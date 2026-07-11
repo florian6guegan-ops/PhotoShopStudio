@@ -18,5 +18,8 @@
         <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnCatalog">
             ⚙  Catalogue et imprimantes
         </Button>
+        <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnStats">
+            📊  Statistiques
+        </Button>
     </StackPanel>
 </UserControl>

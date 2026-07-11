@@ -29,6 +29,7 @@ public partial class App : Application
     private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         // dernière ligne de défense : on informe, on journalise, on ne meurt pas en silence
+        Infrastructure.FileLog.Write("Exception non gérée", e.Exception);
         MessageBox.Show(
             $"Une erreur inattendue s'est produite :\n{e.Exception.Message}\n\nL'application continue.",
             "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);

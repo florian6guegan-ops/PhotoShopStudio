@@ -24,4 +24,7 @@ public partial class HomeView : UserControl
 
     private void OnCatalog(object sender, RoutedEventArgs e) =>
         Navigator.Go(new CatalogView(), "Catalogue et imprimantes");
+
+    private void OnStats(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new StatsView(), "Statistiques");
 }

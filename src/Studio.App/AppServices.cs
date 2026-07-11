@@ -46,6 +46,7 @@ public sealed class AppServices
 
     public required ModeConfig Mode { get; init; }
     public required TicketConfig Ticket { get; init; }
+    public required BackupConfig Backup { get; init; }
 
     private bool _uploadStarted;
 
@@ -54,7 +55,8 @@ public sealed class AppServices
     {
         if (_uploadStarted) return;
 
-        Upload.KioskOrders = new KioskOrderReceiver(Catalog, Orders, Store.ScanRecent(days: 3));
+        Upload.KioskOrders = new KioskOrderReceiver(Catalog, Orders,
+            await Task.Run(() => Store.ScanRecent(days: 3)));
         Upload.KioskOrders.OrderReceived += order =>
         {
             if (!Ticket.Enabled) return;
@@ -68,9 +70,37 @@ public sealed class AppServices
             }
         };
 
-        Firewall.EnsureRule(Upload.Port);
         await Upload.StartAsync();
         _uploadStarted = true;
+        // la règle pare-feu peut être lente (netsh) : après coup, hors du fil d'interface —
+        // le serveur écoute déjà, seul l'accès depuis le réseau en dépend
+        _ = Task.Run(() => Firewall.EnsureRule(Upload.Port));
+    }
+
+    /// <summary>Entretien au démarrage (poste opérateur) : archivage des vieilles commandes + sauvegarde si échue.</summary>
+    public void RunMaintenanceInBackground()
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Archiver.ArchiveOldOrders(
+                    Path.Combine(DataRoot, "orders"),
+                    Path.Combine(DataRoot, "archive"));
+            }
+            catch
+            {
+                // l'archivage réessaiera au prochain démarrage
+            }
+            try
+            {
+                BackupRunner.RunIfDue(DataRoot, Backup);
+            }
+            catch
+            {
+                // sauvegarde indisponible (NAS éteint…) : réessai au prochain démarrage
+            }
+        });
     }
 
     /// <summary>Charge (ou crée avec ses valeurs par défaut) un fichier de config JSON.</summary>
@@ -118,6 +148,7 @@ public sealed class AppServices
             Upload = new UploadServer(Path.Combine(dataRoot, "incoming")),
             Mode = LoadConfig<ModeConfig>(Path.Combine(dataRoot, "config", "mode.json")),
             Ticket = LoadConfig<TicketConfig>(Path.Combine(dataRoot, "config", "ticket.json")),
+            Backup = LoadConfig<BackupConfig>(Path.Combine(dataRoot, "config", "backup.json")),
         };
     }
 

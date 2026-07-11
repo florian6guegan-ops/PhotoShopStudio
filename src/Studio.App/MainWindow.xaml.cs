@@ -27,13 +27,17 @@ public partial class MainWindow : Window
 
             Navigator.Home(new HomeView(), "Studio Photo");
             CheckPendingPrints();
+            App.Services.RunMaintenanceInBackground();
             try
             {
                 // upload téléphone + API bornes disponibles dès le démarrage
+                FileLog.Write("Démarrage du serveur d'envoi…");
                 await App.Services.EnsureUploadServerAsync();
+                FileLog.Write("Serveur d'envoi démarré (port 8123)");
             }
             catch (Exception ex)
             {
+                FileLog.Write("Échec du démarrage du serveur d'envoi", ex);
                 MessageBox.Show(
                     $"Serveur d'envoi non démarré : {ex.Message}\n" +
                     "Le poste fonctionne, mais téléphone et bornes seront indisponibles.",
