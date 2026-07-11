@@ -24,22 +24,47 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="200" Height="200" Margin="8" CornerRadius="10"
+                        <Border Width="220" Height="240" Margin="8" CornerRadius="10"
                                 Background="{StaticResource CardBrush}"
                                 BorderThickness="4"
                                 BorderBrush="{Binding BorderBrush}"
                                 MouseLeftButtonUp="OnPhotoClicked" Tag="{Binding}">
                             <Grid>
-                                <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="6"/>
-                                <Border Background="{StaticResource OkBrush}" CornerRadius="8"
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Image Grid.Row="0" Source="{Binding Thumbnail}" Stretch="Uniform" Margin="6"/>
+                                <Border Grid.Row="0" Background="{StaticResource OkBrush}" CornerRadius="8"
                                         Width="40" Height="40" HorizontalAlignment="Right" VerticalAlignment="Top"
                                         Margin="6" Visibility="{Binding CheckVisibility}">
                                     <TextBlock Text="✓" Foreground="White" FontSize="24" FontWeight="Bold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <TextBlock Text="{Binding Name}" FontSize="13" Foreground="{StaticResource MutedBrush}"
+                                <TextBlock Grid.Row="0" Text="{Binding Name}" FontSize="12"
+                                           Foreground="{StaticResource MutedBrush}"
                                            VerticalAlignment="Bottom" HorizontalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" Margin="8,0,8,4"/>
+                                           TextTrimming="CharacterEllipsis" Margin="8,0,8,2"/>
+
+                                <!-- Bandeau panier de la photo : produit + quantité -->
+                                <Border Grid.Row="1" Height="44" CornerRadius="0,0,6,6"
+                                        Background="#33000000" Visibility="{Binding CartVisibility}">
+                                    <DockPanel Margin="4,2">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Style="{StaticResource FlatButton}" Width="38" Height="36" Padding="0"
+                                                    FontSize="20" Click="OnTileMinus" Tag="{Binding}">−</Button>
+                                            <TextBlock Text="{Binding QuantityLabel}" FontSize="18" FontWeight="Bold"
+                                                       VerticalAlignment="Center" MinWidth="34" TextAlignment="Center"/>
+                                            <Button Style="{StaticResource FlatButton}" Width="38" Height="36" Padding="0"
+                                                    FontSize="20" Click="OnTilePlus" Tag="{Binding}">+</Button>
+                                        </StackPanel>
+                                        <Button Style="{StaticResource FlatButton}" Height="36" Padding="8,0"
+                                                FontSize="14" HorizontalContentAlignment="Left"
+                                                Content="{Binding ProductLabel}"
+                                                Click="OnPickProduct" Tag="{Binding}"/>
+                                    </DockPanel>
+                                </Border>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -47,13 +72,14 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <!-- Barre d'action : produit, quantité, impression -->
+        <!-- Barre d'action : produit et quantité pour la sélection, impression -->
         <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="Produit :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <ComboBox x:Name="ProductCombo" MinWidth="320" FontSize="22" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center"/>
+                              DisplayMemberPath="Label" VerticalAlignment="Center"
+                              SelectionChanged="OnDefaultProductChanged"/>
                     <TextBlock Text="Quantité :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="24,0,8,0"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="56" MinHeight="56" Padding="0"
                             FontSize="26" Click="OnQuantityMinus">−</Button>
@@ -61,11 +87,17 @@
                                VerticalAlignment="Center" MinWidth="48" TextAlignment="Center"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="56" MinHeight="56" Padding="0"
                             FontSize="26" Click="OnQuantityPlus">+</Button>
+                    <TextBlock Text="(s'applique aux photos cochées)" Style="{StaticResource Hint}"
+                               VerticalAlignment="Center" Margin="16,0,0,0" FontSize="14"/>
                 </StackPanel>
-                <Button x:Name="PrintButton" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                        Style="{StaticResource BigButton}" Click="OnPrint" IsEnabled="False">
-                    🖨  Imprimer
-                </Button>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock x:Name="TotalText" FontSize="24" FontWeight="Bold"
+                               VerticalAlignment="Center" Margin="0,0,16,0"/>
+                    <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
+                            Click="OnPrint" IsEnabled="False">
+                        🖨  Imprimer
+                    </Button>
+                </StackPanel>
             </DockPanel>
         </Border>
     </Grid>

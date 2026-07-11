@@ -39,6 +39,8 @@ public partial class PhotoGridView : UserControl
         public string Label => $"{Product.Name} — {Product.Price:0.00} €";
     }
 
+    private Product? DefaultProduct => (ProductCombo.SelectedItem as ProductChoice)?.Product;
+
     private async Task ScanAndLoadAsync()
     {
         _thumbnailCts?.Cancel();
@@ -49,7 +51,7 @@ public partial class PhotoGridView : UserControl
         {
             var files = await Task.Run(() => FindImages(_rootPath), ct);
             foreach (var file in files)
-                _photos.Add(new PhotoItem(file, OnSelectionChanged));
+                _photos.Add(new PhotoItem(file, OnCartChanged));
             PhotosGrid.ItemsSource = _photos;
             UpdateSummary();
         }
@@ -111,22 +113,40 @@ public partial class PhotoGridView : UserControl
 
     private void OnPhotoClicked(object sender, MouseButtonEventArgs e)
     {
-        if ((sender as Border)?.Tag is PhotoItem photo)
-            photo.Selected = !photo.Selected;
+        if ((sender as Border)?.Tag is not PhotoItem photo) return;
+        if (!photo.Selected && photo.Product is null)
+        {
+            // première sélection : la photo prend le produit et la quantité du bandeau
+            photo.Product = DefaultProduct;
+            photo.Quantity = _quantity;
+        }
+        photo.Selected = !photo.Selected;
     }
 
-    private void OnSelectionChanged()
+    private void OnCartChanged()
     {
         UpdateSummary();
     }
 
     private void UpdateSummary()
     {
-        var count = _photos.Count(p => p.Selected);
-        CountText.Text = count == 0
+        var selected = _photos.Where(p => p.Selected).ToList();
+        CountText.Text = selected.Count == 0
             ? $"{_photos.Count} photos trouvées"
-            : $"{count} sélectionnée{(count > 1 ? "s" : "")} sur {_photos.Count}";
-        PrintButton.IsEnabled = count > 0;
+            : $"{selected.Count} sélectionnée{(selected.Count > 1 ? "s" : "")} sur {_photos.Count}";
+        var total = selected.Sum(p => (p.Product?.Price ?? 0) * p.Quantity);
+        TotalText.Text = selected.Count == 0 ? "" : $"{total:0.00} €";
+        PrintButton.IsEnabled = selected.Count > 0;
+    }
+
+    // ----- bandeau : s'applique à toutes les photos cochées -----
+
+    private void OnDefaultProductChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DefaultProduct is null) return;
+        foreach (var photo in _photos.Where(p => p.Selected))
+            photo.Product = DefaultProduct;
+        UpdateSummary();
     }
 
     private void OnQuantityMinus(object sender, RoutedEventArgs e) => SetQuantity(_quantity - 1);
@@ -136,17 +156,55 @@ public partial class PhotoGridView : UserControl
     {
         _quantity = Math.Clamp(value, 1, 99);
         QuantityText.Text = _quantity.ToString();
+        foreach (var photo in _photos.Where(p => p.Selected))
+            photo.Quantity = _quantity;
+        UpdateSummary();
+    }
+
+    // ----- bandeau de la vignette : produit et quantité de cette photo -----
+
+    private void OnTileMinus(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is PhotoItem photo)
+            photo.Quantity = Math.Clamp(photo.Quantity - 1, 1, 99);
+    }
+
+    private void OnTilePlus(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is PhotoItem photo)
+            photo.Quantity = Math.Clamp(photo.Quantity + 1, 1, 99);
+    }
+
+    private void OnPickProduct(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not PhotoItem photo) return;
+
+        var menu = new ContextMenu();
+        foreach (var product in App.Services.Catalog.Enabled)
+        {
+            var item = new MenuItem
+            {
+                Header = $"{product.Name} — {product.Price:0.00} €",
+                FontSize = 18,
+                IsChecked = photo.Product?.Code == product.Code,
+            };
+            var chosen = product;
+            item.Click += (_, _) => photo.Product = chosen;
+            menu.Items.Add(item);
+        }
+        menu.PlacementTarget = button;
+        menu.IsOpen = true;
     }
 
     private async void OnPrint(object sender, RoutedEventArgs e)
     {
-        var selected = _photos.Where(p => p.Selected).ToList();
-        if (selected.Count == 0 || ProductCombo.SelectedItem is not ProductChoice choice) return;
+        var selected = _photos.Where(p => p.Selected && p.Product is not null).ToList();
+        if (selected.Count == 0) return;
 
         var services = App.Services;
-        var quantity = _quantity;
         var items = selected
-            .Select(p => new DraftItem(p.Path, choice.Product, quantity, CropSpec.Full, 0, null, new ImageAdjustments()))
+            .Select(p => new DraftItem(p.Path, p.Product!, p.Quantity, p.Crop,
+                p.RotationQuarterTurns, p.FitOverride, p.Adjustments))
             .ToList();
 
         PrintButton.IsEnabled = false;
@@ -162,9 +220,10 @@ public partial class PhotoGridView : UserControl
             });
 
             Mouse.OverrideCursor = null;
+            var prints = selected.Sum(p => p.Quantity);
             MessageBox.Show(
                 $"Commande {order.DisplayNumber} envoyée à l'impression.\n" +
-                $"{selected.Count} photo(s) × {quantity} — total {order.Total:0.00} €",
+                $"{selected.Count} photo(s), {prints} tirage(s) — total {order.Total:0.00} €",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
             Navigator.Home(new HomeView(), "Studio Photo");
         }
@@ -178,20 +237,29 @@ public partial class PhotoGridView : UserControl
         }
     }
 
+    /// <summary>Une photo de la grille et, si elle est cochée, sa ligne de panier.</summary>
     private sealed class PhotoItem : ObservableObject
     {
-        private readonly Action _selectionChanged;
+        private readonly Action _cartChanged;
         private ImageSource? _thumbnail;
         private bool _selected;
+        private Product? _product;
+        private int _quantity = 1;
 
-        public PhotoItem(string path, Action selectionChanged)
+        public PhotoItem(string path, Action cartChanged)
         {
             Path = path;
-            _selectionChanged = selectionChanged;
+            _cartChanged = cartChanged;
         }
 
         public string Path { get; }
         public string Name => System.IO.Path.GetFileName(Path);
+
+        // recadrage et réglages, renseignés par l'éditeur (CropEditorView)
+        public CropSpec Crop { get; set; } = CropSpec.Full;
+        public int RotationQuarterTurns { get; set; }
+        public FitMode? FitOverride { get; set; }
+        public ImageAdjustments Adjustments { get; set; } = new();
 
         public ImageSource? Thumbnail
         {
@@ -207,14 +275,42 @@ public partial class PhotoGridView : UserControl
                 if (!Set(ref _selected, value)) return;
                 OnPropertyChanged(nameof(BorderBrush));
                 OnPropertyChanged(nameof(CheckVisibility));
-                _selectionChanged();
+                OnPropertyChanged(nameof(CartVisibility));
+                _cartChanged();
             }
         }
+
+        public Product? Product
+        {
+            get => _product;
+            set
+            {
+                if (_product?.Code == value?.Code) return;
+                _product = value;
+                OnPropertyChanged(nameof(ProductLabel));
+                _cartChanged();
+            }
+        }
+
+        public int Quantity
+        {
+            get => _quantity;
+            set
+            {
+                if (!Set(ref _quantity, value)) return;
+                OnPropertyChanged(nameof(QuantityLabel));
+                _cartChanged();
+            }
+        }
+
+        public string ProductLabel => _product is null ? "Produit…" : $"{_product.Name} · {_product.Price:0.00} €";
+        public string QuantityLabel => _quantity.ToString();
 
         public Brush BorderBrush => Selected
             ? (Brush)Application.Current.Resources["AccentBrush"]
             : Brushes.Transparent;
 
         public Visibility CheckVisibility => Selected ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility CartVisibility => Selected ? Visibility.Visible : Visibility.Collapsed;
     }
 }
