@@ -8,9 +8,13 @@ namespace Studio.App.Views;
 public partial class SourcePickerView : UserControl
 {
     private readonly RemovableDriveWatcher _watcher = new();
+    private readonly Action<string> _onFolderChosen;
 
-    public SourcePickerView()
+    /// <param name="onFolderChosen">Suite du parcours ; par défaut la grille d'impression.</param>
+    public SourcePickerView(Action<string>? onFolderChosen = null)
     {
+        _onFolderChosen = onFolderChosen
+            ?? (root => Navigator.Go(new PhotoGridView(root), "Choisir les photos"));
         InitializeComponent();
         _watcher.DrivesChanged += drives => Dispatcher.Invoke(() => Refresh(drives));
         Loaded += (_, _) =>
@@ -30,13 +34,13 @@ public partial class SourcePickerView : UserControl
     private void OnDriveClicked(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is string root)
-            Navigator.Go(new PhotoGridView(root), "Choisir les photos");
+            _onFolderChosen(root);
     }
 
     private void OnBrowseFolder(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choisir le dossier des photos" };
         if (dialog.ShowDialog() == true)
-            Navigator.Go(new PhotoGridView(dialog.FolderName), "Choisir les photos");
+            _onFolderChosen(dialog.FolderName);
     }
 }

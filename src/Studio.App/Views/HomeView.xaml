@@ -6,6 +6,9 @@
         <Button Style="{StaticResource BigButton}" MinWidth="420" Margin="0,12" Click="OnNewOrder">
             📷  Nouvelle commande
         </Button>
+        <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnIdPhoto">
+            🪪  Photos d'identité
+        </Button>
         <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnOrders">
             🗂  Commandes du jour
         </Button>

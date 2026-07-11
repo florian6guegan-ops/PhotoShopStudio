@@ -1,6 +1,7 @@
 using System.IO;
 using Studio.Core.Catalog;
 using Studio.Imaging;
+using Studio.Imaging.Faces;
 using Studio.Printing;
 using Studio.Store;
 
@@ -18,6 +19,12 @@ public sealed class AppServices
     public required OrderService Orders { get; init; }
     public required PrintOrchestrator Printer { get; set; }
     public required ThumbnailService Thumbnails { get; init; }
+
+    private readonly Lazy<FaceDetector> _faces = new(() => new FaceDetector(
+        Path.Combine(AppContext.BaseDirectory, "models", "face_detection_yunet_2023mar.onnx")));
+
+    /// <summary>Détecteur de visage (YuNet), chargé au premier usage.</summary>
+    public FaceDetector Faces => _faces.Value;
 
     public static AppServices Load(string dataRoot = @"D:\PhotoStudioData")
     {

@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- modèle de détection de visage embarqué à côté de l'exécutable -->
+    <Content Include="..\..\models\face_detection_yunet_2023mar.onnx"
+             Link="models\face_detection_yunet_2023mar.onnx"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Studio.Core\Studio.Core.csproj" />
     <ProjectReference Include="..\Studio.Imaging\Studio.Imaging.csproj" />
     <ProjectReference Include="..\Studio.Printing\Studio.Printing.csproj" />
