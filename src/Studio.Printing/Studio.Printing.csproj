@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Studio.Core\Studio.Core.csproj" />
     <ProjectReference Include="..\Studio.Imaging\Studio.Imaging.csproj" />
+    <ProjectReference Include="..\Studio.Store\Studio.Store.csproj" />
   </ItemGroup>
 
   <ItemGroup>

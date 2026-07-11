@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Printing;
+using System.Globalization;
 using Studio.Printing;
 
 // Outil de diagnostic impression :
@@ -13,10 +14,13 @@ return args switch
     ["list"] => ListPrinters(),
     ["addforms"] => AddShopForms(),
     ["devmode", var printer, var file] => CaptureDevMode(printer, file),
-    ["test", var printer, var w, var h] => PrintTestPage(printer, double.Parse(w), double.Parse(h), null),
-    ["test", var printer, var w, var h, var pdf] => PrintTestPage(printer, double.Parse(w), double.Parse(h), pdf),
+    ["test", var printer, var w, var h] => PrintTestPage(printer, ParseMm(w), ParseMm(h), null),
+    ["test", var printer, var w, var h, var pdf] => PrintTestPage(printer, ParseMm(w), ParseMm(h), pdf),
     _ => Usage(),
 };
+
+static double ParseMm(string value) =>
+    double.Parse(value.Replace(',', '.'), CultureInfo.InvariantCulture);
 
 static int Usage()
 {
