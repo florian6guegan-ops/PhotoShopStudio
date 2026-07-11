@@ -65,7 +65,7 @@ public partial class PhotoGridView : UserControl
             try
             {
                 var bytes = await Task.Run(() => thumbnails.GetJpeg(photo.Path), ct);
-                photo.Thumbnail = ToBitmap(bytes);
+                photo.SetSourceThumbnail(ToBitmap(bytes));
             }
             catch (OperationCanceledException) { return; }
             catch (Exception)
@@ -175,6 +175,23 @@ public partial class PhotoGridView : UserControl
             photo.Quantity = Math.Clamp(photo.Quantity + 1, 1, 99);
     }
 
+    private void OnEditCrop(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not PhotoItem photo || photo.Product is null) return;
+
+        var product = photo.Product;
+        var initial = new CropEditorView.State(
+            photo.Crop, photo.RotationQuarterTurns, photo.FitOverride ?? product.DefaultFit);
+
+        Navigator.Go(new CropEditorView(photo.Path, product, initial, result =>
+        {
+            photo.Crop = result.Crop;
+            photo.RotationQuarterTurns = result.RotationQuarterTurns;
+            photo.FitOverride = result.Fit == product.DefaultFit ? null : result.Fit;
+            photo.RefreshThumbnail();
+        }), "Recadrage");
+    }
+
     private void OnPickProduct(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not PhotoItem photo) return;
@@ -261,10 +278,40 @@ public partial class PhotoGridView : UserControl
         public FitMode? FitOverride { get; set; }
         public ImageAdjustments Adjustments { get; set; } = new();
 
+        private BitmapSource? _sourceThumbnail;
+
         public ImageSource? Thumbnail
         {
             get => _thumbnail;
-            set => Set(ref _thumbnail, value);
+            private set => Set(ref _thumbnail, value);
+        }
+
+        public void SetSourceThumbnail(BitmapSource source)
+        {
+            _sourceThumbnail = source;
+            RefreshThumbnail();
+        }
+
+        /// <summary>Vignette affichée = vignette source + rotation utilisateur + recadrage choisi.</summary>
+        public void RefreshThumbnail()
+        {
+            if (_sourceThumbnail is null) return;
+
+            BitmapSource display = _sourceThumbnail;
+            if (RotationQuarterTurns != 0)
+                display = new TransformedBitmap(display, new RotateTransform(90 * RotationQuarterTurns));
+
+            if (!Crop.IsFull && Crop.IsValid)
+            {
+                var x = (int)Math.Round(Crop.X * display.PixelWidth);
+                var y = (int)Math.Round(Crop.Y * display.PixelHeight);
+                var w = Math.Clamp((int)Math.Round(Crop.Width * display.PixelWidth), 1, display.PixelWidth - x);
+                var h = Math.Clamp((int)Math.Round(Crop.Height * display.PixelHeight), 1, display.PixelHeight - y);
+                display = new CroppedBitmap(display, new Int32Rect(x, y, w, h));
+            }
+
+            if (display.CanFreeze) display.Freeze();
+            Thumbnail = display;
         }
 
         public bool Selected
