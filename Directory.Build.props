@@ -5,6 +5,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- l'analyseur du paquet OpenCvSharp exige un compilateur plus récent que le SDK
+         installé : il est simplement ignoré (CS9057 reste un avertissement, il se
+         propage à tout projet qui référence Studio.Imaging) -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS9057</WarningsNotAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
     <NeutralLanguage>fr-FR</NeutralLanguage>
   </PropertyGroup>

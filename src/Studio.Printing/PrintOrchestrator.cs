@@ -133,18 +133,37 @@ public sealed class PrintOrchestrator
                         (widthMm, heightMm) = (product.HeightMm, product.WidthMm);
                 }
 
+                var iccPath = product.IccProfile is not null
+                    ? Path.Combine(_catalogDir, "icc", product.IccProfile)
+                    : null;
+
                 if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
                 {
-                    ImagePipeline.RenderToFile(new RenderRequest(
-                        sourcePath,
-                        itemW, itemH,
-                        item.Crop,
-                        item.RotationQuarterTurns,
-                        item.FitOverride ?? product.DefaultFit,
-                        borderPx,
-                        item.Adjustments,
-                        product.IccProfile is not null ? Path.Combine(_catalogDir, "icc", product.IccProfile) : null),
-                        output, product.Dpi);
+                    if (product.Sheet is { } sheet)
+                    {
+                        // planche identité : la cellule est rendue en Fill au format cellule
+                        var cellW = MmPx.ToPixels(sheet.CellWidthMm, product.Dpi);
+                        var cellH = MmPx.ToPixels(sheet.CellHeightMm, product.Dpi);
+                        ImagePipeline.RenderIdSheetToFile(new RenderRequest(
+                                sourcePath, cellW, cellH,
+                                item.Crop, item.RotationQuarterTurns, FitMode.Fill, 0,
+                                item.Adjustments, iccPath),
+                            sheet.Copies, sheet.GapMm, sheet.CutMarks,
+                            targetW, targetH, output, product.Dpi);
+                    }
+                    else
+                    {
+                        ImagePipeline.RenderToFile(new RenderRequest(
+                            sourcePath,
+                            itemW, itemH,
+                            item.Crop,
+                            item.RotationQuarterTurns,
+                            item.FitOverride ?? product.DefaultFit,
+                            borderPx,
+                            item.Adjustments,
+                            iccPath),
+                            output, product.Dpi);
+                    }
                 }
 
                 pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm));

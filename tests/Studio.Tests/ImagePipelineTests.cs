@@ -87,6 +87,32 @@ public class ImagePipelineTests : IDisposable
     }
 
     [Fact]
+    public void IdSheet_HasExactSize_CellsFilled_MarginsWhite()
+    {
+        var source = MakeJpeg("face.jpg", 2100, 2700, MagickColors.SaddleBrown);
+        var output = Path.Combine(_root, "sheet.png");
+
+        // planche 10×15 portrait à 300 dpi, 6 cellules 35×45
+        var cellW = Studio.Imaging.Geometry.MmPx.ToPixels(35, 300);
+        var cellH = Studio.Imaging.Geometry.MmPx.ToPixels(45, 300);
+        ImagePipeline.RenderIdSheetToFile(
+            Request(source, cellW, cellH), copies: 6, gapMm: 2, cutMarks: true,
+            sheetWidthPx: 1205, sheetHeightPx: 1795, outputPath: output);
+
+        using var result = new MagickImage(output);
+        Assert.Equal(1205u, result.Width);
+        Assert.Equal(1795u, result.Height);
+
+        // grille 2×3 : la première cellule commence vers (177,77) — point pris en son cœur
+        var inCell = result.CloneArea(380, 340, 4, 4).GetPixels().First().ToColor()!;
+        Assert.True(inCell.R > 80 && inCell.B < 80, $"Cellule attendue, obtenu R={inCell.R} B={inCell.B}");
+
+        // coin : marge blanche (hors traits de coupe)
+        var corner = result.CloneArea(30, 60, 2, 2).GetPixels().First().ToColor()!;
+        Assert.Equal(255, corner.R);
+    }
+
+    [Fact]
     public void Crop_IsAppliedBeforeResize()
     {
         // image moitié gauche noire, moitié droite blanche
