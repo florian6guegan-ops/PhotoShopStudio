@@ -1,0 +1,104 @@
+<UserControl x:Class="Studio.App.Views.ProductEditView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,16,14"/>
+        </Style>
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="0,0,0,14"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="TitleText" Grid.Row="0" Style="{StaticResource PageTitle}"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="24" MaxWidth="860"
+                    HorizontalAlignment="Left">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="230"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Nom affiché"/>
+                    <TextBox x:Name="NameBox" Grid.Row="0" Grid.Column="1" Style="{StaticResource FieldBox}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Code (unique)"/>
+                    <TextBox x:Name="CodeBox" Grid.Row="1" Grid.Column="1" Style="{StaticResource FieldBox}" MaxWidth="260" HorizontalAlignment="Left"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Prix (€)"/>
+                    <TextBox x:Name="PriceBox" Grid.Row="2" Grid.Column="1" Style="{StaticResource FieldBox}" MaxWidth="160" HorizontalAlignment="Left"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Largeur × hauteur (mm)"/>
+                    <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox x:Name="WidthBox" Style="{StaticResource FieldBox}" Width="120"/>
+                        <TextBlock Text="×" FontSize="22" VerticalAlignment="Center" Margin="10,0,10,14"/>
+                        <TextBox x:Name="HeightBox" Style="{StaticResource FieldBox}" Width="120"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Imprimante"/>
+                    <ComboBox x:Name="PrinterCombo" Grid.Row="4" Grid.Column="1" FontSize="20" Padding="10,8" Margin="0,0,0,14"/>
+
+                    <TextBlock Grid.Row="5" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Cadrage par défaut"/>
+                    <ComboBox x:Name="FitCombo" Grid.Row="5" Grid.Column="1" FontSize="20" Padding="10,8" Margin="0,0,0,14"
+                              MaxWidth="380" HorizontalAlignment="Left"/>
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Marge blanche (mm)"/>
+                    <TextBox x:Name="BorderBox" Grid.Row="6" Grid.Column="1" Style="{StaticResource FieldBox}" MaxWidth="160" HorizontalAlignment="Left"/>
+
+                    <TextBlock Grid.Row="7" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Résolution (dpi)"/>
+                    <TextBox x:Name="DpiBox" Grid.Row="7" Grid.Column="1" Style="{StaticResource FieldBox}" MaxWidth="160" HorizontalAlignment="Left"/>
+
+                    <TextBlock Grid.Row="8" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Planche (identité)"/>
+                    <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal">
+                        <CheckBox x:Name="SheetCheck" VerticalAlignment="Center" Margin="0,0,16,14"
+                                  Checked="OnSheetToggled" Unchecked="OnSheetToggled">
+                            <TextBlock Text="planche de copies" FontSize="18"/>
+                        </CheckBox>
+                        <TextBox x:Name="SheetCopiesBox" Style="{StaticResource FieldBox}" Width="80" IsEnabled="False"/>
+                        <TextBlock Text="copies de" FontSize="18" VerticalAlignment="Center" Margin="10,0,10,14"/>
+                        <TextBox x:Name="SheetWBox" Style="{StaticResource FieldBox}" Width="80" IsEnabled="False"/>
+                        <TextBlock Text="×" FontSize="20" VerticalAlignment="Center" Margin="8,0,8,14"/>
+                        <TextBox x:Name="SheetHBox" Style="{StaticResource FieldBox}" Width="80" IsEnabled="False"/>
+                        <TextBlock Text="mm" FontSize="18" VerticalAlignment="Center" Margin="8,0,0,14"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="9" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Visible à la vente"/>
+                    <CheckBox x:Name="EnabledCheck" Grid.Row="9" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,14">
+                        <TextBlock Text="produit proposé dans les listes" FontSize="18"/>
+                    </CheckBox>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+            <DockPanel>
+                <TextBlock x:Name="ErrorText" DockPanel.Dock="Left" FontSize="18"
+                           Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnCancel">Annuler</Button>
+                    <Button Style="{StaticResource BigButton}" Margin="12,0,0,0" Click="OnSave">✓ Enregistrer</Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

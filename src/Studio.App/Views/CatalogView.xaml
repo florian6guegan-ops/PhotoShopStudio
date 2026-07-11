@@ -8,9 +8,14 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}" Text="Catalogue et imprimantes"/>
+        <DockPanel Grid.Row="0">
+            <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}" Text="Catalogue et imprimantes"/>
+            <Button DockPanel.Dock="Right" Style="{StaticResource BigButton}" MinHeight="56" MinWidth="240"
+                    FontSize="20" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Click="OnNewProduct">➕ Nouveau produit</Button>
+        </DockPanel>
         <TextBlock Grid.Row="1" Style="{StaticResource Hint}" Margin="0,0,0,16"
-                   Text="« Capturer réglages » ouvre le dialogue du pilote : choisissez papier, format et finition, puis validez — ces réglages seront rejoués à chaque impression du produit. À faire imprimante branchée et allumée. L'édition des produits se fait pour l'instant dans catalog\products.json."/>
+                   Text="« Capturer réglages » ouvre le dialogue du pilote : choisissez papier, format et finition, puis validez — ces réglages seront rejoués à chaque impression du produit. À faire imprimante branchée et allumée."/>
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="ProductsList">
@@ -19,11 +24,22 @@
                         <Border Background="{StaticResource CardBrush}" CornerRadius="12"
                                 Padding="16" Margin="0,0,0,10">
                             <DockPanel>
-                                <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
-                                        MinHeight="48" MinWidth="220" FontSize="18" Padding="16,6"
-                                        VerticalAlignment="Center" Click="OnCaptureDevmode" Tag="{Binding}">
-                                    ⚙  Capturer réglages
-                                </Button>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource FlatButton}"
+                                            MinHeight="48" MinWidth="140" FontSize="18" Padding="12,6"
+                                            Click="OnEditProduct" Tag="{Binding}">✏ Modifier</Button>
+                                    <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
+                                            MinHeight="48" MinWidth="60" FontSize="18" Padding="12,6"
+                                            ToolTip="Dupliquer ce produit"
+                                            Click="OnDuplicateProduct" Tag="{Binding}">⧉</Button>
+                                    <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
+                                            MinHeight="48" MinWidth="130" FontSize="18" Padding="12,6"
+                                            Content="{Binding ToggleLabel}"
+                                            Click="OnToggleProduct" Tag="{Binding}"/>
+                                    <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
+                                            MinHeight="48" MinWidth="210" FontSize="18" Padding="12,6"
+                                            Click="OnCaptureDevmode" Tag="{Binding}">⚙ Capturer réglages</Button>
+                                </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextBrush}" Text="{Binding Title}"/>
