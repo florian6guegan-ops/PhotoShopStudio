@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Studio.Core\Studio.Core.csproj" />
+    <ProjectReference Include="..\Studio.Imaging\Studio.Imaging.csproj" />
+    <ProjectReference Include="..\Studio.Printing\Studio.Printing.csproj" />
+    <ProjectReference Include="..\Studio.Store\Studio.Store.csproj" />
+    <ProjectReference Include="..\Studio.Sources\Studio.Sources.csproj" />
+    <ProjectReference Include="..\Studio.Web\Studio.Web.csproj" />
+  </ItemGroup>
+
+</Project>
