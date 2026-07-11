@@ -1,0 +1,22 @@
+<UserControl x:Class="Studio.App.Views.KioskDoneView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="{StaticResource PageBrush}">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="✅" FontSize="80" TextAlignment="Center"/>
+            <TextBlock Text="Commande envoyée !" FontSize="44" FontWeight="Bold"
+                       TextAlignment="Center" Margin="0,12,0,24"
+                       Foreground="{StaticResource TextBrush}"/>
+            <TextBlock Text="Votre numéro :" FontSize="28" TextAlignment="Center"
+                       Foreground="{StaticResource MutedBrush}"/>
+            <TextBlock x:Name="NumberText" FontSize="110" FontWeight="Bold" TextAlignment="Center"
+                       Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock Text="Présentez-vous à la caisse, vos photos arrivent." FontSize="26"
+                       TextAlignment="Center" Margin="0,20,0,40"
+                       Foreground="{StaticResource TextBrush}"/>
+            <Button Style="{StaticResource BigButton}" MinWidth="380" Click="OnFinish">
+                Terminer
+            </Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

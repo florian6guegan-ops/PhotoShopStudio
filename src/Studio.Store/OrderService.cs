@@ -28,12 +28,14 @@ public sealed class OrderService
         _counter = counter;
     }
 
-    public Order CreateOrder(string source, IReadOnlyList<DraftItem> items, string? customerName = null)
+    /// <param name="id">Clé d'idempotence fournie par le créateur (borne, téléphone) ; null = générée.</param>
+    public Order CreateOrder(string source, IReadOnlyList<DraftItem> items, string? customerName = null, Guid? id = null)
     {
         if (items.Count == 0) throw new ArgumentException("Aucune photo sélectionnée", nameof(items));
 
         var order = new Order
         {
+            Id = id ?? Guid.NewGuid(),
             Source = source,
             DailyNumber = _counter.Next(),
             Status = OrderStatus.Submitted,

@@ -25,6 +25,29 @@ public partial class OrdersView : UserControl
         EmptyText.Visibility = orders.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private async void OnPrintTicket(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not OrderRow row) return;
+        var services = App.Services;
+
+        Mouse.OverrideCursor = Cursors.Wait;
+        try
+        {
+            await Task.Run(() => Studio.Printing.EscPosTicket.Send(
+                Studio.Printing.EscPosTicket.Build(row.Order, services.Catalog, services.Ticket),
+                services.Ticket));
+            Mouse.OverrideCursor = null;
+        }
+        catch (Exception ex)
+        {
+            Mouse.OverrideCursor = null;
+            MessageBox.Show(
+                $"Ticket non imprimé : {ex.Message}\n\n" +
+                $"Vérifiez l'imprimante ticket ({services.Ticket.Host}).",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private async void OnReprint(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is not EnvelopeRow row) return;

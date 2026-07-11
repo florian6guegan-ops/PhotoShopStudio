@@ -3,6 +3,8 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- nécessaire pour référencer Studio.Printing (net8.0-windows) -->
+    <TargetFramework>net8.0-windows</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Studio.Core\Studio.Core.csproj" />
     <ProjectReference Include="..\..\src\Studio.Imaging\Studio.Imaging.csproj" />
+    <ProjectReference Include="..\..\src\Studio.Printing\Studio.Printing.csproj" />
     <ProjectReference Include="..\..\src\Studio.Store\Studio.Store.csproj" />
     <ProjectReference Include="..\..\src\Studio.Web\Studio.Web.csproj" />
   </ItemGroup>

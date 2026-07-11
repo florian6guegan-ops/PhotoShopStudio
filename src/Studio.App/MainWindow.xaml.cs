@@ -12,10 +12,33 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         Navigator.Navigated += OnNavigated;
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
+            if (App.Services.Mode.IsKiosk)
+            {
+                // borne : plein écran verrouillé, parcours client uniquement
+                WindowStyle = WindowStyle.None;
+                ResizeMode = ResizeMode.NoResize;
+                WindowState = WindowState.Maximized;
+                Topmost = true;
+                Navigator.Home(new KioskHomeView(), "Bienvenue");
+                return;
+            }
+
             Navigator.Home(new HomeView(), "Studio Photo");
             CheckPendingPrints();
+            try
+            {
+                // upload téléphone + API bornes disponibles dès le démarrage
+                await App.Services.EnsureUploadServerAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Serveur d'envoi non démarré : {ex.Message}\n" +
+                    "Le poste fonctionne, mais téléphone et bornes seront indisponibles.",
+                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         };
     }
 

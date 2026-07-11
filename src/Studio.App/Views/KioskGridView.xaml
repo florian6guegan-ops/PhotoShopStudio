@@ -1,0 +1,73 @@
+<UserControl x:Class="Studio.App.Views.KioskGridView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+            <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
+                       Text="Touchez les photos que vous voulez"/>
+            <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
+                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="PhotosGrid">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="230" Height="250" Margin="8" CornerRadius="10"
+                                Background="{StaticResource CardBrush}"
+                                BorderThickness="5" BorderBrush="{Binding BorderBrush}"
+                                MouseLeftButtonUp="OnPhotoClicked" Tag="{Binding}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Image Grid.Row="0" Source="{Binding Thumbnail}" Stretch="Uniform" Margin="6"/>
+                                <Border Grid.Row="0" Background="{StaticResource OkBrush}" CornerRadius="10"
+                                        Width="52" Height="52" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Margin="6" Visibility="{Binding CheckVisibility}">
+                                    <TextBlock Text="✓" Foreground="White" FontSize="32" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <Border Grid.Row="1" Height="52" Background="#33000000" CornerRadius="0,0,6,6"
+                                        Visibility="{Binding CheckVisibility}">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <Button Style="{StaticResource FlatButton}" Width="48" Height="44" Padding="0"
+                                                FontSize="24" Click="OnTileMinus" Tag="{Binding}">−</Button>
+                                        <TextBlock Text="{Binding QuantityLabel}" FontSize="24" FontWeight="Bold"
+                                                   VerticalAlignment="Center" MinWidth="46" TextAlignment="Center"/>
+                                        <Button Style="{StaticResource FlatButton}" Width="48" Height="44" Padding="0"
+                                                FontSize="24" Click="OnTilePlus" Tag="{Binding}">+</Button>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+            <DockPanel>
+                <TextBlock x:Name="HelpText" DockPanel.Dock="Left" Style="{StaticResource Hint}"
+                           VerticalAlignment="Center"
+                           Text="Touchez une photo pour la choisir, − / + pour le nombre d'exemplaires."/>
+                <Button x:Name="ContinueButton" DockPanel.Dock="Right" Style="{StaticResource BigButton}"
+                        HorizontalAlignment="Right" IsEnabled="False" Click="OnContinue">
+                    Continuer  ➜
+                </Button>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

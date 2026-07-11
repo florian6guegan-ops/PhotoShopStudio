@@ -1,0 +1,46 @@
+<UserControl x:Class="Studio.App.Views.KioskHomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="{StaticResource PageBrush}">
+        <!-- sortie staff : coin invisible, 5 appuis rapides -->
+        <Button Width="90" Height="90" HorizontalAlignment="Left" VerticalAlignment="Top"
+                Background="Transparent" BorderThickness="0" Click="OnCornerTap"/>
+
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="👋" FontSize="90" TextAlignment="Center"/>
+            <TextBlock Text="Bonjour !" FontSize="56" FontWeight="Bold" TextAlignment="Center"
+                       Foreground="{StaticResource TextBrush}" Margin="0,8,0,4"/>
+            <TextBlock Text="Imprimez vos photos en quelques minutes" FontSize="26"
+                       Foreground="{StaticResource MutedBrush}" TextAlignment="Center" Margin="0,0,0,40"/>
+            <Button Style="{StaticResource BigButton}" MinHeight="110" MinWidth="560" FontSize="32"
+                    Click="OnStart">
+                📷  Toucher ici pour commencer
+            </Button>
+        </StackPanel>
+
+        <!-- pavé PIN de sortie staff -->
+        <Border x:Name="PinPanel" Visibility="Collapsed" Background="#B3000000">
+            <Border Background="{StaticResource CardBrush}" CornerRadius="16" Padding="28"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="Code de sortie" FontSize="24" FontWeight="SemiBold" TextAlignment="Center"/>
+                    <TextBlock x:Name="PinDots" FontSize="34" TextAlignment="Center" Margin="0,10" MinHeight="44"/>
+                    <UniformGrid Columns="3" Rows="4">
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="1">1</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="2">2</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="3">3</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="4">4</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="5">5</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="6">6</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="7">7</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="8">8</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="9">9</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="20" Click="OnPinCancel">Annuler</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="0">0</Button>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="20" Click="OnPinClear">⌫</Button>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

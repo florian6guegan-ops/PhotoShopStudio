@@ -36,6 +36,9 @@ public sealed class UploadServer : IAsyncDisposable
     private readonly ConcurrentDictionary<string, UploadSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private WebApplication? _app;
 
+    /// <summary>Réception des commandes borne ; null = API /api/orders désactivée.</summary>
+    public KioskOrderReceiver? KioskOrders { get; set; }
+
     public UploadServer(string incomingRoot, int port = 8123)
     {
         _incomingRoot = incomingRoot;
@@ -128,6 +131,53 @@ public sealed class UploadServer : IAsyncDisposable
                 saved++;
             }
             return Results.Json(new { saved });
+        });
+
+        app.MapGet("/api/ping", () => Results.Json(new { ok = true }));
+
+        app.MapPost("/api/orders", async (HttpRequest request) =>
+        {
+            var receiver = KioskOrders;
+            if (receiver is null) return Results.NotFound();
+            if (!request.HasFormContentType) return Results.BadRequest();
+
+            var form = await request.ReadFormAsync();
+            var orderJson = form["order"].ToString();
+            if (string.IsNullOrEmpty(orderJson)) return Results.BadRequest();
+
+            KioskOrderDto dto;
+            try
+            {
+                dto = KioskOrderReceiver.ParseDto(orderJson);
+            }
+            catch (Exception)
+            {
+                return Results.BadRequest();
+            }
+
+            // les photos de la commande arrivent dans un dossier dédié au GUID :
+            // un retry ré-écrit les mêmes fichiers, jamais de doublon de commande
+            var folder = Path.Combine(_incomingRoot, $"borne-{dto.Id:N}");
+            Directory.CreateDirectory(folder);
+            foreach (var file in form.Files)
+            {
+                if (file.Length is 0 or > MaxFileBytes) continue;
+                var name = Path.GetFileName(file.FileName);
+                var ext = Path.GetExtension(name).ToLowerInvariant();
+                if (!AllowedExtensions.Contains(ext)) continue;
+                await using var output = File.Create(Path.Combine(folder, name));
+                await file.CopyToAsync(output);
+            }
+
+            try
+            {
+                var ack = receiver.Submit(dto, folder);
+                return Results.Json(ack);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
         });
 
         _app = app;
