@@ -1,0 +1,16 @@
+<UserControl x:Class="Studio.App.Views.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+        <TextBlock Text="Que voulez-vous faire ?" Style="{StaticResource PageTitle}" HorizontalAlignment="Center"/>
+        <Button Style="{StaticResource BigButton}" MinWidth="420" Margin="0,12" Click="OnNewOrder">
+            📷  Nouvelle commande
+        </Button>
+        <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnOrders">
+            🗂  Commandes du jour
+        </Button>
+        <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnCatalog">
+            ⚙  Catalogue et imprimantes
+        </Button>
+    </StackPanel>
+</UserControl>

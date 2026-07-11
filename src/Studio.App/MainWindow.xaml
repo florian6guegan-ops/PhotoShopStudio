@@ -1,12 +1,29 @@
-﻿<Window x:Class="Studio.App.MainWindow"
+<Window x:Class="Studio.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:Studio.App"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="Studio Photo — PHOTOCONCEPT"
+        WindowState="Maximized"
+        MinWidth="1024" MinHeight="700"
+        Background="{StaticResource PageBrush}">
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
+        <!-- Barre d'en-tête : retour + titre -->
+        <Border Grid.Row="0" Background="{StaticResource AccentBrush}" Padding="16,10">
+            <DockPanel>
+                <Button x:Name="BackButton" DockPanel.Dock="Left" Click="OnBackClicked"
+                        Style="{StaticResource BigButton}" Background="{StaticResource AccentDarkBrush}"
+                        MinWidth="140" MinHeight="56" FontSize="22" Visibility="Collapsed">
+                    ← Retour
+                </Button>
+                <TextBlock x:Name="TitleText" Text="Studio Photo" Foreground="White"
+                           FontSize="28" FontWeight="Bold" VerticalAlignment="Center" Margin="24,0,0,0"/>
+            </DockPanel>
+        </Border>
+
+        <ContentControl x:Name="ScreenHost" Grid.Row="1" Margin="24"/>
     </Grid>
 </Window>

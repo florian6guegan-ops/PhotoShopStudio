@@ -1,0 +1,54 @@
+using System.IO;
+using Studio.Core.Catalog;
+using Studio.Imaging;
+using Studio.Printing;
+using Studio.Store;
+
+namespace Studio.App;
+
+/// <summary>Composition de l'application : chemins de données et services partagés.</summary>
+public sealed class AppServices
+{
+    public required string DataRoot { get; init; }
+    public string CatalogDir => Path.Combine(DataRoot, "catalog");
+    public string ProductsJson => Path.Combine(CatalogDir, "products.json");
+
+    public required ProductCatalog Catalog { get; set; }
+    public required OrderFolderStore Store { get; init; }
+    public required OrderService Orders { get; init; }
+    public required PrintOrchestrator Printer { get; set; }
+    public required ThumbnailService Thumbnails { get; init; }
+
+    public static AppServices Load(string dataRoot = @"D:\PhotoStudioData")
+    {
+        foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache" })
+            Directory.CreateDirectory(Path.Combine(dataRoot, sub));
+
+        var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
+        if (!File.Exists(productsJson))
+            ProductCatalog.Save(productsJson, ProductCatalog.CreateDefaultProducts());
+
+        var catalog = ProductCatalog.Load(productsJson);
+        var store = new OrderFolderStore(Path.Combine(dataRoot, "orders"));
+        var counter = new DailyCounter(Path.Combine(dataRoot, "counters", "daily.json"));
+
+        MagickInit.Configure();
+
+        return new AppServices
+        {
+            DataRoot = dataRoot,
+            Catalog = catalog,
+            Store = store,
+            Orders = new OrderService(store, counter),
+            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog")),
+            Thumbnails = new ThumbnailService(Path.Combine(dataRoot, "cache")),
+        };
+    }
+
+    /// <summary>Après modification du catalogue : recharge et recâble l'impression.</summary>
+    public void ReloadCatalog()
+    {
+        Catalog = ProductCatalog.Load(ProductsJson);
+        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir);
+    }
+}
