@@ -11,6 +11,9 @@ public partial class HomeView : UserControl
     private void OnNewOrder(object sender, RoutedEventArgs e) =>
         Navigator.Go(new SourcePickerView(), "Nouvelle commande — choisir le support");
 
+    private void OnPhoneUpload(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new PhoneUploadView(), "Photos depuis un téléphone");
+
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
         Navigator.Go(new SourcePickerView(root =>
             Navigator.Go(new IdPhotoView(root), "Photos d'identité")),

@@ -4,6 +4,7 @@ using Studio.Imaging;
 using Studio.Imaging.Faces;
 using Studio.Printing;
 using Studio.Store;
+using Studio.Web;
 
 namespace Studio.App;
 
@@ -26,9 +27,23 @@ public sealed class AppServices
     /// <summary>Détecteur de visage (YuNet), chargé au premier usage.</summary>
     public FaceDetector Faces => _faces.Value;
 
+    /// <summary>Serveur d'upload téléphone (démarré au premier écran « Téléphone »).</summary>
+    public required UploadServer Upload { get; init; }
+
+    private bool _uploadStarted;
+
+    /// <summary>Démarre Kestrel et ouvre le pare-feu, une seule fois.</summary>
+    public async Task EnsureUploadServerAsync()
+    {
+        if (_uploadStarted) return;
+        Firewall.EnsureRule(Upload.Port);
+        await Upload.StartAsync();
+        _uploadStarted = true;
+    }
+
     public static AppServices Load(string dataRoot = @"D:\PhotoStudioData")
     {
-        foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache" })
+        foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache", "incoming" })
             Directory.CreateDirectory(Path.Combine(dataRoot, sub));
 
         var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
@@ -49,6 +64,7 @@ public sealed class AppServices
             Orders = new OrderService(store, counter),
             Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog")),
             Thumbnails = new ThumbnailService(Path.Combine(dataRoot, "cache")),
+            Upload = new UploadServer(Path.Combine(dataRoot, "incoming")),
         };
     }
 
