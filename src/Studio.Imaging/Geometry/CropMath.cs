@@ -79,6 +79,51 @@ public static class CropMath
         return new PixelRect((canvasWidth - w) / 2, (canvasHeight - h) / 2, w, h);
     }
 
+    /// <summary>Part de zoom minimale : un recadrage ne descend jamais sous 1/5 du recadrage maximal (zoom ×5).</summary>
+    public const double MinZoomShare = 0.2;
+
+    /// <summary>Déplace le recadrage (deltas normalisés) sans changer sa taille, borné à l'image.</summary>
+    public static CropSpec Pan(CropSpec crop, double dxNorm, double dyNorm) =>
+        ClampToBounds(crop with { X = crop.X + dxNorm, Y = crop.Y + dyNorm });
+
+    /// <summary>
+    /// Agrandit (facteur &gt; 1) ou resserre (facteur &lt; 1) le recadrage autour de son centre,
+    /// en préservant l'aspect pixel et sans jamais dépasser le recadrage maximal de l'image.
+    /// </summary>
+    public static CropSpec Zoom(CropSpec crop, double factor, int imageWidth, int imageHeight, double targetAspect)
+    {
+        if (factor <= 0) throw new ArgumentOutOfRangeException(nameof(factor));
+
+        var max = CenterCrop(imageWidth, imageHeight, targetAspect);
+        var scale = Math.Clamp(crop.Width * factor, max.Width * MinZoomShare, max.Width) / crop.Width;
+        // même contrainte sur la hauteur (l'arrivée en butée doit stopper les deux axes ensemble)
+        scale = Math.Clamp(crop.Height * scale, max.Height * MinZoomShare, max.Height) / crop.Height;
+
+        var w = crop.Width * scale;
+        var h = crop.Height * scale;
+        var cx = crop.X + crop.Width / 2;
+        var cy = crop.Y + crop.Height / 2;
+        return ClampToBounds(new CropSpec(cx - w / 2, cy - h / 2, w, h));
+    }
+
+    /// <summary>
+    /// Oriente le canevas du produit comme la photo : renvoie (largeur, hauteur) éventuellement
+    /// échangées pour qu'une photo paysage parte en 15×10 plutôt que rognée en 10×15.
+    /// L'aspect effectif tient compte du recadrage (exprimé sur l'image orientée).
+    /// </summary>
+    public static (int Width, int Height) OrientCanvas(
+        int canvasWidth, int canvasHeight, int imageWidth, int imageHeight, CropSpec crop)
+    {
+        if (canvasWidth == canvasHeight) return (canvasWidth, canvasHeight);
+
+        var effectiveAspect = crop.Width * imageWidth / (crop.Height * imageHeight);
+        var imageLandscape = effectiveAspect > 1;
+        var canvasLandscape = canvasWidth > canvasHeight;
+        return imageLandscape == canvasLandscape
+            ? (canvasWidth, canvasHeight)
+            : (canvasHeight, canvasWidth);
+    }
+
     /// <summary>
     /// Ramène un recadrage (déplacé/zoomé par l'utilisateur) dans les bornes 0..1
     /// en préservant sa taille quand c'est possible.

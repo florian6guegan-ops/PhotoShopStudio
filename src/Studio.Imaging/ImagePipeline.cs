@@ -76,6 +76,26 @@ public static class ImagePipeline
         image.Write(outputPath);
     }
 
+    /// <summary>
+    /// Dimensions de l'image une fois orientée (EXIF + rotation utilisateur), sans
+    /// décoder les pixels (ping des seuls en-têtes).
+    /// </summary>
+    public static (int Width, int Height) GetOrientedSize(string sourcePath, int rotationQuarterTurns)
+    {
+        MagickInit.Configure();
+
+        using var image = new MagickImage();
+        image.Ping(sourcePath);
+        var w = (int)image.Width;
+        var h = (int)image.Height;
+        if (image.Orientation is OrientationType.LeftTop or OrientationType.RightTop
+            or OrientationType.RightBottom or OrientationType.LeftBottom)
+            (w, h) = (h, w);
+        if (rotationQuarterTurns % 2 != 0)
+            (w, h) = (h, w);
+        return (w, h);
+    }
+
     private static void ApplyAdjustments(MagickImage image, ImageAdjustments adjustments)
     {
         if (adjustments.IsNeutral) return;

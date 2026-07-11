@@ -99,7 +99,7 @@ public sealed class PrintOrchestrator
         _store.AppendEvent(order, "confirmed-by-operator", $"env={envelope.Number}");
     }
 
-    private sealed record RenderedPage(string Path, int Copies);
+    private sealed record RenderedPage(string Path, int Copies, double WidthMm, double HeightMm);
 
     private List<RenderedPage> RenderEnvelope(Order order, Envelope envelope)
     {
@@ -120,11 +120,24 @@ public sealed class PrintOrchestrator
                 var item = line.Items[i];
                 var output = Path.Combine(rendersDir, $"env{envelope.Number:00}-{line.ProductCode}-{i + 1:000}.png");
 
+                // canevas orienté comme la photo (une paysage part en 15×10, pas rognée en 10×15) ;
+                // les planches (identité) gardent leur orientation fixe
+                var sourcePath = Path.Combine(photosDir, item.FileName);
+                var (itemW, itemH) = (targetW, targetH);
+                var (widthMm, heightMm) = (product.WidthMm, product.HeightMm);
+                if (product.Sheet is null)
+                {
+                    var (imgW, imgH) = ImagePipeline.GetOrientedSize(sourcePath, item.RotationQuarterTurns);
+                    (itemW, itemH) = CropMath.OrientCanvas(targetW, targetH, imgW, imgH, item.Crop);
+                    if (itemW != targetW)
+                        (widthMm, heightMm) = (product.HeightMm, product.WidthMm);
+                }
+
                 if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
                 {
                     ImagePipeline.RenderToFile(new RenderRequest(
-                        Path.Combine(photosDir, item.FileName),
-                        targetW, targetH,
+                        sourcePath,
+                        itemW, itemH,
                         item.Crop,
                         item.RotationQuarterTurns,
                         item.FitOverride ?? product.DefaultFit,
@@ -134,7 +147,7 @@ public sealed class PrintOrchestrator
                         output, product.Dpi);
                 }
 
-                pages.Add(new RenderedPage(output, item.Quantity));
+                pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm));
             }
         }
         return pages;
@@ -149,7 +162,7 @@ public sealed class PrintOrchestrator
             for (var copy = 0; copy < page.Copies; copy++)
             {
                 BitmapPrinter.Print(
-                    product.PrinterName, bitmap, product.WidthMm, product.HeightMm,
+                    product.PrinterName, bitmap, page.WidthMm, page.HeightMm,
                     devMode, pdfPath, documentName);
             }
         }

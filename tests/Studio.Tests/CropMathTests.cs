@@ -74,4 +74,68 @@ public class CropMathTests
         Assert.Equal(0.0, clamped.Y, 10);
         Assert.True(clamped.IsValid);
     }
+
+    [Fact]
+    public void Pan_KeepsSizeAndStaysInBounds()
+    {
+        var crop = new Studio.Core.Domain.CropSpec(0.2, 0.2, 0.4, 0.4);
+
+        var moved = CropMath.Pan(crop, 0.1, -0.05);
+        Assert.Equal(0.3, moved.X, 10);
+        Assert.Equal(0.15, moved.Y, 10);
+        Assert.Equal(crop.Width, moved.Width, 10);
+
+        var blocked = CropMath.Pan(crop, 5, 5); // butée bas-droite
+        Assert.Equal(1 - crop.Width, blocked.X, 10);
+        Assert.Equal(1 - crop.Height, blocked.Y, 10);
+    }
+
+    [Fact]
+    public void Zoom_PreservesPixelAspect()
+    {
+        const double aspect = 102.0 / 152.0;
+        var crop = CropMath.CenterCrop(6000, 4000, aspect);
+
+        var zoomed = CropMath.Zoom(crop, 0.5, 6000, 4000, aspect);
+        var rect = CropMath.ToPixelRect(zoomed, 6000, 4000);
+        Assert.Equal(aspect, (double)rect.Width / rect.Height, 2);
+        Assert.Equal(crop.Width * 0.5, zoomed.Width, 6);
+    }
+
+    [Fact]
+    public void Zoom_NeverExceedsMaxCrop_NorMinShare()
+    {
+        const double aspect = 1.0;
+        var max = CropMath.CenterCrop(4000, 3000, aspect);
+        var small = CropMath.Zoom(max, 0.01, 4000, 3000, aspect); // demande ×100 : bornée à ×5
+        Assert.Equal(max.Width * CropMath.MinZoomShare, small.Width, 6);
+
+        var big = CropMath.Zoom(small, 100, 4000, 3000, aspect); // dézoom au-delà du max : borné
+        Assert.Equal(max.Width, big.Width, 6);
+        Assert.Equal(max.Height, big.Height, 6);
+    }
+
+    [Fact]
+    public void OrientCanvas_LandscapePhotoOnPortraitProduct_Swaps()
+    {
+        // 10×15 (1205×1795 px) avec une photo 3:2 paysage → canevas 15×10
+        var (w, h) = CropMath.OrientCanvas(1205, 1795, 6000, 4000, Studio.Core.Domain.CropSpec.Full);
+        Assert.Equal((1795, 1205), (w, h));
+    }
+
+    [Fact]
+    public void OrientCanvas_PortraitPhoto_Unchanged()
+    {
+        var (w, h) = CropMath.OrientCanvas(1205, 1795, 4000, 6000, Studio.Core.Domain.CropSpec.Full);
+        Assert.Equal((1205, 1795), (w, h));
+    }
+
+    [Fact]
+    public void OrientCanvas_FollowsCropAspect_NotImageAspect()
+    {
+        // photo paysage mais recadrage portrait serré → le canevas reste portrait
+        var crop = new Studio.Core.Domain.CropSpec(0.3, 0, 0.3, 1); // 1800×4000 px sur 6000×4000
+        var (w, h) = CropMath.OrientCanvas(1205, 1795, 6000, 4000, crop);
+        Assert.Equal((1205, 1795), (w, h));
+    }
 }
