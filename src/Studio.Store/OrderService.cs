@@ -10,7 +10,9 @@ public sealed record DraftItem(
     CropSpec Crop,
     int RotationQuarterTurns,
     FitMode? FitOverride,
-    ImageAdjustments Adjustments);
+    ImageAdjustments Adjustments,
+    /// <summary>Planches identité : nombre de photos sur la planche, null = celui du produit.</summary>
+    int? SheetCopiesOverride = null);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -79,6 +81,7 @@ public sealed class OrderService
                         Crop = item.Crop,
                         RotationQuarterTurns = item.RotationQuarterTurns,
                         FitOverride = item.FitOverride,
+                        SheetCopiesOverride = item.SheetCopiesOverride,
                         Adjustments = item.Adjustments,
                     });
                 }

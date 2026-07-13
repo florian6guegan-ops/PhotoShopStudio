@@ -16,6 +16,18 @@ public sealed record SheetLayoutResult(
 public static class IdSheetLayout
 {
     /// <summary>
+    /// Nombre maximal de cellules tenant sur la planche. Sert à borner le choix
+    /// de l'opérateur avant d'appeler <see cref="Layout"/>, qui lèverait au-delà.
+    /// Renvoie 0 si la cellule ne tient pas du tout.
+    /// </summary>
+    public static int MaxCopies(int sheetWidth, int sheetHeight, int cellWidth, int cellHeight, int gap)
+    {
+        if (cellWidth <= 0 || cellHeight <= 0 || cellWidth > sheetWidth || cellHeight > sheetHeight)
+            return 0;
+        return (sheetWidth + gap) / (cellWidth + gap) * ((sheetHeight + gap) / (cellHeight + gap));
+    }
+
+    /// <summary>
     /// Calcule la grille : autant de colonnes que possible, lignes nécessaires pour
     /// atteindre <paramref name="copies"/>, bloc centré sur la planche.
     /// Lève une exception si les copies ne tiennent pas.

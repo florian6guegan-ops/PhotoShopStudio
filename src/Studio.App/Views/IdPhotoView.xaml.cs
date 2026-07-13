@@ -27,6 +27,7 @@ public partial class IdPhotoView : UserControl
     private readonly List<StripItem> _photos = new();
     private CancellationTokenSource? _loadCts;
     private int _quantity = 1;
+    private int _copies = 6;   // photos sur la planche ; recalé sur le produit à la sélection
 
     private StripItem? _current;
     private BitmapSource? _displayBitmap;
@@ -344,6 +345,37 @@ public partial class IdPhotoView : UserControl
         QuantityText.Text = _quantity.ToString();
     }
 
+    private void OnCopiesMinus(object sender, RoutedEventArgs e) => SetCopies(_copies - 1);
+    private void OnCopiesPlus(object sender, RoutedEventArgs e) => SetCopies(_copies + 1);
+
+    /// <summary>Nombre de photos sur la planche, borné par ce qui tient réellement sur le tirage.</summary>
+    private void SetCopies(int value)
+    {
+        _copies = Math.Clamp(value, 1, Math.Max(1, MaxCopiesForSelectedProduct()));
+        CopiesText.Text = _copies.ToString();
+    }
+
+    private int MaxCopiesForSelectedProduct()
+    {
+        if (ProductCombo.SelectedItem is not ProductChoice choice || choice.Product.Sheet is not { } sheet)
+            return 1;
+
+        var product = choice.Product;
+        return IdSheetLayout.MaxCopies(
+            MmPx.ToPixels(product.WidthMm, product.Dpi),
+            MmPx.ToPixels(product.HeightMm, product.Dpi),
+            MmPx.ToPixels(sheet.CellWidthMm, product.Dpi),
+            MmPx.ToPixels(sheet.CellHeightMm, product.Dpi),
+            MmPx.ToPixels(sheet.GapMm, product.Dpi));
+    }
+
+    /// <summary>Changer de produit repart de sa disposition par défaut (planche de 6, de 8…).</summary>
+    private void OnProductChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ProductCombo.SelectedItem is not ProductChoice choice || choice.Product.Sheet is not { } sheet) return;
+        SetCopies(sheet.Copies);
+    }
+
     // ----- impression -----
 
     private async void OnPrint(object sender, RoutedEventArgs e)
@@ -363,7 +395,7 @@ public partial class IdPhotoView : UserControl
         var adjustments = new ImageAdjustments { Grayscale = GrayscaleCheck.IsChecked == true };
         var items = new List<DraftItem>
         {
-            new(_current.Path, choice.Product, _quantity, _crop, 0, null, adjustments),
+            new(_current.Path, choice.Product, _quantity, _crop, 0, null, adjustments, _copies),
         };
 
         PrintButton.IsEnabled = false;
@@ -381,7 +413,7 @@ public partial class IdPhotoView : UserControl
             Mouse.OverrideCursor = null;
             MessageBox.Show(
                 $"Commande {order.DisplayNumber} envoyée à l'impression.\n" +
-                $"{_quantity} planche(s) — total {order.Total:0.00} €",
+                $"{_quantity} planche(s) de {_copies} photo(s) — total {order.Total:0.00} €",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
             Navigator.Home(new HomeView(), "Studio Photo");
         }

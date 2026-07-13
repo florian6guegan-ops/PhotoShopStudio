@@ -22,6 +22,36 @@ public class IdSheetLayoutTests
     }
 
     [Fact]
+    public void MaxCopies_On10x15_Is6()
+    {
+        // 2 colonnes × 3 lignes de 35×45 : c'est la borne du sélecteur « Photos » de l'écran identité
+        Assert.Equal(6, IdSheetLayout.MaxCopies(SheetW, SheetH, CellW, CellH, Gap));
+    }
+
+    [Fact]
+    public void MaxCopies_IsZero_WhenCellTooBigForSheet()
+    {
+        Assert.Equal(0, IdSheetLayout.MaxCopies(SheetW, SheetH, SheetW + 1, CellH, Gap));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(6)]
+    public void AnyCountUpToMax_LaysOut(int copies)
+    {
+        var layout = IdSheetLayout.Layout(SheetW, SheetH, CellW, CellH, Gap, copies);
+
+        Assert.Equal(copies, layout.Cells.Count);
+        Assert.All(layout.Cells, cell =>
+        {
+            Assert.InRange(cell.X, 0, SheetW - CellW);
+            Assert.InRange(cell.Y, 0, SheetH - CellH);
+        });
+    }
+
+    [Fact]
     public void SixIdPhotos_FitOn10x15_As2x3()
     {
         var layout = IdSheetLayout.Layout(SheetW, SheetH, CellW, CellH, Gap, copies: 6);

@@ -148,7 +148,7 @@ public sealed class PrintOrchestrator
                                 sourcePath, cellW, cellH,
                                 item.Crop, item.RotationQuarterTurns, FitMode.Fill, 0,
                                 item.Adjustments, iccPath),
-                            sheet.Copies, sheet.GapMm, sheet.CutMarks,
+                            item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
                             targetW, targetH, output, product.Dpi);
                     }
                     else

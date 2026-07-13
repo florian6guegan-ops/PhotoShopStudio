@@ -21,6 +21,8 @@ public sealed class OrderItem
     public CropSpec Crop { get; set; } = CropSpec.Full;
     /// <summary>Si null, le mode par défaut du produit s'applique.</summary>
     public FitMode? FitOverride { get; set; }
+    /// <summary>Planches identité : nombre de photos sur la planche. Si null, celui du produit s'applique.</summary>
+    public int? SheetCopiesOverride { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();
 }
 
