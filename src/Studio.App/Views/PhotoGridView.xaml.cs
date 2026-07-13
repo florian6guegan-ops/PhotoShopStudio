@@ -199,15 +199,42 @@ public partial class PhotoGridView : UserControl
         var menu = new ContextMenu();
         foreach (var product in App.Services.Catalog.Enabled)
         {
-            var item = new MenuItem
-            {
-                Header = $"{product.Name} — {product.Price:0.00} €",
-                FontSize = 18,
-                IsChecked = photo.Product?.Code == product.Code,
-            };
             var chosen = product;
-            item.Click += (_, _) => photo.Product = chosen;
-            menu.Items.Add(item);
+
+            // un produit sans finition déclarée reste une seule entrée ; sinon une par finition
+            if (product.Finishes.Count == 0)
+            {
+                var item = new MenuItem
+                {
+                    Header = $"{product.Name} — {product.Price:0.00} €",
+                    FontSize = 18,
+                    IsChecked = photo.Product?.Code == product.Code,
+                };
+                item.Click += (_, _) =>
+                {
+                    photo.Product = chosen;
+                    photo.Finish = null;
+                };
+                menu.Items.Add(item);
+                continue;
+            }
+
+            foreach (var finish in product.Finishes)
+            {
+                var chosenFinish = finish.Name;
+                var item = new MenuItem
+                {
+                    Header = $"{product.Name} — {chosenFinish} — {product.Price:0.00} €",
+                    FontSize = 18,
+                    IsChecked = photo.Product?.Code == product.Code && photo.Finish == chosenFinish,
+                };
+                item.Click += (_, _) =>
+                {
+                    photo.Product = chosen;
+                    photo.Finish = chosenFinish;
+                };
+                menu.Items.Add(item);
+            }
         }
         menu.PlacementTarget = button;
         menu.IsOpen = true;
@@ -221,7 +248,7 @@ public partial class PhotoGridView : UserControl
         var services = App.Services;
         var items = selected
             .Select(p => new DraftItem(p.Path, p.Product!, p.Quantity, p.Crop,
-                p.RotationQuarterTurns, p.FitOverride, p.Adjustments))
+                p.RotationQuarterTurns, p.FitOverride, p.Adjustments, null, p.Finish))
             .ToList();
 
         PrintButton.IsEnabled = false;
@@ -262,6 +289,7 @@ public partial class PhotoGridView : UserControl
         private ImageSource? _thumbnail;
         private bool _selected;
         private Product? _product;
+        private string? _finish;
         private int _quantity = 1;
 
         public PhotoItem(string path, Action cartChanged)
@@ -340,6 +368,17 @@ public partial class PhotoGridView : UserControl
             }
         }
 
+        /// <summary>Finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
+        public string? Finish
+        {
+            get => _finish;
+            set
+            {
+                if (!Set(ref _finish, value)) return;
+                OnPropertyChanged(nameof(ProductLabel));
+            }
+        }
+
         public int Quantity
         {
             get => _quantity;
@@ -351,7 +390,9 @@ public partial class PhotoGridView : UserControl
             }
         }
 
-        public string ProductLabel => _product is null ? "Produit…" : $"{_product.Name} · {_product.Price:0.00} €";
+        public string ProductLabel => _product is null
+            ? "Produit…"
+            : $"{_product.Name}{(_finish is null ? "" : $" · {_finish}")} · {_product.Price:0.00} €";
         public string QuantityLabel => _quantity.ToString();
 
         public Brush BorderBrush => Selected

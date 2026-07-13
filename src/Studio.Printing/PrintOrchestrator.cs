@@ -49,6 +49,21 @@ public sealed class PrintOrchestrator
                 $"L'enveloppe {order.DisplayNumber}/{envelope.Number} a déjà été envoyée à l'impression " +
                 "— confirmation opérateur requise pour réimprimer.");
 
+        // une file sur le port `nul` avale les travaux sans rien imprimer : mieux vaut
+        // refuser franchement que rendre, spouler et annoncer un succès imaginaire
+        foreach (var printerName in envelope.Lines
+                     .Select(l => _catalog.Require(l.ProductCode).PrinterName)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (PrinterPorts.IsNullPort(printerName))
+                throw new InvalidOperationException(
+                    $"L'imprimante « {printerName} » est branchée sur le port « nul » : Windows accepte " +
+                    "les travaux et les jette, aucun tirage ne sortira.\n\n" +
+                    "C'est le cas des files DE100 installées par DiLand (le minilab est piloté par le SDK " +
+                    "Fuji, pas par le spouleur). Il faut d'abord donner un vrai port à cette imprimante, " +
+                    "ou choisir un produit imprimé sur la DS620.");
+        }
+
         WriteSpoolState(order, envelope, SpoolState.Rendering);
         envelope.Status = EnvelopeStatus.Rendering;
         _store.Save(order);
@@ -104,7 +119,8 @@ public sealed class PrintOrchestrator
     /// contenir plusieurs produits — imprimante, DEVMODE et format diffèrent alors d'une
     /// page à l'autre.
     /// </summary>
-    private sealed record RenderedPage(string Path, int Copies, double WidthMm, double HeightMm, Product Product);
+    private sealed record RenderedPage(
+        string Path, int Copies, double WidthMm, double HeightMm, Product Product, string? Finish);
 
     private List<RenderedPage> RenderEnvelope(Order order, Envelope envelope)
     {
@@ -171,7 +187,7 @@ public sealed class PrintOrchestrator
                     }
                 }
 
-                pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm, product));
+                pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm, product, item.Finish));
             }
         }
         return pages;
@@ -185,12 +201,18 @@ public sealed class PrintOrchestrator
         foreach (var page in pages)
         {
             var product = page.Product;
-            if (!devModes.TryGetValue(product.Code, out var devMode))
+            var key = $"{product.Code}|{page.Finish}";
+            if (!devModes.TryGetValue(key, out var devMode))
             {
-                devMode = product.DevmodeFile is not null
-                    ? File.ReadAllBytes(Path.Combine(_catalogDir, product.DevmodeFile))
+                // la finition choisie l'emporte sur le DEVMODE par défaut du produit
+                var file = product.Finishes
+                               .FirstOrDefault(f => string.Equals(f.Name, page.Finish, StringComparison.OrdinalIgnoreCase))
+                               ?.DevmodeFile
+                           ?? product.DevmodeFile;
+                devMode = file is not null
+                    ? File.ReadAllBytes(Path.Combine(_catalogDir, file))
                     : null;
-                devModes[product.Code] = devMode;
+                devModes[key] = devMode;
             }
 
             using var bitmap = new Bitmap(page.Path);

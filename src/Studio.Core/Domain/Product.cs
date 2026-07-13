@@ -13,6 +13,19 @@ public sealed class SheetSpec
     public bool CutMarks { get; set; } = true;
 }
 
+/// <summary>
+/// Une finition proposée à l'opérateur (« Brillant », « Mat », « Lustré »…). Elle n'est
+/// qu'un DEVMODE nommé : les réglages sont capturés dans le dialogue du pilote, où la
+/// finition se choisit réellement (surlaminage DNP, type de média…). Rien n'est codé en
+/// dur, ce qui marche pour la DS620 comme pour n'importe quel autre pilote.
+/// </summary>
+public sealed class FinishOption
+{
+    public string Name { get; set; } = "";
+    /// <summary>Fichier DEVMODE dans catalog/.</summary>
+    public string DevmodeFile { get; set; } = "";
+}
+
 public sealed class Product
 {
     public string Code { get; set; } = "";
@@ -33,6 +46,8 @@ public sealed class Product
     public string? IccProfile { get; set; }
     /// <summary>Fichier DEVMODE capturé dans catalog/, null = réglages par défaut du pilote.</summary>
     public string? DevmodeFile { get; set; }
+    /// <summary>Finitions proposées à l'impression ; vide = pas de choix, on prend DevmodeFile.</summary>
+    public List<FinishOption> Finishes { get; set; } = new();
     /// <summary>Non null pour les produits « planche » (identité).</summary>
     public SheetSpec? Sheet { get; set; }
     public bool Enabled { get; set; } = true;

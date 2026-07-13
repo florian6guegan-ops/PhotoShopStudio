@@ -39,6 +39,10 @@
                                     <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
                                             MinHeight="48" MinWidth="210" FontSize="18" Padding="12,6"
                                             Click="OnCaptureDevmode" Tag="{Binding}">⚙ Capturer réglages</Button>
+                                    <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
+                                            MinHeight="48" MinWidth="150" FontSize="18" Padding="12,6"
+                                            ToolTip="Brillant, mat, lustré… : une capture du pilote par finition"
+                                            Click="OnEditFinishes" Tag="{Binding}">✨ Finitions</Button>
                                 </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"

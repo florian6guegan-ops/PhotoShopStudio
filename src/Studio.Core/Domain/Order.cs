@@ -23,6 +23,8 @@ public sealed class OrderItem
     public FitMode? FitOverride { get; set; }
     /// <summary>Planches identité : nombre de photos sur la planche. Si null, celui du produit s'applique.</summary>
     public int? SheetCopiesOverride { get; set; }
+    /// <summary>Nom de la finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
+    public string? Finish { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();
 }
 

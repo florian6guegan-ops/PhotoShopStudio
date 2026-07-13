@@ -12,7 +12,9 @@ public sealed record DraftItem(
     FitMode? FitOverride,
     ImageAdjustments Adjustments,
     /// <summary>Planches identité : nombre de photos sur la planche, null = celui du produit.</summary>
-    int? SheetCopiesOverride = null);
+    int? SheetCopiesOverride = null,
+    /// <summary>Finition choisie (voir Product.Finishes), null = DEVMODE par défaut du produit.</summary>
+    string? Finish = null);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -82,6 +84,7 @@ public sealed class OrderService
                         RotationQuarterTurns = item.RotationQuarterTurns,
                         FitOverride = item.FitOverride,
                         SheetCopiesOverride = item.SheetCopiesOverride,
+                        Finish = item.Finish,
                         Adjustments = item.Adjustments,
                     });
                 }

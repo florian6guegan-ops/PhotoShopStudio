@@ -101,6 +101,9 @@ public partial class CatalogView : UserControl
         BorderMm = p.BorderMm,
         IccProfile = p.IccProfile,
         DevmodeFile = p.DevmodeFile,
+        Finishes = p.Finishes
+            .Select(f => new FinishOption { Name = f.Name, DevmodeFile = f.DevmodeFile })
+            .ToList(),
         Sheet = p.Sheet is null ? null : new SheetSpec
         {
             Copies = p.Sheet.Copies,
@@ -111,6 +114,12 @@ public partial class CatalogView : UserControl
         },
         Enabled = p.Enabled,
     };
+
+    private void OnEditFinishes(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not ProductRow row) return;
+        Navigator.Go(new FinishesView(row.Product), "Finitions");
+    }
 
     private void OnCaptureDevmode(object sender, RoutedEventArgs e)
     {

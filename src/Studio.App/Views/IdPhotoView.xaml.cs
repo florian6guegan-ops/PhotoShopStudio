@@ -384,13 +384,40 @@ public partial class IdPhotoView : UserControl
     {
         if (ProductCombo.SelectedItem is not ProductChoice choice || choice.Product.Sheet is not { } sheet) return;
         SetCopies(sheet.Copies);
+        ShowFinishes(choice.Product);
+    }
+
+    /// <summary>Le choix de finition n'apparaît que si le produit en propose (voir Catalogue → Finitions).</summary>
+    private void ShowFinishes(Product product)
+    {
+        var names = product.Finishes.Select(f => f.Name).ToList();
+        FinishCombo.ItemsSource = names;
+        if (names.Count > 0) FinishCombo.SelectedIndex = 0;
+
+        var visibility = names.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        FinishCombo.Visibility = visibility;
+        FinishLabel.Visibility = visibility;
     }
 
     // ----- impression -----
 
     private async void OnPrint(object sender, RoutedEventArgs e)
     {
-        if (_current is null || ProductCombo.SelectedItem is not ProductChoice choice) return;
+        // ne jamais sortir en silence : sans produit planche activé, le bouton semblait mort
+        if (ProductCombo.SelectedItem is not ProductChoice choice)
+        {
+            MessageBox.Show(
+                "Aucun produit « planche identité » n'est activé dans le catalogue.\n\n" +
+                "Ouvrez Catalogue et activez un produit de type planche pour imprimer des photos d'identité.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (_current is null)
+        {
+            MessageBox.Show("Choisissez d'abord une photo dans la bande du bas.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
 
         // avertit sans bloquer : l'opérateur reste juge (visage non détecté, photo médiocre…)
         if (_head is not null && !IdPhotoFr.Check(_crop, _head).Compliant)
@@ -405,7 +432,8 @@ public partial class IdPhotoView : UserControl
         var adjustments = new ImageAdjustments { Grayscale = GrayscaleCheck.IsChecked == true };
         var items = new List<DraftItem>
         {
-            new(_current.Path, choice.Product, _quantity, _crop, 0, null, adjustments, _copies),
+            new(_current.Path, choice.Product, _quantity, _crop, 0, null, adjustments, _copies,
+                FinishCombo.SelectedItem as string),
         };
 
         PrintButton.IsEnabled = false;
