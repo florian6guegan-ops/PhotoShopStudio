@@ -36,9 +36,12 @@ public partial class IdPhotoView : UserControl
     private Point _dragLast;
     private bool _dragging;
 
+    private readonly SmoothZoomDriver _smoothZoom;
+
     public IdPhotoView(string rootPath)
     {
         _rootPath = rootPath;
+        _smoothZoom = new SmoothZoomDriver(Zoom);
         InitializeComponent();
 
         ProductCombo.ItemsSource = App.Services.Catalog.Enabled
@@ -48,7 +51,11 @@ public partial class IdPhotoView : UserControl
         ProductCombo.SelectedIndex = 0;
 
         Loaded += async (_, _) => await LoadStripAsync();
-        Unloaded += (_, _) => _loadCts?.Cancel();
+        Unloaded += (_, _) =>
+        {
+            _loadCts?.Cancel();
+            _smoothZoom.Cancel();
+        };
     }
 
     private sealed record ProductChoice(Product Product)
@@ -302,8 +309,12 @@ public partial class IdPhotoView : UserControl
         _dragLast = pos;
     }
 
+    // Pas de zoom pour un cran de molette standard (Delta = 120), étalé sur ~150 ms
+    // par le SmoothZoomDriver : franc au total, continu à l'écran.
+    private const double WheelZoomStep = 1.10;
+
     private void OnStageWheel(object sender, MouseWheelEventArgs e) =>
-        Zoom(e.Delta > 0 ? 1 / 1.15 : 1.15);
+        _smoothZoom.Add(Math.Pow(WheelZoomStep, -e.Delta / 120.0));
 
     private void OnManipulationStarting(object? sender, ManipulationStartingEventArgs e)
     {
@@ -316,7 +327,11 @@ public partial class IdPhotoView : UserControl
         Pan(e.DeltaManipulation.Translation.X, e.DeltaManipulation.Translation.Y);
         var scale = e.DeltaManipulation.Scale.X;
         if (Math.Abs(scale - 1) > 0.001)
+        {
+            // Le pincement colle aux doigts : pas de lissage, et on solde le zoom molette en vol.
+            _smoothZoom.Cancel();
             Zoom(1 / scale);
+        }
         e.Handled = true;
     }
 

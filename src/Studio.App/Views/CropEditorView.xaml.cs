@@ -33,6 +33,8 @@ public partial class CropEditorView : UserControl
     private Point _dragLast;
     private bool _dragging;
 
+    private readonly SmoothZoomDriver _smoothZoom;
+
     public CropEditorView(string photoPath, Product product, State initial, Action<State> onApply)
     {
         _photoPath = photoPath;
@@ -41,12 +43,14 @@ public partial class CropEditorView : UserControl
         _crop = initial.Crop;
         _turns = initial.RotationQuarterTurns;
         _fit = initial.Fit;
+        _smoothZoom = new SmoothZoomDriver(Zoom);
 
         InitializeComponent();
         TitleText.Text = $"Recadrage — {product.Name}";
         UpdateFitToggle();
 
         Loaded += async (_, _) => await LoadPhotoAsync();
+        Unloaded += (_, _) => _smoothZoom.Cancel();
     }
 
     /// <summary>Aspect pixel du cadre : celui du produit, orienté comme la photo (cf. OrientCanvas au rendu).</summary>
@@ -184,8 +188,14 @@ public partial class CropEditorView : UserControl
         _dragLast = pos;
     }
 
+    // Pas de zoom pour un cran de molette standard (Delta = 120), étalé sur ~150 ms
+    // par le SmoothZoomDriver : franc au total, continu à l'écran.
+    private const double WheelZoomStep = 1.10;
+
     private void OnStageWheel(object sender, MouseWheelEventArgs e) =>
-        Zoom(e.Delta > 0 ? 1 / 1.15 : 1.15); // molette vers soi = zoom (cadre plus serré)
+        // molette vers soi = zoom (cadre plus serré) ; l'exposant suit Delta pour
+        // gérer les molettes haute résolution qui envoient moins de 120 par cran.
+        _smoothZoom.Add(Math.Pow(WheelZoomStep, -e.Delta / 120.0));
 
     private void OnManipulationStarting(object? sender, ManipulationStartingEventArgs e)
     {
@@ -198,12 +208,17 @@ public partial class CropEditorView : UserControl
         Pan(e.DeltaManipulation.Translation.X, e.DeltaManipulation.Translation.Y);
         var scale = e.DeltaManipulation.Scale.X;
         if (Math.Abs(scale - 1) > 0.001)
+        {
+            // Le pincement doit coller aux doigts : pas de lissage, et on solde
+            // un éventuel zoom molette encore en vol pour éviter qu'il dérive sous les doigts.
+            _smoothZoom.Cancel();
             Zoom(1 / scale); // écarter les doigts = zoom = cadre plus serré
+        }
         e.Handled = true;
     }
 
-    private void OnZoomIn(object sender, RoutedEventArgs e) => Zoom(1 / 1.25);
-    private void OnZoomOut(object sender, RoutedEventArgs e) => Zoom(1.25);
+    private void OnZoomIn(object sender, RoutedEventArgs e) => _smoothZoom.Add(1 / 1.25);
+    private void OnZoomOut(object sender, RoutedEventArgs e) => _smoothZoom.Add(1.25);
 
     private void OnRotate(object sender, RoutedEventArgs e)
     {
