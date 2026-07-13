@@ -247,6 +247,7 @@ public partial class PhotoGridView : UserControl
         catch (Exception ex)
         {
             Mouse.OverrideCursor = null;
+            FileLog.Write("Échec de l'impression (grille photos)", ex);
             MessageBox.Show($"Échec de l'impression : {ex.Message}\n\n" +
                             "La commande est visible dans « Commandes du jour » pour réimpression.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);

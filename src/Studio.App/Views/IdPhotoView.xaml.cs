@@ -45,11 +45,21 @@ public partial class IdPhotoView : UserControl
         _smoothZoom = new SmoothZoomDriver(Zoom);
         InitializeComponent();
 
-        ProductCombo.ItemsSource = App.Services.Catalog.Enabled
+        var sheetProducts = App.Services.Catalog.Enabled
             .Where(p => p.Sheet is not null)
             .Select(p => new ProductChoice(p))
             .ToList();
+        ProductCombo.ItemsSource = sheetProducts;
         ProductCombo.SelectedIndex = 0;
+
+        // sans produit « planche » actif, l'écran était muet : combo vide, bouton grisé,
+        // aucune explication. On le dit à l'opérateur, qui peut activer le produit au Catalogue.
+        if (sheetProducts.Count == 0)
+            Loaded += (_, _) => MessageBox.Show(
+                "Aucun produit « planche identité » n'est activé dans le catalogue.\n\n" +
+                "Ouvrez Catalogue et activez un produit de type planche (ex. « Photos d'identité 35×45 ») " +
+                "pour pouvoir imprimer des photos d'identité.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         Loaded += async (_, _) => await LoadStripAsync();
         Unloaded += (_, _) =>
@@ -420,6 +430,7 @@ public partial class IdPhotoView : UserControl
         catch (Exception ex)
         {
             Mouse.OverrideCursor = null;
+            FileLog.Write("Échec de l'impression (planche identité)", ex);
             MessageBox.Show($"Échec de l'impression : {ex.Message}\n\n" +
                             "La commande est visible dans « Commandes du jour » pour réimpression.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);

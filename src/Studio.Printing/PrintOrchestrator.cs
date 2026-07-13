@@ -60,14 +60,13 @@ public sealed class PrintOrchestrator
         WriteSpoolState(order, envelope, SpoolState.Spooled);
         envelope.Status = EnvelopeStatus.Spooled;
         _store.Save(order);
-        _store.AppendEvent(order, "spool-start", $"env={envelope.Number}, pages={pages.Sum(p => p.Copies)}");
+        var destinations = string.Join(", ", pages
+            .GroupBy(p => p.Product.PrinterName)
+            .Select(g => $"{g.Key} × {g.Sum(p => p.Copies)}"));
+        _store.AppendEvent(order, "spool-start",
+            $"env={envelope.Number}, pages={pages.Sum(p => p.Copies)}, destinations=[{destinations}]");
 
-        var product = _catalog.Require(envelope.Lines[0].ProductCode);
-        var devMode = product.DevmodeFile is not null
-            ? File.ReadAllBytes(Path.Combine(_catalogDir, product.DevmodeFile))
-            : null;
-
-        PrintPages(product, pages, devMode, pdfOverridePath, $"Studio {order.DisplayNumber}-{envelope.Number}");
+        PrintPages(pages, pdfOverridePath, $"Studio {order.DisplayNumber}-{envelope.Number}");
 
         WriteSpoolState(order, envelope, SpoolState.Printed);
         envelope.Status = EnvelopeStatus.Printed;
@@ -99,7 +98,13 @@ public sealed class PrintOrchestrator
         _store.AppendEvent(order, "confirmed-by-operator", $"env={envelope.Number}");
     }
 
-    private sealed record RenderedPage(string Path, int Copies, double WidthMm, double HeightMm);
+    /// <summary>
+    /// Une page rendue et le produit qui l'a produite. Le produit est porté par la page
+    /// (et non par l'enveloppe) : une enveloppe groupe un CANAL d'impression, qui peut
+    /// contenir plusieurs produits — imprimante, DEVMODE et format diffèrent alors d'une
+    /// page à l'autre.
+    /// </summary>
+    private sealed record RenderedPage(string Path, int Copies, double WidthMm, double HeightMm, Product Product);
 
     private List<RenderedPage> RenderEnvelope(Order order, Envelope envelope)
     {
@@ -166,17 +171,28 @@ public sealed class PrintOrchestrator
                     }
                 }
 
-                pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm));
+                pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm, product));
             }
         }
         return pages;
     }
 
-    private void PrintPages(Product product, List<RenderedPage> pages, byte[]? devMode, string? pdfPath, string documentName)
+    private void PrintPages(List<RenderedPage> pages, string? pdfPath, string documentName)
     {
+        var devModes = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
+
         // aplatit (page, copies) en séquence de pages physiques
         foreach (var page in pages)
         {
+            var product = page.Product;
+            if (!devModes.TryGetValue(product.Code, out var devMode))
+            {
+                devMode = product.DevmodeFile is not null
+                    ? File.ReadAllBytes(Path.Combine(_catalogDir, product.DevmodeFile))
+                    : null;
+                devModes[product.Code] = devMode;
+            }
+
             using var bitmap = new Bitmap(page.Path);
             for (var copy = 0; copy < page.Copies; copy++)
             {

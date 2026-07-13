@@ -3,11 +3,13 @@ namespace Studio.Core.Domain;
 /// <summary>Disposition d'une planche (photos d'identité) : N copies d'une même image sur un tirage.</summary>
 public sealed class SheetSpec
 {
+    public const double DefaultGapMm = 2;
+
     public int Copies { get; set; } = 6;
     public double CellWidthMm { get; set; } = 35;
     public double CellHeightMm { get; set; } = 45;
     /// <summary>Espace minimal entre cellules (les traits de coupe y sont dessinés).</summary>
-    public double GapMm { get; set; } = 2;
+    public double GapMm { get; set; } = DefaultGapMm;
     public bool CutMarks { get; set; } = true;
 }
 

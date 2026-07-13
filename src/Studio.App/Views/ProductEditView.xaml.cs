@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Imaging.Geometry;
 
 namespace Studio.App.Views;
 
@@ -119,6 +120,16 @@ public partial class ProductEditView : UserControl
             if (!TryParseDouble(SheetWBox.Text, out sheetW) || sheetW <= 0) return "Largeur de cellule invalide.";
             if (!TryParseDouble(SheetHBox.Text, out sheetH) || sheetH <= 0) return "Hauteur de cellule invalide.";
             if (sheetW >= width || sheetH >= height) return "La cellule doit être plus petite que le tirage.";
+
+            // sans ce contrôle, une planche impossible s'enregistre et n'échoue qu'à l'impression,
+            // devant le client (IdSheetLayout.Layout lève quand les copies ne tiennent pas)
+            var capacity = IdSheetLayout.MaxCopies(
+                MmPx.ToPixels(width, dpi), MmPx.ToPixels(height, dpi),
+                MmPx.ToPixels(sheetW, dpi), MmPx.ToPixels(sheetH, dpi),
+                MmPx.ToPixels(SheetSpec.DefaultGapMm, dpi));
+            if (sheetCopies > capacity)
+                return $"{sheetCopies} photos de {sheetW:0.#}×{sheetH:0.#} mm ne tiennent pas sur {width:0.#}×{height:0.#} mm " +
+                       $"(maximum {capacity}).";
         }
 
         parsed = new Parsed(price, width, height, border, dpi, sheetCopies, sheetW, sheetH);
