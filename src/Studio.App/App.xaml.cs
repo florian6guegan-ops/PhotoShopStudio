@@ -12,6 +12,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         DispatcherUnhandledException += OnUnhandledException;
+        Studio.Printing.BitmapPrinter.Log = message => Infrastructure.FileLog.Write(message);
 
         try
         {

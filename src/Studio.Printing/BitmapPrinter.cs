@@ -10,6 +10,9 @@ namespace Studio.Printing;
 /// </summary>
 public static class BitmapPrinter
 {
+    /// <summary>Journal optionnel (branché sur FileLog par l'app) : trace la page réellement obtenue.</summary>
+    public static Action<string>? Log { get; set; }
+
     /// <param name="printerName">Nom exact de la file Windows.</param>
     /// <param name="bitmap">Image finale (déjà à la bonne résolution).</param>
     /// <param name="widthMm">Largeur physique de la page.</param>
@@ -66,7 +69,32 @@ public static class BitmapPrinter
             var g = e.Graphics!;
             // compense le décalage matériel pour que (0,0) soit le coin physique de la page
             g.TranslateTransform(-e.PageSettings.HardMarginX, -e.PageSettings.HardMarginY);
-            g.DrawImage(bitmap, new RectangleF(0, 0, w100, h100));
+
+            // On dessine sur la page que le pilote a RÉELLEMENT retenue, pas sur celle qu'on a
+            // demandée : beaucoup de pilotes photo (dont la DS620) ignorent un format personnalisé
+            // et retombent sur le média chargé. Dessiner à la taille nominale débordait alors de
+            // la page et rognait l'image en silence (planche de 6 sortie amputée de sa 3e rangée).
+            var page = e.PageSettings.Bounds;
+
+            var wanted = $"{widthMm:0}×{heightMm:0} mm";
+            var got = $"{page.Width / 100.0 * 25.4:0}×{page.Height / 100.0 * 25.4:0} mm";
+            var paperName = doc.DefaultPageSettings.PaperSize.PaperName;
+            Log?.Invoke($"Impression « {documentName} » sur {printerName} : demandé {wanted}, " +
+                        $"page obtenue {got} ({paperName}, paysage={e.PageSettings.Landscape})" +
+                        (wanted == got ? "" : "  ⚠ le pilote a substitué son média — capturez les réglages (DEVMODE)"));
+
+            if (bitmap.Width > bitmap.Height != page.Width > page.Height && page.Width != page.Height)
+            {
+                // page retenue dans l'autre orientation : on pivote l'image plutôt que de la laisser rogner
+                g.TranslateTransform(page.Width, 0);
+                g.RotateTransform(90);
+                g.DrawImage(bitmap, new RectangleF(0, 0, page.Height, page.Width));
+            }
+            else
+            {
+                g.DrawImage(bitmap, new RectangleF(0, 0, page.Width, page.Height));
+            }
+
             e.HasMorePages = false;
         };
 
