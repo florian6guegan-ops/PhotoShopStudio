@@ -154,8 +154,13 @@ public sealed class PrintOrchestrator
                         (widthMm, heightMm) = (product.HeightMm, product.WidthMm);
                 }
 
-                var iccPath = product.IccProfile is not null
-                    ? Path.Combine(_catalogDir, "icc", product.IccProfile)
+                // le profil de la finition (média) l'emporte sur celui du produit
+                var iccFile = product.Finishes
+                                  .FirstOrDefault(f => string.Equals(f.Name, item.Finish, StringComparison.OrdinalIgnoreCase))
+                                  ?.IccProfile
+                              ?? product.IccProfile;
+                var iccPath = iccFile is not null
+                    ? Path.Combine(_catalogDir, "icc", iccFile)
                     : null;
 
                 if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash

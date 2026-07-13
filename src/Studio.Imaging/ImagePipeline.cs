@@ -82,8 +82,22 @@ public static class ImagePipeline
         }
     }
 
+    /// <summary>
+    /// Ramène la source dans l'espace de travail sRGB. Une photo d'appareil peut porter
+    /// un profil AdobeRGB ou Display P3 : sans cette conversion, ses pixels sont lus comme
+    /// du sRGB et les couleurs sortent fausses (rouges éteints, vert délavé). Sans profil
+    /// embarqué, on suppose sRGB — la convention des JPEG grand public.
+    /// </summary>
+    private static void NormalizeToSrgb(MagickImage image)
+    {
+        if (image.GetColorProfile() is { } embedded)
+            image.TransformColorSpace(embedded, ColorProfiles.SRGB);
+    }
+
     private static void RenderInto(MagickImage image, RenderRequest request)
     {
+        NormalizeToSrgb(image);
+
         image.AutoOrient(); // applique l'orientation EXIF une bonne fois pour toutes
 
         var turns = ((request.RotationQuarterTurns % 4) + 4) % 4;
@@ -124,7 +138,10 @@ public static class ImagePipeline
         if (request.IccProfilePath is not null)
         {
             // gestion couleur chez nous : sRGB → profil imprimante (la correction du
-            // pilote doit alors être désactivée dans le DEVMODE du produit)
+            // pilote doit alors être désactivée dans le DEVMODE du produit, sinon elle
+            // s'applique une seconde fois par-dessus la nôtre)
+            image.RenderingIntent = RenderingIntent.Perceptual;  // photos : dégradés et peaux préservés
+            image.BlackPointCompensation = true;                 // évite les noirs bouchés en dye-sub
             image.TransformColorSpace(ColorProfiles.SRGB, new ColorProfile(File.ReadAllBytes(request.IccProfilePath)));
         }
     }

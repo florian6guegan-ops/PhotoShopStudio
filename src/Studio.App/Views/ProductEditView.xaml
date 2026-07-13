@@ -36,7 +36,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                         <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-                        <RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/><RowDefinition/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Nom affiché"/>
@@ -82,8 +82,16 @@
                         <TextBlock Text="mm" FontSize="18" VerticalAlignment="Center" Margin="8,0,0,14"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="9" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Visible à la vente"/>
-                    <CheckBox x:Name="EnabledCheck" Grid.Row="9" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,14">
+                    <TextBlock Grid.Row="9" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Profil couleur (ICC)"/>
+                    <StackPanel Grid.Row="9" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,14">
+                        <ComboBox x:Name="IccCombo" MinWidth="320" FontSize="18" Padding="10,8" VerticalAlignment="Center"/>
+                        <Button Style="{StaticResource FlatButton}" Margin="12,0,0,0" MinHeight="44" MinWidth="150"
+                                FontSize="17" Padding="12,6" Click="OnImportIcc"
+                                ToolTip="Importer un profil fourni par le pilote (dossier couleur de Windows)">📥 Importer…</Button>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="10" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Visible à la vente"/>
+                    <CheckBox x:Name="EnabledCheck" Grid.Row="10" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,14">
                         <TextBlock Text="produit proposé dans les listes" FontSize="18"/>
                     </CheckBox>
                 </Grid>

@@ -46,11 +46,47 @@ public partial class ProductEditView : UserControl
         DpiBox.Text = product.Dpi.ToString(CultureInfo.CurrentCulture);
         EnabledCheck.IsChecked = product.Enabled;
 
+        RefreshIccList(product.IccProfile);
+
         SheetCheck.IsChecked = product.Sheet is not null;
         SheetCopiesBox.Text = (product.Sheet?.Copies ?? 6).ToString(CultureInfo.CurrentCulture);
         SheetWBox.Text = (product.Sheet?.CellWidthMm ?? 35).ToString(CultureInfo.CurrentCulture);
         SheetHBox.Text = (product.Sheet?.CellHeightMm ?? 45).ToString(CultureInfo.CurrentCulture);
         OnSheetToggled(this, new RoutedEventArgs());
+    }
+
+    /// <summary>Entrée « aucun profil » : la couleur est alors laissée au pilote (comportement d'origine).</summary>
+    private const string NoIcc = "Aucun — le pilote gère la couleur";
+
+    private void RefreshIccList(string? selected)
+    {
+        var profiles = IccProfiles.List(App.Services.CatalogDir);
+        IccCombo.ItemsSource = new[] { NoIcc }.Concat(profiles).ToList();
+        IccCombo.SelectedItem = selected is not null && profiles.Contains(selected) ? selected : NoIcc;
+    }
+
+    /// <summary>Importe un profil livré par le pilote (DS620-R0.icc, DE100 Lustre.icc…) dans catalog/icc.</summary>
+    private void OnImportIcc(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Choisir un profil ICC",
+            Filter = "Profils couleur (*.icc;*.icm)|*.icc;*.icm",
+            InitialDirectory = IccProfiles.WindowsColorDir,
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            var fileName = IccProfiles.Import(App.Services.CatalogDir, dialog.FileName);
+            RefreshIccList(fileName);
+            ErrorText.Text = "";
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Import du profil ICC impossible", ex);
+            ErrorText.Text = $"Import impossible : {ex.Message}";
+        }
     }
 
     private void OnSheetToggled(object sender, RoutedEventArgs e)
@@ -81,6 +117,7 @@ public partial class ProductEditView : UserControl
         _product.DefaultFit = FitCombo.SelectedIndex == 0 ? FitMode.Fill : FitMode.Fit;
         _product.BorderMm = parsed.Border;
         _product.Dpi = parsed.Dpi;
+        _product.IccProfile = IccCombo.SelectedItem as string is { } icc && icc != NoIcc ? icc : null;
         _product.Enabled = EnabledCheck.IsChecked == true;
         _product.Sheet = SheetCheck.IsChecked == true
             ? new SheetSpec { Copies = parsed.SheetCopies, CellWidthMm = parsed.SheetW, CellHeightMm = parsed.SheetH }

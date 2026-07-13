@@ -102,7 +102,12 @@ public partial class CatalogView : UserControl
         IccProfile = p.IccProfile,
         DevmodeFile = p.DevmodeFile,
         Finishes = p.Finishes
-            .Select(f => new FinishOption { Name = f.Name, DevmodeFile = f.DevmodeFile })
+            .Select(f => new FinishOption
+            {
+                Name = f.Name,
+                DevmodeFile = f.DevmodeFile,
+                IccProfile = f.IccProfile,
+            })
             .ToList(),
         Sheet = p.Sheet is null ? null : new SheetSpec
         {
@@ -167,6 +172,10 @@ public partial class CatalogView : UserControl
             $"{Product.WidthMm:0}×{Product.HeightMm:0} mm — {Product.PrinterName}" +
             (Product.Sheet is not null ? $" — planche {Product.Sheet.Copies}×" : "") +
             $" — réglages pilote : {(Product.DevmodeFile is not null ? "capturés ✓" : "par défaut")}" +
+            $" — couleur : {(Product.IccProfile ?? "pilote")}" +
+            (Product.Finishes.Count > 0
+                ? $" — finitions : {string.Join(", ", Product.Finishes.Select(f => f.Name))}"
+                : "") +
             (Product.Enabled ? "" : " — DÉSACTIVÉ");
     }
 }

@@ -24,6 +24,8 @@ public sealed class FinishOption
     public string Name { get; set; } = "";
     /// <summary>Fichier DEVMODE dans catalog/.</summary>
     public string DevmodeFile { get; set; } = "";
+    /// <summary>Profil ICC du média (catalog/icc) ; null = celui du produit. Le DE100 en a un par média.</summary>
+    public string? IccProfile { get; set; }
 }
 
 public sealed class Product

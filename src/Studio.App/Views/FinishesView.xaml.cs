@@ -22,15 +22,53 @@ public partial class FinishesView : UserControl
         _product = product;
         InitializeComponent();
         TitleText.Text = $"Finitions — {product.Name}";
+        RefreshIccList(null);
         Refresh();
     }
 
     private void Refresh() =>
         FinishesList.ItemsSource = _product.Finishes
-            .Select(f => new FinishRow(f.Name, f.DevmodeFile))
+            .Select(f => new FinishRow(f.Name, f.DevmodeFile, f.IccProfile))
             .ToList();
 
-    private sealed record FinishRow(string Name, string File);
+    private sealed record FinishRow(string Name, string File, string? Icc)
+    {
+        public string Details => $"{File} — profil : {Icc ?? "celui du produit"}";
+    }
+
+    private const string NoIcc = "Profil du produit";
+
+    private void RefreshIccList(string? selected)
+    {
+        var profiles = IccProfiles.List(App.Services.CatalogDir);
+        IccCombo.ItemsSource = new[] { NoIcc }.Concat(profiles).ToList();
+        IccCombo.SelectedItem = selected is not null && profiles.Contains(selected) ? selected : NoIcc;
+    }
+
+    private void OnImportIcc(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Choisir un profil ICC",
+            Filter = "Profils couleur (*.icc;*.icm)|*.icc;*.icm",
+            InitialDirectory = IccProfiles.WindowsColorDir,
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            RefreshIccList(IccProfiles.Import(App.Services.CatalogDir, dialog.FileName));
+            ErrorText.Text = "";
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Import du profil ICC impossible", ex);
+            ErrorText.Text = $"Import impossible : {ex.Message}";
+        }
+    }
+
+    private string? SelectedIcc() =>
+        IccCombo.SelectedItem as string is { } icc && icc != NoIcc ? icc : null;
 
     private void OnCapture(object sender, RoutedEventArgs e)
     {
@@ -48,7 +86,12 @@ public partial class FinishesView : UserControl
 
         if (Capture(name) is { } file)
         {
-            _product.Finishes.Add(new FinishOption { Name = name, DevmodeFile = file });
+            _product.Finishes.Add(new FinishOption
+            {
+                Name = name,
+                DevmodeFile = file,
+                IccProfile = SelectedIcc(),
+            });
             if (Save()) NameBox.Clear();
             Refresh();
         }
@@ -59,8 +102,12 @@ public partial class FinishesView : UserControl
         if ((sender as Button)?.Tag is not FinishRow row) return;
         var finish = _product.Finishes.First(f => f.Name == row.Name);
 
+        // la liste repart du profil actuel de la finition : recapturer sans y toucher ne l'efface pas
+        RefreshIccList(finish.IccProfile);
+
         if (Capture(finish.Name) is not null)
         {
+            finish.IccProfile = SelectedIcc();
             Save();
             Refresh();
         }

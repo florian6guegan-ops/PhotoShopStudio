@@ -16,11 +16,20 @@
                    Text="Une finition = un jeu de réglages du pilote, enregistré sous un nom. Saisissez le nom (Brillant, Mat, Lustré…), cliquez sur « Capturer » : le dialogue du pilote s'ouvre, choisissez-y la finition, validez. L'opérateur pourra ensuite la choisir au moment d'imprimer."/>
 
         <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,16">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Nom :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="NameBox" MinWidth="260" FontSize="20" Padding="10,8" VerticalAlignment="Center"/>
-                <Button Style="{StaticResource BigButton}" Margin="16,0,0,0" MinHeight="52" MinWidth="260"
-                        Click="OnCapture">⚙ Capturer les réglages du pilote</Button>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Nom :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="NameBox" MinWidth="260" FontSize="20" Padding="10,8" VerticalAlignment="Center"/>
+                    <Button Style="{StaticResource BigButton}" Margin="16,0,0,0" MinHeight="52" MinWidth="260"
+                            Click="OnCapture">⚙ Capturer les réglages du pilote</Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <TextBlock Text="Profil ICC du média :" Style="{StaticResource Hint}"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox x:Name="IccCombo" MinWidth="300" FontSize="18" Padding="10,8" VerticalAlignment="Center"/>
+                    <Button Style="{StaticResource FlatButton}" Margin="12,0,0,0" MinHeight="44" MinWidth="150"
+                            FontSize="17" Padding="12,6" Click="OnImportIcc">📥 Importer…</Button>
+                </StackPanel>
             </StackPanel>
         </Border>
 
@@ -42,7 +51,7 @@
                                     <TextBlock FontSize="22" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextBrush}" Text="{Binding Name}"/>
                                     <TextBlock FontSize="17" Foreground="{StaticResource MutedBrush}"
-                                               Text="{Binding File}" Margin="0,4,0,0"/>
+                                               Text="{Binding Details}" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </DockPanel>
                         </Border>
