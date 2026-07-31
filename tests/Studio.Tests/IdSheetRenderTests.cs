@@ -60,6 +60,19 @@ public class IdSheetRenderTests : IDisposable
         IdSheetLayout.Layout(SheetW, SheetH, CellW, cellHeightPx ?? CellH,
             MmPx.ToPixels(gapMm, Dpi), copies, MmPx.ToPixels(3, Dpi));
 
+    /// <summary>
+    /// Bande réservée en bas quand la planche est horodatée : la mention de 5 mm et l'air
+    /// autour. Doit rester en accord avec ImagePipeline, faute de quoi les mesures
+    /// porteraient sur la mauvaise zone.
+    /// </summary>
+    private static int BandeHorodatage => MmPx.ToPixels(7, Dpi);
+
+    /// <summary>Disposition réellement produite lorsque la planche porte la date.</summary>
+    private static SheetLayoutResult DispositionRendue(int copies = 8, int? cellHeightPx = null) =>
+        IdSheetLayout.Layout(SheetW, SheetH, CellW, cellHeightPx ?? CellH,
+            MmPx.ToPixels(SheetSpec.DefaultGapMm, Dpi), copies, MmPx.ToPixels(3, Dpi),
+            BandeHorodatage);
+
     private static byte Niveau(IPixelCollection<byte> pixels, int x, int y) =>
         (byte)pixels.GetPixel(x, y).GetChannel(0);
 
@@ -156,10 +169,49 @@ public class IdSheetRenderTests : IDisposable
         using var planche = new MagickImage(Rendre(stamp: moment));
         using var pixels = planche.GetPixels();
 
-        var basPhotos = Disposition().Cells.Max(c => c.Bottom);
+        var basPhotos = DispositionRendue().Cells.Max(c => c.Bottom);
         var encre = CompterPixelsSombres(pixels, basPhotos, SheetH);
 
         Assert.True(encre > 50, $"la mention doit être imprimée (pixels sombres : {encre})");
+    }
+
+    /// <summary>
+    /// La mention doit être lisible sur le tirage, pas seulement présente. DiLand écrit la
+    /// sienne au corps de 5 mm ; en dessous elle ne se lit plus, ce qui a été constaté sur
+    /// une planche de contrôle le 31/07/2026.
+    ///
+    /// On mesure la hauteur des chiffres : pour un corps de 5 mm, Arial donne environ
+    /// 3,6 mm de haut de chiffre, plus les jambages du « / ».
+    /// </summary>
+    [Fact]
+    public void La_mention_est_ecrite_assez_grand_pour_etre_lue()
+    {
+        using var planche = new MagickImage(Rendre(stamp: new DateTime(2026, 7, 31, 19, 42, 0)));
+        using var pixels = planche.GetPixels();
+
+        var haut = int.MaxValue;
+        var bas = -1;
+        var gauche = int.MaxValue;
+        var droite = -1;
+
+        var basPhotos = DispositionRendue().Cells.Max(c => c.Bottom);
+        for (var y = basPhotos + 2; y < SheetH; y++)
+            for (var x = 0; x < SheetW; x++)
+                if (Niveau(pixels, x, y) < 140)
+                {
+                    haut = Math.Min(haut, y);
+                    bas = Math.Max(bas, y);
+                    gauche = Math.Min(gauche, x);
+                    droite = Math.Max(droite, x);
+                }
+
+        Assert.True(bas > 0, "la mention doit être présente");
+
+        var hauteurMm = (bas - haut + 1) * 25.4 / Dpi;
+        var largeurMm = (droite - gauche + 1) * 25.4 / Dpi;
+
+        Assert.InRange(hauteurMm, 3.0, 6.0);
+        Assert.InRange(largeurMm, 25.0, 60.0);
     }
 
     [Fact]
@@ -187,7 +239,7 @@ public class IdSheetRenderTests : IDisposable
         var sortie = Rendre(stamp: new DateTime(2026, 7, 31, 19, 42, 0), cellHeightPx: hautes);
 
         using var planche = new MagickImage(sortie);
-        var disposition = Disposition(cellHeightPx: hautes);
+        var disposition = DispositionRendue(cellHeightPx: hautes);
         var basPhotos = disposition.Cells.Max(c => c.Bottom);
 
         Assert.True(SheetH - basPhotos < MmPx.ToPixels(3.5, Dpi),

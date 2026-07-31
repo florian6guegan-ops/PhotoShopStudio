@@ -59,9 +59,11 @@ ImagePipeline.RenderIdSheetToFile(
     planche.CutBorder,
     planche.DateStamp ? DateTime.Now : null);
 
+// meme reserve que le rendu, sinon la disposition annoncee ne serait pas celle produite
 var disposition = IdSheetLayout.Layout(sheetW, sheetH, cellW, cellH,
     MmPx.ToPixels(planche.GapMm, produit.Dpi), planche.Copies,
-    planche.CutMarks ? MmPx.ToPixels(3, produit.Dpi) : 0);
+    planche.CutMarks ? MmPx.ToPixels(3, produit.Dpi) : 0,
+    planche.DateStamp ? MmPx.ToPixels(7, produit.Dpi) : 0);
 
 Console.WriteLine($"Produit  : {produit.Name}");
 Console.WriteLine($"Machine  : {produit.PrinterName}"
@@ -75,6 +77,35 @@ Console.WriteLine($"Horodate : {(planche.DateStamp ? "oui" : "non")},"
     + $" marge basse {sheetH - disposition.Cells.Max(c => c.Bottom)} px");
 Console.WriteLine($"Profil   : {icc ?? "aucun"}");
 Console.WriteLine($"Ecrit    : {sortie}");
+
+// mesure reelle de la mention sur la planche produite : hauteur et largeur du texte,
+// pour verifier qu'elle sort bien au corps voulu
+using var relue = new MagickImage(sortie);
+using var pixels = relue.GetPixels();
+var basPhotos = disposition.Cells.Max(c => c.Bottom);
+
+int hautTexte = int.MaxValue, basTexte = -1, gaucheTexte = int.MaxValue, droiteTexte = -1;
+for (var y = basPhotos + 2; y < sheetH; y++)
+    for (var x = 0; x < sheetW; x++)
+        if (pixels.GetPixel(x, y).GetChannel(0) < 140)
+        {
+            if (y < hautTexte) hautTexte = y;
+            if (y > basTexte) basTexte = y;
+            if (x < gaucheTexte) gaucheTexte = x;
+            if (x > droiteTexte) droiteTexte = x;
+        }
+
+if (basTexte < 0)
+{
+    Console.WriteLine("Mention  : absente de la planche");
+}
+else
+{
+    var hautMm = (basTexte - hautTexte + 1) * 25.4 / produit.Dpi;
+    var largeMm = (droiteTexte - gaucheTexte + 1) * 25.4 / produit.Dpi;
+    Console.WriteLine($"Mention  : {hautMm:0.0} × {largeMm:0.0} mm,"
+        + $" de y={hautTexte} a {basTexte} (planche {sheetH} px)");
+}
 
 return 0;
 

@@ -43,11 +43,21 @@ public static class ImagePipeline
         bool cutBorder = true, DateTime? stamp = null)
     {
         var gapPx = MmPx.ToPixels(gapMm, dpi);
+        var tickPx = cutMarks ? MmPx.ToPixels(3, dpi) : 0;
+
         var layout = IdSheetLayout.Layout(
             sheetWidthPx, sheetHeightPx,
             cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
-            gapPx, copies,
-            tickLength: cutMarks ? MmPx.ToPixels(3, dpi) : 0);
+            gapPx, copies, tickPx);
+
+        // la date demande de la place : on refait la disposition en réservant le bas,
+        // sans quoi elle devrait tenir dans la marge résiduelle et sortirait illisible
+        if (stamp is not null)
+            layout = IdSheetLayout.Layout(
+                sheetWidthPx, sheetHeightPx,
+                cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
+                gapPx, copies, tickPx,
+                bottomReserve: StampBandPx(dpi));
 
         using var cell = Render(cellRequest);
         using var sheet = new MagickImage(MagickColors.White, (uint)sheetWidthPx, (uint)sheetHeightPx);
@@ -108,17 +118,30 @@ public static class ImagePipeline
     /// Rien n'est écrit si la marge est trop courte : mordre sur les photos les rendrait
     /// non conformes, ce qui serait pire que l'absence de mention.
     /// </summary>
+    /// <summary>
+    /// Corps de la mention, en millimètres. DiLand écrit la sienne en 5 mm — relevé dans
+    /// son code : <c>new Font("Arial", 5 * unMillimetreEnPixels, GraphicsUnit.Pixel)</c>.
+    /// On s'aligne dessus : en dessous, la date est illisible sur le tirage.
+    /// </summary>
+    private const double StampHeightMm = 5;
+
+    /// <summary>Hauteur à réserver en bas de la planche : la mention et son air autour.</summary>
+    private static int StampBandPx(int dpi) => MmPx.ToPixels(StampHeightMm + 2, dpi);
+
     private static void DrawStamp(MagickImage sheet, SheetLayoutResult layout, DateTime moment, int dpi)
     {
         var basPhotos = layout.Cells.Max(c => c.Bottom);
         var marge = (int)sheet.Height - basPhotos;
 
-        var hauteurTexte = MmPx.ToPixels(2.5, dpi);
+        var hauteurTexte = MmPx.ToPixels(StampHeightMm, dpi);
         if (marge < hauteurTexte + MmPx.ToPixels(1, dpi)) return;
 
+        // la taille est donnée en pixels : ImageMagick dessine à 72 points par pouce quelle
+        // que soit la densité de l'image, donc un point vaut ici un pixel. La convertir
+        // comme un vrai corps typographique la divisait par quatre — mention illisible.
         var drawables = new Drawables()
             .Font(StampFont())
-            .FontPointSize(hauteurTexte * 72.0 / dpi)
+            .FontPointSize(hauteurTexte)
             .FillColor(MagickColors.Black)
             .StrokeColor(MagickColors.Transparent)
             .TextAlignment(TextAlignment.Center)

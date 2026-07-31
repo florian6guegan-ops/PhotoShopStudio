@@ -32,14 +32,19 @@ public static class IdSheetLayout
     /// atteindre <paramref name="copies"/>, bloc centré sur la planche.
     /// Lève une exception si les copies ne tiennent pas.
     /// </summary>
+    /// <param name="bottomReserve">
+    /// Hauteur laissée libre en bas de la planche, par exemple pour y porter la date. Le
+    /// bloc de photos est alors centré sur ce qui reste, donc remonte.
+    /// </param>
     public static SheetLayoutResult Layout(
         int sheetWidth, int sheetHeight,
         int cellWidth, int cellHeight,
-        int gap, int copies, int tickLength = 0)
+        int gap, int copies, int tickLength = 0, int bottomReserve = 0)
     {
         if (copies < 1) throw new ArgumentOutOfRangeException(nameof(copies));
         if (cellWidth <= 0 || cellHeight <= 0 || cellWidth > sheetWidth || cellHeight > sheetHeight)
             throw new ArgumentOutOfRangeException(nameof(cellWidth), "Cellule invalide pour la planche");
+        if (bottomReserve < 0) throw new ArgumentOutOfRangeException(nameof(bottomReserve));
 
         var maxCols = (sheetWidth + gap) / (cellWidth + gap);
         var maxRows = (sheetHeight + gap) / (cellHeight + gap);
@@ -60,7 +65,12 @@ public static class IdSheetLayout
         var blockW = cols * cellWidth + (cols - 1) * gap;
         var blockH = rows * cellHeight + (rows - 1) * gap;
         var originX = (sheetWidth - blockW) / 2;
-        var originY = (sheetHeight - blockH) / 2;
+
+        // la réserve est prise en bas : le bloc se centre sur la hauteur restante, et ne
+        // remonte jamais au point de mordre sur les repères de coupe du haut
+        var utile = Math.Max(blockH, sheetHeight - bottomReserve);
+        var originY = Math.Max(tickLength, (utile - blockH) / 2);
+        if (originY + blockH > sheetHeight) originY = Math.Max(0, sheetHeight - blockH);
 
         var cells = new List<PixelRect>(copies);
         for (var i = 0; i < copies; i++)
