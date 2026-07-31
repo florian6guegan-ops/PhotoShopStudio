@@ -8,12 +8,17 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0">
-            <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
-                       Text="Touchez les photos à imprimer"/>
-            <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
-                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
-        </DockPanel>
+        <StackPanel Grid.Row="0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
+                           Text="Touchez les photos à imprimer"/>
+                <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            </DockPanel>
+            <!-- le bouton de recadrage passait inaperçu : on dit ici ce qu'il fait -->
+            <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10" TextWrapping="Wrap"
+                       Text="Le bouton ✂ sous chaque photo permet de la recadrer au format choisi, de la pivoter, ou de l'imprimer en entier avec des marges blanches."/>
+        </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="PhotosGrid">
@@ -52,8 +57,10 @@
                                         Background="#33000000" Visibility="{Binding CartVisibility}">
                                     <DockPanel Margin="4,2">
                                         <Button DockPanel.Dock="Left" Style="{StaticResource FlatButton}"
-                                                Width="38" Height="36" Padding="0" FontSize="17"
-                                                ToolTip="Recadrer / pivoter"
+                                                Width="44" Height="36" Padding="0" FontSize="19"
+                                                Background="{StaticResource AccentBrush}" Foreground="White"
+                                                FontWeight="Bold"
+                                                ToolTip="Recadrer au format, pivoter, ou imprimer la photo entière avec des marges blanches"
                                                 Click="OnEditCrop" Tag="{Binding}">✂</Button>
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                             <Button Style="{StaticResource FlatButton}" Width="38" Height="36" Padding="0"
