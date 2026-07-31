@@ -329,8 +329,46 @@ public partial class IdPhotoView : UserControl
         PlaceGuide(ChinMinLine, cropRect, IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.HeadMinMm);
         PlaceGuide(ChinMaxLine, cropRect, IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.HeadMaxMm);
 
+        PlacerGabaritVisage(cropRect);
         PlacerAnneaux(display);
         UpdateCompliance();
+    }
+
+    /// <summary>
+    /// Trace le gabarit du visage : deux ovales concentriques, l'un à la taille minimale
+    /// de tête admise, l'autre à la maximale, plus l'axe vertical.
+    ///
+    /// C'est le repère de DiLand : l'opérateur amène le tour de tête entre les deux
+    /// ovales et le visage sur l'axe, sans avoir à lire une mesure en millimètres.
+    /// </summary>
+    private void PlacerGabaritVisage(Rect cropRect)
+    {
+        // la tête visée est centrée sur ce point : crâne à 4 mm du haut, hauteur 34 mm
+        var centreY = cropRect.Y + cropRect.Height
+            * (IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.TargetHeadMm / 2) / IdPhotoFr.PhotoHeightMm;
+        var centreX = cropRect.X + cropRect.Width / 2;
+
+        PlacerOvale(HeadMinOval, cropRect, centreX, centreY, IdPhotoFr.HeadMinMm);
+        PlacerOvale(HeadMaxOval, cropRect, centreX, centreY, IdPhotoFr.HeadMaxMm);
+
+        FaceAxis.X1 = FaceAxis.X2 = centreX;
+        FaceAxis.Y1 = cropRect.Y;
+        FaceAxis.Y2 = cropRect.Bottom;
+    }
+
+    /// <summary>Un ovale de gabarit, dimensionné en millimètres du tirage final.</summary>
+    private static void PlacerOvale(System.Windows.Shapes.Ellipse ovale, Rect cropRect,
+        double centreX, double centreY, double hauteurMm)
+    {
+        const double largeurSurHauteur = 0.75;   // proportion moyenne d'un visage
+
+        var hauteur = cropRect.Height * hauteurMm / IdPhotoFr.PhotoHeightMm;
+        var largeur = cropRect.Width * (hauteurMm * largeurSurHauteur) / IdPhotoFr.PhotoWidthMm;
+
+        ovale.Width = largeur;
+        ovale.Height = hauteur;
+        Canvas.SetLeft(ovale, centreX - largeur / 2);
+        Canvas.SetTop(ovale, centreY - hauteur / 2);
     }
 
     private static void PlaceGuide(System.Windows.Shapes.Line line, Rect cropRect, double mmFromTop)

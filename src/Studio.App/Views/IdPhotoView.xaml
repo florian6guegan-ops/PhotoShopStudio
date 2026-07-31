@@ -59,6 +59,12 @@
                         <Line x:Name="CrownLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
                         <Line x:Name="ChinMinLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
                         <Line x:Name="ChinMaxLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
+                        <!-- Gabarit du visage : le tour de tête doit tomber entre les deux
+                             ovales. C'est le repère de DiLand, que les opérateurs lisent
+                             d'un coup d'œil sans rien mesurer. -->
+                        <Ellipse x:Name="HeadMinOval" Stroke="#E9527A" StrokeThickness="2"/>
+                        <Ellipse x:Name="HeadMaxOval" Stroke="#E9527A" StrokeThickness="2"/>
+                        <Line x:Name="FaceAxis" Stroke="#E9527A" StrokeThickness="1.5" StrokeDashArray="5 4"/>
                     </Canvas>
                     <!-- Anneaux de placement : sommet du crâne et bas du menton.
                          Sans fond, seul le trait est cliquable, la photo reste visible dessous. -->
