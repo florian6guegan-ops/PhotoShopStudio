@@ -38,8 +38,17 @@
                                                 <DockPanel Margin="0,4">
                                                     <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
                                                             MinHeight="48" MinWidth="180" FontSize="18" Padding="16,6"
-                                                            Click="OnReprint" Tag="{Binding}">
+                                                            Click="OnReprint" Tag="{Binding}"
+                                                            Visibility="{Binding ReprintVisibility}">
                                                         🖨  Réimprimer
+                                                    </Button>
+                                                    <Button DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                                                            MinHeight="48" MinWidth="220" FontSize="18" Padding="16,6"
+                                                            Margin="0,0,10,0"
+                                                            Click="OnPrintLargeFormat" Tag="{Binding}"
+                                                            Visibility="{Binding LargeFormatVisibility}"
+                                                            ToolTip="Ouvre la boîte d'impression grand format pour tirer sur l'Epson.">
+                                                        🖼  Tirer sur l'Epson…
                                                     </Button>
                                                     <TextBlock FontSize="19" VerticalAlignment="Center"
                                                                Foreground="{StaticResource MutedBrush}"

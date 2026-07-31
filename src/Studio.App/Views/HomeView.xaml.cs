@@ -6,7 +6,23 @@ namespace Studio.App.Views;
 
 public partial class HomeView : UserControl
 {
-    public HomeView() => InitializeComponent();
+    public HomeView()
+    {
+        InitializeComponent();
+
+        // le compte est affiché sur le bouton : un agrandissement oublié dans la file
+        // ne se voit nulle part ailleurs, puisque rien ne part tout seul à l'impression
+        Loaded += (_, _) =>
+        {
+            var pending = LargeFormatQueueView.PendingCount();
+            LargeFormatButton.Content = pending > 0
+                ? $"🖼  Agrandissements à tirer ({pending})"
+                : "🖼  Agrandissements à tirer";
+        };
+    }
+
+    private void OnLargeFormatQueue(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new LargeFormatQueueView(), "Agrandissements à tirer");
 
     private void OnNewOrder(object sender, RoutedEventArgs e) =>
         Navigator.Go(new SourcePickerView(), "Nouvelle commande — choisir le support");

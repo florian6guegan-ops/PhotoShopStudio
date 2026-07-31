@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Studio.App.Infrastructure;
 using Studio.Core.Domain;
 
 namespace Studio.App.Views;
@@ -76,6 +77,18 @@ public partial class OrdersView : UserControl
         Refresh();
     }
 
+    /// <summary>
+    /// Ouvre la file des agrandissements limitée à cette enveloppe : l'opérateur y tire
+    /// chaque image sur l'Epson, puis confirme.
+    /// </summary>
+    private void OnPrintLargeFormat(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not EnvelopeRow row) return;
+
+        Navigator.Go(new LargeFormatQueueView(row.Order, row.Envelope),
+            $"Agrandissements — commande {row.Order.DisplayNumber}");
+    }
+
     private sealed record OrderRow(Order Order)
     {
         public string Header =>
@@ -118,10 +131,18 @@ public partial class OrdersView : UserControl
                     EnvelopeStatus.Spooled => "envoyée à l'imprimante",
                     EnvelopeStatus.Printed => "imprimée",
                     EnvelopeStatus.Error => $"ERREUR : {Envelope.Error}",
+                    EnvelopeStatus.AwaitingManualPrint => "à tirer sur l'Epson",
                     _ => Envelope.Status.ToString(),
                 };
                 return $"Enveloppe {Envelope.Number} — {Envelope.PrinterChannel} — {prints} tirage(s) — {status}";
             }
         }
+
+        /// <summary>Une enveloppe d'agrandissements se tire depuis la boîte grand format, pas par le spouleur.</summary>
+        public bool IsLargeFormat => Envelope.Status == EnvelopeStatus.AwaitingManualPrint;
+
+        public Visibility LargeFormatVisibility => IsLargeFormat ? Visibility.Visible : Visibility.Collapsed;
+
+        public Visibility ReprintVisibility => IsLargeFormat ? Visibility.Collapsed : Visibility.Visible;
     }
 }
