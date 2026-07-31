@@ -44,16 +44,28 @@ public class DiLandRepositoryTests : IDisposable
                 CREATE TABLE "Order" (
                     Oid INTEGER PRIMARY KEY, Number INTEGER, DailyNumber TEXT, Date TEXT,
                     DirectoryName TEXT, EndUserName TEXT, GCRecord INTEGER);
+                CREATE TABLE Product (Oid INTEGER PRIMARY KEY, Name TEXT);
+                CREATE TABLE OrderLine (
+                    Oid INTEGER PRIMARY KEY, "Order" INTEGER, Product INTEGER,
+                    Description TEXT, Price REAL, GCRecord INTEGER);
+                CREATE TABLE OrderLineImage (
+                    Oid INTEGER PRIMARY KEY, OrderLine INTEGER, FileName TEXT,
+                    OriginalFileName TEXT, Quantity INTEGER, ApplyCrop INTEGER,
+                    CropX REAL, CropY REAL, CropWidth REAL, CropHeight REAL,
+                    Angle REAL, GCRecord INTEGER);
+                INSERT INTO Product (Oid, Name) VALUES (1, '10x15');
                 """;
             creation.ExecuteNonQuery();
         }
 
-        Ajouter(connexion, 10, 36001, "31-001", "2026-07-31 10:00:00", "20260731-1000-aaaa", null);
-        Ajouter(connexion, 11, 36002, "31-002", "2026-07-31 11:00:00", "20260731-1100-bbbb", null);
+        Ajouter(connexion, 10, 36001, "31-001", "2026-07-31 10:00:00", ComptoirDir, null);
+        Ajouter(connexion, 11, 36002, "31-002", "2026-07-31 11:00:00", BorneDir, null);
         // commande supprimée logiquement : DiLand l'ignore, nous aussi
         Ajouter(connexion, 12, 36003, "31-003", "2026-07-31 12:00:00", "20260731-1200-cccc", 1);
 
-        foreach (var dossier in new[] { "20260731-1000-aaaa", "20260731-1100-bbbb" })
+        AjouterContenu(connexion);
+
+        foreach (var dossier in new[] { ComptoirDir, BorneDir })
         {
             var photos = Path.Combine(Depot, "Orders", dossier, "F");
             Directory.CreateDirectory(photos);
@@ -62,6 +74,32 @@ public class DiLandRepositoryTests : IDisposable
             // dérivé de DiLand : ne doit pas être compté comme une photo client
             File.WriteAllText(Path.Combine(photos, "O_photo1.jpg"), "x");
         }
+    }
+
+    /// <summary>Nom de dossier d'une commande du comptoir : pas de suffixe.</summary>
+    private const string ComptoirDir = "20260731-1000-aaaa";
+
+    /// <summary>Nom de dossier d'une commande de borne : DiLand suffixe en .COM.</summary>
+    private const string BorneDir = "20260731-1100-bbbb.COM";
+
+    /// <summary>
+    /// Une ligne « 10x15 » avec deux photos, dont une commandée en double : c'est la forme
+    /// qu'ont réellement les commandes de bornes.
+    /// </summary>
+    private static void AjouterContenu(SqliteConnection c)
+    {
+        using var commande = c.CreateCommand();
+        commande.CommandText = """
+            INSERT INTO OrderLine (Oid, "Order", Product, Description, Price, GCRecord)
+            VALUES (500, 11, 1, '', 1.5, NULL);
+            INSERT INTO OrderLineImage
+                (Oid, OrderLine, FileName, OriginalFileName, Quantity, ApplyCrop,
+                 CropX, CropY, CropWidth, CropHeight, Angle, GCRecord)
+            VALUES (900, 500, 'photo1.jpg', 'IMG_0143.jpeg', 2, 1, 0.1, 0.2, 0.8, 0.7, 90, NULL),
+                   (901, 500, 'photo2.jpg', '', 1, 0, 0, 0, 1, 1, 0, NULL),
+                   (902, 500, 'photo3.jpg', 'IMG_0999.jpeg', 1, 0, 0, 0, 1, 1, 0, 1);
+            """;
+        commande.ExecuteNonQuery();
     }
 
     private static void Ajouter(SqliteConnection c, long oid, int numero, string jour,
@@ -202,6 +240,105 @@ public class DiLandRepositoryTests : IDisposable
         Assert.False(depot.IsAvailable);
         Assert.False(depot.RefreshSnapshot());
         Assert.Empty(depot.ReadOrdersAfter(0));
+    }
+
+    // — ce que la boutique veut récupérer : les bornes, et rien d'autre —
+
+    /// <summary>
+    /// La demande est explicite : seules les commandes de bornes intéressent la boutique.
+    /// Celles du comptoir sont déjà saisies chez nous, les reprendre ferait doublon.
+    /// </summary>
+    [Fact]
+    public void Seules_les_commandes_de_bornes_sont_recuperees()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+
+        var bornes = depot.ReadKioskOrdersAfter(0);
+
+        Assert.Equal([36002], bornes.Select(c => c.Number));
+    }
+
+    /// <summary>Le contenu doit être repris tel quel : le produit et le nombre de tirages.</summary>
+    [Fact]
+    public void Le_produit_et_le_nombre_de_tirages_sont_repris()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+        var borne = depot.ReadKioskOrdersAfter(0).Single();
+
+        var ligne = depot.LinesOf(borne).Single();
+
+        Assert.Equal("10x15", ligne.ProductName);
+        Assert.Equal(1.5m, ligne.Price);
+    }
+
+    /// <summary>
+    /// Le nombre de tirages est la somme des quantités, pas le nombre de photos : deux
+    /// exemplaires d'une même photo comptent pour deux.
+    /// </summary>
+    [Fact]
+    public void Une_photo_commandee_en_double_compte_pour_deux()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+        var borne = depot.ReadKioskOrdersAfter(0).Single();
+
+        var ligne = depot.LinesOf(borne).Single();
+
+        Assert.Equal(2, ligne.Photos.Count);
+        Assert.Equal(3, ligne.PrintCount);
+    }
+
+    /// <summary>Le recadrage fait à la borne doit suivre, sinon le tirage n'est pas le bon.</summary>
+    [Fact]
+    public void Le_recadrage_fait_a_la_borne_est_conserve()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+        var borne = depot.ReadKioskOrdersAfter(0).Single();
+
+        var photo = depot.LinesOf(borne).Single().Photos[0];
+
+        Assert.True(photo.ApplyCrop);
+        Assert.Equal(0.1, photo.CropX, 3);
+        Assert.Equal(0.8, photo.CropWidth, 3);
+        Assert.Equal(90, photo.Angle, 3);
+    }
+
+    [Fact]
+    public void Une_photo_supprimee_de_la_commande_est_ignoree()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+        var borne = depot.ReadKioskOrdersAfter(0).Single();
+
+        var photos = depot.LinesOf(borne).Single().Photos;
+
+        Assert.DoesNotContain(photos, p => p.FileName == "photo3.jpg");
+    }
+
+    /// <summary>Le fichier stocké est un identifiant illisible ; l'opérateur a besoin du nom du client.</summary>
+    [Fact]
+    public void Le_nom_d_origine_du_client_est_affiche_quand_il_existe()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+        var photos = depot.LinesOf(depot.ReadKioskOrdersAfter(0).Single()).Single().Photos;
+
+        Assert.Equal("IMG_0143.jpeg", photos[0].DisplayName);
+        Assert.Equal("photo2.jpg", photos[1].DisplayName);   // repli quand la borne n'a pas transmis le nom
+    }
+
+    [Fact]
+    public void Le_chemin_de_la_photo_pointe_dans_le_dossier_de_la_commande()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+        var borne = depot.ReadKioskOrdersAfter(0).Single();
+        var photo = depot.LinesOf(borne).Single().Photos[0];
+
+        Assert.True(File.Exists(depot.PhotoPath(borne, photo)));
     }
 
     [Fact]
