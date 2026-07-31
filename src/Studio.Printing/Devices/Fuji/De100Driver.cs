@@ -356,13 +356,37 @@ public sealed class De100Driver : IDisposable
     }
 
     private static uint ReadInt(IntPtr handle, string name) =>
-        uint.TryParse(ReadValue(handle, name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        (uint)Math.Max(0, ParseNumber(ReadValue(handle, name)));
 
     private static int ReadIndexedInt(IntPtr handle, string name, uint index) =>
-        int.TryParse(ReadIndexedValue(handle, name, index), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        (int)ParseNumber(ReadIndexedValue(handle, name, index));
 
     private static double ReadIndexedDouble(IntPtr handle, string name, uint index) =>
-        double.TryParse(ReadIndexedValue(handle, name, index), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        ParseNumber(ReadIndexedValue(handle, name, index));
+
+    /// <summary>
+    /// Analyse un nombre renvoyé par le SDK.
+    ///
+    /// Le SDK suit le séparateur décimal du système : sur un poste français il renvoie
+    /// « 152,0 » et non « 152.0 ». Analyser en culture invariante rendait donc zéro sur
+    /// toutes les valeurs décimales — largeur de papier et longueur restante en tête —
+    /// alors que les entiers, eux, passaient. On accepte les deux écritures.
+    /// </summary>
+    internal static double ParseNumber(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return 0;
+
+        var texte = value.Trim();
+        if (double.TryParse(texte, NumberStyles.Float, CultureInfo.CurrentCulture, out var courant))
+            return courant;
+        if (double.TryParse(texte, NumberStyles.Float, CultureInfo.InvariantCulture, out var invariant))
+            return invariant;
+
+        // dernier recours : normaliser le séparateur quel qu'il soit
+        return double.TryParse(texte.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var normalise)
+            ? normalise
+            : 0;
+    }
 
     private static void Check(int code, string call)
     {

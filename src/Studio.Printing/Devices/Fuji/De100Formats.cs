@@ -88,17 +88,31 @@ public static class De100Formats
         if (paperRemainingMm < 0) paperRemainingMm = 0;
 
         return ForPaperWidth(paperWidthMm)
-            .Select(f => new De100FormatAvailability(f, EstimatePrints(f, paperRemainingMm)))
-            .OrderBy(a => a.Format.LengthMm)
+            .Select(f => new De100FormatAvailability(f, EstimatePrints(f, paperRemainingMm, paperWidthMm)))
+            .OrderBy(a => ConsumedLengthMm(a.Format, paperWidthMm))
             .ThenBy(a => a.Format.Name, StringComparer.Ordinal)
             .ToList();
     }
 
-    /// <summary>Nombre de tirages entiers obtenables dans la longueur restante.</summary>
-    public static int EstimatePrints(De100Format format, double paperRemainingMm)
+    /// <summary>
+    /// Longueur de rouleau qu'un tirage consomme réellement.
+    ///
+    /// Un format se pose dans un sens ou dans l'autre : sur un rouleau de 152 mm, un
+    /// 10×15 sort en travers et ne consomme que ses 102 mm. Compter sa grande dimension
+    /// sous-estimerait d'un tiers le nombre de tirages restants.
+    /// </summary>
+    public static int ConsumedLengthMm(De100Format format, int paperWidthMm)
     {
         ArgumentNullException.ThrowIfNull(format);
-        if (format.LengthMm <= 0 || paperRemainingMm <= 0) return 0;
-        return (int)(paperRemainingMm / format.LengthMm);
+        return paperWidthMm == format.ShortSideMm ? format.LengthMm : format.ShortSideMm;
+    }
+
+    /// <summary>Nombre de tirages entiers obtenables dans la longueur restante.</summary>
+    public static int EstimatePrints(De100Format format, double paperRemainingMm, int paperWidthMm)
+    {
+        ArgumentNullException.ThrowIfNull(format);
+        var consomme = ConsumedLengthMm(format, paperWidthMm);
+        if (consomme <= 0 || paperRemainingMm <= 0) return 0;
+        return (int)(paperRemainingMm / consomme);
     }
 }

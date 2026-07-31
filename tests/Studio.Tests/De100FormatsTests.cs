@@ -52,8 +52,22 @@ public class De100FormatsTests
     {
         var dixQuinze = De100Formats.All.First(f => f.Name == "10x15");
 
-        // 10 mètres de papier, tirages de 152 mm
-        Assert.Equal(65, De100Formats.EstimatePrints(dixQuinze, 10_000));
+        // rouleau de 102 mm : le tirage consomme ses 152 mm de long
+        Assert.Equal(65, De100Formats.EstimatePrints(dixQuinze, 10_000, paperWidthMm: 102));
+    }
+
+    /// <summary>
+    /// Le même format posé en travers consomme sa petite dimension : sur un rouleau de
+    /// 152 mm, un 10×15 ne mange que 102 mm de longueur.
+    /// </summary>
+    [Fact]
+    public void Un_format_pose_en_travers_consomme_sa_petite_dimension()
+    {
+        var dixQuinze = De100Formats.All.First(f => f.Name == "10x15");
+
+        Assert.Equal(152, De100Formats.ConsumedLengthMm(dixQuinze, paperWidthMm: 102));
+        Assert.Equal(102, De100Formats.ConsumedLengthMm(dixQuinze, paperWidthMm: 152));
+        Assert.Equal(98, De100Formats.EstimatePrints(dixQuinze, 10_000, paperWidthMm: 152));
     }
 
     [Fact]
@@ -61,8 +75,23 @@ public class De100FormatsTests
     {
         var dixQuinze = De100Formats.All.First(f => f.Name == "10x15");
 
-        Assert.Equal(1, De100Formats.EstimatePrints(dixQuinze, 300));
-        Assert.Equal(0, De100Formats.EstimatePrints(dixQuinze, 151));
+        Assert.Equal(1, De100Formats.EstimatePrints(dixQuinze, 300, paperWidthMm: 102));
+        Assert.Equal(0, De100Formats.EstimatePrints(dixQuinze, 151, paperWidthMm: 102));
+    }
+
+    /// <summary>
+    /// Le relevé réel du 31/07/2026 : rouleau lustré de 152 mm, 34 470 mm restants.
+    /// Ces chiffres sont ceux que la machine a donnés, ils servent de repère.
+    /// </summary>
+    [Fact]
+    public void Le_releve_reel_du_rouleau_lustre_donne_des_comptes_coherents()
+    {
+        var estimation = De100Formats.Estimate(152, 34_470).ToDictionary(e => e.Format.Name);
+
+        Assert.Equal(337, estimation["10x15"].RemainingPrints);   // 102 mm par tirage
+        Assert.Equal(226, estimation["15x15"].RemainingPrints);   // 152 mm par tirage
+        Assert.Equal(169, estimation["15x20"].RemainingPrints);   // 203 mm par tirage
+        Assert.Equal(113, estimation["15x30"].RemainingPrints);   // 304 mm par tirage
     }
 
     [Fact]
@@ -93,12 +122,12 @@ public class De100FormatsTests
     }
 
     [Fact]
-    public void L_estimation_est_classee_du_plus_petit_format_au_plus_grand()
+    public void L_estimation_est_classee_du_format_le_plus_econome_au_plus_gourmand()
     {
         var estimation = De100Formats.Estimate(127, 5_000);
 
-        var longueurs = estimation.Select(e => e.Format.LengthMm).ToList();
-        Assert.Equal(longueurs.OrderBy(l => l), longueurs);
+        var consommations = estimation.Select(e => De100Formats.ConsumedLengthMm(e.Format, 127)).ToList();
+        Assert.Equal(consommations.OrderBy(l => l), consommations);
     }
 
     [Fact]

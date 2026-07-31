@@ -121,7 +121,8 @@ int ProbeDe100(string[] argv)
             {
                 Console.WriteLine($"    Rouleau    : magasin {media.LoadingNumber}, type {media.MagazineType}, " +
                                   $"{media.PaperWidthMm} mm, {media.Surface}");
-                Console.WriteLine($"    Papier     : {media.PaperRemainingMm:0} (unité brute du SDK) restant");
+                Console.WriteLine($"    Papier     : {media.PaperRemainingMm / 1000:0.00} m restants " +
+                                  $"({media.PaperRemainingMm:0} mm)");
             }
 
             if (info.Supplies is { } supplies)
