@@ -89,6 +89,10 @@ int ProbeDe100(string[] argv)
 {
     Section("Minilab Fuji Frontier DE100 (PModuleIF.dll)");
 
+    // le SDK vit dans le dossier de DiLand, pas à côté de cet outil
+    var sdk = De100Driver.LocateSdk();
+    Console.WriteLine(sdk is null ? "  SDK Fuji : introuvable" : $"  SDK Fuji : {sdk}");
+
     if (!De100Driver.IsSdkInstalled())
     {
         Console.WriteLine("  SDK Fuji absent : PModuleIF.dll introuvable depuis ce dossier.");
@@ -109,11 +113,30 @@ int ProbeDe100(string[] argv)
         foreach (var machineId in machines)
         {
             var info = driver.GetPrinterInfo(machineId);
-            Console.WriteLine($"  Machine '{machineId}' — enregistrement {info.RegistrationNumber}");
-            Console.WriteLine($"    État    : {info.Status}");
-            Console.WriteLine($"    Prête   : {(driver.IsReady(machineId) ? "oui" : "non")}");
-            foreach (var mag in info.Magazines)
-                Console.WriteLine($"    Magasin {mag.Index} : {mag.MagazineType}, {mag.PaperWidthMm}×{mag.PaperHeightMm} mm");
+            Console.WriteLine($"  Machine '{machineId}' — {info.Model} (série {info.SerialNumber})");
+            Console.WriteLine($"    État       : {info.Status}   Prête : {(driver.IsReady(machineId) ? "oui" : "non")}");
+            Console.WriteLine($"    Réseau     : {info.IpAddress}   Compteur : {info.TotalPrintCount} tirages");
+
+            if (info.Media is { } media)
+            {
+                Console.WriteLine($"    Rouleau    : magasin {media.LoadingNumber}, type {media.MagazineType}, " +
+                                  $"{media.PaperWidthMm} mm, {media.Surface}");
+                Console.WriteLine($"    Papier     : {media.PaperRemainingMm:0} (unité brute du SDK) restant");
+            }
+
+            if (info.Supplies is { } supplies)
+            {
+                var encres = string.Join("   ", supplies.Inks.Select(i => $"{i.Name} {i.Level}"));
+                Console.WriteLine($"    Encres     : {encres}");
+                Console.WriteLine($"    {supplies.MaintenanceTank.Name} : {supplies.MaintenanceTank.Level}");
+            }
+
+            if (info.Formats.Count > 0)
+            {
+                Console.WriteLine("    Tirages restants par format :");
+                foreach (var f in info.Formats.Where(f => !f.Format.IsVariable))
+                    Console.WriteLine($"      {f.Format.Name,-8} {f.RemainingPrints,6}");
+            }
             Console.WriteLine();
         }
 

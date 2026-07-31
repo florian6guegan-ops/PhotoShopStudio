@@ -143,12 +143,70 @@ public sealed record De100PrintJob(
     bool HighQuality = false,
     string ColorMode = "");
 
-/// <summary>Identité et état d'un magasin (rouleau) chargé dans une machine.</summary>
-public sealed record De100Magazine(int Index, string MagazineType, double PaperWidthMm, double PaperHeightMm);
+/// <summary>Le rouleau chargé dans la machine.</summary>
+/// <param name="LoadingNumber">Numéro du magasin chargé, tel que déclaré par la machine.</param>
+/// <param name="MagazineType">Type de magasin.</param>
+/// <param name="PaperWidthMm">Largeur du rouleau : c'est elle qui détermine les formats tirables.</param>
+/// <param name="PaperHeightMm">Hauteur déclarée, quand la machine en donne une.</param>
+/// <param name="Surface">Finition du papier chargé.</param>
+/// <param name="PaperRemainingMm">Longueur de papier restante, en millimètres.</param>
+public sealed record De100Media(
+    int LoadingNumber,
+    string MagazineType,
+    int PaperWidthMm,
+    int PaperHeightMm,
+    De100Surface Surface,
+    double PaperRemainingMm);
 
-/// <summary>Instantané d'une machine DE100.</summary>
+/// <summary>Niveau d'un consommable, en pourcentage quand la machine le donne ainsi.</summary>
+/// <param name="Name">Libellé destiné à l'opérateur.</param>
+/// <param name="Level">Niveau restant tel que renvoyé par la machine.</param>
+public sealed record De100Supply(string Name, int Level);
+
+/// <summary>
+/// Consommables du DE100 : les quatre encres et la cartouche de maintenance.
+/// L'ordre des encres est celui du SDK — 1 jaune, 2 magenta, 3 cyan, 4 noir.
+/// </summary>
+/// <param name="Yellow">Encre jaune.</param>
+/// <param name="Magenta">Encre magenta.</param>
+/// <param name="Cyan">Encre cyan.</param>
+/// <param name="Black">Encre noire.</param>
+/// <param name="MaintenanceTank">Remplissage du bac de maintenance.</param>
+/// <param name="InkCount">Nombre d'encres déclaré par la machine.</param>
+public sealed record De100Supplies(
+    De100Supply Yellow,
+    De100Supply Magenta,
+    De100Supply Cyan,
+    De100Supply Black,
+    De100Supply MaintenanceTank,
+    int InkCount)
+{
+    /// <summary>Les quatre encres, dans l'ordre du SDK.</summary>
+    public IReadOnlyList<De100Supply> Inks => [Yellow, Magenta, Cyan, Black];
+
+    /// <summary>Encres dont le niveau est au plus <paramref name="seuil"/>.</summary>
+    public IEnumerable<De100Supply> InksBelow(int seuil) => Inks.Where(i => i.Level <= seuil);
+}
+
+/// <summary>Instantané complet d'une machine DE100 : état, papier, consommables, formats.</summary>
+/// <param name="MachineId">Identifiant machine (un caractère).</param>
+/// <param name="Status">État courant.</param>
+/// <param name="RegistrationNumber">Numéro d'enregistrement.</param>
+/// <param name="Model">Modèle, lu dans les informations d'installation.</param>
+/// <param name="SerialNumber">Numéro de série.</param>
+/// <param name="IpAddress">Adresse réseau de la machine.</param>
+/// <param name="TotalPrintCount">Compteur de tirages depuis la mise en service.</param>
+/// <param name="Media">Rouleau chargé, ou null si la machine n'en déclare pas.</param>
+/// <param name="Supplies">Encres et bac de maintenance, ou null si indisponibles.</param>
+/// <param name="Formats">Formats tirables avec le rouleau chargé, et tirages restants estimés.</param>
 public sealed record De100PrinterInfo(
     char MachineId,
     De100PrinterStatus Status,
     string RegistrationNumber,
-    IReadOnlyList<De100Magazine> Magazines);
+    string Model,
+    string SerialNumber,
+    string IpAddress,
+    long TotalPrintCount,
+    De100Media? Media,
+    De100Supplies? Supplies,
+    IReadOnlyList<De100FormatAvailability> Formats);

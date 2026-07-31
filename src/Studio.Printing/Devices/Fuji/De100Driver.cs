@@ -145,29 +145,80 @@ public sealed class De100Driver : IDisposable
         Check(De100Interop.PIF_DevSetCallbackAddress(machineId, _eventCallback, _orderCallback),
             nameof(De100Interop.PIF_DevSetCallbackAddress));
 
-    /// <summary>Lit l'état d'une machine et le contenu de ses magasins.</summary>
+    /// <summary>
+    /// Instantané complet d'une machine : état, rouleau chargé, encres, bac de maintenance
+    /// et formats encore tirables.
+    ///
+    /// Attention au piège du SDK : <c>LoadingNum</c> n'est pas un NOMBRE de magasins mais le
+    /// NUMÉRO du magasin chargé. Toutes les propriétés indexées se lisent avec cette
+    /// valeur — c'est ainsi que procède le pilote de DiLand.
+    /// </summary>
     public De100PrinterInfo GetPrinterInfo(char machineId)
     {
         var handle = IntPtr.Zero;
         Check(De100Interop.PIF_DevGetPrinterInfo(machineId, ref handle), nameof(De100Interop.PIF_DevGetPrinterInfo));
+
+        De100PrinterStatus status;
+        string regNum, serial;
+        long printCount;
+        De100Media? media = null;
+        De100Supplies? supplies = null;
+
         try
         {
-            var loadingNum = ReadInt(handle, "LoadingNum");
-            // les proprietes indexees du SDK Fuji sont numerotees a partir de 1
-            var status = (De100PrinterStatus)ReadIndexedInt(handle, "PrinterStatus", 1);
-            var regNum = ReadValue(handle, "RegNum");
+            var loading = ReadValue(handle, "LoadingNum");
+            var n = uint.TryParse(loading, out var parsed) ? parsed : 0u;
 
-            var magazines = new List<De100Magazine>();
-            for (uint i = 1; i <= Math.Min(loadingNum, MaxMagazines); i++)
+            status = (De100PrinterStatus)ReadIndexedInt(handle, "PrinterStatus", n);
+            regNum = ReadValue(handle, "RegNum");
+            serial = ReadValue(handle, "SerialNumber");
+            printCount = long.TryParse(ReadValue(handle, "TotalPrintCountAS"), NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var count) ? count : 0;
+
+            if (!string.IsNullOrEmpty(loading))
             {
-                magazines.Add(new De100Magazine(
-                    (int)i,
-                    ReadIndexedValue(handle, "MagazineType", i),
-                    ReadIndexedDouble(handle, "PaperWidth", i),
-                    ReadIndexedDouble(handle, "PaperHeight", i)));
-            }
+                media = new De100Media(
+                    LoadingNumber: (int)n,
+                    MagazineType: ReadIndexedValue(handle, "MagazineType", n),
+                    PaperWidthMm: (int)Math.Round(ReadIndexedDouble(handle, "PaperWidth", n)),
+                    PaperHeightMm: (int)Math.Round(ReadIndexedDouble(handle, "PaperHeight", n)),
+                    Surface: (De100Surface)ReadIndexedInt(handle, "Surface", n),
+                    PaperRemainingMm: ReadIndexedDouble(handle, "PaperRest", n));
 
-            return new De100PrinterInfo(machineId, status, regNum, magazines);
+                supplies = new De100Supplies(
+                    Yellow: new De100Supply("Jaune", ReadIndexedInt(handle, "InkRemain", 1)),
+                    Magenta: new De100Supply("Magenta", ReadIndexedInt(handle, "InkRemain", 2)),
+                    Cyan: new De100Supply("Cyan", ReadIndexedInt(handle, "InkRemain", 3)),
+                    Black: new De100Supply("Noir", ReadIndexedInt(handle, "InkRemain", 4)),
+                    MaintenanceTank: new De100Supply("Bac de maintenance", (int)ReadInt(handle, "MaintenanceTank")),
+                    InkCount: (int)ReadInt(handle, "InkNum"));
+            }
+        }
+        finally
+        {
+            De100Interop.PHIF_ReleaseHandle(handle);
+        }
+
+        // modèle, type et adresse réseau vivent dans un second jeu d'informations
+        var (model, ip) = ReadSetupInfo(machineId);
+
+        var formats = media is null
+            ? []
+            : De100Formats.Estimate(media.PaperWidthMm, media.PaperRemainingMm);
+
+        return new De100PrinterInfo(machineId, status, regNum, model, serial, ip, printCount,
+            media, supplies, formats);
+    }
+
+    private static (string Model, string IpAddress) ReadSetupInfo(char machineId)
+    {
+        var handle = IntPtr.Zero;
+        if (De100Interop.PIF_DevGetSetupInfo(machineId, ref handle) != (int)PifResult.Ok)
+            return ("", "");
+
+        try
+        {
+            return (ReadValue(handle, "PrinterName"), ReadValue(handle, "IPAddress"));
         }
         finally
         {
