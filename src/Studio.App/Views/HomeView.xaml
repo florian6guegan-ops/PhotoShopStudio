@@ -56,6 +56,7 @@
 
         <UniformGrid Grid.Row="1" Columns="3" Rows="3">
             <Button Style="{StaticResource Tuile}" Click="OnNewOrder"
+                    AutomationProperties.Name="Nouvelle commande"
                     Background="{StaticResource AccentBrush}">
                 <StackPanel>
                     <TextBlock Text="Nouvelle commande" Style="{StaticResource TuileTitre}"
@@ -65,7 +66,8 @@
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnPhoneUpload">
+            <Button Style="{StaticResource Tuile}" Click="OnPhoneUpload"
+                    AutomationProperties.Name="Photos d'un téléphone">
                 <StackPanel>
                     <TextBlock Text="Photos d'un téléphone" Style="{StaticResource TuileTitre}"/>
                     <TextBlock Text="Le client envoie ses photos depuis son mobile"
@@ -73,7 +75,8 @@
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnIdPhoto">
+            <Button Style="{StaticResource Tuile}" Click="OnIdPhoto"
+                    AutomationProperties.Name="Photos d'identité">
                 <StackPanel>
                     <TextBlock Text="Photos d'identité" Style="{StaticResource TuileTitre}"/>
                     <TextBlock Text="Planche aux normes, 274 documents connus"
@@ -81,7 +84,8 @@
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnOrders">
+            <Button Style="{StaticResource Tuile}" Click="OnOrders"
+                    AutomationProperties.Name="Commandes du jour">
                 <StackPanel>
                     <TextBlock Text="Commandes du jour" Style="{StaticResource TuileTitre}"/>
                     <TextBlock Text="Suivre, réimprimer, imprimer un ticket"
@@ -89,7 +93,8 @@
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnMachineStatus">
+            <Button Style="{StaticResource Tuile}" Click="OnMachineStatus"
+                    AutomationProperties.Name="État des machines">
                 <StackPanel>
                     <TextBlock Text="État des machines" Style="{StaticResource TuileTitre}"/>
                     <TextBlock Text="Papier, encres, tirages restants par format"
@@ -97,7 +102,8 @@
                 </StackPanel>
             </Button>
 
-            <Button x:Name="LargeFormatButton" Style="{StaticResource Tuile}" Click="OnLargeFormatQueue">
+            <Button x:Name="LargeFormatButton" Style="{StaticResource Tuile}" Click="OnLargeFormatQueue"
+                    AutomationProperties.Name="Agrandissements à tirer">
                 <StackPanel>
                     <TextBlock x:Name="LargeFormatTitle" Text="Agrandissements à tirer"
                                Style="{StaticResource TuileTitre}"/>
@@ -106,14 +112,16 @@
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnCatalog">
+            <Button Style="{StaticResource Tuile}" Click="OnCatalog"
+                    AutomationProperties.Name="Catalogue et imprimantes">
                 <StackPanel>
                     <TextBlock Text="Catalogue et imprimantes" Style="{StaticResource TuileTitre}"/>
                     <TextBlock Text="Formats, prix, finitions" Style="{StaticResource TuileSousTitre}"/>
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnStats">
+            <Button Style="{StaticResource Tuile}" Click="OnStats"
+                    AutomationProperties.Name="Statistiques">
                 <StackPanel>
                     <TextBlock Text="Statistiques" Style="{StaticResource TuileTitre}"/>
                     <TextBlock Text="Ventes et volumes" Style="{StaticResource TuileSousTitre}"/>

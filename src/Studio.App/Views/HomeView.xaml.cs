@@ -28,7 +28,7 @@ public partial class HomeView : UserControl
         Navigator.Go(new LargeFormatQueueView(), "Agrandissements à tirer");
 
     private void OnNewOrder(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new SourcePickerView(), "Nouvelle commande — choisir le support");
+        Navigator.Go(new ProductTypeView(), "Nouvelle commande");
 
     private void OnPhoneUpload(object sender, RoutedEventArgs e) =>
         Navigator.Go(new PhoneUploadView(), "Photos depuis un téléphone");
