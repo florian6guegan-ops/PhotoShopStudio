@@ -21,15 +21,23 @@ public partial class PhotoGridView : UserControl
     private CancellationTokenSource? _thumbnailCts;
     private int _quantity = 1;
 
-    public PhotoGridView(string rootPath)
+    /// <param name="rootPath">Dossier des photos à proposer.</param>
+    /// <param name="produitParDefaut">
+    /// Format déjà choisi en amont, comme dans le parcours de DiLand. Vide = premier
+    /// produit du catalogue, l'opérateur choisira dans la liste.
+    /// </param>
+    public PhotoGridView(string rootPath, string? produitParDefaut = null)
     {
         _rootPath = rootPath;
         InitializeComponent();
 
-        ProductCombo.ItemsSource = App.Services.Catalog.Enabled
-            .Select(p => new ProductChoice(p))
-            .ToList();
-        ProductCombo.SelectedIndex = 0;
+        var choix = App.Services.Catalog.Enabled.Select(p => new ProductChoice(p)).ToList();
+        ProductCombo.ItemsSource = choix;
+
+        var prechoisi = produitParDefaut is null
+            ? -1
+            : choix.FindIndex(c => c.Product.Code.Equals(produitParDefaut, StringComparison.OrdinalIgnoreCase));
+        ProductCombo.SelectedIndex = prechoisi >= 0 ? prechoisi : 0;
 
         Loaded += async (_, _) =>
         {

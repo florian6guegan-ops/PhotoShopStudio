@@ -18,7 +18,7 @@ public partial class ProductTypeView : UserControl
     public ProductTypeView() => InitializeComponent();
 
     private void OnTirages(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new SourcePickerView(), "Tirages — choisir le support");
+        Navigator.Go(new PrintFamilyView(), "Tirages");
 
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
         Navigator.Go(new SourcePickerView(root =>
