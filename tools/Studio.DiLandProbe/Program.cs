@@ -65,6 +65,31 @@ foreach (var commande in commandes)
     Console.WriteLine();
 }
 
+// Reprise à blanc : est-ce que Studio saurait refaire ces commandes ?
+// Rien n'est créé ici — on vérifie seulement que chaque produit vendu en borne a son
+// équivalent au catalogue, car un produit inconnu ferait perdre une ligne de commande.
+var cataloguePath = Path.Combine(@"D:\PhotoStudioData", "catalog", "products.json");
+if (File.Exists(cataloguePath))
+{
+    var catalogue = Studio.Core.Catalog.ProductCatalog.Load(cataloguePath).All.ToList();
+    var essai = new DiLandImporter(depot, commandes: null!, catalogue, registrePath: "");
+
+    var produits = depot.ReadKioskOrdersAfter(0, 4000)
+        .SelectMany(c => depot.LinesOf(c))
+        .GroupBy(l => l.ProductName)
+        .OrderByDescending(g => g.Count())
+        .ToList();
+
+    Console.WriteLine($"Produits vendus en borne : {produits.Count}");
+    foreach (var groupe in produits)
+    {
+        var trouve = essai.MatchProduct(groupe.Key);
+        Console.WriteLine($"  {groupe.Key,-22} {groupe.Count(),3} ligne(s)  → "
+            + (trouve is null ? "AUCUN PRODUIT AU CATALOGUE" : $"{trouve.Code} ({trouve.Output})"));
+    }
+    Console.WriteLine();
+}
+
 // la garantie qui compte : on n'a pas touché à DiLand
 var empreinteApres = Empreinte(depot.DatabasePath);
 Console.WriteLine(empreinteAvant == empreinteApres
