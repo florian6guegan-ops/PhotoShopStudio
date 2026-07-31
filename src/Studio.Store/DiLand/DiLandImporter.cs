@@ -145,6 +145,85 @@ public sealed class DiLandImporter
         return new DiLandImportOutcome(order, creee, avertissements);
     }
 
+    /// <summary>Ce qu'il faut pour ouvrir une commande de borne dans l'écran des photos.</summary>
+    /// <param name="PhotosDirectory">Dossier où les photos ont été recopiées.</param>
+    /// <param name="ProductCode">Produit majoritaire de la commande, à présélectionner.</param>
+    /// <param name="PhotoCount">Nombre de photos recopiées.</param>
+    public sealed record StagedOrder(string PhotosDirectory, string? ProductCode, int PhotoCount);
+
+    /// <summary>
+    /// Recopie les photos d'une commande de borne dans un dossier de travail, pour qu'on
+    /// puisse les recadrer et les corriger avant de tirer.
+    ///
+    /// On recopie plutôt que de travailler sur place : le dossier de DiLand contient aussi
+    /// ses propres dérivés, qu'il ne faut pas montrer, et surtout ses fichiers doivent
+    /// rester intacts puisqu'il peut encore tirer la commande de son côté.
+    ///
+    /// Une photo commandée en plusieurs exemplaires n'est recopiée qu'une fois : la
+    /// quantité se règle ensuite dans l'écran des photos.
+    /// </summary>
+    public StagedOrder Stage(DiLandOrder order, string workDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        var destination = Path.Combine(workDirectory, order.DirectoryName);
+        Directory.CreateDirectory(destination);
+
+        var lignes = _depot.LinesOf(order);
+
+        // une même photo peut figurer sur deux lignes — commandée en 10x15 et en 13x18 par
+        // exemple. On ne la met à disposition qu'une fois, et on la compte une fois
+        var deposees = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var photo in lignes.SelectMany(l => l.Photos))
+        {
+            var source = _depot.PhotoPath(order, photo);
+            if (!File.Exists(source)) continue;
+
+            var cible = Path.Combine(destination, photo.FileName);
+            if (!File.Exists(cible)) File.Copy(source, cible);
+            deposees.Add(photo.FileName);
+        }
+
+        // le produit majoritaire : sur une commande de soixante 10x15 et d'un 13x18,
+        // présélectionner le 10x15 évite soixante corrections à la main
+        var majoritaire = lignes
+            .Where(l => MatchProduct(l.ProductName) is not null)
+            .OrderByDescending(l => l.PrintCount)
+            .FirstOrDefault();
+
+        return new StagedOrder(
+            destination,
+            majoritaire is null ? null : MatchProduct(majoritaire.ProductName)!.Code,
+            deposees.Count);
+    }
+
+    /// <summary>
+    /// Marque une commande comme prise en charge sans rien créer : elle a été ouverte pour
+    /// être retouchée, la commande Studio naîtra à l'impression.
+    /// </summary>
+    public void MarkTaken(DiLandOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        Enregistrer(order.Oid);
+    }
+
+    /// <summary>
+    /// Commandes de bornes déjà prises en charge, de la plus récente à la plus ancienne.
+    /// Sert à les retrouver quand une reprise a été faite par erreur ou abandonnée.
+    /// </summary>
+    public IReadOnlyList<DiLandOrder> Taken(int limit = 30)
+    {
+        if (!_depot.RefreshSnapshot()) return [];
+
+        var registre = Registre();
+        return _depot.ReadKioskOrdersAfter(0, 4000)
+            .Where(c => registre.Contains(c.Oid))
+            .Reverse()
+            .Take(limit)
+            .ToList();
+    }
+
     /// <summary>
     /// Retrouve le produit Studio correspondant au produit DiLand.
     ///

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -28,18 +30,59 @@ public partial class KioskOrdersView : UserControl
     private void Refresh()
     {
         var importateur = App.Services.DiLandImport;
-        var attente = importateur.Pending();
+        var dejaReprises = ShowTakenCheck.IsChecked == true;
+        var commandes = dejaReprises ? importateur.Taken() : importateur.Pending();
 
         // le détail vient des lignes : sans le produit et le nombre de tirages,
         // l'opérateur ne sait pas ce qu'il reprend
-        OrdersList.ItemsSource = attente.Select(commande => new Row(
+        OrdersList.ItemsSource = commandes.Select(commande => new Row(
             commande,
-            $"#{commande.Number} — {commande.Date:HH:mm}",
+            $"#{commande.Number} — {commande.Date:dd/MM HH:mm}",
             Describe(importateur, commande))).ToList();
 
-        StatusText.Text = attente.Count == 0
-            ? "Aucune commande de borne en attente. Les commandes du comptoir ne sont pas reprises : elles sont déjà saisies ici."
-            : $"{attente.Count} commande(s) de borne à reprendre. DiLand garde les siennes.";
+        StatusText.Text = dejaReprises
+            ? $"{commandes.Count} commande(s) déjà reprise(s). Les rouvrir ne crée pas de doublon tant qu'on n'imprime pas."
+            : commandes.Count == 0
+                ? "Aucune commande de borne en attente. Les commandes du comptoir ne sont pas reprises : elles sont déjà saisies ici."
+                : $"{commandes.Count} commande(s) de borne à reprendre. DiLand garde les siennes.";
+    }
+
+    /// <summary>
+    /// Ouvre les photos de la commande pour les recadrer et les corriger avant de tirer.
+    ///
+    /// Rien n'est créé ici : la commande Studio naîtra à l'impression, comme pour une
+    /// commande faite au comptoir. La commande de borne est marquée comme prise en charge
+    /// pour ne pas rester dans la liste, et reste consultable via la case du bas.
+    /// </summary>
+    private void OnOpen(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not Row ligne) return;
+
+        var importateur = App.Services.DiLandImport;
+        var travail = Path.Combine(App.Services.DataRoot, "diland", "travail");
+
+        try
+        {
+            var prete = importateur.Stage(ligne.Order, travail);
+
+            if (prete.PhotoCount == 0)
+            {
+                MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
+                    "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            importateur.MarkTaken(ligne.Order);
+
+            Navigator.Go(new PhotoGridView(prete.PhotosDirectory, prete.ProductCode),
+                $"Borne #{ligne.Order.Number} — {prete.PhotoCount} photo(s)");
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Commandes des bornes : ouverture impossible", ex);
+            MessageBox.Show($"Ouverture impossible : {ex.Message}",
+                "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private static string Describe(DiLandImporter importateur, DiLandOrder commande)

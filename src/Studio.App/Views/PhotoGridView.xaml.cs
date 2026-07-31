@@ -209,6 +209,10 @@ public partial class PhotoGridView : UserControl
         CropButton.IsEnabled = courante;
         CropButton.Content = courante ? $"Recadrer {_photoCourante!.Name}" : "Recadrer";
         CropAllButton.IsEnabled = selected.Count(p => p.Product is not null) > 0;
+
+        // les corrections ne dépendent pas du produit : une photo cochée suffit
+        AdjustButton.IsEnabled = selected.Count > 0;
+        AdjustButton.Content = selected.Count > 1 ? $"Corriger ({selected.Count})" : "Corriger";
     }
 
     // ----- bandeau : s'applique à toutes les photos cochées -----
@@ -270,6 +274,36 @@ public partial class PhotoGridView : UserControl
         if (aRegler.Count == 0) return;
 
         EditSequence(aRegler, 0);
+    }
+
+    /// <summary>
+    /// Corrections appliquées à toutes les photos cochées d'un coup — le geste de DiLand,
+    /// avec des réglages qui vont plus loin que la luminosité et le contraste.
+    ///
+    /// Les réglages de départ sont ceux de la première photo cochée : rouvrir l'écran
+    /// après une correction doit montrer où on en était, pas repartir de zéro.
+    /// </summary>
+    private void OnAdjust(object sender, RoutedEventArgs e)
+    {
+        var aCorriger = _photos.Where(p => p.Selected).ToList();
+        if (aCorriger.Count == 0) return;
+
+        var depart = (_photoCourante is { Selected: true } courante ? courante : aCorriger[0]).Adjustments;
+
+        Navigator.Go(new AdjustView(
+                aCorriger.Select(p => p.Path).ToList(),
+                depart,
+                reglages =>
+                {
+                    foreach (var photo in aCorriger)
+                    {
+                        // un exemplaire par photo : un objet partagé ferait qu'un réglage
+                        // ultérieur sur l'une déborderait sur toutes les autres
+                        photo.Adjustments = reglages.Clone();
+                        photo.RefreshThumbnail();
+                    }
+                }),
+            aCorriger.Count > 1 ? $"Corrections — {aCorriger.Count} photos" : "Corrections");
     }
 
     private void EditSequence(List<PhotoItem> photos, int index)
@@ -428,7 +462,10 @@ public partial class PhotoGridView : UserControl
             RefreshThumbnail();
         }
 
-        /// <summary>Vignette affichée = vignette source + rotation utilisateur + recadrage choisi.</summary>
+        /// <summary>
+        /// Vignette affichée = vignette source + rotation utilisateur + recadrage choisi
+        /// + corrections, pour que la grille montre la photo telle qu'elle sortira.
+        /// </summary>
         public void RefreshThumbnail()
         {
             if (_sourceThumbnail is null) return;
@@ -447,7 +484,10 @@ public partial class PhotoGridView : UserControl
             }
 
             if (display.CanFreeze) display.Freeze();
-            Thumbnail = display;
+
+            // les corrections en dernier : elles s'appliquent à ce qui sera réellement
+            // tiré, donc après le recadrage et la rotation
+            Thumbnail = ThumbnailAdjuster.Apply(display, Adjustments);
         }
 
         public bool Selected

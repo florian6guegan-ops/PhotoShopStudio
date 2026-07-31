@@ -210,6 +210,83 @@ public class DiLandImporterTests : IDisposable
         Assert.Empty(Importateur().Pending());
     }
 
+    // — ouvrir pour retoucher —
+
+    /// <summary>
+    /// Ouvrir une commande recopie ses photos chez nous : celles de DiLand doivent rester
+    /// intactes, puisqu'il peut encore tirer la commande de son côté.
+    /// </summary>
+    [Fact]
+    public void Ouvrir_recopie_les_photos_sans_toucher_a_celles_de_DiLand()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+        var dossierDiLand = Path.Combine(Depot, "Orders", "20260731-1509-borne.COM", "F");
+        var avant = Directory.GetFiles(dossierDiLand).OrderBy(f => f).ToList();
+
+        var prete = importateur.Stage(borne, Path.Combine(_root, "travail"));
+
+        Assert.Equal(2, prete.PhotoCount);
+        Assert.Equal(2, Directory.GetFiles(prete.PhotosDirectory).Length);
+        Assert.Equal(avant, Directory.GetFiles(dossierDiLand).OrderBy(f => f).ToList());
+    }
+
+    /// <summary>
+    /// Le produit majoritaire est présélectionné : sur une commande de soixante 10x15 et
+    /// d'un autre format, c'est le 10x15 qu'il faut proposer.
+    /// </summary>
+    [Fact]
+    public void Ouvrir_preselectionne_le_produit_majoritaire()
+    {
+        var importateur = Importateur();
+
+        var prete = importateur.Stage(importateur.Pending().Single(), Path.Combine(_root, "travail"));
+
+        Assert.Equal("10x15", prete.ProductCode);
+    }
+
+    /// <summary>Ouvrir deux fois ne doit pas faire échouer la recopie ni dupliquer les fichiers.</summary>
+    [Fact]
+    public void Ouvrir_deux_fois_ne_duplique_pas_les_photos()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+        var travail = Path.Combine(_root, "travail");
+
+        importateur.Stage(borne, travail);
+        var seconde = importateur.Stage(borne, travail);
+
+        Assert.Equal(2, Directory.GetFiles(seconde.PhotosDirectory).Length);
+    }
+
+    /// <summary>
+    /// Ouvrir ne crée aucune commande : elle naîtra à l'impression, comme au comptoir.
+    /// Mais la commande sort de la liste d'attente, pour ne pas être traitée deux fois.
+    /// </summary>
+    [Fact]
+    public void Ouvrir_sort_la_commande_de_l_attente_sans_rien_creer()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+
+        importateur.MarkTaken(borne);
+
+        Assert.Empty(importateur.Pending());
+        Assert.Equal([borne.Oid], importateur.Taken().Select(c => c.Oid));
+        Assert.False(Directory.Exists(Path.Combine(_root, "orders", borne.Date.Year.ToString())));
+    }
+
+    [Fact]
+    public void Les_commandes_deja_reprises_restent_consultables()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+
+        importateur.Import(borne);
+
+        Assert.Contains(importateur.Taken(), c => c.Oid == borne.Oid);
+    }
+
     // — choix du produit —
 
     /// <summary>À nom égal, c'est le minilab qui tire les commandes de bornes.</summary>

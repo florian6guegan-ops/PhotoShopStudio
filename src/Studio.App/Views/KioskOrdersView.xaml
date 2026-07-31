@@ -32,9 +32,14 @@
                                                Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"
                                                TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="Reprendre" Padding="22,10" FontSize="15"
-                                        VerticalAlignment="Center" Click="OnImport" Tag="{Binding}"
-                                        ToolTip="Crée la commande dans Studio. DiLand garde la sienne."/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="Ouvrir" Padding="22,10" FontSize="15"
+                                            Click="OnOpen" Tag="{Binding}"
+                                            ToolTip="Ouvre les photos pour les recadrer et les corriger avant de tirer."/>
+                                    <Button Content="Reprendre" Padding="18,10" FontSize="15" Margin="10,0,0,0"
+                                            Click="OnImport" Tag="{Binding}"
+                                            ToolTip="Crée la commande telle quelle, sans retouche. DiLand garde la sienne."/>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -46,7 +51,11 @@
             <Button Content="Actualiser" Padding="22,10" FontSize="15" Click="OnRefresh"/>
             <Button Content="Tout reprendre" Padding="22,10" FontSize="15" Margin="12,0,0,0"
                     Click="OnImportAll"
-                    ToolTip="Reprend toutes les commandes de bornes en attente."/>
+                    ToolTip="Reprend toutes les commandes de bornes en attente, sans retouche."/>
+            <CheckBox x:Name="ShowTakenCheck" Content="Voir les commandes déjà reprises"
+                      VerticalAlignment="Center" Margin="24,0,0,0" FontSize="14"
+                      Foreground="{StaticResource TextBrush}"
+                      Checked="OnRefresh" Unchecked="OnRefresh"/>
         </StackPanel>
     </Grid>
 </UserControl>

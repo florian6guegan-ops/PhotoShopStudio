@@ -116,6 +116,10 @@
                             Padding="18,0" FontSize="17" Margin="0,0,20,0" IsEnabled="False"
                             ToolTip="Passer en revue toutes les photos cochées, l'une après l'autre"
                             Click="OnCropAll">Recadrer tout</Button>
+                    <Button x:Name="AdjustButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="18,0" FontSize="17" Margin="0,0,20,0" IsEnabled="False"
+                            ToolTip="Exposition, ombres, hautes lumières, couleur — appliqués à toutes les photos cochées"
+                            Click="OnAdjust">Corriger</Button>
                     <TextBlock x:Name="TotalText" FontSize="24" FontWeight="Bold"
                                VerticalAlignment="Center" Margin="0,0,16,0"/>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
