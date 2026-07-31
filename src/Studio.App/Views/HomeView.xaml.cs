@@ -15,9 +15,9 @@ public partial class HomeView : UserControl
         Loaded += (_, _) =>
         {
             var pending = LargeFormatQueueView.PendingCount();
-            LargeFormatButton.Content = pending > 0
-                ? $"🖼  Agrandissements à tirer ({pending})"
-                : "🖼  Agrandissements à tirer";
+            LargeFormatTitle.Text = pending > 0
+                ? $"Agrandissements à tirer ({pending})"
+                : "Agrandissements à tirer";
         };
     }
 
