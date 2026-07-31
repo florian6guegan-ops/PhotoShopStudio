@@ -45,8 +45,11 @@ public sealed class Product
     public string Name { get; set; } = "";
     public double WidthMm { get; set; }
     public double HeightMm { get; set; }
-    /// <summary>Nom exact de la file d'impression Windows.</summary>
+    /// <summary>Nom exact de la file d'impression Windows. Vide si <see cref="Output"/> vaut ManualFile.</summary>
     public string PrinterName { get; set; } = "";
+
+    /// <summary>Par où sort le produit : file Windows, ou fichier repris à la main dans Photoshop.</summary>
+    public ProductOutput Output { get; set; } = ProductOutput.Printer;
     /// <summary>Canal logique (regroupe les enveloppes) ; par défaut le nom de l'imprimante.</summary>
     public string? PrinterChannel { get; set; }
     public int Dpi { get; set; } = 300;

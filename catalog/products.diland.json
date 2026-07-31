@@ -5,6 +5,7 @@
         "WidthMm":  102,
         "HeightMm":  102,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -35,6 +36,7 @@
         "WidthMm":  102,
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -65,6 +67,7 @@
         "WidthMm":  127,
         "HeightMm":  127,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fill",
@@ -80,6 +83,7 @@
         "WidthMm":  127,
         "HeightMm":  180,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fill",
@@ -95,6 +99,7 @@
         "WidthMm":  152,
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
@@ -110,6 +115,7 @@
         "WidthMm":  152,
         "HeightMm":  203,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
@@ -125,6 +131,7 @@
         "WidthMm":  152,
         "HeightMm":  304,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
@@ -140,8 +147,9 @@
         "WidthMm":  203,
         "HeightMm":  203,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
-        "Price":  7.9,
+        "Price":  7.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
         "Enabled":  true,
@@ -155,8 +163,9 @@
         "WidthMm":  203,
         "HeightMm":  256,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
-        "Price":  7.9,
+        "Price":  7.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
         "Enabled":  true,
@@ -170,6 +179,7 @@
         "WidthMm":  203,
         "HeightMm":  307,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
@@ -185,6 +195,7 @@
         "WidthMm":  102,
         "HeightMm":  102,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.9,
         "DefaultFit":  "Fit",
@@ -215,6 +226,7 @@
         "WidthMm":  102,
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.9,
         "DefaultFit":  "Fit",
@@ -245,6 +257,7 @@
         "WidthMm":  127,
         "HeightMm":  127,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fit",
@@ -260,6 +273,7 @@
         "WidthMm":  127,
         "HeightMm":  180,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fit",
@@ -275,6 +289,7 @@
         "WidthMm":  152,
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fit",
@@ -290,6 +305,7 @@
         "WidthMm":  152,
         "HeightMm":  203,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fit",
@@ -305,6 +321,7 @@
         "WidthMm":  203,
         "HeightMm":  203,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fit",
@@ -320,6 +337,7 @@
         "WidthMm":  203,
         "HeightMm":  256,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fit",
@@ -335,6 +353,7 @@
         "WidthMm":  203,
         "HeightMm":  307,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fit",
@@ -350,6 +369,7 @@
         "WidthMm":  80,
         "HeightMm":  102,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -380,6 +400,7 @@
         "WidthMm":  102,
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -409,157 +430,178 @@
         "Name":  "30x30",
         "WidthMm":  300,
         "HeightMm":  300,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "30x40",
         "Name":  "30x40",
         "WidthMm":  300,
         "HeightMm":  400,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  12.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "30x45",
         "Name":  "30x45",
         "WidthMm":  300,
         "HeightMm":  450,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "40x40",
         "Name":  "40x40",
         "WidthMm":  400,
         "HeightMm":  400,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "40x50",
         "Name":  "40x50",
         "WidthMm":  400,
         "HeightMm":  500,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "40x60",
         "Name":  "40x60",
         "WidthMm":  400,
         "HeightMm":  600,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "50x50",
         "Name":  "50x50",
         "WidthMm":  500,
         "HeightMm":  500,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "50x60",
         "Name":  "50x60",
         "WidthMm":  500,
         "HeightMm":  600,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "50x70",
         "Name":  "50x70",
         "WidthMm":  500,
         "HeightMm":  700,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "50x75",
         "Name":  "50x75",
         "WidthMm":  500,
         "HeightMm":  750,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  29.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "70x100",
         "Name":  "70x100",
         "WidthMm":  700,
         "HeightMm":  1000,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  0,
         "DefaultFit":  "Fill",
@@ -567,37 +609,42 @@
         "Enabled":  false,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "60x80",
         "Name":  "60x80",
         "WidthMm":  600,
         "HeightMm":  800,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  29.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "60x90",
         "Name":  "60x90",
         "WidthMm":  600,
         "HeightMm":  900,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
+        "PrinterName":  "",
+        "Output":  "ManualFile",
         "Dpi":  300,
         "Price":  35.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false,
+        "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Agrandissements (Photoshop)"
     },
     {
         "Code":  "10x15-dnp",
@@ -605,6 +652,7 @@
         "WidthMm":  105,
         "HeightMm":  156.1,
         "PrinterName":  "DP-DS620",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -635,6 +683,7 @@
         "WidthMm":  210,
         "HeightMm":  297,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fill",
@@ -650,6 +699,7 @@
         "WidthMm":  210,
         "HeightMm":  297,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0,
         "DefaultFit":  "Fill",
@@ -665,6 +715,7 @@
         "WidthMm":  180,
         "HeightMm":  240,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  6.9,
         "DefaultFit":  "Fill",
@@ -680,6 +731,7 @@
         "WidthMm":  105,
         "HeightMm":  156.1,
         "PrinterName":  "DP-DS620",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  10,
         "DefaultFit":  "Fill",
@@ -695,6 +747,7 @@
         "WidthMm":  102,
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
+        "Output":  "Printer",
         "Dpi":  300,
         "Price":  0.9,
         "DefaultFit":  "Fit",
@@ -717,21 +770,6 @@
                                "FromQuantity":  50,
                                "UnitPrice":  0.5
                            }
-                       ]
-    },
-    {
-        "Code":  "30x40-2",
-        "Name":  "30x40",
-        "WidthMm":  300,
-        "HeightMm":  400,
-        "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
-        "Dpi":  300,
-        "Price":  12.9,
-        "DefaultFit":  "Fill",
-        "BorderMm":  0,
-        "Enabled":  false,
-        "PriceTiers":  [
-
                        ]
     }
 ]

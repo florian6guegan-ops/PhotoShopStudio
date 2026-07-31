@@ -30,7 +30,7 @@ public class DilandCatalogTests
     public void Le_catalogue_se_charge()
     {
         Assert.NotEmpty(Catalogue.Value.All);
-        Assert.Equal(41, Catalogue.Value.All.Count);
+        Assert.Equal(40, Catalogue.Value.All.Count);
     }
 
     [Fact]
@@ -95,6 +95,10 @@ public class DilandCatalogTests
     [InlineData("13x18", 1.50)]
     [InlineData("15x20", 1.90)]
     [InlineData("18x24", 6.90)]
+    // 20×20 et 20×25 ne figurent pas sur l'affiche : alignés sur le 20×30 à la demande
+    // de l'exploitant (31/07/2026)
+    [InlineData("20x20", 7.50)]
+    [InlineData("20x25", 7.50)]
     [InlineData("20x30", 7.50)]
     [InlineData("30x40", 12.90)]
     [InlineData("40x50", 19.90)]
@@ -181,23 +185,55 @@ public class DilandCatalogTests
     }
 
     [Fact]
-    public void Les_produits_actifs_designent_une_imprimante()
+    public void Les_produits_envoyes_au_spouleur_designent_une_imprimante()
     {
-        Assert.All(Catalogue.Value.Enabled, p => Assert.False(string.IsNullOrWhiteSpace(p.PrinterName),
+        var automatiques = Catalogue.Value.Enabled.Where(p => p.Output == ProductOutput.Printer);
+
+        Assert.All(automatiques, p => Assert.False(string.IsNullOrWhiteSpace(p.PrinterName),
             $"{p.Code} est actif sans imprimante"));
     }
 
     /// <summary>
-    /// Les agrandissements sortaient d'un profil DiLand qui ne nommait aucune file Windows :
-    /// ils restent désactivés tant que l'imprimante n'est pas confirmée sur place.
+    /// Au-delà du 21×29,7 la boutique tire sur l'Epson SC-P800, mais depuis l'outil
+    /// d'impression de Photoshop. Ces produits sortent donc en fichiers et ne doivent
+    /// jamais partir au spouleur Windows.
     /// </summary>
     [Fact]
-    public void Les_agrandissements_restent_desactives()
+    public void Les_grands_formats_passent_par_Photoshop()
     {
         var grands = Catalogue.Value.All.Where(p => p.WidthMm >= 300).ToList();
 
         Assert.NotEmpty(grands);
-        Assert.All(grands, p => Assert.False(p.Enabled, $"{p.Code} devrait rester désactivé"));
+        Assert.All(grands, p =>
+        {
+            Assert.Equal(ProductOutput.ManualFile, p.Output);
+            Assert.True(string.IsNullOrEmpty(p.PrinterName), $"{p.Code} ne doit désigner aucune file Windows");
+        });
+    }
+
+    /// <summary>
+    /// Une enveloppe ne peut pas mélanger circuit automatique et circuit manuel :
+    /// les produits repris dans Photoshop doivent donc avoir leur propre canal.
+    /// </summary>
+    [Fact]
+    public void Le_circuit_manuel_a_son_propre_canal()
+    {
+        var manuels = Catalogue.Value.All.Where(p => p.Output == ProductOutput.ManualFile).ToList();
+        var automatiques = Catalogue.Value.All.Where(p => p.Output == ProductOutput.Printer).ToList();
+
+        Assert.NotEmpty(manuels);
+        Assert.All(manuels, p => Assert.Equal("Agrandissements (Photoshop)", p.Channel));
+        Assert.DoesNotContain(automatiques, p => p.Channel == "Agrandissements (Photoshop)");
+    }
+
+    [Fact]
+    public void Les_formats_jusqu_au_A4_restent_sur_le_minilab()
+    {
+        // le 21×29,7 est la limite : lui passe encore par le DE100
+        var produit = Get("21x29-7");
+
+        Assert.Equal(ProductOutput.Printer, produit.Output);
+        Assert.Equal("FUJIFILM DE100", produit.PrinterName);
     }
 
     [Fact]

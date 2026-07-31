@@ -14,6 +14,9 @@ public sealed record SpoolState(string Status, DateTimeOffset At)
     public const string Rendering = "Rendering";
     public const string Spooled = "Spooled";
     public const string Printed = "Printed";
+
+    /// <summary>Fichiers prêts, impression manuelle attendue (voir <see cref="ProductOutput.ManualFile"/>).</summary>
+    public const string AwaitingManualPrint = "AwaitingManualPrint";
 }
 
 /// <summary>
@@ -49,19 +52,29 @@ public sealed class PrintOrchestrator
                 $"L'enveloppe {order.DisplayNumber}/{envelope.Number} a déjà été envoyée à l'impression " +
                 "— confirmation opérateur requise pour réimprimer.");
 
+        var products = envelope.Lines.Select(l => _catalog.Require(l.ProductCode)).ToList();
+        var manualCount = products.Count(p => p.Output == ProductOutput.ManualFile);
+        if (manualCount > 0 && manualCount != products.Count)
+            throw new InvalidOperationException(
+                $"L'enveloppe {order.DisplayNumber}/{envelope.Number} mélange des produits envoyés au " +
+                "spouleur et des produits repris à la main dans Photoshop. Ces deux circuits doivent être " +
+                "séparés : donnez-leur des canaux d'impression distincts dans le catalogue.");
+        var manualPrinting = manualCount > 0;
+
         // une file sur le port `nul` avale les travaux sans rien imprimer : mieux vaut
         // refuser franchement que rendre, spouler et annoncer un succès imaginaire
-        foreach (var printerName in envelope.Lines
-                     .Select(l => _catalog.Require(l.ProductCode).PrinterName)
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        if (!manualPrinting)
         {
-            if (PrinterPorts.IsNullPort(printerName))
-                throw new InvalidOperationException(
-                    $"L'imprimante « {printerName} » est branchée sur le port « nul » : Windows accepte " +
-                    "les travaux et les jette, aucun tirage ne sortira.\n\n" +
-                    "C'est le cas des files DE100 installées par DiLand (le minilab est piloté par le SDK " +
-                    "Fuji, pas par le spouleur). Il faut d'abord donner un vrai port à cette imprimante, " +
-                    "ou choisir un produit imprimé sur la DS620.");
+            foreach (var printerName in products.Select(p => p.PrinterName).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (PrinterPorts.IsNullPort(printerName))
+                    throw new InvalidOperationException(
+                        $"L'imprimante « {printerName} » est branchée sur le port « nul » : Windows accepte " +
+                        "les travaux et les jette, aucun tirage ne sortira.\n\n" +
+                        "C'est le cas des files DE100 installées par DiLand (le minilab est piloté par le SDK " +
+                        "Fuji, pas par le spouleur). Il faut d'abord donner un vrai port à cette imprimante, " +
+                        "ou choisir un produit imprimé sur la DS620.");
+            }
         }
 
         WriteSpoolState(order, envelope, SpoolState.Rendering);
@@ -70,6 +83,18 @@ public sealed class PrintOrchestrator
         _store.AppendEvent(order, "render-start", $"env={envelope.Number}");
 
         var pages = RenderEnvelope(order, envelope);
+
+        // circuit manuel : les fichiers sont prêts, rien ne part au spouleur. L'opérateur
+        // les ouvre dans Photoshop et confirme ensuite via ConfirmPrinted.
+        if (manualPrinting)
+        {
+            WriteSpoolState(order, envelope, SpoolState.AwaitingManualPrint);
+            envelope.Status = EnvelopeStatus.AwaitingManualPrint;
+            _store.Save(order);
+            _store.AppendEvent(order, "awaiting-manual-print",
+                $"env={envelope.Number}, fichiers={pages.Sum(p => p.Copies)}, dossier={_store.GetRendersFolder(order)}");
+            return;
+        }
 
         // moment décisif : on grave « Spooled » sur disque AVANT de soumettre au spouleur
         WriteSpoolState(order, envelope, SpoolState.Spooled);
@@ -101,6 +126,22 @@ public sealed class PrintOrchestrator
             foreach (var envelope in order.Envelopes)
                 if (ReadSpoolState(order, envelope)?.Status == SpoolState.Spooled)
                     result.Add((order, envelope));
+        return result;
+    }
+
+    /// <summary>
+    /// Enveloppes rendues en fichiers et qui attendent d'être imprimées à la main depuis
+    /// Photoshop. Rien n'a été soumis à Windows : sans action de l'opérateur, elles
+    /// resteront dans cet état, ce qui est le comportement voulu.
+    /// </summary>
+    public List<(Order Order, Envelope Envelope, string Folder)> FindEnvelopesAwaitingManualPrint(
+        IEnumerable<Order> orders)
+    {
+        var result = new List<(Order, Envelope, string)>();
+        foreach (var order in orders)
+            foreach (var envelope in order.Envelopes)
+                if (ReadSpoolState(order, envelope)?.Status == SpoolState.AwaitingManualPrint)
+                    result.Add((order, envelope, _store.GetRendersFolder(order)));
         return result;
     }
 
