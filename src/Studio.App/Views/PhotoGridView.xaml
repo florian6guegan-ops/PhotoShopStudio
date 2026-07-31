@@ -56,7 +56,7 @@
                                      Tout tenait sur une seule ligne de 44 px : le bouton de recadrage
                                      s'y réduisait à un pictogramme que la police ne sait pas dessiner. -->
                                 <Border Grid.Row="1" CornerRadius="0,0,6,6"
-                                        Background="#33000000" Visibility="{Binding CartVisibility}">
+                                        Background="#1AFFFFFF" Visibility="{Binding CartVisibility}">
                                     <StackPanel Margin="5,4">
                                         <Button Style="{StaticResource FlatButton}" Height="30" Padding="6,0"
                                                 FontSize="13" HorizontalContentAlignment="Left"

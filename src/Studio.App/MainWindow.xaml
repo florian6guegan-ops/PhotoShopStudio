@@ -1,6 +1,7 @@
 <Window x:Class="Studio.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:Studio.App.Views"
         Title="Studio Photo — PHOTOCONCEPT"
         WindowState="Maximized"
         MinWidth="1024" MinHeight="700"
@@ -9,21 +10,27 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Barre d'en-tête : retour + titre -->
-        <Border Grid.Row="0" Background="{StaticResource AccentBrush}" Padding="16,10">
+        <Border Grid.Row="0" Background="#0C1116" Padding="16,10"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <Button x:Name="BackButton" DockPanel.Dock="Left" Click="OnBackClicked"
-                        Style="{StaticResource BigButton}" Background="{StaticResource AccentDarkBrush}"
+                        Style="{StaticResource FlatButton}"
                         MinWidth="140" MinHeight="56" FontSize="22" Visibility="Collapsed">
                     ← Retour
                 </Button>
-                <TextBlock x:Name="TitleText" Text="Studio Photo" Foreground="White"
+                <TextBlock x:Name="TitleText" Text="Studio Photo"
+                           Foreground="{StaticResource TitleBrush}"
                            FontSize="28" FontWeight="Bold" VerticalAlignment="Center" Margin="24,0,0,0"/>
             </DockPanel>
         </Border>
 
         <ContentControl x:Name="ScreenHost" Grid.Row="1" Margin="24"/>
+
+        <!-- Bandeau permanent des machines, comme dans DiLand -->
+        <v:MachineBarView x:Name="MachineBar" Grid.Row="2"/>
     </Grid>
 </Window>

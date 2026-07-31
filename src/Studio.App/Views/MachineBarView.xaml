@@ -1,0 +1,63 @@
+<UserControl x:Class="Studio.App.Views.MachineBarView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Background="#0C1116" BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0"
+            Padding="10,8">
+        <Grid>
+            <TextBlock x:Name="MessageText" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                       VerticalAlignment="Center" Margin="6,0"/>
+
+            <ItemsControl x:Name="MachinesList">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{Binding Fond}" CornerRadius="8" Margin="4" Padding="12,8">
+                            <DockPanel>
+                                <!-- lettre de la machine, comme le A / C de DiLand -->
+                                <Border DockPanel.Dock="Left" Width="44" Height="44" CornerRadius="6"
+                                        BorderBrush="#66FFFFFF" BorderThickness="2" Margin="0,0,12,0">
+                                    <TextBlock Text="{Binding Lettre}" FontSize="24" FontWeight="Bold"
+                                               Foreground="White" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+
+                                <!-- jauges d'encre à droite -->
+                                <ItemsControl DockPanel.Dock="Right" ItemsSource="{Binding Encres}"
+                                              VerticalAlignment="Center" Margin="12,0,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Width="10" Height="40" Margin="3,0" CornerRadius="2"
+                                                    Background="#33000000" VerticalAlignment="Center"
+                                                    ToolTip="{Binding Info}">
+                                                <Border VerticalAlignment="Bottom" CornerRadius="2"
+                                                        Background="{Binding Couleur}" Height="{Binding Hauteur}"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Nom}" FontSize="14" FontWeight="Bold"
+                                               Foreground="White" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Papier}" FontSize="13" Foreground="#DDFFFFFF"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Restant}" FontSize="13" Foreground="#DDFFFFFF"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </Border>
+</UserControl>

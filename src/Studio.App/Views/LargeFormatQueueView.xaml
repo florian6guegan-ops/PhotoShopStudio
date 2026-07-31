@@ -43,7 +43,8 @@
                                 <ItemsControl ItemsSource="{Binding Files}" Margin="0,14,0,0">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border BorderBrush="#DDDDDD" BorderThickness="0,1,0,0" Padding="0,10">
+                                            <Border BorderBrush="{StaticResource SeparatorBrush}"
+                                                    BorderThickness="0,1,0,0" Padding="0,10">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>

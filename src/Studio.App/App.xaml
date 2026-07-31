@@ -4,15 +4,20 @@
              StartupUri="MainWindow.xaml">
     <Application.Resources>
 
-        <!-- Palette sobre, fort contraste (lisibilité personnes âgées) -->
-        <SolidColorBrush x:Key="AccentBrush" Color="#1565C0"/>
-        <SolidColorBrush x:Key="AccentDarkBrush" Color="#0D47A1"/>
-        <SolidColorBrush x:Key="PageBrush" Color="#F4F6F8"/>
-        <SolidColorBrush x:Key="CardBrush" Color="White"/>
-        <SolidColorBrush x:Key="TextBrush" Color="#1A1A1A"/>
-        <SolidColorBrush x:Key="MutedBrush" Color="#5F6B76"/>
-        <SolidColorBrush x:Key="DangerBrush" Color="#C62828"/>
-        <SolidColorBrush x:Key="OkBrush" Color="#2E7D32"/>
+        <!-- Palette sombre, dans l'esprit de DiLand : les opérateurs de la boutique la
+             connaissent, et un fond sombre fait ressortir les photos au lieu de leur
+             faire concurrence. Contraste tenu élevé pour rester lisible de loin. -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#2C9BD6"/>
+        <SolidColorBrush x:Key="AccentDarkBrush" Color="#1B7CAE"/>
+        <SolidColorBrush x:Key="PageBrush" Color="#12181E"/>
+        <SolidColorBrush x:Key="CardBrush" Color="#1E2731"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#2A3440"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#ECEFF1"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#93A3B1"/>
+        <SolidColorBrush x:Key="TitleBrush" Color="#F0932B"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#E53935"/>
+        <SolidColorBrush x:Key="OkBrush" Color="#4CAF50"/>
+        <SolidColorBrush x:Key="SeparatorBrush" Color="#33FFFFFF"/>
 
         <!-- Bouton tactile principal : grand, contrasté -->
         <Style x:Key="BigButton" TargetType="Button">
@@ -37,7 +42,8 @@
                                 <Setter TargetName="border" Property="Background" Value="{StaticResource AccentDarkBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="border" Property="Background" Value="#B0BEC5"/>
+                                <Setter TargetName="border" Property="Background" Value="#33FFFFFF"/>
+                                <Setter Property="Foreground" Value="#7A8794"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -45,10 +51,10 @@
             </Setter>
         </Style>
 
-        <!-- Variante secondaire (contour) -->
+        <!-- Variante secondaire : panneau sombre bordé, lisible sur fond noir -->
         <Style x:Key="FlatButton" TargetType="Button" BasedOn="{StaticResource BigButton}">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -59,11 +65,12 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#E3F2FD"/>
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource AccentDarkBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="#90A4AE"/>
-                                <Setter TargetName="border" Property="BorderBrush" Value="#B0BEC5"/>
+                                <Setter Property="Foreground" Value="#6B7883"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#3A4652"/>
+                                <Setter TargetName="border" Property="Background" Value="#1A222A"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -71,10 +78,11 @@
             </Setter>
         </Style>
 
+        <!-- Titre d'écran : orangé, comme les titres de DiLand -->
         <Style x:Key="PageTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="34"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}"/>
             <Setter Property="Margin" Value="0,0,0,18"/>
         </Style>
 
