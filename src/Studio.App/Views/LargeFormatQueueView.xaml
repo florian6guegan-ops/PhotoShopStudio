@@ -10,7 +10,7 @@
         <TextBlock x:Name="TitleText" Grid.Row="0" Style="{StaticResource PageTitle}"
                    Text="Agrandissements à tirer"/>
 
-        <TextBlock x:Name="EmptyText" Grid.Row="1" Style="{StaticResource Subtitle}"
+        <TextBlock x:Name="EmptyText" Grid.Row="1" Style="{StaticResource Hint}"
                    VerticalAlignment="Top" Margin="0,20,0,0"
                    Text="Aucun agrandissement en attente. Les tirages au-delà du 21×29,7 apparaissent ici une fois la commande préparée."
                    TextWrapping="Wrap" Visibility="Collapsed"/>

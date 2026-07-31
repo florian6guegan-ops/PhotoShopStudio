@@ -27,7 +27,7 @@
                     HorizontalAlignment="Right" VerticalAlignment="Center" Click="OnRefresh"/>
         </DockPanel>
 
-        <TextBlock x:Name="MessageText" Grid.Row="1" Style="{StaticResource Subtitle}"
+        <TextBlock x:Name="MessageText" Grid.Row="1" Style="{StaticResource Hint}"
                    VerticalAlignment="Top" Margin="0,20,0,0" TextWrapping="Wrap"/>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">

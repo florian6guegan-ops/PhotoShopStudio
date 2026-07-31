@@ -17,7 +17,7 @@
             </DockPanel>
             <!-- le bouton de recadrage passait inaperçu : on dit ici ce qu'il fait -->
             <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10" TextWrapping="Wrap"
-                       Text="Le bouton ✂ sous chaque photo permet de la recadrer au format choisi, de la pivoter, ou de l'imprimer en entier avec des marges blanches."/>
+                       Text="Le bouton « Recadrer », sous chaque photo choisie, permet de la recadrer au format, de la pivoter, ou de l'imprimer en entier avec des marges blanches."/>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -29,7 +29,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="220" Height="240" Margin="8" CornerRadius="10"
+                        <Border Width="220" Height="286" Margin="8" CornerRadius="10"
                                 Background="{StaticResource CardBrush}"
                                 BorderThickness="4"
                                 BorderBrush="{Binding BorderBrush}"
@@ -52,29 +52,35 @@
                                            VerticalAlignment="Bottom" HorizontalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" Margin="8,0,8,2"/>
 
-                                <!-- Bandeau panier de la photo : produit + quantité -->
-                                <Border Grid.Row="1" Height="44" CornerRadius="0,0,6,6"
+                                <!-- Bandeau panier : produit sur une ligne, actions sur la suivante.
+                                     Tout tenait sur une seule ligne de 44 px : le bouton de recadrage
+                                     s'y réduisait à un pictogramme que la police ne sait pas dessiner. -->
+                                <Border Grid.Row="1" CornerRadius="0,0,6,6"
                                         Background="#33000000" Visibility="{Binding CartVisibility}">
-                                    <DockPanel Margin="4,2">
-                                        <Button DockPanel.Dock="Left" Style="{StaticResource FlatButton}"
-                                                Width="44" Height="36" Padding="0" FontSize="19"
-                                                Background="{StaticResource AccentBrush}" Foreground="White"
-                                                FontWeight="Bold"
-                                                ToolTip="Recadrer au format, pivoter, ou imprimer la photo entière avec des marges blanches"
-                                                Click="OnEditCrop" Tag="{Binding}">✂</Button>
-                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                            <Button Style="{StaticResource FlatButton}" Width="38" Height="36" Padding="0"
-                                                    FontSize="20" Click="OnTileMinus" Tag="{Binding}">−</Button>
-                                            <TextBlock Text="{Binding QuantityLabel}" FontSize="18" FontWeight="Bold"
-                                                       VerticalAlignment="Center" MinWidth="34" TextAlignment="Center"/>
-                                            <Button Style="{StaticResource FlatButton}" Width="38" Height="36" Padding="0"
-                                                    FontSize="20" Click="OnTilePlus" Tag="{Binding}">+</Button>
-                                        </StackPanel>
-                                        <Button Style="{StaticResource FlatButton}" Height="36" Padding="6,0"
-                                                Margin="4,0,0,0" FontSize="14" HorizontalContentAlignment="Left"
+                                    <StackPanel Margin="5,4">
+                                        <Button Style="{StaticResource FlatButton}" Height="30" Padding="6,0"
+                                                FontSize="13" HorizontalContentAlignment="Left"
+                                                ToolTip="Changer le format ou le produit"
                                                 Content="{Binding ProductLabel}"
                                                 Click="OnPickProduct" Tag="{Binding}"/>
-                                    </DockPanel>
+                                        <DockPanel Margin="0,5,0,0">
+                                            <Button DockPanel.Dock="Left" Style="{StaticResource FlatButton}"
+                                                    Height="36" Padding="12,0" FontSize="14" FontWeight="Bold"
+                                                    Background="{StaticResource AccentBrush}" Foreground="White"
+                                                    Content="Recadrer"
+                                                    ToolTip="Recadrer au format, pivoter, ou imprimer la photo entière avec des marges blanches"
+                                                    Click="OnEditCrop" Tag="{Binding}"/>
+                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                        HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource FlatButton}" Width="36" Height="36"
+                                                        Padding="0" FontSize="20" Click="OnTileMinus" Tag="{Binding}">−</Button>
+                                                <TextBlock Text="{Binding QuantityLabel}" FontSize="17" FontWeight="Bold"
+                                                           VerticalAlignment="Center" MinWidth="30" TextAlignment="Center"/>
+                                                <Button Style="{StaticResource FlatButton}" Width="36" Height="36"
+                                                        Padding="0" FontSize="20" Click="OnTilePlus" Tag="{Binding}">+</Button>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </StackPanel>
                                 </Border>
                             </Grid>
                         </Border>
