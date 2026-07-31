@@ -7,6 +7,7 @@ using Studio.App.Infrastructure;
 using Studio.Printing;
 using Studio.Printing.Devices.Fuji;
 using Studio.Store;
+using Studio.Store.DiLand;
 using Studio.Web;
 
 namespace Studio.App;
@@ -39,6 +40,21 @@ public sealed class AppServices
     /// <summary>Accès au minilab Fuji, partagé avec l'orchestrateur d'impression.</summary>
     public required De100BridgePrinter Minilab { get; init; }
     public required ThumbnailService Thumbnails { get; init; }
+
+    private DiLandImporter? _diland;
+
+    /// <summary>
+    /// Reprise des commandes déposées par les bornes dans DiLand.
+    ///
+    /// Tant que DiLand tourne en boutique, les bornes lui envoient les commandes ; on les
+    /// récupère sans les lui prendre. Construit au premier usage : le catalogue peut être
+    /// rechargé, et le dépôt DiLand peut être absent sur un poste de développement.
+    /// </summary>
+    public DiLandImporter DiLandImport => _diland ??= new DiLandImporter(
+        new DiLandRepository(DiLandRepository.DefaultRoot, Path.Combine(DataRoot, "diland")),
+        Orders,
+        Catalog.All.ToList(),
+        Path.Combine(DataRoot, "diland", "reprises.json"));
 
     private readonly Lazy<FaceDetector> _faces = new(() => new FaceDetector(
         Path.Combine(AppContext.BaseDirectory, "models", "face_detection_yunet_2023mar.onnx")));

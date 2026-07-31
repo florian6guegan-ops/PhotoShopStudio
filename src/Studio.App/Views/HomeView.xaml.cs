@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using Studio.App.Infrastructure;
@@ -18,8 +19,26 @@ public partial class HomeView : UserControl
             LargeFormatTitle.Text = pending > 0
                 ? $"Agrandissements à tirer ({pending})"
                 : "Agrandissements à tirer";
+
+            // le compte des bornes est affiché sur la tuile : une commande arrivée pendant
+            // qu'on servait un client ne se signale nulle part ailleurs
+            try
+            {
+                var bornes = App.Services.DiLandImport.Pending().Count;
+                KioskOrdersTitle.Text = bornes > 0
+                    ? $"Commandes des bornes ({bornes})"
+                    : "Commandes des bornes";
+            }
+            catch (Exception e)
+            {
+                // DiLand absent ou dépôt illisible : la tuile reste, sans compte
+                FileLog.Write("Accueil : comptage des commandes de bornes impossible", e);
+            }
         };
     }
+
+    private void OnKioskOrders(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new KioskOrdersView(), "Commandes des bornes");
 
     private void OnMachineStatus(object sender, RoutedEventArgs e) =>
         Navigator.Go(new MachineStatusView(), "État des machines");

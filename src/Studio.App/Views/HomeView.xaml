@@ -112,6 +112,16 @@
                 </StackPanel>
             </Button>
 
+            <Button x:Name="KioskOrdersButton" Style="{StaticResource Tuile}" Click="OnKioskOrders"
+                    AutomationProperties.Name="Commandes des bornes">
+                <StackPanel>
+                    <TextBlock x:Name="KioskOrdersTitle" Text="Commandes des bornes"
+                               Style="{StaticResource TuileTitre}"/>
+                    <TextBlock Text="Reprendre les commandes reçues par DiLand"
+                               Style="{StaticResource TuileSousTitre}"/>
+                </StackPanel>
+            </Button>
+
             <Button Style="{StaticResource Tuile}" Click="OnCatalog"
                     AutomationProperties.Name="Catalogue et imprimantes">
                 <StackPanel>

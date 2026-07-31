@@ -66,6 +66,22 @@ public sealed class DiLandImporter
     }
 
     /// <summary>
+    /// Décrit le contenu d'une commande pour l'opérateur : un libellé par produit, avec le
+    /// nombre de tirages, et la mention de ce que Studio ne sait pas vendre. C'est ce qu'il
+    /// faut lire avant de décider de reprendre.
+    /// </summary>
+    public IReadOnlyList<string> Describe(DiLandOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        return _depot.LinesOf(order)
+            .Select(l => MatchProduct(l.ProductName) is null
+                ? $"{l.ProductName} × {l.PrintCount} (non repris)"
+                : $"{l.ProductName} × {l.PrintCount}")
+            .ToList();
+    }
+
+    /// <summary>
     /// Reprend une commande : copie ses photos dans le dossier Studio et crée la commande
     /// avec ses produits, ses quantités et ses recadrages.
     ///
