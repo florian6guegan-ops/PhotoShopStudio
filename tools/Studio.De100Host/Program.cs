@@ -31,7 +31,7 @@ log(sdkDirectory is null
 
 var sdkDnp = DnpDriver.LocateSdk();
 log(sdkDnp is null
-    ? "SDK DNP introuvable : definissez STUDIO_DNP_SDK sur le dossier contenant cspstat.dll."
+    ? "SDK DNP introuvable : definissez STUDIO_DNP_SDK sur le dossier contenant CPPCtrl32.dll."
     : $"SDK DNP trouvé : {sdkDnp}");
 
 De100Driver? driver = null;
@@ -150,7 +150,7 @@ De100Message Handle(De100Message request) => request.Name switch
 /// <summary>
 /// Etat des imprimantes DNP branchees.
 ///
-/// PIEGE VERIFIE LE 31/07/2026 : cspstat.dll se bloque indefiniment quand DiLand tient
+/// PIEGE VERIFIE LE 31/07/2026 : CPPCtrl32.dll se bloque indefiniment quand DiLand tient
 /// le port USB de la DS620 - et DiLand le tient en permanence. Un appel direct figerait
 /// la boucle de lecture du relais, qui ne repondrait plus pour le minilab non plus.
 /// On borne donc l attente, et on renonce definitivement apres un premier blocage :
@@ -162,7 +162,7 @@ List<DnpPrinterInfo> EtatDesDnp()
 
     if (!DnpDriver.IsSdkInstalled())
     {
-        log("SDK DNP introuvable (cspstat.dll) : aucune imprimante DNP remontee.");
+        log("SDK DNP introuvable (CPPCtrl32.dll) : aucune imprimante DNP remontee.");
         dnpAbandonne = true;
         return [];
     }

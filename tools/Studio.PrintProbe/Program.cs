@@ -16,6 +16,8 @@ return args switch
     ["devmode", var printer, var file] => CaptureDevMode(printer, file),
     ["test", var printer, var w, var h] => PrintTestPage(printer, ParseMm(w), ParseMm(h), null),
     ["test", var printer, var w, var h, var pdf] => PrintTestPage(printer, ParseMm(w), ParseMm(h), pdf),
+    ["image", var printer, var file, var w, var h] => PrintImage(printer, file, ParseMm(w), ParseMm(h), null),
+    ["image", var printer, var file, var w, var h, var dm] => PrintImage(printer, file, ParseMm(w), ParseMm(h), dm),
     _ => Usage(),
 };
 
@@ -79,6 +81,36 @@ static int CaptureDevMode(string printer, string file)
     }
     File.WriteAllBytes(file, bytes);
     Console.WriteLine($"DEVMODE sauvegardé : {file} ({bytes.Length} octets)");
+    return 0;
+}
+
+/// <summary>
+/// Imprime une image déjà rendue, à ses dimensions exactes. Sert à contrôler sur la
+/// machine ce qu'on a d'abord contrôlé à l'écran — une planche identité, par exemple —
+/// sans avoir à créer une commande.
+/// </summary>
+static int PrintImage(string printer, string file, double widthMm, double heightMm, string? devModeFile)
+{
+    if (!File.Exists(file))
+    {
+        Console.WriteLine($"Fichier introuvable : {file}");
+        return 1;
+    }
+
+    using var bitmap = new Bitmap(file);
+
+    var devMode = devModeFile is not null && File.Exists(devModeFile)
+        ? File.ReadAllBytes(devModeFile)
+        : null;
+
+    Console.WriteLine($"Image  : {file} ({bitmap.Width}×{bitmap.Height} px)");
+    Console.WriteLine($"Tirage : {widthMm}×{heightMm} mm sur « {printer} »"
+        + (devMode is null ? " (réglages par défaut du pilote)" : $" (DEVMODE {devMode.Length} octets)"));
+
+    BitmapPrinter.Print(printer, bitmap, widthMm, heightMm, devModeBytes: devMode,
+        documentName: "Studio Photo — controle planche");
+
+    Console.WriteLine("Envoyé au spouleur.");
     return 0;
 }
 

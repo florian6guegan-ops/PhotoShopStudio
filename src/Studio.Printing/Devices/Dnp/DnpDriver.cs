@@ -6,7 +6,7 @@ namespace Studio.Printing.Devices.Dnp;
 
 /// <summary>
 /// Interrogation et réglage des imprimantes à sublimation DNP (DS620, DS820, QW410)
-/// via <c>cspstat.dll</c>.
+/// via <c>CPPCtrl32.dll</c>.
 ///
 /// À n'instancier que dans un processus 32 bits — la DLL est en x86.
 ///
@@ -20,7 +20,12 @@ public sealed class DnpDriver
     private const int ValueCapacity = 256;
     private const int MaxPrinters = 16;
 
-    private const string SdkFileName = "cspstat.dll";
+    /// <summary>
+    /// La bibliothèque du SDK DNP. Voir <see cref="CspStatInterop"/> : le poste porte
+    /// aussi un <c>cspstat.dll</c> aux mêmes noms de fonctions, dont l'appel fait planter
+    /// le processus. DiLand appelle celle-ci.
+    /// </summary>
+    private const string SdkFileName = "CPPCtrl32.dll";
 
     /// <summary>Déclare où trouver le SDK DNP.</summary>
     public static void UseSdkFrom(string directory) => NativeSdkResolver.Register(SdkFileName, directory);
@@ -50,20 +55,12 @@ public sealed class DnpDriver
     {
         CspStatInterop.SetPrinterFilter((int)filter);
 
-        var buffer = Marshal.AllocHGlobal(sizeof(int) * MaxPrinters);
-        try
-        {
-            var found = CspStatInterop.GetPrinterPortNum(buffer, MaxPrinters);
-            if (found <= 0) return [];
+        // tableau managé, marshalé tel quel : c'est ainsi que DiLand appelle la fonction,
+        // et c'est le seul usage éprouvé sur cette machine
+        var ports = new int[MaxPrinters];
+        var found = CspStatInterop.GetPrinterPortNum(ports, MaxPrinters);
 
-            var ports = new int[Math.Min(found, MaxPrinters)];
-            Marshal.Copy(buffer, ports, 0, ports.Length);
-            return ports;
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
+        return found <= 0 ? [] : ports.Take(Math.Min(found, MaxPrinters)).ToList();
     }
 
     /// <summary>État courant d'une imprimante.</summary>

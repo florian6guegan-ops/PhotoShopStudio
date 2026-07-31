@@ -4,8 +4,14 @@ using System.Text;
 namespace Studio.Printing.Devices.Dnp;
 
 /// <summary>
-/// Liaison brute avec le SDK de statut DNP (<c>cspstat.dll</c>), utilisé par les
+/// Liaison brute avec le SDK de statut DNP (<c>CPPCtrl32.dll</c>), utilisé par les
 /// imprimantes à sublimation DS620 / DS820 / QW410.
+///
+/// LA BIBLIOTHÈQUE EST BIEN <c>CPPCtrl32.dll</c>. Le poste porte aussi un
+/// <c>cspstat.dll</c> qui exporte les mêmes noms, et l'appeler fait planter le processus
+/// en violation d'accès (constaté le 31/07/2026 sur <c>GetSerialNo</c>). DiLand appelle
+/// <c>CPPCtrl32.dll</c> pour ses 47 fonctions : c'est la référence, elle tourne en
+/// production sur cette machine.
 ///
 /// ATTENTION : la DLL est en 32 bits, mêmes contraintes que le SDK Fuji.
 ///
@@ -20,14 +26,14 @@ namespace Studio.Printing.Devices.Dnp;
 /// </summary>
 internal static class CspStatInterop
 {
-    private const string Dll = "cspstat.dll";
+    private const string Dll = "CPPCtrl32.dll";
 
     // — découverte —
 
-    /// <param name="portArray">Tableau de <c>int</c> non managé recevant les numéros de port.</param>
+    /// <param name="portArray">Tableau recevant les numéros de port, alloué par l'appelant.</param>
     /// <returns>Nombre d'imprimantes trouvées.</returns>
     [DllImport(Dll)]
-    internal static extern int GetPrinterPortNum(IntPtr portArray, int arraySize);
+    internal static extern int GetPrinterPortNum(int[] portArray, int arraySize);
 
     /// <summary>Restreint la découverte à un type d'imprimante (voir <see cref="DnpPrinterType"/>).</summary>
     [DllImport(Dll)]

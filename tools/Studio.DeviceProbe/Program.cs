@@ -6,7 +6,7 @@ using Studio.Printing.Devices.Fuji;
 // Compilé en x86 (obligatoire : les deux SDK sont 32 bits). À lancer depuis un dossier
 // où les DLL natives sont résolubles — le plus simple est de copier DeviceProbe.exe et
 // ses dépendances dans « C:\Program Files (x86)\DiLand Studio 2 », qui contient déjà
-// PModuleIF.dll et cspstat.dll.
+// PModuleIF.dll et CPPCtrl32.dll.
 //
 //   DeviceProbe            → état des deux familles de machines
 //   DeviceProbe dnp        → DNP seulement
@@ -37,7 +37,7 @@ return failures == 0 ? 0 : 1;
 
 int ProbeDnp()
 {
-    Section("Imprimantes DNP (cspstat.dll)");
+    Section("Imprimantes DNP (CPPCtrl32.dll)");
 
     // le SDK vit dans le dossier de DiLand, pas à côté de cet outil
     var sdkDnp = DnpDriver.LocateSdk();
@@ -45,7 +45,7 @@ int ProbeDnp()
 
     if (!DnpDriver.IsSdkInstalled())
     {
-        Console.WriteLine("  SDK DNP absent : cspstat.dll introuvable depuis ce dossier.");
+        Console.WriteLine("  SDK DNP absent : CPPCtrl32.dll introuvable depuis ce dossier.");
         return 1;
     }
 
@@ -79,12 +79,12 @@ int ProbeDnp()
     }
     catch (DllNotFoundException)
     {
-        Console.WriteLine("  cspstat.dll introuvable : lancer l'outil depuis le dossier de DiLand.");
+        Console.WriteLine("  CPPCtrl32.dll introuvable : lancer l'outil depuis le dossier de DiLand.");
         return 1;
     }
     catch (BadImageFormatException)
     {
-        Console.WriteLine("  cspstat.dll est en 32 bits et ce processus ne l'est pas.");
+        Console.WriteLine("  CPPCtrl32.dll est en 32 bits et ce processus ne l'est pas.");
         return 1;
     }
 }
