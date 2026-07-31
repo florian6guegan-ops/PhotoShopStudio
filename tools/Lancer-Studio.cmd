@@ -21,6 +21,15 @@ rem avec un message d'erreur incomprehensible, qui accuserait le code a tort.
 tasklist /FI "IMAGENAME eq Studio.App.exe" 2>nul | find /I "Studio.App.exe" >nul
 if not errorlevel 1 goto :dejaOuvert
 
+rem Le relais du minilab survit parfois a l'application et verrouille les memes
+rem fichiers. Il s'arrete seul a la deconnexion : on le laisse partir.
+tasklist /FI "IMAGENAME eq Studio.De100Host.exe" 2>nul | find /I "Studio.De100Host.exe" >nul
+if not errorlevel 1 (
+    echo   Arret du relais du minilab restant...
+    taskkill /IM Studio.De100Host.exe /F >nul 2>&1
+    timeout /t 2 /nobreak >nul
+)
+
 echo   Compilation de la derniere version du code...
 echo.
 
