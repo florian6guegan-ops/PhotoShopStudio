@@ -71,9 +71,13 @@ public sealed class PrintOrchestrator
                     throw new InvalidOperationException(
                         $"L'imprimante « {printerName} » est branchée sur le port « nul » : Windows accepte " +
                         "les travaux et les jette, aucun tirage ne sortira.\n\n" +
-                        "C'est le cas des files DE100 installées par DiLand (le minilab est piloté par le SDK " +
-                        "Fuji, pas par le spouleur). Il faut d'abord donner un vrai port à cette imprimante, " +
-                        "ou choisir un produit imprimé sur la DS620.");
+                        "C'est normal et voulu : le minilab DE100 ne se pilote pas par le spouleur Windows " +
+                        "mais par le SDK Fuji (PModuleIF.dll). NE CHANGEZ PAS le port de cette file — DiLand " +
+                        "en dépend, et le modifier l'empêcherait d'imprimer.\n\n" +
+                        "Le pilote qui parle au minilab existe déjà dans Studio, mais il n'est pas encore " +
+                        "raccordé : le SDK Fuji est en 32 bits alors que l'application tourne en 64 bits, " +
+                        "il faut un processus relais.\n\n" +
+                        "En attendant, choisissez un produit imprimé sur la DS620.");
             }
         }
 

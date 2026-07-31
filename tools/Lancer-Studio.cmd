@@ -15,6 +15,12 @@ set "EXE=%RACINE%\src\Studio.App\bin\Debug\net8.0-windows\Studio.App.exe"
 echo.
 echo   Studio Photo
 echo   ------------
+
+rem Une instance deja ouverte verrouille ses fichiers : la recompilation echouerait
+rem avec un message d'erreur incomprehensible, qui accuserait le code a tort.
+tasklist /FI "IMAGENAME eq Studio.App.exe" 2>nul | find /I "Studio.App.exe" >nul
+if not errorlevel 1 goto :dejaOuvert
+
 echo   Compilation de la derniere version du code...
 echo.
 
@@ -25,6 +31,16 @@ if not exist "%EXE%" goto :introuvable
 
 echo   Demarrage...
 start "" "%EXE%"
+exit /b 0
+
+:dejaOuvert
+echo.
+echo   Studio Photo est deja ouvert.
+echo.
+echo   Fermez d'abord la fenetre de l'application, puis relancez ce raccourci :
+echo   tant qu'elle tourne, la derniere version du code ne peut pas etre compilee.
+echo.
+pause
 exit /b 0
 
 :echec
