@@ -104,10 +104,33 @@ public class DilandCatalogTests
     [InlineData("40x50", 19.90)]
     [InlineData("50x70", 24.90)]
     [InlineData("60x80", 29.90)]
-    [InlineData("bord-blanc-10x15", 0.90)]
     public void Les_prix_sont_ceux_affiches_en_boutique(string code, double prix)
     {
         Assert.Equal((decimal)prix, Get(code).Price);
+    }
+
+    /// <summary>
+    /// Le bord blanc ne se facture pas plus cher que le tirage plein (décision de
+    /// l'exploitant, 31/07/2026) : c'est le même papier, seul le cadrage change.
+    /// </summary>
+    [Fact]
+    public void Le_bord_blanc_coute_le_meme_prix_que_le_tirage_plein()
+    {
+        // deux produits peuvent porter le même nom sur des machines différentes
+        // (un 10×15 sur le DE100, un autre sur la DS620) : la clé inclut l'imprimante
+        var parNom = Catalogue.Value.All.ToDictionary(p => $"{p.Name}|{p.PrinterName}", StringComparer.Ordinal);
+        var bordBlanc = Catalogue.Value.All.Where(p => p.Name.StartsWith("Bord blanc ", StringComparison.Ordinal)).ToList();
+
+        Assert.NotEmpty(bordBlanc);
+        foreach (var produit in bordBlanc)
+        {
+            var cle = $"{produit.Name["Bord blanc ".Length..]}|{produit.PrinterName}";
+            Assert.True(parNom.TryGetValue(cle, out var reference),
+                $"Aucun tirage plein en face de « {produit.Name} » sur {produit.PrinterName}");
+
+            Assert.Equal(reference.Price, produit.Price);
+            Assert.Equal(reference.PriceTiers.Count, produit.PriceTiers.Count);
+        }
     }
 
     [Theory]
