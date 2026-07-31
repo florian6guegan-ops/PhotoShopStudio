@@ -339,7 +339,11 @@ public sealed class PrintOrchestrator
                                 item.Crop, item.RotationQuarterTurns, FitMode.Fill, 0,
                                 item.Adjustments, iccPath),
                             item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
-                            targetW, targetH, output, product.Dpi);
+                            targetW, targetH, output, product.Dpi,
+                            sheet.CutBorder,
+                            // la date de la commande, pas l'heure du rendu : une planche
+                            // rejouée après un incident doit porter la même mention
+                            sheet.DateStamp ? order.CreatedAt.DateTime : null);
                     }
                     else
                     {

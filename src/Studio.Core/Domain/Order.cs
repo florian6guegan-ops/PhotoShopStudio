@@ -1,12 +1,66 @@
 namespace Studio.Core.Domain;
 
+/// <summary>
+/// Réglages de correction d'une photo, dans l'esprit de Lightroom.
+///
+/// DiLand ne propose que luminosité et contraste ; c'est trop grossier pour rattraper un
+/// contre-jour ou un intérieur jaune. On garde les mêmes noms que Lightroom pour que les
+/// réglages soient lus de la même façon par quelqu'un qui le connaît.
+///
+/// Toutes les valeurs sont neutres à 0, sauf l'exposition qui est en diaphragmes (IL).
+/// </summary>
 public sealed class ImageAdjustments
 {
     public bool Grayscale { get; set; }
-    public double Brightness { get; set; } // -100..100, 0 = neutre
-    public double Contrast { get; set; }   // -100..100, 0 = neutre
 
-    public bool IsNeutral => !Grayscale && Brightness == 0 && Contrast == 0;
+    /// <summary>Exposition en diaphragmes : +1 double la lumière, −1 la divise par deux.</summary>
+    public double Exposure { get; set; }
+
+    /// <summary>Luminosité globale, −100..100. Conservée pour les commandes déjà enregistrées.</summary>
+    public double Brightness { get; set; }
+
+    public double Contrast { get; set; }
+
+    /// <summary>Hautes lumières, −100..100 : négatif récupère un ciel brûlé.</summary>
+    public double Highlights { get; set; }
+
+    /// <summary>Ombres, −100..100 : positif déniche un visage en contre-jour.</summary>
+    public double Shadows { get; set; }
+
+    /// <summary>Blancs, −100..100 : déplace le point blanc.</summary>
+    public double Whites { get; set; }
+
+    /// <summary>Noirs, −100..100 : déplace le point noir.</summary>
+    public double Blacks { get; set; }
+
+    /// <summary>Température, −100 (froid, bleu) .. 100 (chaud, orangé).</summary>
+    public double Temperature { get; set; }
+
+    /// <summary>Teinte, −100 (vert) .. 100 (magenta).</summary>
+    public double Tint { get; set; }
+
+    /// <summary>Saturation, −100..100 : agit sur toutes les couleurs.</summary>
+    public double Saturation { get; set; }
+
+    /// <summary>
+    /// Vibrance, −100..100 : n'intensifie que les couleurs déjà ternes, et épargne donc
+    /// les teints de peau — c'est ce qu'on veut sur un portrait.
+    /// </summary>
+    public double Vibrance { get; set; }
+
+    /// <summary>Clarté, −100..100 : contraste local, donne du relief sans toucher aux couleurs.</summary>
+    public double Clarity { get; set; }
+
+    /// <summary>Netteté, 0..100.</summary>
+    public double Sharpness { get; set; }
+
+    public bool IsNeutral =>
+        !Grayscale && Exposure == 0 && Brightness == 0 && Contrast == 0 &&
+        Highlights == 0 && Shadows == 0 && Whites == 0 && Blacks == 0 &&
+        Temperature == 0 && Tint == 0 && Saturation == 0 && Vibrance == 0 &&
+        Clarity == 0 && Sharpness == 0;
+
+    public ImageAdjustments Clone() => (ImageAdjustments)MemberwiseClone();
 }
 
 /// <summary>Une photo dans une ligne de commande, avec son recadrage et ses réglages.</summary>

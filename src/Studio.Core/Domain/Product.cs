@@ -11,6 +11,19 @@ public sealed class SheetSpec
     /// <summary>Espace minimal entre cellules (les traits de coupe y sont dessinés).</summary>
     public double GapMm { get; set; } = DefaultGapMm;
     public bool CutMarks { get; set; } = true;
+
+    /// <summary>
+    /// Contour noir tracé autour de chaque photo. C'est le repère sur lequel on coupe :
+    /// les traits dans les marges obligent à aligner une règle d'un bord à l'autre, un
+    /// contour se suit aux ciseaux directement.
+    /// </summary>
+    public bool CutBorder { get; set; } = true;
+
+    /// <summary>
+    /// Date et heure du tirage, portées dans la marge de la planche. L'administration
+    /// l'exige pour les photos d'identité, qui doivent être récentes.
+    /// </summary>
+    public bool DateStamp { get; set; } = true;
 }
 
 /// <summary>
