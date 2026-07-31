@@ -141,8 +141,17 @@ int ProbeDe100(string[] argv)
             Console.WriteLine();
         }
 
-        if (argv.Length >= 4 && argv[1].Equals("test", StringComparison.OrdinalIgnoreCase))
-            return SubmitTestPrint(driver, machines[0], imagePath: argv[2], printSizeName: argv[3]);
+        if (argv.Length >= 3 && argv[1].Equals("test", StringComparison.OrdinalIgnoreCase))
+        {
+            // jamais la première machine venue : la A de la boutique est hors ligne
+            var prete = machines.FirstOrDefault(m => driver.GetPrinterInfo(m).Status != De100PrinterStatus.Offline);
+            if (prete == default)
+            {
+                Console.WriteLine("  Aucune machine en ligne : rien n'a été envoyé.");
+                return 1;
+            }
+            return SubmitTestPrint(driver, prete, imagePath: argv[2]);
+        }
 
         return 0;
     }
@@ -163,7 +172,7 @@ int ProbeDe100(string[] argv)
     }
 }
 
-int SubmitTestPrint(De100Driver driver, char machineId, string imagePath, string printSizeName)
+int SubmitTestPrint(De100Driver driver, char machineId, string imagePath)
 {
     Section("Tirage d'essai");
 
@@ -172,6 +181,19 @@ int SubmitTestPrint(De100Driver driver, char machineId, string imagePath, string
         Console.WriteLine($"  Image introuvable : {imagePath}");
         return 1;
     }
+
+    // on reprend le papier réellement chargé : format ET finition
+    var info = driver.GetPrinterInfo(machineId);
+    var media = info.Media;
+    var largeurRouleau = media?.PaperWidthMm ?? 152;
+    var surface = media?.Surface ?? De100Surface.Glossy;
+
+    // un 10×15 sur ce rouleau : le grand côté d'abord, comme l'attend le minilab
+    double grandCote = 152, petitCote = 102;
+    var printSizeName = $"{grandCote:0}x{petitCote:0}";
+
+    Console.WriteLine($"  Machine {machineId} — rouleau {largeurRouleau} mm, finition {surface}");
+    Console.WriteLine($"  Format demandé : {printSizeName} mm");
 
     using var finished = new ManualResetEventSlim(false);
     De100JobResult? outcome = null;
@@ -189,9 +211,11 @@ int SubmitTestPrint(De100Driver driver, char machineId, string imagePath, string
     var job = new De100PrintJob(
         JobId: "essai-" + DateTime.Now.ToString("HHmmss"),
         ImagePath: Path.GetFullPath(imagePath),
-        WidthMm: 152,
-        HeightMm: 102,
-        PrintSizeName: printSizeName);
+        WidthMm: grandCote,
+        HeightMm: petitCote,
+        PrintSizeName: printSizeName,
+        Surface: surface,
+        Copies: 1);
 
     Console.WriteLine($"  Envoi de « {job.ImagePath} » au format {printSizeName} sur la machine '{machineId}'…");
     var handle = driver.Submit(job, machineId);

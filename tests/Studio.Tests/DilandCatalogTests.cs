@@ -249,14 +249,36 @@ public class DilandCatalogTests
         Assert.DoesNotContain(automatiques, p => p.Channel == "Agrandissements (Photoshop)");
     }
 
+    /// <summary>
+    /// Le 21×29,7 est la limite : jusque-là on tire sur le minilab, au-delà sur l'Epson
+    /// depuis Photoshop. Le DE100 ne passe PAS par une file Windows — les siennes sont
+    /// sur le port « nul » — mais par le SDK Fuji via le relais 32 bits.
+    /// </summary>
     [Fact]
-    public void Les_formats_jusqu_au_A4_restent_sur_le_minilab()
+    public void Les_formats_jusqu_au_A4_partent_au_minilab_par_le_SDK()
     {
-        // le 21×29,7 est la limite : lui passe encore par le DE100
         var produit = Get("21x29-7");
 
+        Assert.Equal(ProductOutput.FujiMinilab, produit.Output);
+        Assert.True(string.IsNullOrEmpty(produit.PrinterName),
+            "un produit minilab ne doit désigner aucune file Windows");
+        Assert.Equal("Minilab DE100", produit.Channel);
+    }
+
+    [Fact]
+    public void Les_tirages_courants_partent_au_minilab()
+    {
+        foreach (var code in new[] { "10x15", "13x18", "20x30", "bord-blanc-10x15" })
+            Assert.Equal(ProductOutput.FujiMinilab, Get(code).Output);
+    }
+
+    [Fact]
+    public void La_DS620_reste_sur_le_spouleur_Windows()
+    {
+        var produit = Get("10x15-dnp");
+
         Assert.Equal(ProductOutput.Printer, produit.Output);
-        Assert.Equal("FUJIFILM DE100", produit.PrinterName);
+        Assert.Equal("DP-DS620", produit.PrinterName);
     }
 
     [Fact]

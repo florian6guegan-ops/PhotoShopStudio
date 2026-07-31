@@ -4,8 +4,8 @@
         "Name":  "10x10",
         "WidthMm":  102,
         "HeightMm":  102,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -28,15 +28,16 @@
                                "FromQuantity":  99,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "10x15",
         "Name":  "10x15",
         "WidthMm":  102,
         "HeightMm":  152,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -59,15 +60,16 @@
                                "FromQuantity":  100,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "13x13",
         "Name":  "13x13",
         "WidthMm":  127,
         "HeightMm":  127,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fill",
@@ -75,15 +77,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "13x18",
         "Name":  "13x18",
         "WidthMm":  127,
         "HeightMm":  180,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fill",
@@ -91,15 +94,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "15x15",
         "Name":  "15x15",
         "WidthMm":  152,
         "HeightMm":  152,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
@@ -107,15 +111,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "15x20",
         "Name":  "15x20",
         "WidthMm":  152,
         "HeightMm":  203,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
@@ -123,15 +128,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "15x30",
         "Name":  "15x30",
         "WidthMm":  152,
         "HeightMm":  304,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
@@ -139,15 +145,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "20x20",
         "Name":  "20x20",
         "WidthMm":  203,
         "HeightMm":  203,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
@@ -155,15 +162,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "20x25",
         "Name":  "20x25",
         "WidthMm":  203,
         "HeightMm":  256,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
@@ -171,15 +179,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "20x30",
         "Name":  "20x30",
         "WidthMm":  203,
         "HeightMm":  307,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
@@ -187,15 +196,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-10x10",
         "Name":  "Bord blanc 10x10",
         "WidthMm":  102,
         "HeightMm":  102,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fit",
@@ -218,15 +228,16 @@
                                "FromQuantity":  99,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-10x15",
         "Name":  "Bord blanc 10x15",
         "WidthMm":  102,
         "HeightMm":  152,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fit",
@@ -249,15 +260,16 @@
                                "FromQuantity":  100,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-13x13",
         "Name":  "Bord blanc 13x13",
         "WidthMm":  127,
         "HeightMm":  127,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fit",
@@ -265,15 +277,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-13x18",
         "Name":  "Bord blanc 13x18",
         "WidthMm":  127,
         "HeightMm":  180,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fit",
@@ -281,15 +294,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-15x15",
         "Name":  "Bord blanc 15x15",
         "WidthMm":  152,
         "HeightMm":  152,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fit",
@@ -297,15 +311,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-15x20",
         "Name":  "Bord blanc 15x20",
         "WidthMm":  152,
         "HeightMm":  203,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fit",
@@ -313,15 +328,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-20x20",
         "Name":  "Bord blanc 20x20",
         "WidthMm":  203,
         "HeightMm":  203,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fit",
@@ -329,15 +345,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-20x25",
         "Name":  "Bord blanc 20x25",
         "WidthMm":  203,
         "HeightMm":  256,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fit",
@@ -345,15 +362,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "bord-blanc-20x30",
         "Name":  "Bord blanc 20x30",
         "WidthMm":  203,
         "HeightMm":  307,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fit",
@@ -361,15 +379,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "8x10",
         "Name":  "8x10",
         "WidthMm":  80,
         "HeightMm":  102,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -392,15 +411,16 @@
                                "FromQuantity":  99,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "10x15pola",
         "Name":  "10x15POLA",
         "WidthMm":  102,
         "HeightMm":  152,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
@@ -423,7 +443,8 @@
                                "FromQuantity":  99,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "30x30",
@@ -682,8 +703,8 @@
         "Name":  "21x29,7",
         "WidthMm":  210,
         "HeightMm":  297,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fill",
@@ -691,15 +712,16 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "a4",
         "Name":  "A4",
         "WidthMm":  210,
         "HeightMm":  297,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0,
         "DefaultFit":  "Fill",
@@ -707,15 +729,16 @@
         "Enabled":  false,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "18x24",
         "Name":  "18x24",
         "WidthMm":  180,
         "HeightMm":  240,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  6.9,
         "DefaultFit":  "Fill",
@@ -723,7 +746,8 @@
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     },
     {
         "Code":  "e-photo-dnp",
@@ -746,8 +770,8 @@
         "Name":  "POLA",
         "WidthMm":  102,
         "HeightMm":  152,
-        "PrinterName":  "FUJIFILM DE100",
-        "Output":  "Printer",
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
         "Dpi":  300,
         "Price":  0.9,
         "DefaultFit":  "Fit",
@@ -770,6 +794,7 @@
                                "FromQuantity":  50,
                                "UnitPrice":  0.5
                            }
-                       ]
+                       ],
+        "PrinterChannel":  "Minilab DE100"
     }
 ]

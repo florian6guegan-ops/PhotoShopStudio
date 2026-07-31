@@ -175,22 +175,29 @@ public sealed class PrintOrchestrator
         _store.AppendEvent(order, "minilab-submit-start",
             $"env={envelope.Number}, machine={machine}, tirages={pages.Sum(p => p.Copies)}");
 
+        // la finition doit être celle du papier réellement chargé : annoncer « brillant »
+        // sur du lustré fausse le rendu
+        var surface = _minilab!.LoadedSurface(machine);
+
         var handles = new List<string>();
         foreach (var page in pages)
         {
             var product = page.Product;
+
+            // le minilab attend le grand côté en premier, en millimètres
+            var longSide = Math.Max(page.WidthMm, page.HeightMm);
+            var shortSide = Math.Min(page.WidthMm, page.HeightMm);
+
             var job = new De100PrintJob(
                 JobId: $"{order.DisplayNumber}-{envelope.Number}-{handles.Count + 1:000}",
                 ImagePath: page.Path,
-                WidthMm: page.WidthMm,
-                HeightMm: page.HeightMm,
-                PrintSizeName: string.IsNullOrWhiteSpace(product.MinilabPrintSizeName)
-                    ? product.Name
-                    : product.MinilabPrintSizeName!,
-                Surface: De100Surface.Glossy,
+                WidthMm: longSide,
+                HeightMm: shortSide,
+                PrintSizeName: MinilabSizeName(product, longSide, shortSide),
+                Surface: surface,
                 Copies: page.Copies);
 
-            handles.Add(_minilab!.Submit(job, machine));
+            handles.Add(_minilab.Submit(job, machine));
         }
 
         _store.AppendEvent(order, "minilab-submitted",
@@ -205,6 +212,18 @@ public sealed class PrintOrchestrator
         ChooseMachine(
             _minilab!.ReadyMachines(),
             pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)));
+
+    /// <summary>
+    /// Nom de format attendu par le minilab.
+    ///
+    /// Ce n'est PAS le nom commercial : le DE100 attend « 152x102 », les millimètres
+    /// grand côté en premier. Envoyer « 10x15 » ferait rejeter la commande. Un produit
+    /// peut malgré tout imposer son propre libellé.
+    /// </summary>
+    internal static string MinilabSizeName(Product product, double longSideMm, double shortSideMm) =>
+        string.IsNullOrWhiteSpace(product.MinilabPrintSizeName)
+            ? $"{longSideMm:0}x{shortSideMm:0}"
+            : product.MinilabPrintSizeName!;
 
     /// <summary>
     /// Règle de choix, isolée pour être vérifiable : la machine demandée si elle est

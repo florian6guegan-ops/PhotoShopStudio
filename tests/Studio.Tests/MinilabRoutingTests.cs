@@ -29,6 +29,8 @@ public class MinilabRoutingTests : IDisposable
 
         public IReadOnlyList<char> ReadyMachines() => ready;
 
+        public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
+
         public string Submit(De100PrintJob job, char machineId)
         {
             Submitted.Add((job, machineId));
@@ -172,12 +174,23 @@ public class MinilabRoutingTests : IDisposable
         Assert.Equal("Minilab DE100", produit.Channel);
     }
 
+    /// <summary>
+    /// Le minilab n'accepte pas les noms commerciaux : il attend « 152x102 », grand côté
+    /// en premier. Relevé dans les journaux de DiLand le 31/07/2026.
+    /// </summary>
     [Fact]
-    public void Le_nom_de_format_minilab_reprend_le_nom_du_produit_par_defaut()
+    public void Le_nom_de_format_minilab_est_en_millimetres_grand_cote_en_premier()
+    {
+        Assert.Equal("152x102", PrintOrchestrator.MinilabSizeName(Minilab(), 152, 102));
+        Assert.Equal("203x152", PrintOrchestrator.MinilabSizeName(Minilab(), 203, 152));
+    }
+
+    [Fact]
+    public void Un_produit_peut_imposer_son_propre_libelle_de_format()
     {
         var produit = Minilab();
+        produit.MinilabPrintSizeName = "10x15POLA";
 
-        Assert.Null(produit.MinilabPrintSizeName);
-        Assert.Equal("10x15", produit.Name);
+        Assert.Equal("10x15POLA", PrintOrchestrator.MinilabSizeName(produit, 152, 102));
     }
 }

@@ -14,6 +14,12 @@ public interface IMinilabPrinter
     /// <summary>Machines prêtes à recevoir un tirage. Vide = aucune, l'envoi doit être refusé.</summary>
     IReadOnlyList<char> ReadyMachines();
 
+    /// <summary>
+    /// Finition du papier réellement chargé dans la machine. Le tirage doit la déclarer :
+    /// annoncer « brillant » sur du lustré donne un rendu faux.
+    /// </summary>
+    De100Surface LoadedSurface(char machineId);
+
     /// <summary>Envoie un tirage et renvoie le handle de commande attribué par le minilab.</summary>
     string Submit(De100PrintJob job, char machineId);
 }
@@ -70,6 +76,14 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
             ready.Add(machine);
         }
         return ready;
+    }
+
+    public De100Surface LoadedSurface(char machineId)
+    {
+        EnsureConnected();
+
+        var info = _client.GetPrinterInfoAsync(machineId).GetAwaiter().GetResult();
+        return info?.Media?.Surface ?? De100Surface.Glossy;
     }
 
     public string Submit(De100PrintJob job, char machineId)
