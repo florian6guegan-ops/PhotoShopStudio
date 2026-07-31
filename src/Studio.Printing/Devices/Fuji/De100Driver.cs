@@ -50,10 +50,77 @@ public sealed class De100Driver : IDisposable
         _sweepTimer = new Timer(_ => Sweep(), null, interval, interval);
     }
 
-    /// <summary>Vrai si le SDK du DE100 est présent sur la machine.</summary>
+    private const string SdkFileName = "PModuleIF.dll";
+    private static string? _sdkDirectory;
+    private static bool _resolverInstalled;
+
+    /// <summary>
+    /// Déclare où trouver le SDK Fuji. Il n'est pas installé à côté de Studio mais dans le
+    /// dossier de DiLand : sans cette indication, le chargement échouerait alors que la
+    /// bibliothèque est bien présente sur le poste.
+    /// </summary>
+    public static void UseSdkFrom(string directory)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(directory);
+        _sdkDirectory = directory;
+
+        if (_resolverInstalled) return;
+        _resolverInstalled = true;
+
+        // un seul résolveur par assembly : on l'installe une fois et il consulte le
+        // dossier courant à chaque chargement
+        NativeLibrary.SetDllImportResolver(typeof(De100Driver).Assembly, (name, _, _) =>
+        {
+            if (!name.Equals(SdkFileName, StringComparison.OrdinalIgnoreCase)) return IntPtr.Zero;
+            if (string.IsNullOrEmpty(_sdkDirectory)) return IntPtr.Zero;
+
+            var candidate = Path.Combine(_sdkDirectory, SdkFileName);
+            return File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out var handle)
+                ? handle
+                : IntPtr.Zero;
+        });
+    }
+
+    /// <summary>Emplacements où chercher le SDK Fuji, du plus explicite au plus probable.</summary>
+    public static IEnumerable<string> ProbeSdkDirectories()
+    {
+        var declare = Environment.GetEnvironmentVariable("STUDIO_DE100_SDK");
+        if (!string.IsNullOrWhiteSpace(declare)) yield return declare;
+
+        yield return AppContext.BaseDirectory;
+
+        foreach (var programFiles in new[]
+                 {
+                     Environment.GetEnvironmentVariable("ProgramFiles(x86)"),
+                     Environment.GetEnvironmentVariable("ProgramFiles"),
+                 })
+        {
+            if (!string.IsNullOrEmpty(programFiles))
+                yield return Path.Combine(programFiles, "DiLand Studio 2");
+        }
+    }
+
+    /// <summary>
+    /// Cherche le SDK et le déclare s'il est trouvé. Renvoie le dossier retenu, ou null.
+    /// </summary>
+    public static string? LocateSdk()
+    {
+        foreach (var directory in ProbeSdkDirectories())
+        {
+            if (!File.Exists(Path.Combine(directory, SdkFileName))) continue;
+            UseSdkFrom(directory);
+            return directory;
+        }
+        return null;
+    }
+
+    /// <summary>Vrai si le SDK du DE100 est chargeable depuis ce poste.</summary>
     public static bool IsSdkInstalled()
     {
-        var handle = NativeLibrary.TryLoad("PModuleIF.dll", out var lib);
+        if (!string.IsNullOrEmpty(_sdkDirectory))
+            return File.Exists(Path.Combine(_sdkDirectory, SdkFileName));
+
+        var handle = NativeLibrary.TryLoad(SdkFileName, out var lib);
         if (handle) NativeLibrary.Free(lib);
         return handle;
     }
@@ -86,11 +153,12 @@ public sealed class De100Driver : IDisposable
         try
         {
             var loadingNum = ReadInt(handle, "LoadingNum");
-            var status = (De100PrinterStatus)ReadIndexedInt(handle, "PrinterStatus", 0);
+            // les proprietes indexees du SDK Fuji sont numerotees a partir de 1
+            var status = (De100PrinterStatus)ReadIndexedInt(handle, "PrinterStatus", 1);
             var regNum = ReadValue(handle, "RegNum");
 
             var magazines = new List<De100Magazine>();
-            for (uint i = 0; i < Math.Min(loadingNum, MaxMagazines); i++)
+            for (uint i = 1; i <= Math.Min(loadingNum, MaxMagazines); i++)
             {
                 magazines.Add(new De100Magazine(
                     (int)i,

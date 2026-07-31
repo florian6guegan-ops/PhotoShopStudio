@@ -24,6 +24,10 @@
     <ProjectReference Include="..\..\src\Studio.Printing\Studio.Printing.csproj" />
     <ProjectReference Include="..\..\src\Studio.Store\Studio.Store.csproj" />
     <ProjectReference Include="..\..\src\Studio.Web\Studio.Web.csproj" />
+    <!-- Le relais DE100 est un exécutable x86 séparé : on ne référence pas son assembly,
+         seulement sa compilation, pour que le test d'intégration le trouve construit. -->
+    <ProjectReference Include="..\..\tools\Studio.De100Host\Studio.De100Host.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

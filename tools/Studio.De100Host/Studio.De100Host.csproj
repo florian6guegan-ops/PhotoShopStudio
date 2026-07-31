@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- RAISON D'ETRE DE CE PROJET : PModuleIF.dll (SDK Fuji du DE100) est en 32 bits.
+         Studio.App tourne en 64 bits, volontairement — c'est ce qui lui évite les
+         saturations mémoire de DiLand. Les deux ne peuvent pas cohabiter dans un même
+         processus : ce relais héberge le SDK et parle à l'application par un tube nommé. -->
+    <PlatformTarget>x86</PlatformTarget>
+    <AssemblyName>Studio.De100Host</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Studio.Printing\Studio.Printing.csproj" />
+  </ItemGroup>
+
+</Project>
