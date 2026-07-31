@@ -37,6 +37,11 @@ public partial class IdPhotoView : UserControl
     private Point _dragLast;
     private bool _dragging;
 
+    /// <summary>Repères posés par l'opérateur : sommet du crâne et bas du menton.</summary>
+    private NormPoint? _crown;
+    private NormPoint? _chin;
+    private string? _markerDrag;   // "Crown", "Chin", ou null
+
     private readonly SmoothZoomDriver _smoothZoom;
 
     public IdPhotoView(string rootPath)
@@ -134,7 +139,8 @@ public partial class IdPhotoView : UserControl
             ApplyGrayscalePreview();
 
             var face = await Task.Run(() => App.Services.Faces.DetectMain(path));
-            _head = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
+            var detecte = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
+            PoserReperes(detecte);
             AutoCrop();
         }
         catch (Exception ex)
@@ -151,19 +157,122 @@ public partial class IdPhotoView : UserControl
         Redraw();
     }
 
+    /// <summary>
+    /// Place les deux anneaux : sur la tête détectée si elle l'a été, sinon à une position
+    /// plausible que l'opérateur ajustera. Ils sont toujours proposés — la détection se
+    /// trompe sur les cheveux volumineux, les couvre-chefs et les bébés, et c'est
+    /// précisément là que le placement manuel sauve la photo.
+    /// </summary>
+    private void PoserReperes(NormRect? detecte)
+    {
+        if (detecte is { } tete)
+        {
+            _crown = new NormPoint(tete.CenterX, tete.Y);
+            _chin = new NormPoint(tete.CenterX, tete.Bottom);
+        }
+        else
+        {
+            _crown = new NormPoint(0.5, 0.22);
+            _chin = new NormPoint(0.5, 0.62);
+        }
+    }
+
+    /// <summary>Recalcule la tête et le cadre à partir des deux repères.</summary>
     private void AutoCrop()
     {
         if (_displayBitmap is null) return;
-        _crop = _head is not null
-            ? IdPhotoFr.ComputeCrop(_head, _displayBitmap.PixelWidth, _displayBitmap.PixelHeight)
-            : CropMath.CenterCrop(_displayBitmap.PixelWidth, _displayBitmap.PixelHeight,
-                IdPhotoFr.PhotoWidthMm / IdPhotoFr.PhotoHeightMm);
+
+        if (_crown is not null && _chin is not null)
+        {
+            try
+            {
+                _head = IdPhotoFr.HeadFromMarkers(_crown, _chin);
+                _crop = IdPhotoFr.ComputeCrop(_head, _displayBitmap.PixelWidth, _displayBitmap.PixelHeight);
+                return;
+            }
+            catch (ArgumentException)
+            {
+                // repères confondus : on garde le cadre précédent plutôt que de tout perdre
+                return;
+            }
+        }
+
+        _head = null;
+        _crop = CropMath.CenterCrop(_displayBitmap.PixelWidth, _displayBitmap.PixelHeight,
+            IdPhotoFr.PhotoWidthMm / IdPhotoFr.PhotoHeightMm);
     }
 
     private void OnRedetect(object sender, RoutedEventArgs e)
     {
+        if (_current is not null)
+        {
+            var face = App.Services.Faces.DetectMain(_current.Path);
+            PoserReperes(face is null ? null : IdPhotoFr.EstimateHead(face.Box));
+        }
         AutoCrop();
         Redraw();
+    }
+
+    // ----- anneaux de placement -----
+
+    private void OnMarkerDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement anneau) return;
+
+        _markerDrag = anneau.Tag as string;
+        Stage.CaptureMouse();   // la souris peut sortir de l'anneau pendant le glissement
+        e.Handled = true;       // ne pas déclencher le déplacement du cadre
+    }
+
+    /// <summary>Déplace l'anneau saisi ; renvoie vrai si le glissement a été consommé.</summary>
+    private bool DeplacerRepere(Point positionStage)
+    {
+        if (_markerDrag is null) return false;
+
+        var display = DisplayRect();
+        if (display.IsEmpty || display.Width <= 0 || display.Height <= 0) return true;
+
+        var point = new NormPoint(
+            Math.Clamp((positionStage.X - display.X) / display.Width, 0, 1),
+            Math.Clamp((positionStage.Y - display.Y) / display.Height, 0, 1));
+
+        if (_markerDrag == "Crown") _crown = point;
+        else _chin = point;
+
+        AutoCrop();
+        Redraw();
+        return true;
+    }
+
+    private void PlacerAnneaux(Rect display)
+    {
+        var visible = _crown is not null && _chin is not null && !display.IsEmpty;
+        var etat = visible ? Visibility.Visible : Visibility.Collapsed;
+        CrownMarker.Visibility = ChinMarker.Visibility = etat;
+        CrownLabel.Visibility = ChinLabel.Visibility = MarkerAxis.Visibility = etat;
+        if (!visible) return;
+
+        var crane = new Point(display.X + _crown!.X * display.Width, display.Y + _crown.Y * display.Height);
+        var menton = new Point(display.X + _chin!.X * display.Width, display.Y + _chin.Y * display.Height);
+
+        Centrer(CrownMarker, crane);
+        Centrer(ChinMarker, menton);
+
+        Canvas.SetLeft(CrownLabel, crane.X + 30);
+        Canvas.SetTop(CrownLabel, crane.Y - 10);
+        Canvas.SetLeft(ChinLabel, menton.X + 30);
+        Canvas.SetTop(ChinLabel, menton.Y - 10);
+
+        MarkerAxis.X1 = crane.X;
+        MarkerAxis.Y1 = crane.Y;
+        MarkerAxis.X2 = menton.X;
+        MarkerAxis.Y2 = menton.Y;
+    }
+
+    private static void Centrer(FrameworkElement anneau, Point centre)
+    {
+        Canvas.SetLeft(anneau, centre.X - anneau.Width / 2);
+        Canvas.SetTop(anneau, centre.Y - anneau.Height / 2);
     }
 
     private void OnGrayscaleChanged(object sender, RoutedEventArgs e) => ApplyGrayscalePreview();
@@ -220,6 +329,7 @@ public partial class IdPhotoView : UserControl
         PlaceGuide(ChinMinLine, cropRect, IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.HeadMinMm);
         PlaceGuide(ChinMaxLine, cropRect, IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.HeadMaxMm);
 
+        PlacerAnneaux(display);
         UpdateCompliance();
     }
 
@@ -309,11 +419,15 @@ public partial class IdPhotoView : UserControl
     private void OnStageMouseUp(object sender, MouseButtonEventArgs e)
     {
         _dragging = false;
+        _markerDrag = null;
         Stage.ReleaseMouseCapture();
     }
 
     private void OnStageMouseMove(object sender, MouseEventArgs e)
     {
+        // un anneau saisi a la priorité sur le déplacement du cadre
+        if (DeplacerRepere(e.GetPosition(Stage))) return;
+
         if (!_dragging) return;
         var pos = e.GetPosition(Stage);
         Pan(pos.X - _dragLast.X, pos.Y - _dragLast.Y);

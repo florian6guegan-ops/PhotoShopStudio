@@ -12,7 +12,7 @@
             <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}" Text="Photo d'identité 35×45"/>
             <TextBlock DockPanel.Dock="Right" Style="{StaticResource Hint}" HorizontalAlignment="Right"
                        VerticalAlignment="Center"
-                       Text="Le cadrage se règle comme une photo : glisser, molette, pincement"/>
+                       Text="Placez l'anneau jaune au sommet du crâne et le bleu sous le menton : le cadrage suit"/>
         </DockPanel>
 
         <Grid Grid.Row="1">
@@ -60,6 +60,25 @@
                         <Line x:Name="ChinMinLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
                         <Line x:Name="ChinMaxLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
                     </Canvas>
+                    <!-- Anneaux de placement : sommet du crâne et bas du menton.
+                         Sans fond, seul le trait est cliquable, la photo reste visible dessous. -->
+                    <Canvas x:Name="Markers">
+                        <Ellipse x:Name="CrownMarker" Width="52" Height="52" StrokeThickness="4"
+                                 Stroke="#FFD24A" Fill="#22FFD24A" Cursor="SizeAll"
+                                 Visibility="Collapsed"
+                                 MouseLeftButtonDown="OnMarkerDown" Tag="Crown"/>
+                        <TextBlock x:Name="CrownLabel" Text="crâne" FontSize="14" FontWeight="Bold"
+                                   Foreground="#FFD24A" Visibility="Collapsed"/>
+                        <Ellipse x:Name="ChinMarker" Width="52" Height="52" StrokeThickness="4"
+                                 Stroke="#4ADEFF" Fill="#224ADEFF" Cursor="SizeAll"
+                                 Visibility="Collapsed"
+                                 MouseLeftButtonDown="OnMarkerDown" Tag="Chin"/>
+                        <TextBlock x:Name="ChinLabel" Text="menton" FontSize="14" FontWeight="Bold"
+                                   Foreground="#4ADEFF" Visibility="Collapsed"/>
+                        <Line x:Name="MarkerAxis" StrokeThickness="2" StrokeDashArray="5 4"
+                              Stroke="#88FFFFFF" Visibility="Collapsed"/>
+                    </Canvas>
+
                     <TextBlock x:Name="EmptyText" Foreground="White" FontSize="24" FontWeight="SemiBold"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Text="Choisissez une photo à gauche"/>

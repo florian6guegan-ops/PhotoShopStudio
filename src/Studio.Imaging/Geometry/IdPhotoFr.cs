@@ -9,6 +9,9 @@ public sealed record NormRect(double X, double Y, double Width, double Height)
     public double Bottom => Y + Height;
 }
 
+/// <summary>Point normalisé (0..1) sur l'image orientée.</summary>
+public sealed record NormPoint(double X, double Y);
+
 /// <summary>Écarts mesurés du cadrage identité par rapport au gabarit FR 35×45.</summary>
 public sealed record IdCompliance(
     double HeadHeightMm,
@@ -43,6 +46,48 @@ public static class IdPhotoFr
     /// </summary>
     public static NormRect EstimateHead(NormRect faceBox) =>
         new(faceBox.X, faceBox.Y - 0.28 * faceBox.Height, faceBox.Width, 1.28 * faceBox.Height);
+
+    /// <summary>
+    /// Largeur de tête présumée, en proportion de sa hauteur. Elle ne sert qu'à donner
+    /// une emprise au rectangle : le cadrage n'utilise que le centre et la hauteur.
+    /// </summary>
+    private const double HeadWidthRatio = 0.75;
+
+    /// <summary>
+    /// Tête définie par deux repères posés par l'opérateur : le sommet du crâne et le bas
+    /// du menton. C'est la méthode de DiLand, et la plus fiable — la détection
+    /// automatique se trompe sur les cheveux volumineux, les couvre-chefs et les bébés,
+    /// alors que ces deux points-là ne se discutent pas.
+    /// </summary>
+    /// <param name="crown">Sommet du crâne, cheveux compris.</param>
+    /// <param name="chin">Bas du menton.</param>
+    public static NormRect HeadFromMarkers(NormPoint crown, NormPoint chin)
+    {
+        ArgumentNullException.ThrowIfNull(crown);
+        ArgumentNullException.ThrowIfNull(chin);
+
+        // les repères peuvent être posés dans n'importe quel ordre : on remet d'aplomb
+        var haut = Math.Min(crown.Y, chin.Y);
+        var bas = Math.Max(crown.Y, chin.Y);
+        var hauteur = bas - haut;
+
+        if (hauteur <= 0)
+            throw new ArgumentException(
+                "Le sommet du crâne et le menton sont au même endroit : impossible d'en déduire une taille de visage.",
+                nameof(chin));
+
+        // l'axe du visage passe entre les deux repères : c'est lui qui sert au centrage
+        var centreX = (crown.X + chin.X) / 2;
+        var largeur = hauteur * HeadWidthRatio;
+
+        return new NormRect(centreX - largeur / 2, haut, largeur, hauteur);
+    }
+
+    /// <summary>
+    /// Cadre 35×45 déduit des deux repères, prêt à imprimer.
+    /// </summary>
+    public static CropSpec CropFromMarkers(NormPoint crown, NormPoint chin, int imageWidth, int imageHeight) =>
+        ComputeCrop(HeadFromMarkers(crown, chin), imageWidth, imageHeight);
 
     /// <summary>
     /// Cadre 35×45 idéal pour la tête donnée : tête à 34 mm, crâne à 4 mm du bord haut,
