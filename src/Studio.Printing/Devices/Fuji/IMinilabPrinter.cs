@@ -86,6 +86,24 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         return info?.Media?.Surface ?? De100Surface.Glossy;
     }
 
+    /// <summary>
+    /// État complet de chaque machine : papier, encres, bac de maintenance, formats
+    /// encore tirables. Sert à l'écran de suivi des consommables.
+    /// </summary>
+    public async Task<IReadOnlyList<De100PrinterInfo>> SnapshotAsync()
+    {
+        if (!_client.IsConnected) await _client.ConnectAsync();
+
+        var machines = await _client.ListMachinesAsync();
+        var etats = new List<De100PrinterInfo>();
+        foreach (var machine in machines)
+        {
+            var info = await _client.GetPrinterInfoAsync(machine);
+            if (info is not null) etats.Add(info);
+        }
+        return etats;
+    }
+
     public string Submit(De100PrintJob job, char machineId)
     {
         EnsureConnected();

@@ -21,6 +21,9 @@ public partial class HomeView : UserControl
         };
     }
 
+    private void OnMachineStatus(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new MachineStatusView(), "État des machines");
+
     private void OnLargeFormatQueue(object sender, RoutedEventArgs e) =>
         Navigator.Go(new LargeFormatQueueView(), "Agrandissements à tirer");
 

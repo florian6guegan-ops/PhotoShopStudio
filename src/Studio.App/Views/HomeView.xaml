@@ -15,6 +15,9 @@
         <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnOrders">
             🗂  Commandes du jour
         </Button>
+        <Button Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12" Click="OnMachineStatus">
+            🖨  État des machines
+        </Button>
         <Button x:Name="LargeFormatButton" Style="{StaticResource FlatButton}" MinWidth="420" Margin="0,12"
                 Click="OnLargeFormatQueue">
             🖼  Agrandissements à tirer

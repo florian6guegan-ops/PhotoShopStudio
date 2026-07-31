@@ -35,6 +35,9 @@ public sealed class AppServices
     public required OrderFolderStore Store { get; init; }
     public required OrderService Orders { get; init; }
     public required PrintOrchestrator Printer { get; set; }
+
+    /// <summary>Accès au minilab Fuji, partagé avec l'orchestrateur d'impression.</summary>
+    public required De100BridgePrinter Minilab { get; init; }
     public required ThumbnailService Thumbnails { get; init; }
 
     private readonly Lazy<FaceDetector> _faces = new(() => new FaceDetector(
@@ -139,6 +142,8 @@ public sealed class AppServices
 
         MagickInit.Configure();
 
+        var minilab = new De100BridgePrinter { Log = message => FileLog.Write(message) };
+
         return new AppServices
         {
             DataRoot = dataRoot,
@@ -146,8 +151,8 @@ public sealed class AppServices
             Store = store,
             Orders = new OrderService(store, counter),
             // le minilab se connecte à la demande : construire l'objet ne démarre pas le relais
-            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog"),
-                new De100BridgePrinter { Log = message => FileLog.Write(message) }),
+            Minilab = minilab,
+            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog"), minilab),
             Thumbnails = new ThumbnailService(Path.Combine(dataRoot, "cache")),
             Upload = new UploadServer(Path.Combine(dataRoot, "incoming")),
             Mode = LoadConfig<ModeConfig>(Path.Combine(dataRoot, "config", "mode.json")),
