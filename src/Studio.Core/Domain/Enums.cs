@@ -37,6 +37,13 @@ public enum ProductOutput
     /// au-delà du 21×29,7 sur l'Epson SC-P800.
     /// </summary>
     ManualFile,
+
+    /// <summary>
+    /// Envoi direct au minilab Fuji par son SDK, via le relais 32 bits. Le DE100 n'écoute
+    /// PAS le spouleur Windows : ses files y sont branchées sur le port « nul », qui avale
+    /// les travaux sans rien imprimer.
+    /// </summary>
+    FujiMinilab,
 }
 
 public enum FitMode

@@ -48,8 +48,21 @@ public sealed class Product
     /// <summary>Nom exact de la file d'impression Windows. Vide si <see cref="Output"/> vaut ManualFile.</summary>
     public string PrinterName { get; set; } = "";
 
-    /// <summary>Par où sort le produit : file Windows, ou fichier repris à la main dans Photoshop.</summary>
+    /// <summary>Par où sort le produit : file Windows, fichier repris dans Photoshop, ou minilab Fuji.</summary>
     public ProductOutput Output { get; set; } = ProductOutput.Printer;
+
+    /// <summary>
+    /// Machine visée sur le minilab (« A », « B »…), quand <see cref="Output"/> vaut
+    /// FujiMinilab. Vide = la première machine prête, ce qui évite de rester bloqué
+    /// quand l'une des deux est hors ligne.
+    /// </summary>
+    public string? MinilabMachineId { get; set; }
+
+    /// <summary>
+    /// Nom du format tel que le minilab le connaît (paramètre <c>PrintSizeName</c>).
+    /// Vide = on reprend <see cref="Name"/>, qui correspond déjà aux noms Fuji.
+    /// </summary>
+    public string? MinilabPrintSizeName { get; set; }
     /// <summary>Canal logique (regroupe les enveloppes) ; par défaut le nom de l'imprimante.</summary>
     public string? PrinterChannel { get; set; }
     public int Dpi { get; set; } = 300;

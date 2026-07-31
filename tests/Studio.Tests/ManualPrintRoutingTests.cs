@@ -80,7 +80,7 @@ public class ManualPrintRoutingTests : IDisposable
         var ex = Assert.Throws<InvalidOperationException>(
             () => orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]));
 
-        Assert.Contains("Photoshop", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("circuits", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("canaux d'impression distincts", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -110,7 +110,7 @@ public class ManualPrintRoutingTests : IDisposable
         var ex = Record.Exception(() => orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]));
 
         if (ex is InvalidOperationException invalide)
-            Assert.DoesNotContain("canaux d'impression distincts", invalide.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("circuits", invalide.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

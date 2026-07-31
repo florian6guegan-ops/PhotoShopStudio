@@ -3,7 +3,9 @@ using System.Text.Json;
 using Studio.Core.Catalog;
 using Studio.Imaging;
 using Studio.Imaging.Faces;
+using Studio.App.Infrastructure;
 using Studio.Printing;
+using Studio.Printing.Devices.Fuji;
 using Studio.Store;
 using Studio.Web;
 
@@ -143,7 +145,9 @@ public sealed class AppServices
             Catalog = catalog,
             Store = store,
             Orders = new OrderService(store, counter),
-            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog")),
+            // le minilab se connecte à la demande : construire l'objet ne démarre pas le relais
+            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog"),
+                new De100BridgePrinter { Log = message => FileLog.Write(message) }),
             Thumbnails = new ThumbnailService(Path.Combine(dataRoot, "cache")),
             Upload = new UploadServer(Path.Combine(dataRoot, "incoming")),
             Mode = LoadConfig<ModeConfig>(Path.Combine(dataRoot, "config", "mode.json")),

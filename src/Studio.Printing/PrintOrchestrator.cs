@@ -4,6 +4,7 @@ using Studio.Core.Catalog;
 using Studio.Core.Domain;
 using Studio.Imaging;
 using Studio.Imaging.Geometry;
+using Studio.Printing.Devices.Fuji;
 using Studio.Store;
 
 namespace Studio.Printing;
@@ -31,13 +32,20 @@ public sealed class PrintOrchestrator
     private readonly ProductCatalog _catalog;
     private readonly OrderFolderStore _store;
     private readonly string _catalogDir;
+    private readonly IMinilabPrinter? _minilab;
 
     /// <param name="catalogDir">Dossier catalog/ contenant les DEVMODE et profils ICC.</param>
-    public PrintOrchestrator(ProductCatalog catalog, OrderFolderStore store, string catalogDir)
+    /// <param name="minilab">
+    /// Accès au minilab Fuji. Null = les produits qui en dépendent seront refusés
+    /// explicitement plutôt que renvoyés vers un spouleur qui les jetterait.
+    /// </param>
+    public PrintOrchestrator(ProductCatalog catalog, OrderFolderStore store, string catalogDir,
+        IMinilabPrinter? minilab = null)
     {
         _catalog = catalog;
         _store = store;
         _catalogDir = catalogDir;
+        _minilab = minilab;
     }
 
     /// <summary>
@@ -53,17 +61,26 @@ public sealed class PrintOrchestrator
                 "— confirmation opérateur requise pour réimprimer.");
 
         var products = envelope.Lines.Select(l => _catalog.Require(l.ProductCode)).ToList();
-        var manualCount = products.Count(p => p.Output == ProductOutput.ManualFile);
-        if (manualCount > 0 && manualCount != products.Count)
+
+        // une enveloppe emprunte un seul circuit : spouleur, fichiers, ou minilab
+        var circuits = products.Select(p => p.Output).Distinct().ToList();
+        if (circuits.Count > 1)
             throw new InvalidOperationException(
-                $"L'enveloppe {order.DisplayNumber}/{envelope.Number} mélange des produits envoyés au " +
-                "spouleur et des produits repris à la main dans Photoshop. Ces deux circuits doivent être " +
-                "séparés : donnez-leur des canaux d'impression distincts dans le catalogue.");
-        var manualPrinting = manualCount > 0;
+                $"L'enveloppe {order.DisplayNumber}/{envelope.Number} mélange plusieurs circuits " +
+                $"d'impression ({string.Join(", ", circuits)}). Ils doivent être séparés : donnez à ces " +
+                "produits des canaux d'impression distincts dans le catalogue.");
+
+        var manualPrinting = circuits[0] == ProductOutput.ManualFile;
+        var minilabPrinting = circuits[0] == ProductOutput.FujiMinilab;
+
+        if (minilabPrinting && _minilab is null)
+            throw new InvalidOperationException(
+                "Le minilab Fuji n'est pas accessible depuis cette application : le relais 32 bits " +
+                "n'a pas été fourni. Aucun tirage n'a été envoyé.");
 
         // une file sur le port `nul` avale les travaux sans rien imprimer : mieux vaut
         // refuser franchement que rendre, spouler et annoncer un succès imaginaire
-        if (!manualPrinting)
+        if (!manualPrinting && !minilabPrinting)
         {
             foreach (var printerName in products.Select(p => p.PrinterName).Distinct(StringComparer.OrdinalIgnoreCase))
             {
@@ -100,6 +117,13 @@ public sealed class PrintOrchestrator
             return;
         }
 
+        // circuit minilab : on passe par le SDK Fuji, jamais par le spouleur
+        if (minilabPrinting)
+        {
+            SubmitToMinilab(order, envelope, pages);
+            return;
+        }
+
         // moment décisif : on grave « Spooled » sur disque AVANT de soumettre au spouleur
         WriteSpoolState(order, envelope, SpoolState.Spooled);
         envelope.Status = EnvelopeStatus.Spooled;
@@ -131,6 +155,74 @@ public sealed class PrintOrchestrator
                 if (ReadSpoolState(order, envelope)?.Status == SpoolState.Spooled)
                     result.Add((order, envelope));
         return result;
+    }
+
+    /// <summary>
+    /// Envoie les pages rendues au minilab Fuji.
+    ///
+    /// Comme pour le spouleur, l'état « Spooled » est gravé sur disque AVANT le premier
+    /// envoi : un plantage en cours de route ne doit jamais provoquer un renvoi
+    /// automatique. L'enveloppe reste dans cet état jusqu'à ce que le minilab confirme
+    /// ses tirages ou que l'opérateur tranche.
+    /// </summary>
+    private void SubmitToMinilab(Order order, Envelope envelope, List<RenderedPage> pages)
+    {
+        var machine = ChooseMinilabMachine(pages);
+
+        WriteSpoolState(order, envelope, SpoolState.Spooled);
+        envelope.Status = EnvelopeStatus.Spooled;
+        _store.Save(order);
+        _store.AppendEvent(order, "minilab-submit-start",
+            $"env={envelope.Number}, machine={machine}, tirages={pages.Sum(p => p.Copies)}");
+
+        var handles = new List<string>();
+        foreach (var page in pages)
+        {
+            var product = page.Product;
+            var job = new De100PrintJob(
+                JobId: $"{order.DisplayNumber}-{envelope.Number}-{handles.Count + 1:000}",
+                ImagePath: page.Path,
+                WidthMm: page.WidthMm,
+                HeightMm: page.HeightMm,
+                PrintSizeName: string.IsNullOrWhiteSpace(product.MinilabPrintSizeName)
+                    ? product.Name
+                    : product.MinilabPrintSizeName!,
+                Surface: De100Surface.Glossy,
+                Copies: page.Copies);
+
+            handles.Add(_minilab!.Submit(job, machine));
+        }
+
+        _store.AppendEvent(order, "minilab-submitted",
+            $"env={envelope.Number}, machine={machine}, commandes=[{string.Join(", ", handles)}]");
+    }
+
+    /// <summary>
+    /// Machine visée : celle demandée par le produit si elle est prête, sinon la première
+    /// machine prête. Le DE100 de la boutique en compte deux, dont une souvent hors ligne.
+    /// </summary>
+    private char ChooseMinilabMachine(List<RenderedPage> pages) =>
+        ChooseMachine(
+            _minilab!.ReadyMachines(),
+            pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)));
+
+    /// <summary>
+    /// Règle de choix, isolée pour être vérifiable : la machine demandée si elle est
+    /// prête, sinon la première prête. Une machine demandée mais hors ligne ne doit pas
+    /// bloquer le tirage — le DE100 de la boutique en compte deux, dont une souvent
+    /// éteinte.
+    /// </summary>
+    internal static char ChooseMachine(IReadOnlyList<char> ready, string? requested)
+    {
+        if (ready.Count == 0)
+            throw new InvalidOperationException(
+                "Aucune machine du minilab n'est prête : rien n'a été envoyé. Vérifiez que le DE100 " +
+                "est allumé et sorti de veille.");
+
+        if (!string.IsNullOrWhiteSpace(requested) && ready.Contains(requested[0]))
+            return requested[0];
+
+        return ready[0];
     }
 
     /// <summary>
