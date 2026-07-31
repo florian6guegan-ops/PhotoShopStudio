@@ -12,15 +12,32 @@ public sealed record NormRect(double X, double Y, double Width, double Height)
 /// <summary>Point normalisé (0..1) sur l'image orientée.</summary>
 public sealed record NormPoint(double X, double Y);
 
-/// <summary>Écarts mesurés du cadrage identité par rapport au gabarit FR 35×45.</summary>
+/// <summary>
+/// Écarts mesurés du cadrage identité par rapport au gabarit du document visé.
+/// Sans document précisé, la norme française 35×45 s'applique.
+/// </summary>
 public sealed record IdCompliance(
     double HeadHeightMm,
     double CrownMarginMm,
-    double CenterOffsetMm)
+    double CenterOffsetMm,
+    IdDocumentSpec? Spec = null)
 {
-    public bool HeadHeightOk => HeadHeightMm >= IdPhotoFr.HeadMinMm && HeadHeightMm <= IdPhotoFr.HeadMaxMm;
-    public bool CrownOk => CrownMarginMm >= IdPhotoFr.CrownMarginMinMm && CrownMarginMm <= IdPhotoFr.CrownMarginMaxMm;
+    private IdDocumentSpec Document => Spec ?? IdDocumentSpec.France;
+
+    /// <summary>
+    /// Faux quand le document ne précise aucune borne de visage : la conformité ne peut
+    /// alors pas être jugée, et annoncer « conforme » serait mentir.
+    /// </summary>
+    public bool CanBeChecked => Document.HasHeadBounds;
+
+    public bool HeadHeightOk =>
+        !CanBeChecked || (HeadHeightMm >= Document.HeadMinMm && HeadHeightMm <= Document.HeadMaxMm);
+
+    public bool CrownOk => CrownMarginMm >= IdPhotoFr.CrownMarginMinMm
+                           && CrownMarginMm <= IdPhotoFr.CrownMarginMaxMm;
+
     public bool CenteredOk => Math.Abs(CenterOffsetMm) <= IdPhotoFr.CenterToleranceMm;
+
     public bool Compliant => HeadHeightOk && CrownOk && CenteredOk;
 }
 
@@ -94,27 +111,43 @@ public static class IdPhotoFr
     /// centré sur la tête. Le résultat est borné à l'image (la conformité peut donc
     /// être dégradée sur une photo trop serrée — Check le mesurera).
     /// </summary>
-    public static CropSpec ComputeCrop(NormRect head, int imageWidth, int imageHeight)
+    public static CropSpec ComputeCrop(NormRect head, int imageWidth, int imageHeight) =>
+        ComputeCrop(head, imageWidth, imageHeight, IdDocumentSpec.France);
+
+    /// <summary>
+    /// Cadre idéal pour le document visé : visage à la hauteur visée, crâne à la marge
+    /// prévue, centré. Chaque pays a ses cotes — un passeport espagnol fait 26 × 32 mm
+    /// là où le français fait 35 × 45.
+    /// </summary>
+    public static CropSpec ComputeCrop(NormRect head, int imageWidth, int imageHeight, IdDocumentSpec spec)
     {
+        ArgumentNullException.ThrowIfNull(spec);
         if (imageWidth <= 0 || imageHeight <= 0)
             throw new ArgumentOutOfRangeException(nameof(imageWidth));
+        if (!spec.IsUsable)
+            throw new ArgumentException($"Document sans cotes exploitables : {spec.Label}", nameof(spec));
 
-        var cropH = head.Height * (PhotoHeightMm / TargetHeadMm);
-        // aspect pixel 35/45 exprimé en coordonnées normalisées
-        var cropW = cropH * (PhotoWidthMm / PhotoHeightMm) * imageHeight / imageWidth;
-        var top = head.Y - cropH * (TargetCrownMarginMm / PhotoHeightMm);
+        var cropH = head.Height * (spec.HeightMm / spec.TargetHeadMm);
+        // proportions du document exprimées en coordonnées normalisées
+        var cropW = cropH * (spec.WidthMm / spec.HeightMm) * imageHeight / imageWidth;
+        var top = head.Y - cropH * (spec.TargetCrownMarginMm / spec.HeightMm);
         return CropMath.ClampToBounds(new CropSpec(head.CenterX - cropW / 2, top, cropW, cropH));
     }
 
     /// <summary>Mesure le cadrage actuel contre le gabarit (mm sur le tirage final).</summary>
-    public static IdCompliance Check(CropSpec crop, NormRect head)
+    public static IdCompliance Check(CropSpec crop, NormRect head) =>
+        Check(crop, head, IdDocumentSpec.France);
+
+    /// <summary>Mesure le cadrage contre le gabarit du document visé.</summary>
+    public static IdCompliance Check(CropSpec crop, NormRect head, IdDocumentSpec spec)
     {
+        ArgumentNullException.ThrowIfNull(spec);
         if (crop.Height <= 0 || crop.Width <= 0)
             throw new ArgumentOutOfRangeException(nameof(crop));
 
-        var headHeightMm = head.Height / crop.Height * PhotoHeightMm;
-        var crownMarginMm = (head.Y - crop.Y) / crop.Height * PhotoHeightMm;
-        var centerOffsetMm = (head.CenterX - (crop.X + crop.Width / 2)) / crop.Width * PhotoWidthMm;
-        return new IdCompliance(headHeightMm, crownMarginMm, centerOffsetMm);
+        var headHeightMm = head.Height / crop.Height * spec.HeightMm;
+        var crownMarginMm = (head.Y - crop.Y) / crop.Height * spec.HeightMm;
+        var centerOffsetMm = (head.CenterX - (crop.X + crop.Width / 2)) / crop.Width * spec.WidthMm;
+        return new IdCompliance(headHeightMm, crownMarginMm, centerOffsetMm, spec);
     }
 }
