@@ -68,10 +68,13 @@ public sealed class OrderService
             foreach (var productGroup in channelGroup.GroupBy(i => i.Product.Code))
             {
                 var product = productGroup.First().Product;
+                // le tarif dégressif se calcule sur le total du produit dans la commande,
+                // pas photo par photo : 30 tirages en 3 images restent 30 tirages
+                var totalQuantity = productGroup.Sum(i => i.Quantity);
                 var line = new OrderLine
                 {
                     ProductCode = product.Code,
-                    UnitPrice = product.Price,
+                    UnitPrice = product.UnitPriceFor(Math.Max(totalQuantity, 1)),
                 };
                 foreach (var item in productGroup)
                 {

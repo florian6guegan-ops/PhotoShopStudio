@@ -14,13 +14,6 @@
                    },
                    {
                        "ProduitOid":  70,
-                       "Quantite":  1,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  70,
                        "Quantite":  5,
                        "PrixUnitaire":  0.6,
                        "FraisFixes":  0,
@@ -29,14 +22,35 @@
                    {
                        "ProduitOid":  70,
                        "Quantite":  31,
+                       "PrixUnitaire":  0.55,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  70,
+                       "Quantite":  50,
+                       "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  70,
+                       "Quantite":  99,
                        "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
                    {
                        "ProduitOid":  70,
+                       "Quantite":  1,
+                       "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  70,
                        "Quantite":  31,
-                       "PrixUnitaire":  0.55,
+                       "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -48,20 +62,6 @@
                        "FraisService":  0
                    },
                    {
-                       "ProduitOid":  70,
-                       "Quantite":  50,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  70,
-                       "Quantite":  99,
-                       "PrixUnitaire":  0.45,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
                        "ProduitOid":  71,
                        "Quantite":  5,
                        "PrixUnitaire":  0.6,
@@ -84,6 +84,34 @@
                    },
                    {
                        "ProduitOid":  71,
+                       "Quantite":  99,
+                       "PrixUnitaire":  0.45,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  72,
+                       "Quantite":  5,
+                       "PrixUnitaire":  0.6,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  72,
+                       "Quantite":  31,
+                       "PrixUnitaire":  0.55,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  72,
+                       "Quantite":  50,
+                       "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  72,
                        "Quantite":  99,
                        "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
@@ -98,22 +126,8 @@
                    },
                    {
                        "ProduitOid":  72,
-                       "Quantite":  5,
-                       "PrixUnitaire":  0.6,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  72,
                        "Quantite":  31,
                        "PrixUnitaire":  0.45,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  72,
-                       "Quantite":  31,
-                       "PrixUnitaire":  0.55,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -121,20 +135,6 @@
                        "ProduitOid":  72,
                        "Quantite":  50,
                        "PrixUnitaire":  0.4,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  72,
-                       "Quantite":  50,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  72,
-                       "Quantite":  99,
-                       "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -259,13 +259,6 @@
                    },
                    {
                        "ProduitOid":  81,
-                       "Quantite":  1,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  81,
                        "Quantite":  5,
                        "PrixUnitaire":  0.6,
                        "FraisFixes":  0,
@@ -280,15 +273,22 @@
                    },
                    {
                        "ProduitOid":  81,
-                       "Quantite":  31,
-                       "PrixUnitaire":  0.45,
+                       "Quantite":  50,
+                       "PrixUnitaire":  0.5,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
                    {
                        "ProduitOid":  81,
-                       "Quantite":  50,
+                       "Quantite":  1,
                        "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  81,
+                       "Quantite":  31,
+                       "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -308,13 +308,6 @@
                    },
                    {
                        "ProduitOid":  82,
-                       "Quantite":  1,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  82,
                        "Quantite":  5,
                        "PrixUnitaire":  0.6,
                        "FraisFixes":  0,
@@ -329,15 +322,22 @@
                    },
                    {
                        "ProduitOid":  82,
-                       "Quantite":  31,
-                       "PrixUnitaire":  0.45,
+                       "Quantite":  50,
+                       "PrixUnitaire":  0.5,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
                    {
                        "ProduitOid":  82,
-                       "Quantite":  50,
+                       "Quantite":  1,
                        "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  82,
+                       "Quantite":  31,
+                       "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -476,13 +476,6 @@
                    },
                    {
                        "ProduitOid":  94,
-                       "Quantite":  1,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  94,
                        "Quantite":  5,
                        "PrixUnitaire":  0.6,
                        "FraisFixes":  0,
@@ -491,21 +484,7 @@
                    {
                        "ProduitOid":  94,
                        "Quantite":  31,
-                       "PrixUnitaire":  0.45,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  94,
-                       "Quantite":  31,
                        "PrixUnitaire":  0.55,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  94,
-                       "Quantite":  50,
-                       "PrixUnitaire":  0.4,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -520,6 +499,27 @@
                        "ProduitOid":  94,
                        "Quantite":  99,
                        "PrixUnitaire":  0.45,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  94,
+                       "Quantite":  1,
+                       "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  94,
+                       "Quantite":  31,
+                       "PrixUnitaire":  0.45,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  94,
+                       "Quantite":  50,
+                       "PrixUnitaire":  0.4,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
@@ -798,13 +798,6 @@
                    },
                    {
                        "ProduitOid":  168,
-                       "Quantite":  1,
-                       "PrixUnitaire":  0.5,
-                       "FraisFixes":  0,
-                       "FraisService":  0
-                   },
-                   {
-                       "ProduitOid":  168,
                        "Quantite":  5,
                        "PrixUnitaire":  0.6,
                        "FraisFixes":  0,
@@ -819,15 +812,22 @@
                    },
                    {
                        "ProduitOid":  168,
-                       "Quantite":  31,
-                       "PrixUnitaire":  0.45,
+                       "Quantite":  50,
+                       "PrixUnitaire":  0.5,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },
                    {
                        "ProduitOid":  168,
-                       "Quantite":  50,
+                       "Quantite":  1,
                        "PrixUnitaire":  0.5,
+                       "FraisFixes":  0,
+                       "FraisService":  0
+                   },
+                   {
+                       "ProduitOid":  168,
+                       "Quantite":  31,
+                       "PrixUnitaire":  0.45,
                        "FraisFixes":  0,
                        "FraisService":  0
                    },

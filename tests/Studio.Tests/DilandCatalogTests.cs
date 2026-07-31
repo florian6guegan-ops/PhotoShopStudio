@@ -90,15 +90,77 @@ public class DilandCatalogTests
     }
 
     [Theory]
-    // grille tarifaire boutique de DiLand, prix à l'unité
-    [InlineData("10x15", 0.50)]
+    // prix affichés en boutique (affiches « TIRAGE NUMÉRIQUE » et « TIRAGE AGRANDISSEMENT »)
+    [InlineData("10x15", 0.60)]
     [InlineData("13x18", 1.50)]
     [InlineData("15x20", 1.90)]
-    [InlineData("20x30", 7.90)]
+    [InlineData("18x24", 6.90)]
+    [InlineData("20x30", 7.50)]
+    [InlineData("30x40", 12.90)]
+    [InlineData("40x50", 19.90)]
+    [InlineData("50x70", 24.90)]
+    [InlineData("60x80", 29.90)]
     [InlineData("bord-blanc-10x15", 0.90)]
-    public void Les_prix_sont_ceux_de_DiLand(string code, double prix)
+    public void Les_prix_sont_ceux_affiches_en_boutique(string code, double prix)
     {
         Assert.Equal((decimal)prix, Get(code).Price);
+    }
+
+    [Theory]
+    // affiche « De 1 à 30 : 0,60 € / De 31 à 49 : 0,55 € / De 50 à 99 : 0,50 € / De 100 à 200 : 0,45 € »
+    [InlineData(1, 0.60)]
+    [InlineData(30, 0.60)]
+    [InlineData(31, 0.55)]
+    [InlineData(49, 0.55)]
+    [InlineData(50, 0.50)]
+    [InlineData(99, 0.50)]
+    [InlineData(100, 0.45)]
+    [InlineData(200, 0.45)]
+    public void Le_10x15_applique_le_tarif_degressif_affiche(int quantite, double attendu)
+    {
+        Assert.Equal((decimal)attendu, Get("10x15").UnitPriceFor(quantite));
+    }
+
+    [Fact]
+    public void Un_produit_a_prix_unique_ignore_la_quantite()
+    {
+        var produit = Get("13x18");
+
+        Assert.Empty(produit.PriceTiers);
+        Assert.Equal(1.50m, produit.UnitPriceFor(1));
+        Assert.Equal(1.50m, produit.UnitPriceFor(500));
+    }
+
+    [Fact]
+    public void Le_premier_palier_correspond_toujours_au_prix_affiche()
+    {
+        Assert.All(Catalogue.Value.All.Where(p => p.PriceTiers.Count > 0), p =>
+        {
+            Assert.Equal(1, p.PriceTiers[0].FromQuantity);
+            Assert.Equal(p.Price, p.PriceTiers[0].UnitPrice);
+        });
+    }
+
+    [Fact]
+    public void Les_paliers_sont_ordonnes_et_decroissants()
+    {
+        Assert.All(Catalogue.Value.All.Where(p => p.PriceTiers.Count > 1), p =>
+        {
+            for (var i = 1; i < p.PriceTiers.Count; i++)
+            {
+                Assert.True(p.PriceTiers[i].FromQuantity > p.PriceTiers[i - 1].FromQuantity,
+                    $"{p.Code} : paliers non ordonnés");
+                Assert.True(p.PriceTiers[i].UnitPrice <= p.PriceTiers[i - 1].UnitPrice,
+                    $"{p.Code} : le palier {p.PriceTiers[i].FromQuantity} n'est pas plus avantageux");
+            }
+        });
+    }
+
+    /// <summary>Un produit vendable à 0,00 € distribuerait des tirages gratuits.</summary>
+    [Fact]
+    public void Aucun_produit_actif_n_est_gratuit()
+    {
+        Assert.All(Catalogue.Value.Enabled, p => Assert.True(p.Price > 0, $"{p.Code} est actif à 0,00 €"));
     }
 
     [Fact]
@@ -144,12 +206,15 @@ public class DilandCatalogTests
         Assert.All(Catalogue.Value.Enabled, p => Assert.True(p.Dpi >= 150, $"{p.Code} : {p.Dpi} ppp"));
     }
 
-    /// <summary>DiLand n'avait pas de prix pour ces trois-là ; le constat est enregistré ici.</summary>
+    /// <summary>
+    /// Ni DiLand ni les affiches ne donnent de prix pour ces deux-là (le 70×100 relève
+    /// du « sur devis »). Ils restent désactivés ; le constat est enregistré ici.
+    /// </summary>
     [Fact]
-    public void Les_produits_sans_prix_dans_DiLand_sont_connus()
+    public void Les_produits_sans_prix_connu_sont_recenses()
     {
         var sansPrix = Catalogue.Value.All.Where(p => p.Price == 0).Select(p => p.Code).OrderBy(c => c).ToList();
 
-        Assert.Equal(["10x15-dnp", "30x40-2", "a4"], sansPrix);
+        Assert.Equal(["70x100", "a4"], sansPrix);
     }
 }

@@ -6,10 +6,28 @@
         "HeightMm":  102,
         "PrinterName":  "FUJIFILM DE100",
         "Dpi":  300,
-        "Price":  0.5,
+        "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           },
+                           {
+                               "FromQuantity":  99,
+                               "UnitPrice":  0.45
+                           }
+                       ]
     },
     {
         "Code":  "10x15",
@@ -18,10 +36,28 @@
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
         "Dpi":  300,
-        "Price":  0.5,
+        "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           },
+                           {
+                               "FromQuantity":  100,
+                               "UnitPrice":  0.45
+                           }
+                       ]
     },
     {
         "Code":  "13x13",
@@ -33,7 +69,10 @@
         "Price":  1.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "13x18",
@@ -45,7 +84,10 @@
         "Price":  1.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "15x15",
@@ -57,7 +99,10 @@
         "Price":  1.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "15x20",
@@ -69,7 +114,10 @@
         "Price":  1.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "15x30",
@@ -81,7 +129,10 @@
         "Price":  1.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "20x20",
@@ -93,7 +144,10 @@
         "Price":  7.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "20x25",
@@ -105,7 +159,10 @@
         "Price":  7.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "20x30",
@@ -114,10 +171,13 @@
         "HeightMm":  307,
         "PrinterName":  "FUJIFILM DE100",
         "Dpi":  300,
-        "Price":  7.9,
+        "Price":  7.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-10x10",
@@ -129,7 +189,25 @@
         "Price":  0.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.9
+                           },
+                           {
+                               "FromQuantity":  5,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           }
+                       ]
     },
     {
         "Code":  "bord-blanc-10x15",
@@ -141,7 +219,25 @@
         "Price":  0.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.9
+                           },
+                           {
+                               "FromQuantity":  5,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           }
+                       ]
     },
     {
         "Code":  "bord-blanc-13x13",
@@ -153,7 +249,10 @@
         "Price":  1.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-13x18",
@@ -165,7 +264,10 @@
         "Price":  1.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-15x15",
@@ -177,7 +279,10 @@
         "Price":  1.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-15x20",
@@ -189,7 +294,10 @@
         "Price":  1.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-20x20",
@@ -201,7 +309,10 @@
         "Price":  7.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-20x25",
@@ -213,7 +324,10 @@
         "Price":  7.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "bord-blanc-20x30",
@@ -225,7 +339,10 @@
         "Price":  7.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "8x10",
@@ -237,7 +354,25 @@
         "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           },
+                           {
+                               "FromQuantity":  99,
+                               "UnitPrice":  0.45
+                           }
+                       ]
     },
     {
         "Code":  "10x15pola",
@@ -246,10 +381,28 @@
         "HeightMm":  152,
         "PrinterName":  "FUJIFILM DE100",
         "Dpi":  300,
-        "Price":  0.5,
+        "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           },
+                           {
+                               "FromQuantity":  99,
+                               "UnitPrice":  0.45
+                           }
+                       ]
     },
     {
         "Code":  "30x30",
@@ -261,7 +414,10 @@
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "30x40",
@@ -270,10 +426,13 @@
         "HeightMm":  400,
         "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
         "Dpi":  300,
-        "Price":  19.9,
+        "Price":  12.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "30x45",
@@ -285,7 +444,10 @@
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "40x40",
@@ -297,7 +459,10 @@
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "40x50",
@@ -309,7 +474,10 @@
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "40x60",
@@ -321,7 +489,10 @@
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "50x50",
@@ -333,7 +504,10 @@
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "50x60",
@@ -345,7 +519,10 @@
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "50x70",
@@ -354,10 +531,13 @@
         "HeightMm":  700,
         "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
         "Dpi":  300,
-        "Price":  29.9,
+        "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "50x75",
@@ -369,7 +549,10 @@
         "Price":  29.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "70x100",
@@ -378,10 +561,13 @@
         "HeightMm":  1000,
         "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
         "Dpi":  300,
-        "Price":  49,
+        "Price":  0,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "60x80",
@@ -390,10 +576,13 @@
         "HeightMm":  800,
         "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
         "Dpi":  300,
-        "Price":  34.9,
+        "Price":  29.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "60x90",
@@ -405,7 +594,10 @@
         "Price":  35.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "10x15-dnp",
@@ -414,10 +606,28 @@
         "HeightMm":  156.1,
         "PrinterName":  "DP-DS620",
         "Dpi":  300,
-        "Price":  0,
+        "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           },
+                           {
+                               "FromQuantity":  100,
+                               "UnitPrice":  0.45
+                           }
+                       ]
     },
     {
         "Code":  "21x29-7",
@@ -429,7 +639,10 @@
         "Price":  7.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "a4",
@@ -441,7 +654,10 @@
         "Price":  0,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "18x24",
@@ -453,7 +669,10 @@
         "Price":  6.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "e-photo-dnp",
@@ -465,7 +684,10 @@
         "Price":  10,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ]
     },
     {
         "Code":  "pola",
@@ -477,7 +699,25 @@
         "Price":  0.9,
         "DefaultFit":  "Fit",
         "BorderMm":  2,
-        "Enabled":  true
+        "Enabled":  true,
+        "PriceTiers":  [
+                           {
+                               "FromQuantity":  1,
+                               "UnitPrice":  0.9
+                           },
+                           {
+                               "FromQuantity":  5,
+                               "UnitPrice":  0.6
+                           },
+                           {
+                               "FromQuantity":  31,
+                               "UnitPrice":  0.55
+                           },
+                           {
+                               "FromQuantity":  50,
+                               "UnitPrice":  0.5
+                           }
+                       ]
     },
     {
         "Code":  "30x40-2",
@@ -486,9 +726,12 @@
         "HeightMm":  400,
         "PrinterName":  "EPSONFECE59 (SC-P800 Series)",
         "Dpi":  300,
-        "Price":  0,
+        "Price":  12.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
-        "Enabled":  false
+        "Enabled":  false,
+        "PriceTiers":  [
+
+                       ]
     }
 ]

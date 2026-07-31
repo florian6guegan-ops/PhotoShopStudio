@@ -28,6 +28,16 @@ public sealed class FinishOption
     public string? IccProfile { get; set; }
 }
 
+/// <summary>
+/// Un palier de tarif dégressif : à partir de <see cref="FromQuantity"/> exemplaires du
+/// même produit dans la commande, le tirage est facturé <see cref="UnitPrice"/>.
+/// </summary>
+public sealed class PriceTier
+{
+    public int FromQuantity { get; set; } = 1;
+    public decimal UnitPrice { get; set; }
+}
+
 public sealed class Product
 {
     public string Code { get; set; } = "";
@@ -54,5 +64,31 @@ public sealed class Product
     public SheetSpec? Sheet { get; set; }
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Paliers de tarif dégressif, du plus petit au plus grand. Vide = prix unique.
+    /// Le palier à la quantité 1 doit valoir <see cref="Price"/> ; c'est ce que vérifie
+    /// le catalogue à sa relecture.
+    /// </summary>
+    public List<PriceTier> PriceTiers { get; set; } = new();
+
     public string Channel => string.IsNullOrEmpty(PrinterChannel) ? PrinterName : PrinterChannel!;
+
+    /// <summary>
+    /// Prix unitaire applicable pour <paramref name="quantity"/> exemplaires : le palier
+    /// le plus avantageux déjà atteint. Sans palier défini, c'est <see cref="Price"/>.
+    /// </summary>
+    public decimal UnitPriceFor(int quantity)
+    {
+        if (quantity < 1)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "La quantité doit être au moins 1.");
+        if (PriceTiers.Count == 0)
+            return Price;
+
+        var applicable = PriceTiers
+            .Where(t => t.FromQuantity <= quantity)
+            .OrderByDescending(t => t.FromQuantity)
+            .FirstOrDefault();
+
+        return applicable?.UnitPrice ?? Price;
+    }
 }
