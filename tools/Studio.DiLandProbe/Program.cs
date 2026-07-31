@@ -88,6 +88,19 @@ if (File.Exists(cataloguePath))
             + (trouve is null ? "AUCUN PRODUIT AU CATALOGUE" : $"{trouve.Code} ({trouve.Output})"));
     }
     Console.WriteLine();
+
+    // Tous les produits du catalogue DiLand, pas seulement ceux deja vendus : un format
+    // propose en borne mais absent de chez nous ferait perdre une ligne le jour ou un
+    // client le commande.
+    var tousDiLand = depot.AllProductNames();
+    var apparies = tousDiLand.Where(n => essai.MatchProduct(n) is not null).ToList();
+    var orphelins = tousDiLand.Except(apparies).ToList();
+
+    Console.WriteLine($"Catalogue DiLand : {tousDiLand.Count} produits, "
+        + $"{apparies.Count} repris par Studio, {orphelins.Count} sans equivalent :");
+    foreach (var nom in orphelins)
+        Console.WriteLine($"  - {nom}");
+    Console.WriteLine();
 }
 
 // la garantie qui compte : on n'a pas touché à DiLand

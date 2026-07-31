@@ -44,7 +44,7 @@ public class DiLandRepositoryTests : IDisposable
                 CREATE TABLE "Order" (
                     Oid INTEGER PRIMARY KEY, Number INTEGER, DailyNumber TEXT, Date TEXT,
                     DirectoryName TEXT, EndUserName TEXT, GCRecord INTEGER);
-                CREATE TABLE Product (Oid INTEGER PRIMARY KEY, Name TEXT);
+                CREATE TABLE Product (Oid INTEGER PRIMARY KEY, Name TEXT, GCRecord INTEGER);
                 CREATE TABLE OrderLine (
                     Oid INTEGER PRIMARY KEY, "Order" INTEGER, Product INTEGER,
                     Description TEXT, Price REAL, GCRecord INTEGER);
@@ -328,6 +328,20 @@ public class DiLandRepositoryTests : IDisposable
 
         Assert.Equal("IMG_0143.jpeg", photos[0].DisplayName);
         Assert.Equal("photo2.jpg", photos[1].DisplayName);   // repli quand la borne n'a pas transmis le nom
+    }
+
+    /// <summary>
+    /// La liste complète des produits DiLand sert à mesurer la couverture du catalogue
+    /// Studio : un format proposé en borne mais absent de chez nous ferait perdre une
+    /// ligne le jour où un client le commande, pas avant.
+    /// </summary>
+    [Fact]
+    public void Tous_les_produits_de_DiLand_sont_lisibles_pas_seulement_les_vendus()
+    {
+        var depot = Depot_();
+        depot.RefreshSnapshot();
+
+        Assert.Equal(["10x15"], depot.AllProductNames());
     }
 
     [Fact]

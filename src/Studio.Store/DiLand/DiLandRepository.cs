@@ -270,6 +270,32 @@ public sealed class DiLandRepository
         return photos;
     }
 
+    /// <summary>
+    /// Tous les produits que DiLand connaît, pas seulement ceux déjà vendus.
+    ///
+    /// Sert à vérifier la couverture du catalogue Studio : un format proposé en borne mais
+    /// absent de chez nous ferait perdre une ligne le jour où un client le commande.
+    /// </summary>
+    public IReadOnlyList<string> AllProductNames()
+    {
+        if (!File.Exists(SnapshotPath)) return [];
+
+        var noms = new List<string>();
+
+        using var connexion = OpenSnapshot();
+        using var commande = connexion.CreateCommand();
+        commande.CommandText = """
+            SELECT DISTINCT Name FROM Product
+            WHERE GCRecord IS NULL AND Name IS NOT NULL AND Name <> ''
+            ORDER BY Name
+            """;
+
+        using var lecteur = commande.ExecuteReader();
+        while (lecteur.Read()) noms.Add(lecteur.GetString(0));
+
+        return noms;
+    }
+
     /// <summary>Emplacement d'une photo sur le disque, dans le dossier de sa commande.</summary>
     public string PhotoPath(DiLandOrder order, DiLandOrderPhoto photo)
     {

@@ -66,7 +66,7 @@ public class DiLandImporterTests : IDisposable
                 CREATE TABLE "Order" (
                     Oid INTEGER PRIMARY KEY, Number INTEGER, DailyNumber TEXT, Date TEXT,
                     DirectoryName TEXT, EndUserName TEXT, GCRecord INTEGER);
-                CREATE TABLE Product (Oid INTEGER PRIMARY KEY, Name TEXT);
+                CREATE TABLE Product (Oid INTEGER PRIMARY KEY, Name TEXT, GCRecord INTEGER);
                 CREATE TABLE OrderLine (
                     Oid INTEGER PRIMARY KEY, "Order" INTEGER, Product INTEGER,
                     Description TEXT, Price REAL, GCRecord INTEGER);
