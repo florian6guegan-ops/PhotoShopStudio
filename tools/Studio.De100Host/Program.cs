@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
+using Studio.Printing.Devices.Dnp;
 using Studio.Printing.Devices.Fuji;
 using Studio.Printing.Devices.Fuji.Bridge;
 
@@ -28,7 +29,13 @@ log(sdkDirectory is null
     ? "SDK Fuji introuvable : definissez STUDIO_DE100_SDK sur le dossier contenant PModuleIF.dll."
     : $"SDK Fuji trouvé : {sdkDirectory}");
 
+var sdkDnp = DnpDriver.LocateSdk();
+log(sdkDnp is null
+    ? "SDK DNP introuvable : definissez STUDIO_DNP_SDK sur le dossier contenant cspstat.dll."
+    : $"SDK DNP trouvé : {sdkDnp}");
+
 De100Driver? driver = null;
+var dnpAbandonne = false;
 var writeLock = new object();
 StreamWriter? writer = null;
 
@@ -135,8 +142,50 @@ De100Message Handle(De100Message request) => request.Name switch
 
     De100Commands.PendingJobs => De100Protocol.Success(request, Driver().PendingJobIds),
 
+    De100Commands.DnpSnapshot => De100Protocol.Success(request, EtatDesDnp()),
+
     _ => De100Protocol.Failure(request, $"Commande inconnue : « {request.Name} »"),
 };
+
+/// <summary>
+/// Etat des imprimantes DNP branchees.
+///
+/// PIEGE VERIFIE LE 31/07/2026 : cspstat.dll se bloque indefiniment quand DiLand tient
+/// le port USB de la DS620 - et DiLand le tient en permanence. Un appel direct figerait
+/// la boucle de lecture du relais, qui ne repondrait plus pour le minilab non plus.
+/// On borne donc l attente, et on renonce definitivement apres un premier blocage :
+/// reessayer toutes les deux minutes ne ferait qu accumuler des fils bloques.
+/// </summary>
+List<DnpPrinterInfo> EtatDesDnp()
+{
+    if (dnpAbandonne) return [];
+
+    if (!DnpDriver.IsSdkInstalled())
+    {
+        log("SDK DNP introuvable (cspstat.dll) : aucune imprimante DNP remontee.");
+        dnpAbandonne = true;
+        return [];
+    }
+
+    var lecture = Task.Run(() =>
+    {
+        var pilote = new DnpDriver();
+        var etats = new List<DnpPrinterInfo>();
+        foreach (var port in pilote.ListPorts())
+        {
+            try { etats.Add(pilote.GetPrinterInfo(port)); }
+            catch (Exception ex) { log($"Imprimante DNP du port {port} illisible : {ex.Message}"); }
+        }
+        return etats;
+    });
+
+    if (lecture.Wait(TimeSpan.FromSeconds(6))) return lecture.Result;
+
+    dnpAbandonne = true;
+    log("Imprimantes DNP sans reponse en 6 s : port USB probablement tenu par DiLand. " +
+        "On cesse de les interroger pour cette session.");
+    return [];
+}
 
 De100Message Subscribe(De100Message request)
 {

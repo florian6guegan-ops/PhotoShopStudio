@@ -118,5 +118,12 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         return _client.SubmitAsync(job, machineId).GetAwaiter().GetResult();
     }
 
+    /// <summary>État des imprimantes DNP, vues par le même relais.</summary>
+    public async Task<IReadOnlyList<Dnp.DnpPrinterInfo>> DnpSnapshotAsync()
+    {
+        if (!_client.IsConnected) await _client.ConnectAsync();
+        return await _client.DnpSnapshotAsync();
+    }
+
     public ValueTask DisposeAsync() => _client.DisposeAsync();
 }

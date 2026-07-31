@@ -28,6 +28,12 @@ public static class De100Commands
     public const string Cancel = "cancel";
     public const string PendingJobs = "pending-jobs";
     public const string Shutdown = "shutdown";
+
+    /// <summary>
+    /// État des imprimantes DNP. Elles transitent par le même relais : leur SDK
+    /// (<c>cspstat.dll</c>) est lui aussi en 32 bits.
+    /// </summary>
+    public const string DnpSnapshot = "dnp-snapshot";
 }
 
 /// <summary>Événements poussés spontanément par le relais.</summary>

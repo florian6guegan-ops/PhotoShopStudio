@@ -155,6 +155,13 @@ public sealed class De100BridgeClient : IAsyncDisposable
         await SendAsync<List<string>>(De100Commands.PendingJobs) ?? [];
 
     /// <summary>
+    /// État des imprimantes DNP. Elles passent par le même relais : leur SDK est
+    /// également en 32 bits.
+    /// </summary>
+    public async Task<IReadOnlyList<Dnp.DnpPrinterInfo>> DnpSnapshotAsync() =>
+        await SendAsync<List<Dnp.DnpPrinterInfo>>(De100Commands.DnpSnapshot) ?? [];
+
+    /// <summary>
     /// Un processus 64 bits transmet souvent DOTNET_ROOT pointant vers son propre runtime :
     /// le relais 32 bits y chercherait alors un hostfxr qui n'y est pas, et s'arrêterait
     /// aussitôt. On efface la variable et on désigne explicitement le runtime 32 bits.

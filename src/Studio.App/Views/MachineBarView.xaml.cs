@@ -39,20 +39,36 @@ public partial class MachineBarView : UserControl
     /// <summary>Relit l'état des machines. Appelable après une impression.</summary>
     public async Task RefreshAsync()
     {
+        var lignes = new List<MachineTile>();
+
+        // Le minilab d'abord : il répond vite et de façon fiable. La DNP est interrogée
+        // ensuite et séparément — son SDK peut rester bloqué quand DiLand tient le port
+        // USB, et ce blocage ne doit pas effacer les machines déjà connues.
         try
         {
-            var etats = await App.Services.Minilab.SnapshotAsync();
-            var lignes = etats.Select(e => new MachineTile(e)).ToList();
+            foreach (var fuji in await App.Services.Minilab.SnapshotAsync())
+                lignes.Add(new MachineTile(fuji));
 
-            MachinesList.ItemsSource = lignes;
-            MessageText.Text = lignes.Count == 0 ? "Aucune machine détectée" : "";
+            MachinesList.ItemsSource = lignes.ToList();
+            MessageText.Text = "";
         }
         catch (Exception ex)
         {
-            // le bandeau ne doit jamais empêcher de travailler : on signale, sans bloquer
-            FileLog.Write("Bandeau machines indisponible", ex);
-            MachinesList.ItemsSource = null;
+            FileLog.Write("Bandeau : minilab indisponible", ex);
             MessageText.Text = "Minilab injoignable — les tirages restent possibles si la machine répond.";
+        }
+
+        try
+        {
+            foreach (var dnp in await App.Services.Minilab.DnpSnapshotAsync())
+                lignes.Add(new MachineTile(dnp));
+
+            MachinesList.ItemsSource = lignes.ToList();
+        }
+        catch (Exception ex)
+        {
+            // silencieux à l'écran : les machines Fuji restent affichées
+            FileLog.Write("Bandeau : imprimante DNP indisponible", ex);
         }
     }
 
@@ -103,6 +119,38 @@ public partial class MachineBarView : UserControl
                 ? Color.FromRgb(0x8A, 0x62, 0x0E)
                 : Color.FromRgb(0x2E, 0x6B, 0x33));
         }
+
+        /// <summary>
+        /// Une imprimante DNP. Elle n'a pas d'encres séparées — le ruban et le papier
+        /// s'épuisent ensemble — donc pas de jauges : c'est le nombre de tirages restants
+        /// qui compte, comme l'affiche DiLand.
+        /// </summary>
+        public MachineTile(Studio.Printing.Devices.Dnp.DnpPrinterInfo info)
+        {
+            Lettre = "D";
+            Nom = string.IsNullOrWhiteSpace(info.SerialNumber) ? "DNP" : $"DNP {info.SerialNumber}";
+            Papier = $"{DecrireMedia(info.MediaSize)} · {info.MediaClass}";
+
+            var pourcent = info.MediaRemainingPercent is { } pc ? $" ({pc:0} %)" : "";
+            Restant = $"{info.MediaRemaining} tirages restants{pourcent}";
+
+            Encres = [];
+
+            var alerte = info.Status.NeedsOperator || info.Status.IsFault || info.MediaRemaining <= 20;
+            Fond = new SolidColorBrush(info.Status.IsCommunicationFailure
+                ? Color.FromRgb(0x4A, 0x4A, 0x4A)
+                : alerte ? Color.FromRgb(0x8A, 0x62, 0x0E) : Color.FromRgb(0x2E, 0x6B, 0x33));
+
+            if (!info.Status.IsReady && !info.Status.IsBusy)
+                Papier = info.Status.Message;
+        }
+
+        /// <summary>Nom lisible d'un format DNP : « Size6x4 » ne parle à personne.</summary>
+        private static string DecrireMedia(Studio.Printing.Devices.Dnp.DnpMediaSize media) =>
+            media.ToString()
+                .Replace("Size", "")
+                .Replace("p", ",")
+                .Replace("x", "×");
 
         private static InkGauge Jauge(string nom, int niveau, Color couleur) =>
             new($"{nom} : {niveau} %", new SolidColorBrush(couleur),

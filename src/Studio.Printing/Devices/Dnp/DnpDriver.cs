@@ -20,10 +20,24 @@ public sealed class DnpDriver
     private const int ValueCapacity = 256;
     private const int MaxPrinters = 16;
 
-    /// <summary>Vrai si le SDK DNP est présent sur la machine.</summary>
+    private const string SdkFileName = "cspstat.dll";
+
+    /// <summary>Déclare où trouver le SDK DNP.</summary>
+    public static void UseSdkFrom(string directory) => NativeSdkResolver.Register(SdkFileName, directory);
+
+    /// <summary>
+    /// Cherche le SDK DNP et le déclare s'il est trouvé. Comme celui de Fuji, il est
+    /// livré avec DiLand et non avec Studio.
+    /// </summary>
+    public static string? LocateSdk() => NativeSdkResolver.Locate(SdkFileName, "STUDIO_DNP_SDK");
+
+    /// <summary>Vrai si le SDK DNP est chargeable depuis ce poste.</summary>
     public static bool IsSdkInstalled()
     {
-        var loaded = NativeLibrary.TryLoad("cspstat.dll", out var lib);
+        if (NativeSdkResolver.DirectoryOf(SdkFileName) is not null)
+            return NativeSdkResolver.Exists(SdkFileName);
+
+        var loaded = NativeLibrary.TryLoad(SdkFileName, out var lib);
         if (loaded) NativeLibrary.Free(lib);
         return loaded;
     }

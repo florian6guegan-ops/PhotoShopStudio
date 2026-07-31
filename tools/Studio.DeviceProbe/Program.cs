@@ -39,6 +39,10 @@ int ProbeDnp()
 {
     Section("Imprimantes DNP (cspstat.dll)");
 
+    // le SDK vit dans le dossier de DiLand, pas à côté de cet outil
+    var sdkDnp = DnpDriver.LocateSdk();
+    Console.WriteLine(sdkDnp is null ? "  SDK DNP : introuvable" : $"  SDK DNP : {sdkDnp}");
+
     if (!DnpDriver.IsSdkInstalled())
     {
         Console.WriteLine("  SDK DNP absent : cspstat.dll introuvable depuis ce dossier.");
