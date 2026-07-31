@@ -48,22 +48,42 @@ public partial class CropEditorView : UserControl
         InitializeComponent();
         TitleText.Text = $"Recadrage — {product.Name}";
         UpdateFitToggle();
+        UpdateFrameToggle();
 
         Loaded += async (_, _) => await LoadPhotoAsync();
         Unloaded += (_, _) => _smoothZoom.Cancel();
     }
 
-    /// <summary>Aspect pixel du cadre : celui du produit, orienté comme la photo (cf. OrientCanvas au rendu).</summary>
+    /// <summary>
+    /// Aspect pixel du cadre : celui du produit, orienté comme la photo par défaut
+    /// (cf. OrientCanvas au rendu), ou selon le choix de l'opérateur s'il l'a forcé.
+    ///
+    /// Faire tenir une photo verticale dans un tirage horizontal est un besoin courant :
+    /// pivoter la photo ne le permet pas, il faut pivoter le CADRE.
+    /// </summary>
     private double TargetAspect
     {
         get
         {
             var aspect = _product.WidthMm / _product.HeightMm;
-            if (_displayBitmap is null) return aspect;
-            var imageLandscape = _displayBitmap.PixelWidth > _displayBitmap.PixelHeight;
-            return imageLandscape == aspect > 1 ? aspect : 1 / aspect;
+
+            bool cadrePaysage;
+            if (_frameLandscape is { } choisi)
+            {
+                cadrePaysage = choisi;
+            }
+            else
+            {
+                if (_displayBitmap is null) return aspect;
+                cadrePaysage = _displayBitmap.PixelWidth > _displayBitmap.PixelHeight;
+            }
+
+            return cadrePaysage == aspect > 1 ? aspect : 1 / aspect;
         }
     }
+
+    /// <summary>Orientation du cadre imposée par l'opérateur ; null = suit la photo.</summary>
+    private bool? _frameLandscape;
 
     private async Task LoadPhotoAsync()
     {
@@ -89,6 +109,7 @@ public partial class CropEditorView : UserControl
 
         ApplyRotation();
         if (_crop.IsFull) ResetCrop();
+        UpdateFrameToggle(); // l'orientation par défaut n'est connue qu'une fois la photo lue
         Redraw();
     }
 
@@ -225,6 +246,7 @@ public partial class CropEditorView : UserControl
         _turns = (_turns + 1) % 4;
         ApplyRotation();
         ResetCrop(); // les repères changent : on repart du recadrage centré maximal
+        UpdateFrameToggle();
         Redraw();
     }
 
@@ -238,13 +260,27 @@ public partial class CropEditorView : UserControl
     private void UpdateFitToggle() =>
         FitToggle.Content = _fit == FitMode.Fill ? "Mode : Remplir" : "Mode : Entier";
 
+    /// <summary>Bascule le cadre entre portrait et paysage, la photo restant telle quelle.</summary>
+    private void OnToggleFrame(object sender, RoutedEventArgs e)
+    {
+        _frameLandscape = !(TargetAspect > 1);
+        ResetCrop(); // le cadre change de proportions : on repart d'un recadrage centré
+        UpdateFrameToggle();
+        Redraw();
+    }
+
+    private void UpdateFrameToggle() =>
+        FrameToggle.Content = TargetAspect > 1 ? "Cadre : paysage" : "Cadre : portrait";
+
     private void OnReset(object sender, RoutedEventArgs e)
     {
         _turns = 0;
         _fit = FitMode.Fill;
+        _frameLandscape = null; // le cadre reprend l'orientation de la photo
         ApplyRotation();
         ResetCrop();
         UpdateFitToggle();
+        UpdateFrameToggle();
         Redraw();
     }
 

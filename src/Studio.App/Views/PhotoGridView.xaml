@@ -17,7 +17,7 @@
             </DockPanel>
             <!-- le bouton de recadrage passait inaperçu : on dit ici ce qu'il fait -->
             <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10" TextWrapping="Wrap"
-                       Text="Le bouton « Recadrer », sous chaque photo choisie, permet de la recadrer au format, de la pivoter, ou de l'imprimer en entier avec des marges blanches."/>
+                       Text="En bas à droite : « Recadrer » agit sur la dernière photo choisie, « Recadrer tout » passe en revue toutes les photos cochées. On y règle le cadrage, l'orientation du cadre et les marges blanches."/>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -29,7 +29,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="220" Height="286" Margin="8" CornerRadius="10"
+                        <Border Width="220" Height="270" Margin="8" CornerRadius="10"
                                 Background="{StaticResource CardBrush}"
                                 BorderThickness="4"
                                 BorderBrush="{Binding BorderBrush}"
@@ -64,12 +64,6 @@
                                                 Content="{Binding ProductLabel}"
                                                 Click="OnPickProduct" Tag="{Binding}"/>
                                         <DockPanel Margin="0,5,0,0">
-                                            <Button DockPanel.Dock="Left" Style="{StaticResource FlatButton}"
-                                                    Height="36" Padding="12,0" FontSize="14" FontWeight="Bold"
-                                                    Background="{StaticResource AccentBrush}" Foreground="White"
-                                                    Content="Recadrer"
-                                                    ToolTip="Recadrer au format, pivoter, ou imprimer la photo entière avec des marges blanches"
-                                                    Click="OnEditCrop" Tag="{Binding}"/>
                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                                         HorizontalAlignment="Right">
                                                 <Button Style="{StaticResource FlatButton}" Width="36" Height="36"
@@ -106,8 +100,22 @@
                             FontSize="26" Click="OnQuantityPlus">+</Button>
                     <TextBlock Text="(s'applique aux photos cochées)" Style="{StaticResource Hint}"
                                VerticalAlignment="Center" Margin="16,0,0,0" FontSize="14"/>
+                    <TextBlock Text="Minilab :" Style="{StaticResource Hint}" VerticalAlignment="Center"
+                               Margin="24,0,8,0"/>
+                    <ComboBox x:Name="MachineCombo" MinWidth="300" FontSize="16" Padding="10,8"
+                              DisplayMemberPath="Label" VerticalAlignment="Center"
+                              ToolTip="Machine du minilab et papier qui y est chargé"
+                              SelectionChanged="OnMachineChanged"/>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CropButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="18,0" FontSize="17" Margin="0,0,10,0" IsEnabled="False"
+                            ToolTip="Recadrer la dernière photo choisie"
+                            Click="OnCropCurrent">Recadrer</Button>
+                    <Button x:Name="CropAllButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="18,0" FontSize="17" Margin="0,0,20,0" IsEnabled="False"
+                            ToolTip="Passer en revue toutes les photos cochées, l'une après l'autre"
+                            Click="OnCropAll">Recadrer tout</Button>
                     <TextBlock x:Name="TotalText" FontSize="24" FontWeight="Bold"
                                VerticalAlignment="Center" Margin="0,0,16,0"/>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"

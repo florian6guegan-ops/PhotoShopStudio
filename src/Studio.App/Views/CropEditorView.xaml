@@ -40,7 +40,11 @@
         <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                    <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnRotate">⟳ Pivoter</Button>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnRotate"
+                            ToolTip="Fait pivoter la PHOTO d'un quart de tour">⟳ Pivoter la photo</Button>
+                    <Button x:Name="FrameToggle" Style="{StaticResource FlatButton}" MinWidth="200"
+                            Margin="12,0,0,0" Click="OnToggleFrame"
+                            ToolTip="Bascule le CADRE entre portrait et paysage, sans toucher à la photo"/>
                     <Button x:Name="FitToggle" Style="{StaticResource FlatButton}" MinWidth="180"
                             Margin="12,0,0,0" Click="OnToggleFit"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="90" Margin="24,0,0,0"

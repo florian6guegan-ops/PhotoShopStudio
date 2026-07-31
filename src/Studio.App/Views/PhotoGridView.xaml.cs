@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Printing.Devices.Fuji;
 using Studio.Store;
 
 namespace Studio.App.Views;
@@ -30,7 +31,11 @@ public partial class PhotoGridView : UserControl
             .ToList();
         ProductCombo.SelectedIndex = 0;
 
-        Loaded += async (_, _) => await ScanAndLoadAsync();
+        Loaded += async (_, _) =>
+        {
+            await ScanAndLoadAsync();
+            await LoadMachinesAsync();
+        };
         Unloaded += (_, _) => _thumbnailCts?.Cancel();
     }
 
@@ -121,11 +126,65 @@ public partial class PhotoGridView : UserControl
             photo.Quantity = _quantity;
         }
         photo.Selected = !photo.Selected;
+
+        // cocher désigne la photo pour le bouton « Recadrer » ; décocher ne la désigne pas
+        if (photo.Selected) _photoCourante = photo;
+        else if (ReferenceEquals(_photoCourante, photo)) _photoCourante = null;
     }
 
     private void OnCartChanged()
     {
         UpdateSummary();
+    }
+
+    /// <summary>Une machine du minilab, avec le papier qui y est chargé.</summary>
+    private sealed record MachineChoice(char Id, string Label);
+
+    /// <summary>
+    /// Charge les machines du minilab et le papier de chacune. L'opérateur choisit sur
+    /// quelle machine tirer, et voit du même coup ce qui y est chargé : imprimer un 13×18
+    /// sur un rouleau de 152 mm ne donne rien de bon.
+    /// </summary>
+    private async Task LoadMachinesAsync()
+    {
+        try
+        {
+            var etats = await App.Services.Minilab.SnapshotAsync();
+
+            var choix = etats
+                .Where(e => e.Status != De100PrinterStatus.Offline)
+                .Select(e => new MachineChoice(e.MachineId, DecrireMachine(e)))
+                .ToList();
+
+            MachineCombo.ItemsSource = choix;
+            if (choix.Count > 0) MachineCombo.SelectedIndex = 0;
+            MachineCombo.IsEnabled = choix.Count > 1;
+
+            if (choix.Count == 0)
+                MachineCombo.ItemsSource = new[] { new MachineChoice(' ', "aucune machine en ligne") };
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Liste des machines du minilab indisponible", ex);
+            MachineCombo.ItemsSource = new[] { new MachineChoice(' ', "minilab injoignable") };
+            MachineCombo.SelectedIndex = 0;
+            MachineCombo.IsEnabled = false;
+        }
+    }
+
+    private static string DecrireMachine(De100PrinterInfo info)
+    {
+        if (info.Media is not { } media) return $"{info.MachineId} — papier inconnu";
+
+        var restant = info.Formats.FirstOrDefault(f => !f.Format.IsVariable);
+        var suffixe = restant is null ? "" : $", ~{restant.RemainingPrints} × {restant.Format.Name}";
+        return $"{info.MachineId} — {media.PaperWidthMm} mm {media.Surface}{suffixe}";
+    }
+
+    private void OnMachineChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MachineCombo.SelectedItem is not MachineChoice choix || choix.Id == ' ') return;
+        App.Services.Printer.PreferredMinilabMachine = choix.Id.ToString();
     }
 
     private void UpdateSummary()
@@ -137,6 +196,11 @@ public partial class PhotoGridView : UserControl
         var total = selected.Sum(p => (p.Product?.Price ?? 0) * p.Quantity);
         TotalText.Text = selected.Count == 0 ? "" : $"{total:0.00} €";
         PrintButton.IsEnabled = selected.Count > 0;
+
+        var courante = _photoCourante is { Selected: true, Product: not null };
+        CropButton.IsEnabled = courante;
+        CropButton.Content = courante ? $"Recadrer {_photoCourante!.Name}" : "Recadrer";
+        CropAllButton.IsEnabled = selected.Count(p => p.Product is not null) > 0;
     }
 
     // ----- bandeau : s'applique à toutes les photos cochées -----
@@ -175,11 +239,45 @@ public partial class PhotoGridView : UserControl
             photo.Quantity = Math.Clamp(photo.Quantity + 1, 1, 99);
     }
 
-    private void OnEditCrop(object sender, RoutedEventArgs e)
-    {
-        if ((sender as Button)?.Tag is not PhotoItem photo || photo.Product is null) return;
+    /// <summary>
+    /// Dernière photo que l'opérateur a cochée. Elle sert de cible au bouton « Recadrer »
+    /// de la barre du bas : cocher une photo la désigne, la décocher ne la désigne pas.
+    /// </summary>
+    private PhotoItem? _photoCourante;
 
-        var product = photo.Product;
+    private void OnCropCurrent(object sender, RoutedEventArgs e)
+    {
+        if (_photoCourante is { } photo && photo.Selected)
+            EditCrop(photo, onClosed: null);
+    }
+
+    /// <summary>
+    /// Passe en revue toutes les photos cochées, l'une après l'autre : c'est le
+    /// « modifier tout » de DiLand. Sur une commande de vingt tirages, régler chaque
+    /// cadrage en repassant par la grille serait interminable.
+    /// </summary>
+    private void OnCropAll(object sender, RoutedEventArgs e)
+    {
+        var aRegler = _photos.Where(p => p.Selected && p.Product is not null).ToList();
+        if (aRegler.Count == 0) return;
+
+        EditSequence(aRegler, 0);
+    }
+
+    private void EditSequence(List<PhotoItem> photos, int index)
+    {
+        if (index >= photos.Count) return;
+
+        EditCrop(photos[index],
+            titre: $"Recadrage {index + 1} sur {photos.Count}",
+            // l'éditeur se referme juste après son rappel : on enchaîne au tour d'après
+            onClosed: () => Dispatcher.BeginInvoke(() => EditSequence(photos, index + 1)));
+    }
+
+    private void EditCrop(PhotoItem photo, Action? onClosed, string titre = "Recadrage")
+    {
+        if (photo.Product is not { } product) return;
+
         var initial = new CropEditorView.State(
             photo.Crop, photo.RotationQuarterTurns, photo.FitOverride ?? product.DefaultFit);
 
@@ -189,7 +287,8 @@ public partial class PhotoGridView : UserControl
             photo.RotationQuarterTurns = result.RotationQuarterTurns;
             photo.FitOverride = result.Fit == product.DefaultFit ? null : result.Fit;
             photo.RefreshThumbnail();
-        }), "Recadrage");
+            onClosed?.Invoke();
+        }), titre);
     }
 
     private void OnPickProduct(object sender, RoutedEventArgs e)

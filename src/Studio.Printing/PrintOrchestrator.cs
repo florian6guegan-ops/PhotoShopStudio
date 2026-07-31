@@ -208,10 +208,18 @@ public sealed class PrintOrchestrator
     /// Machine visée : celle demandée par le produit si elle est prête, sinon la première
     /// machine prête. Le DE100 de la boutique en compte deux, dont une souvent hors ligne.
     /// </summary>
+    /// <summary>
+    /// Machine du minilab choisie par l'opérateur pour la session en cours. Elle prime sur
+    /// celle éventuellement fixée par le produit ; null = choix automatique.
+    /// </summary>
+    public string? PreferredMinilabMachine { get; set; }
+
     private char ChooseMinilabMachine(List<RenderedPage> pages) =>
         ChooseMachine(
             _minilab!.ReadyMachines(),
-            pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)));
+            !string.IsNullOrWhiteSpace(PreferredMinilabMachine)
+                ? PreferredMinilabMachine
+                : pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)));
 
     /// <summary>
     /// Nom de format attendu par le minilab.
