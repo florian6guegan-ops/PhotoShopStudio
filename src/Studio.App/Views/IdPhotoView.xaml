@@ -9,7 +9,8 @@
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0">
-            <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}" Text="Photo d'identité 35×45"/>
+            <TextBlock x:Name="TitleText" DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
+                       Text="Photo d'identité"/>
             <TextBlock DockPanel.Dock="Right" Style="{StaticResource Hint}" HorizontalAlignment="Right"
                        VerticalAlignment="Center"
                        Text="Placez l'anneau jaune au sommet du crâne et le bleu sous le menton : le cadrage suit"/>

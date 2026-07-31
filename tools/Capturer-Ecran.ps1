@@ -26,9 +26,19 @@ public struct RECT { public int Left, Top, Right, Bottom; }
 public static class Win32Fenetre {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
+    [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);
+    public const uint DEPLACEMENT = 0x0001;
 }
 "@
 }
+
+# Un ecran en veille n'est plus compose : PrintWindow renverrait une image blanche.
+# Un micro-deplacement de souris reveille l'affichage sans rien cliquer.
+[void][Win32Fenetre]::SetThreadExecutionState([uint32]2147483650)   # ES_CONTINUOUS | ES_DISPLAY_REQUIRED
+[Win32Fenetre]::mouse_event([Win32Fenetre]::DEPLACEMENT, 1, 0, 0, [IntPtr]::Zero)
+[Win32Fenetre]::mouse_event([Win32Fenetre]::DEPLACEMENT, [uint32]4294967295, 0, 0, [IntPtr]::Zero)
+Start-Sleep -Milliseconds 900
 
 if ($AttenteSecondes -gt 0) { Start-Sleep -Seconds $AttenteSecondes }
 

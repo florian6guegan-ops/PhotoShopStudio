@@ -20,10 +20,17 @@ public partial class ProductTypeView : UserControl
     private void OnTirages(object sender, RoutedEventArgs e) =>
         Navigator.Go(new PrintFamilyView(), "Tirages");
 
+    /// <summary>
+    /// Le document est choisi AVANT les photos, comme dans DiLand : c'est lui qui fixe le
+    /// format du tirage et le gabarit du visage, donc tout le cadrage qui suit.
+    /// </summary>
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new SourcePickerView(root =>
-            Navigator.Go(new IdPhotoView(root), "Photos d'identité")),
-            "Photos d'identité — choisir le support");
+        Navigator.Go(new IdDocumentPickerView(document =>
+            Navigator.Go(new SourcePickerView(root =>
+                Navigator.Go(new IdPhotoView(root, document),
+                    $"{document.Country} — {document.Document}")),
+                "Photos d'identité — choisir le support")),
+            "Photos d'identité — choisir le document");
 
     private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Back();
 }

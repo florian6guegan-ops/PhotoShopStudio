@@ -37,6 +37,14 @@ public partial class IdPhotoView : UserControl
     private Point _dragLast;
     private bool _dragging;
 
+    /// <summary>
+    /// Document visé. Toute la géométrie en découle : format du tirage, bornes du visage,
+    /// taille des ovales du gabarit. Un passeport espagnol fait 26 × 32 mm là où le
+    /// français fait 35 × 45 — afficher le gabarit français sur l'un ou l'autre
+    /// donnerait une planche refusée au guichet.
+    /// </summary>
+    private IdDocumentSpec _document = IdDocumentSpec.France;
+
     /// <summary>Repères posés par l'opérateur : sommet du crâne et bas du menton.</summary>
     private NormPoint? _crown;
     private NormPoint? _chin;
@@ -44,11 +52,20 @@ public partial class IdPhotoView : UserControl
 
     private readonly SmoothZoomDriver _smoothZoom;
 
-    public IdPhotoView(string rootPath)
+    /// <param name="rootPath">Dossier des photos.</param>
+    /// <param name="document">
+    /// Norme visée. Null = norme française, le cas courant de la boutique.
+    /// </param>
+    public IdPhotoView(string rootPath, IdDocumentSpec? document = null)
     {
         _rootPath = rootPath;
+        _document = document ?? IdDocumentSpec.France;
         _smoothZoom = new SmoothZoomDriver(Zoom);
         InitializeComponent();
+
+        TitleText.Text = _document.Country == "France"
+            ? $"Photo d'identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
+            : $"{_document.Country} — {_document.Document} ({_document.WidthMm:0.#}×{_document.HeightMm:0.#} mm)";
 
         var sheetProducts = App.Services.Catalog.Enabled
             .Where(p => p.Sheet is not null)
@@ -187,7 +204,8 @@ public partial class IdPhotoView : UserControl
             try
             {
                 _head = IdPhotoFr.HeadFromMarkers(_crown, _chin);
-                _crop = IdPhotoFr.ComputeCrop(_head, _displayBitmap.PixelWidth, _displayBitmap.PixelHeight);
+                _crop = IdPhotoFr.ComputeCrop(_head, _displayBitmap.PixelWidth, _displayBitmap.PixelHeight,
+                    _document);
                 return;
             }
             catch (ArgumentException)
@@ -198,8 +216,7 @@ public partial class IdPhotoView : UserControl
         }
 
         _head = null;
-        _crop = CropMath.CenterCrop(_displayBitmap.PixelWidth, _displayBitmap.PixelHeight,
-            IdPhotoFr.PhotoWidthMm / IdPhotoFr.PhotoHeightMm);
+        _crop = CropMath.CenterCrop(_displayBitmap.PixelWidth, _displayBitmap.PixelHeight, TargetAspect);
     }
 
     private void OnRedetect(object sender, RoutedEventArgs e)
@@ -325,9 +342,17 @@ public partial class IdPhotoView : UserControl
         CropBorder.Height = cropRect.Height;
 
         // lignes du gabarit : crâne à 4 mm, menton entre 36 et 40 mm du bord haut
-        PlaceGuide(CrownLine, cropRect, IdPhotoFr.TargetCrownMarginMm);
-        PlaceGuide(ChinMinLine, cropRect, IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.HeadMinMm);
-        PlaceGuide(ChinMaxLine, cropRect, IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.HeadMaxMm);
+        // les lignes du gabarit suivent la norme du document visé, pas une norme figée
+        var reperesVisibles = _document.HasHeadBounds;
+        CrownLine.Visibility = ChinMinLine.Visibility = ChinMaxLine.Visibility =
+            reperesVisibles ? Visibility.Visible : Visibility.Collapsed;
+
+        if (reperesVisibles)
+        {
+            PlaceGuide(CrownLine, cropRect, _document.TargetCrownMarginMm);
+            PlaceGuide(ChinMinLine, cropRect, _document.TargetCrownMarginMm + _document.HeadMinMm);
+            PlaceGuide(ChinMaxLine, cropRect, _document.TargetCrownMarginMm + _document.HeadMaxMm);
+        }
 
         PlacerGabaritVisage(cropRect);
         PlacerAnneaux(display);
@@ -343,27 +368,39 @@ public partial class IdPhotoView : UserControl
     /// </summary>
     private void PlacerGabaritVisage(Rect cropRect)
     {
-        // la tête visée est centrée sur ce point : crâne à 4 mm du haut, hauteur 34 mm
-        var centreY = cropRect.Y + cropRect.Height
-            * (IdPhotoFr.TargetCrownMarginMm + IdPhotoFr.TargetHeadMm / 2) / IdPhotoFr.PhotoHeightMm;
         var centreX = cropRect.X + cropRect.Width / 2;
-
-        PlacerOvale(HeadMinOval, cropRect, centreX, centreY, IdPhotoFr.HeadMinMm);
-        PlacerOvale(HeadMaxOval, cropRect, centreX, centreY, IdPhotoFr.HeadMaxMm);
 
         FaceAxis.X1 = FaceAxis.X2 = centreX;
         FaceAxis.Y1 = cropRect.Y;
         FaceAxis.Y2 = cropRect.Bottom;
+
+        // Sans bornes de visage, il n'y a pas de gabarit à montrer : une trentaine des
+        // 274 documents n'en donnent aucune. Dessiner des ovales quand même laisserait
+        // croire à une norme qui n'existe pas.
+        if (!_document.HasHeadBounds)
+        {
+            HeadMinOval.Visibility = HeadMaxOval.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        HeadMinOval.Visibility = HeadMaxOval.Visibility = Visibility.Visible;
+
+        // centre de la tête visée, exprimé dans les cotes du document
+        var centreY = cropRect.Y + cropRect.Height
+            * (_document.TargetCrownMarginMm + _document.TargetHeadMm / 2) / _document.HeightMm;
+
+        PlacerOvale(HeadMinOval, cropRect, centreX, centreY, _document.HeadMinMm);
+        PlacerOvale(HeadMaxOval, cropRect, centreX, centreY, _document.HeadMaxMm);
     }
 
-    /// <summary>Un ovale de gabarit, dimensionné en millimètres du tirage final.</summary>
-    private static void PlacerOvale(System.Windows.Shapes.Ellipse ovale, Rect cropRect,
+    /// <summary>Un ovale de gabarit, dimensionné dans les millimètres du document visé.</summary>
+    private void PlacerOvale(System.Windows.Shapes.Ellipse ovale, Rect cropRect,
         double centreX, double centreY, double hauteurMm)
     {
         const double largeurSurHauteur = 0.75;   // proportion moyenne d'un visage
 
-        var hauteur = cropRect.Height * hauteurMm / IdPhotoFr.PhotoHeightMm;
-        var largeur = cropRect.Width * (hauteurMm * largeurSurHauteur) / IdPhotoFr.PhotoWidthMm;
+        var hauteur = cropRect.Height * hauteurMm / _document.HeightMm;
+        var largeur = cropRect.Width * (hauteurMm * largeurSurHauteur) / _document.WidthMm;
 
         ovale.Width = largeur;
         ovale.Height = hauteur;
@@ -371,9 +408,9 @@ public partial class IdPhotoView : UserControl
         Canvas.SetTop(ovale, centreY - hauteur / 2);
     }
 
-    private static void PlaceGuide(System.Windows.Shapes.Line line, Rect cropRect, double mmFromTop)
+    private void PlaceGuide(System.Windows.Shapes.Line line, Rect cropRect, double mmFromTop)
     {
-        var y = cropRect.Y + cropRect.Height * mmFromTop / IdPhotoFr.PhotoHeightMm;
+        var y = cropRect.Y + cropRect.Height * mmFromTop / _document.HeightMm;
         line.X1 = cropRect.X;
         line.X2 = cropRect.Right;
         line.Y1 = line.Y2 = y;
@@ -389,7 +426,20 @@ public partial class IdPhotoView : UserControl
             return;
         }
 
-        var c = IdPhotoFr.Check(_crop, _head);
+        var c = IdPhotoFr.Check(_crop, _head, _document);
+
+        // sans borne de visage dans la norme, on ne peut pas juger : le dire plutôt
+        // que d'annoncer « conforme » sur un document qu'on ne sait pas contrôler
+        if (!c.CanBeChecked)
+        {
+            SetGuideBrush(NeutralBrush);
+            ComplianceText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
+            ComplianceText.Text =
+                $"{_document.Country} — {_document.Document} : cette norme ne fixe pas de hauteur de visage, " +
+                "conformité non vérifiable.";
+            return;
+        }
+
         SetGuideBrush(c.Compliant ? OkBrush : WarnBrush);
         ComplianceText.Foreground = c.Compliant
             ? (Brush)Application.Current.Resources["OkBrush"]
@@ -397,13 +447,14 @@ public partial class IdPhotoView : UserControl
 
         if (c.Compliant)
         {
-            ComplianceText.Text = $"Conforme ✓ — tête {c.HeadHeightMm:0.0} mm";
+            ComplianceText.Text =
+                $"Conforme ✓ — tête {c.HeadHeightMm:0.0} mm ({_document.HeadMinMm:0.#}–{_document.HeadMaxMm:0.#} mm)";
             return;
         }
 
         var issues = new List<string>();
         if (!c.HeadHeightOk)
-            issues.Add(c.HeadHeightMm > IdPhotoFr.HeadMaxMm
+            issues.Add(c.HeadHeightMm > _document.HeadMaxMm
                 ? $"tête trop grande ({c.HeadHeightMm:0.0} mm) : reculez le zoom"
                 : $"tête trop petite ({c.HeadHeightMm:0.0} mm) : zoomez");
         if (!c.CrownOk)
@@ -427,8 +478,8 @@ public partial class IdPhotoView : UserControl
 
     // ----- interactions (mêmes gestes que l'éditeur de recadrage) -----
 
-    /// <summary>Aspect pixel du cadre identité : 35/45.</summary>
-    private static double TargetAspect => IdPhotoFr.PhotoWidthMm / IdPhotoFr.PhotoHeightMm;
+    /// <summary>Proportions du cadre : celles du document visé, pas un 35/45 figé.</summary>
+    private double TargetAspect => _document.WidthMm / _document.HeightMm;
 
     private void Pan(double dxPx, double dyPx)
     {
@@ -572,7 +623,7 @@ public partial class IdPhotoView : UserControl
         }
 
         // avertit sans bloquer : l'opérateur reste juge (visage non détecté, photo médiocre…)
-        if (_head is not null && !IdPhotoFr.Check(_crop, _head).Compliant)
+        if (_head is not null && !IdPhotoFr.Check(_crop, _head, _document).Compliant)
         {
             var answer = MessageBox.Show(
                 "Le cadrage ne respecte pas le gabarit 35×45.\nImprimer quand même ?",

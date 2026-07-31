@@ -34,9 +34,12 @@ public partial class HomeView : UserControl
         Navigator.Go(new PhoneUploadView(), "Photos depuis un téléphone");
 
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new SourcePickerView(root =>
-            Navigator.Go(new IdPhotoView(root), "Photos d'identité")),
-            "Photos d'identité — choisir le support");
+        Navigator.Go(new IdDocumentPickerView(document =>
+            Navigator.Go(new SourcePickerView(root =>
+                Navigator.Go(new IdPhotoView(root, document),
+                    $"{document.Country} — {document.Document}")),
+                "Photos d'identité — choisir le support")),
+            "Photos d'identité — choisir le document");
 
     private void OnOrders(object sender, RoutedEventArgs e) =>
         Navigator.Go(new OrdersView(), "Commandes du jour");
