@@ -41,6 +41,20 @@ public class MinilabRoutingTests : IDisposable
             Submitted.Add((job, machineId));
             return $"OH-{Submitted.Count}";
         }
+
+        /// <summary>Commandes rappelées, dans l'ordre : c'est ce que l'annulation doit produire.</summary>
+        public List<string> Canceled { get; } = [];
+
+        /// <summary>Handles que la machine refuse de rappeler — un tirage déjà sorti, par exemple.</summary>
+        public HashSet<string> RefuseCancel { get; } = [];
+
+        public void Cancel(string orderHandle)
+        {
+            if (RefuseCancel.Contains(orderHandle))
+                throw new InvalidOperationException($"Le minilab refuse d'annuler {orderHandle}.");
+
+            Canceled.Add(orderHandle);
+        }
     }
 
     private static Product Minilab(string code = "10x15", string? machine = null) => new()

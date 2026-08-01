@@ -107,6 +107,23 @@ public static class CropMath
     }
 
     /// <summary>
+    /// Dimensions du canevas qu'un redressement produit : l'image tournée, coins vides
+    /// compris.
+    ///
+    /// C'est sur CE canevas que les fractions d'un recadrage se comptent, puisque le
+    /// rendu tourne l'image avant de la recadrer. Juger de l'orientation d'un cadrage sur
+    /// les dimensions de l'image droite fait partir de travers un cadre presque carré.
+    /// </summary>
+    public static (double Width, double Height) TiltedCanvas(double width, double height, double degrees)
+    {
+        var radians = degrees * Math.PI / 180;
+        var cos = Math.Abs(Math.Cos(radians));
+        var sin = Math.Abs(Math.Sin(radians));
+
+        return (width * cos + height * sin, width * sin + height * cos);
+    }
+
+    /// <summary>
     /// Oriente le canevas du produit comme la photo : renvoie (largeur, hauteur) éventuellement
     /// échangées pour qu'une photo paysage parte en 15×10 plutôt que rognée en 10×15.
     /// L'aspect effectif tient compte du recadrage (exprimé sur l'image orientée).

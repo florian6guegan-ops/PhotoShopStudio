@@ -231,7 +231,8 @@ public partial class KioskOrdersView : UserControl
 
         foreach (var commande in commandes)
         {
-            var resultat = App.Services.DiLandImport.Import(commande);
+            var resultat = App.Services.DiLandImport.Import(
+                commande, Path.Combine(App.Services.DataRoot, "diland", "travail"));
             if (resultat.Succeeded) reprises++;
 
             foreach (var avertissement in resultat.Warnings)

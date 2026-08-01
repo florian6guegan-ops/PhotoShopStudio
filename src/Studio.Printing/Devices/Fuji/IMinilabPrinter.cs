@@ -29,6 +29,14 @@ public interface IMinilabPrinter
 
     /// <summary>Envoie un tirage et renvoie le handle de commande attribué par le minilab.</summary>
     string Submit(De100PrintJob job, char machineId);
+
+    /// <summary>
+    /// Rappelle une commande déjà transmise, tant que la machine ne l'a pas tirée.
+    ///
+    /// DiLand n'a pas cet appel : chez lui, une commande partie ne se reprend qu'en
+    /// allant vider la file SUR le minilab. Le SDK sait pourtant le faire.
+    /// </summary>
+    void Cancel(string orderHandle);
 }
 
 /// <summary>
@@ -131,6 +139,12 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         }
 
         return _client.SubmitAsync(job, machineId).GetAwaiter().GetResult();
+    }
+
+    public void Cancel(string orderHandle)
+    {
+        EnsureConnected();
+        _client.CancelAsync(orderHandle).GetAwaiter().GetResult();
     }
 
     /// <summary>État des imprimantes DNP, vues par le même relais.</summary>

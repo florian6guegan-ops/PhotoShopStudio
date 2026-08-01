@@ -14,11 +14,14 @@ public partial class KioskGridView : UserControl
 {
     private readonly List<KioskPhoto> _photos = new();
     private readonly string _rootPath;
+    private readonly bool _avecSousDossiers;
     private CancellationTokenSource? _thumbnailCts;
 
-    public KioskGridView(string rootPath)
+    /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
+    public KioskGridView(string rootPath, bool avecSousDossiers = true)
     {
         _rootPath = rootPath;
+        _avecSousDossiers = avecSousDossiers;
         InitializeComponent();
         Loaded += async (_, _) => await ScanAndLoadAsync();
         Unloaded += (_, _) => _thumbnailCts?.Cancel();
@@ -32,7 +35,9 @@ public partial class KioskGridView : UserControl
 
         if (_photos.Count == 0)
         {
-            var files = await Task.Run(() => PhotoScanner.Scan(_rootPath), ct);
+            var files = await Task.Run(
+                () => PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct),
+                ct);
             foreach (var file in files)
                 _photos.Add(new KioskPhoto(file, UpdateSummary));
             PhotosGrid.ItemsSource = _photos;
@@ -83,9 +88,14 @@ public partial class KioskGridView : UserControl
     {
         var selected = _photos.Where(p => p.Selected).ToList();
         var prints = selected.Sum(p => p.Quantity);
-        CountText.Text = selected.Count == 0
-            ? $"{_photos.Count} photos trouvées"
-            : $"{selected.Count} photo(s), {prints} tirage(s)";
+        CountText.Text = selected.Count switch
+        {
+            // un support vide arrive tous les jours à une borne : on le dit, plutôt que
+            // de laisser le client devant un écran noir sans explication
+            0 when _photos.Count == 0 => "Aucune photo trouvée sur ce support.",
+            0 => $"{_photos.Count} photos trouvées",
+            _ => $"{selected.Count} photo(s), {prints} tirage(s)",
+        };
         ContinueButton.IsEnabled = selected.Count > 0;
     }
 

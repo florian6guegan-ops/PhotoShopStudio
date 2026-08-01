@@ -32,8 +32,9 @@
         </ScrollViewer>
 
         <Button Grid.Row="2" Style="{StaticResource FlatButton}" HorizontalAlignment="Left"
-                Margin="0,16,0,0" Click="OnBrowseFolder">
-            📁  Choisir un dossier sur l'ordinateur…
+                Margin="0,16,0,0" Click="OnBrowseFolder"
+                ToolTip="Descendre dans les dossiers et voir ce qu'ils contiennent avant d'ouvrir">
+            📁  Parcourir les dossiers de l'ordinateur…
         </Button>
     </Grid>
 </UserControl>

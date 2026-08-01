@@ -10,16 +10,24 @@ namespace Studio.Imaging;
 /// L'ordre suit celui d'un développement photo, et il compte : on cale d'abord la
 /// lumière, puis la couleur sur cette base, et le relief en dernier — accentuer avant de
 /// remonter les ombres ferait ressortir le bruit du capteur.
+///
+/// <b>Le calcul lui-même n'est plus celui d'ImageMagick</b>, mais celui de
+/// <see cref="PixelCorrections"/> : Magick.NET est mono-fil sur ce poste, et faisait une
+/// traversée complète de l'image par réglage. On ne lui laisse ici que ce qu'il est seul à
+/// savoir faire — le noir et blanc, qui change l'espace colorimétrique, et les trois
+/// automatismes, qui demandent de mesurer l'image avant de la corriger.
 /// </summary>
 public static class ImageAdjuster
 {
-    /// <summary>Écart maximal appliqué aux canaux rouge et bleu par la température.</summary>
-    private const double TemperatureRange = 0.30;
-
-    /// <summary>Écart maximal appliqué au canal vert par la teinte.</summary>
-    private const double TintRange = 0.20;
-
-    public static void Apply(IMagickImage<byte> image, ImageAdjustments a)
+    /// <param name="avecRelief">
+    /// Faux pour sauter la clarté et la netteté.
+    ///
+    /// Ce n'est plus une béquille de vitesse : depuis <see cref="PixelCorrections"/> le
+    /// relief coûte quelques millisecondes et l'aperçu l'applique toujours. Le paramètre
+    /// reste pour les usages où l'on veut la couleur sans le relief — une vignette de
+    /// planche, où l'accentuation ne se verrait pas.
+    /// </param>
+    public static void Apply(IMagickImage<byte> image, ImageAdjustments a, bool avecRelief = true)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(a);
@@ -36,19 +44,18 @@ public static class ImageAdjuster
             image.Grayscale(PixelIntensityMethod.Rec709Luma);
 
         ApplyAuto(image, a);
-        ApplyTone(image, a);
 
-        if (!a.Grayscale)
-        {
-            ApplyWhiteBalance(image, a);
-            ApplySaturation(image, a);
-        }
-
-        ApplyDetail(image, a);
+        // le reste — tons, couleur, relief — se calcule sur les octets, en parallèle
+        SurLesOctets(image, octets => Corriger(octets, image, a, avecRelief));
     }
 
     /// <summary>
     /// Les trois corrections automatiques de DiLand, appliquées avant les réglages fins.
+    ///
+    /// Elles restent à ImageMagick : chacune commence par mesurer l'image entière —
+    /// histogramme, extrema, moyenne par canal — et c'est un travail qu'il fait bien. Elles
+    /// sont d'ailleurs des bascules, cochées une fois : leur coût ne se paie pas à chaque
+    /// mouvement de curseur.
     ///
     /// L'ordre entre elles n'est pas indifférent : la dominante se neutralise d'abord,
     /// sinon l'étirement des niveaux la fige en l'amplifiant canal par canal. Le contraste
@@ -70,111 +77,74 @@ public static class ImageAdjuster
             image.Normalize();
     }
 
-    /// <summary>
-    /// Exposition, noirs, blancs, ombres, hautes lumières et contraste, en une seule
-    /// traversée de l'image via une table de correspondance.
-    /// </summary>
-    private static void ApplyTone(IMagickImage<byte> image, ImageAdjustments a)
+    private static void Corriger(
+        byte[] octets, IMagickImage<byte> image, ImageAdjustments a, bool avecRelief)
     {
-        if (ToneCurve.IsIdentity(a)) return;
+        var largeur = (int)image.Width;
+        var hauteur = (int)image.Height;
+        var disposition = Disposition(image);
 
-        using var table = BuildLutImage(a);
-        image.Clut(table, PixelInterpolateMethod.Bilinear);
-    }
+        PixelCorrections.AppliquerPoints(octets, largeur, hauteur, disposition, a);
 
-    /// <summary>La courbe rendue sous forme d'image d'une ligne, que ImageMagick sait appliquer.</summary>
-    private static MagickImage BuildLutImage(ImageAdjustments a, int taille = 1024)
-    {
-        var valeurs = ToneCurve.BuildLut(a, taille);
-
-        var table = new MagickImage(MagickColors.Black, (uint)taille, 1);
-        table.Alpha(AlphaOption.Off);   // sans quoi le nombre de canaux dépendrait de la source
-
-        var pixels = table.GetPixels();
-        var canaux = (int)table.ChannelCount;
-
-        for (var i = 0; i < taille; i++)
-        {
-            var niveau = (byte)Math.Round(valeurs[i] * 255);
-            var valeur = new byte[canaux];
-            Array.Fill(valeur, niveau);
-            pixels.SetPixel(i, 0, valeur);
-        }
-
-        return table;
+        if (avecRelief)
+            PixelCorrections.AppliquerRelief(octets, largeur, hauteur, disposition, a);
     }
 
     /// <summary>
-    /// Température et teinte, par pondération des canaux : réchauffer, c'est monter le
-    /// rouge et descendre le bleu — exactement ce qu'il faut pour rattraper un intérieur
-    /// éclairé à l'ampoule.
-    /// </summary>
-    private static void ApplyWhiteBalance(IMagickImage<byte> image, ImageAdjustments a)
-    {
-        if (a.Temperature != 0)
-        {
-            var t = a.Temperature / 100.0 * TemperatureRange;
-            image.Evaluate(Channels.Red, EvaluateOperator.Multiply, 1 + t);
-            image.Evaluate(Channels.Blue, EvaluateOperator.Multiply, 1 - t);
-        }
-
-        if (a.Tint != 0)
-        {
-            // vers le magenta on retire du vert, vers le vert on en ajoute
-            var t = a.Tint / 100.0 * TintRange;
-            image.Evaluate(Channels.Green, EvaluateOperator.Multiply, 1 - t);
-        }
-    }
-
-    private static void ApplySaturation(IMagickImage<byte> image, ImageAdjustments a)
-    {
-        if (a.Saturation != 0)
-            image.Modulate(new Percentage(100), new Percentage(100 + a.Saturation), new Percentage(100));
-
-        if (a.Vibrance != 0)
-            ApplyVibrance(image, a.Vibrance);
-    }
-
-    /// <summary>
-    /// Vibrance : la saturation appliquée surtout là où l'image est terne.
+    /// Où sont les canaux dans ce que rend ImageMagick.
     ///
-    /// On sature fortement une copie, puis on la ramène à travers un masque tiré de la
-    /// saturation existante — inversé, donc opaque sur les zones ternes et transparent sur
-    /// les couleurs déjà vives. Un teint de peau, déjà saturé, est ainsi épargné, alors
-    /// qu'une saturation globale le ferait virer à l'orange.
+    /// Une image passée en noir et blanc n'en a plus qu'un, et l'interroger comme une
+    /// image couleur renverrait du vert et du bleu à zéro — donc une photo noire.
     /// </summary>
-    private static void ApplyVibrance(IMagickImage<byte> image, double vibrance)
+    private static PixelCorrections.Disposition Disposition(IMagickImage<byte> image)
     {
-        using var accentuee = image.Clone();
-        accentuee.Modulate(new Percentage(100), new Percentage(100 + vibrance), new Percentage(100));
+        var canaux = (int)image.ChannelCount;
 
-        using var masque = image.Clone();
-        masque.ColorSpace = ColorSpace.HSL;
-        using var saturation = masque.Separate(Channels.Green).First();
-        saturation.Negate();   // opaque là où la couleur est terne
-
-        accentuee.Alpha(AlphaOption.On);
-        accentuee.Composite(saturation, CompositeOperator.CopyAlpha);
-
-        image.Composite(accentuee, CompositeOperator.Over);
+        return image.ColorSpace == ColorSpace.Gray
+            ? PixelCorrections.Disposition.Gris(canaux)
+            : PixelCorrections.Disposition.Rvb(canaux);
     }
 
     /// <summary>
-    /// Clarté et netteté, toutes deux en masque flou : la clarté sur un large rayon donne
-    /// du relief à la matière, la netteté sur un rayon serré détache les contours.
+    /// Sort les octets de l'image, laisse les corriger, les remet.
     ///
-    /// Le rayon de la clarté suit la taille de l'image, sinon son effet dépendrait du
-    /// format de tirage au lieu du sujet.
+    /// La lecture suit la disposition native d'ImageMagick — R, V, B puis l'alpha, ou le
+    /// seul canal d'une image grise — pour que la réécriture retombe exactement sur les
+    /// mêmes cases. Passer par du BGRA obligerait à reconstruire l'image, ce qui lui
+    /// coûterait son espace colorimétrique : le noir et blanc redeviendrait une image
+    /// couleur dont les trois canaux sont égaux, et le tirage n'irait plus au même papier.
+    ///
+    /// Un espace exotique (CMJN d'un fichier venu d'un imprimeur) est d'abord ramené en
+    /// sRGB : tout le pipeline y travaille, et corriger canal par canal du CMJN
+    /// inverserait les réglages.
     /// </summary>
-    private static void ApplyDetail(IMagickImage<byte> image, ImageAdjustments a)
+    private static void SurLesOctets(IMagickImage<byte> image, Action<byte[]> corriger)
     {
-        if (a.Clarity != 0)
+        if (image.ColorSpace is not (ColorSpace.sRGB or ColorSpace.RGB or ColorSpace.Gray))
+            image.ColorSpace = ColorSpace.sRGB;
+
+        var canaux = (int)image.ChannelCount;
+        var carte = image.ColorSpace == ColorSpace.Gray ? "R" : "RGB";
+        if (canaux == carte.Length + 1) carte += "A";
+
+        if (canaux != carte.Length)
         {
-            var sigma = Math.Max(4, Math.Max(image.Width, image.Height) / 200.0);
-            image.UnsharpMask(0, sigma, a.Clarity / 100.0, 0.0);
+            // disposition inattendue : plutôt que d'écrire n'importe où, on repasse par
+            // une image sRGB dont on connaît la forme
+            image.ColorSpace = ColorSpace.sRGB;
+            image.Alpha(AlphaOption.Off);
+            canaux = (int)image.ChannelCount;
+            carte = "RGB";
+            if (canaux != 3) return;
         }
 
-        if (a.Sharpness > 0)
-            image.UnsharpMask(0, 1, a.Sharpness / 100.0 * 1.5, 0.02);
+        using var pixels = image.GetPixels();
+
+        var octets = pixels.ToByteArray(carte);
+        if (octets is null) return;
+
+        corriger(octets);
+
+        pixels.SetPixels(octets);
     }
 }

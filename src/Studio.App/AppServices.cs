@@ -69,6 +69,12 @@ public sealed class AppServices
     public required TicketConfig Ticket { get; init; }
     public required BackupConfig Backup { get; init; }
 
+    /// <summary>
+    /// Les impressions en cours. Partagé par toute l'application : c'est lui qui permet
+    /// de rendre la main à l'opérateur pendant qu'une commande s'imprime.
+    /// </summary>
+    public SuiviImpressions Impressions { get; } = new();
+
     private bool _uploadStarted;
 
     /// <summary>Démarre Kestrel, ouvre le pare-feu et branche l'API bornes, une seule fois.</summary>
@@ -160,7 +166,7 @@ public sealed class AppServices
 
         var minilab = new De100BridgePrinter { Log = message => FileLog.Write(message) };
 
-        return new AppServices
+        var services = new AppServices
         {
             DataRoot = dataRoot,
             Catalog = catalog,
@@ -175,6 +181,22 @@ public sealed class AppServices
             Ticket = LoadConfig<TicketConfig>(Path.Combine(dataRoot, "config", "ticket.json")),
             Backup = LoadConfig<BackupConfig>(Path.Combine(dataRoot, "config", "backup.json")),
         };
+
+        // Ce que la MACHINE a réellement sorti, par opposition à ce qu'on lui a envoyé.
+        // L'événement arrive du relais, donc d'un fil de fond : le suivi, lui, est lu par
+        // l'interface — on repasse par le répartiteur avant d'y toucher.
+        minilab.JobFinished += (_, resultat) =>
+        {
+            var reussi = resultat.Outcome == De100JobOutcome.Printed;
+            var repartiteur = System.Windows.Application.Current?.Dispatcher;
+
+            if (repartiteur is null)
+                services.Impressions.TirageTermine(resultat.JobId, reussi);
+            else
+                repartiteur.BeginInvoke(() => services.Impressions.TirageTermine(resultat.JobId, reussi));
+        };
+
+        return services;
     }
 
     /// <summary>Après modification du catalogue : recharge et recâble l'impression.</summary>

@@ -133,10 +133,10 @@ public partial class LargeFormatQueueView : UserControl
             Order = order;
             Envelope = envelope;
 
+            // la liste des fichiers vient de l'orchestrateur, qui est aussi celui qui les
+            // nomme : deux endroits qui devinent le même motif finissent par diverger
             var prefix = $"env{envelope.Number:00}-";
-            var files = Directory.Exists(folder)
-                ? Directory.GetFiles(folder, prefix + "*.png").OrderBy(f => f, StringComparer.Ordinal).ToList()
-                : [];
+            var files = App.Services.Printer.ManualPrintFiles(order, envelope);
 
             Files = files.Select(f => new FileRow(f, DescribeProduct(f, prefix), order.DisplayNumber)).ToList();
         }

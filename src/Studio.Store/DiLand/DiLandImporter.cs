@@ -81,7 +81,16 @@ public sealed class DiLandImporter
     /// <summary>Le contenu d'une commande et son total, en une seule lecture de la base.</summary>
     /// <param name="Lines">Un libellé par produit, avec le nombre de tirages.</param>
     /// <param name="Total">Ce que coûterait la commande à notre tarif.</param>
-    public sealed record KioskOrderSummary(IReadOnlyList<string> Lines, decimal Total);
+    /// <param name="Lines">Une ligne de texte par produit commandé.</param>
+    /// <param name="Total">Prix de la commande, au tarif du catalogue Studio.</param>
+    /// <param name="PhotoCount">
+    /// Photos DISTINCTES de la commande. Une même photo commandée en 10×15 et en 13×18
+    /// figure sur deux lignes mais ne compte qu'une fois — c'est ce que l'opérateur voit
+    /// quand il ouvre la commande, et donc ce qu'il faut annoncer.
+    /// </param>
+    /// <param name="PrintCount">Nombre de tirages, exemplaires compris.</param>
+    public sealed record KioskOrderSummary(
+        IReadOnlyList<string> Lines, decimal Total, int PhotoCount, int PrintCount);
 
     /// <summary>
     /// Ce qu'il faut afficher pour une commande : son contenu et son prix.
@@ -95,9 +104,17 @@ public sealed class DiLandImporter
 
         var libelles = new List<string>();
         var total = 0m;
+        var tiragesTotal = 0;
+
+        // même règle que la mise à disposition des fichiers : une photo présente sur deux
+        // lignes n'est comptée qu'une fois
+        var distinctes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var ligne in _depot.LinesOf(order))
         {
+            foreach (var photo in ligne.Photos) distinctes.Add(photo.FileName);
+            tiragesTotal += Math.Max(1, ligne.PrintCount);
+
             var produit = MatchProduct(ligne.ProductName);
             if (produit is null)
             {
@@ -111,7 +128,7 @@ public sealed class DiLandImporter
             total += produit.UnitPriceFor(tirages) * tirages;
         }
 
-        return new KioskOrderSummary(libelles, total);
+        return new KioskOrderSummary(libelles, total, distinctes.Count, tiragesTotal);
     }
 
     /// <summary>L'état d'une commande de borne : à traiter, en cours, tirée, retirée.</summary>
@@ -195,7 +212,18 @@ public sealed class DiLandImporter
     ///
     /// Une commande déjà reprise n'est pas reprise deux fois.
     /// </summary>
-    public DiLandImportOutcome Import(DiLandOrder order)
+    /// <param name="workDirectory">
+    /// Dossier où recopier les photos avant de les reprendre.
+    ///
+    /// Il ne sert pas qu'à mettre les fichiers à l'abri : c'est aussi lui qui leur REND
+    /// LEUR NOM. DiLand marque les fichiers des commandes qu'il a traitées d'un « _p »
+    /// final, si bien que <c>photo.jpg</c> devient <c>photo.jpg_p</c> — un nom dont
+    /// l'extension n'est plus celle d'une image. La recopie repart du nom de la base.
+    ///
+    /// Null pour lire les fichiers là où ils sont, ce qui reste correct pour une commande
+    /// que DiLand n'a pas encore touchée.
+    /// </param>
+    public DiLandImportOutcome Import(DiLandOrder order, string? workDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(order);
 
@@ -208,6 +236,9 @@ public sealed class DiLandImporter
 
         var photos = new List<DraftItem>();
 
+        // les fichiers sont recopiés une fois pour toutes, sous leur nom de base
+        var prete = workDirectory is null ? null : Stage(order, workDirectory);
+
         foreach (var ligne in _depot.LinesOf(order))
         {
             var produit = MatchProduct(ligne.ProductName);
@@ -219,7 +250,10 @@ public sealed class DiLandImporter
 
             foreach (var photo in ligne.Photos)
             {
-                var chemin = _depot.PhotoPath(order, photo);
+                var chemin = prete is null
+                    ? _depot.PhotoPath(order, photo)
+                    : Path.Combine(prete.PhotosDirectory, photo.FileName);
+
                 if (!File.Exists(chemin))
                 {
                     avertissements.Add($"photo introuvable : {photo.DisplayName}");
@@ -275,11 +309,16 @@ public sealed class DiLandImporter
     /// Une photo commandée en plusieurs exemplaires n'est recopiée qu'une fois : la
     /// quantité se règle ensuite dans l'écran des photos.
     /// </summary>
-    public StagedOrder Stage(DiLandOrder order, string workDirectory)
+    /// <param name="folderName">
+    /// Nom du sous-dossier à créer ; par défaut celui de DiLand. L'export vers les
+    /// téléchargements s'en sert pour donner au dossier le nom de la commande, qui parle
+    /// à l'opérateur là où « 000123.COM » ne dit rien.
+    /// </param>
+    public StagedOrder Stage(DiLandOrder order, string workDirectory, string? folderName = null)
     {
         ArgumentNullException.ThrowIfNull(order);
 
-        var destination = Path.Combine(workDirectory, order.DirectoryName);
+        var destination = Path.Combine(workDirectory, folderName ?? order.DirectoryName);
         Directory.CreateDirectory(destination);
 
         var lignes = _depot.LinesOf(order);
@@ -290,11 +329,11 @@ public sealed class DiLandImporter
 
         foreach (var photo in lignes.SelectMany(l => l.Photos))
         {
-            var source = _depot.PhotoPath(order, photo);
-            if (!File.Exists(source)) continue;
+            if (!File.Exists(_depot.PhotoPath(order, photo))) continue;
 
-            var cible = Path.Combine(destination, photo.FileName);
-            if (!File.Exists(cible)) File.Copy(source, cible);
+            // la recopie remet la photo en clair : DiLand brouille le début des fichiers
+            // des commandes qu'il a traitées
+            _depot.CopyPhotoTo(order, photo, Path.Combine(destination, photo.FileName));
             deposees.Add(photo.FileName);
         }
 

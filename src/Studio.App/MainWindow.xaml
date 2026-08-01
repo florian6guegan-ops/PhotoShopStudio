@@ -22,6 +22,18 @@
                         MinWidth="140" MinHeight="56" FontSize="22" Visibility="Collapsed">
                     ← Retour
                 </Button>
+                <!-- Suivi des impressions : le seul retour qu'on ait une fois la
+                     commande partie, puisqu'il n'y a plus de boîte de dialogue à la fin.
+                     Dans l'en-tête et non sur l'accueil, pour qu'il reste visible même
+                     quand on enchaîne sur le client suivant. -->
+                <Border x:Name="PrintBanner" DockPanel.Dock="Right" CornerRadius="8"
+                        Padding="16,8" Margin="16,0,0,0" VerticalAlignment="Center"
+                        Background="#1B5E20" Visibility="Collapsed"
+                        MouseLeftButtonUp="OnPrintBannerClicked" Cursor="Hand">
+                    <TextBlock x:Name="PrintBannerText" Foreground="White" FontSize="16"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               MaxWidth="620"/>
+                </Border>
                 <TextBlock x:Name="TitleText" Text="Studio Photo"
                            Foreground="{StaticResource TitleBrush}"
                            FontSize="28" FontWeight="Bold" VerticalAlignment="Center" Margin="24,0,0,0"/>

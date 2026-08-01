@@ -23,6 +23,13 @@ public enum EnvelopeStatus
     /// Aucun travail n'a été soumis à Windows : c'est l'opérateur qui conclut.
     /// </summary>
     AwaitingManualPrint,
+
+    /// <summary>
+    /// Arrêtée par l'opérateur. Ce qui était parti au minilab lui a été rappelé ; ce qui
+    /// était déjà sorti est sorti. Ajouté EN FIN d'énumération : les commandes déjà
+    /// enregistrées portent des valeurs numériques qu'il ne faut pas déplacer.
+    /// </summary>
+    Canceled,
 }
 
 /// <summary>Par où sort un produit une fois rendu.</summary>

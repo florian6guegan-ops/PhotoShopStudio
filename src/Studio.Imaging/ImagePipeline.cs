@@ -152,25 +152,8 @@ public static class ImagePipeline
         sheet.Draw(drawables);
     }
 
-    /// <summary>
-    /// Police de l'horodatage. Sans choix explicite, ImageMagick retombe sur une fonte
-    /// interne minuscule, illisible sur un tirage. On prend la première police sans
-    /// empattement installée — plus lisible en petit corps qu'une police à empattements.
-    /// </summary>
-    private static string StampFont()
-    {
-        if (_stampFont is not null) return _stampFont;
-
-        var installees = MagickNET.FontFamilies.ToList();
-        _stampFont = new[] { "Arial", "Segoe UI", "Tahoma", "Verdana", "Calibri" }
-                         .FirstOrDefault(installees.Contains)
-                     ?? installees.FirstOrDefault()
-                     ?? "Arial";
-
-        return _stampFont;
-    }
-
-    private static string? _stampFont;
+    /// <summary>Police de l'horodatage — voir <see cref="Fonts.SansEmpattement"/>.</summary>
+    private static string StampFont() => Fonts.SansEmpattement();
 
     private static MagickImage Render(RenderRequest request)
     {

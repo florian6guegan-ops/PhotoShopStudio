@@ -33,8 +33,6 @@ public partial class CropEditorView : UserControl
     private Point _dragLast;
     private bool _dragging;
 
-    private readonly SmoothZoomDriver _smoothZoom;
-
     public CropEditorView(string photoPath, Product product, State initial, Action<State> onApply)
     {
         _photoPath = photoPath;
@@ -43,7 +41,6 @@ public partial class CropEditorView : UserControl
         _crop = initial.Crop;
         _turns = initial.RotationQuarterTurns;
         _fit = initial.Fit;
-        _smoothZoom = new SmoothZoomDriver(Zoom);
 
         InitializeComponent();
         TitleText.Text = $"Recadrage — {product.Name}";
@@ -58,7 +55,6 @@ public partial class CropEditorView : UserControl
             // sans le focus, les flèches et Ctrl+I n'arriveraient jamais jusqu'ici
             Focus();
         };
-        Unloaded += (_, _) => _smoothZoom.Cancel();
     }
 
     /// <summary>
@@ -71,9 +67,9 @@ public partial class CropEditorView : UserControl
 
         new KeyMap()
             .On(Key.R, () => Reset())
-            .On(Key.Z, () => _smoothZoom.Add(1 / 1.25))
-            .On([Key.Add, Key.OemPlus], () => _smoothZoom.Add(1 / 1.25))
-            .On([Key.Subtract, Key.OemMinus], () => _smoothZoom.Add(1.25))
+            .On(Key.Z, () => Zoom(1 / PasBouton))
+            .On([Key.Add, Key.OemPlus], () => Zoom(1 / PasBouton))
+            .On([Key.Subtract, Key.OemMinus], () => Zoom(PasBouton))
             .On(Key.C, ToggleFit)
             .On(Key.T, ToggleFrame)
             .On(Key.Escape, Navigator.Back)
@@ -181,6 +177,8 @@ public partial class CropEditorView : UserControl
         var cropping = _fit == FitMode.Fill;
         Overlay.Visibility = cropping ? Visibility.Visible : Visibility.Collapsed;
         FitMessage.Visibility = cropping ? Visibility.Collapsed : Visibility.Visible;
+
+        DessinerLePapier(cropping, display);
         if (!cropping) return;
 
         var cropRect = new Rect(
@@ -198,15 +196,62 @@ public partial class CropEditorView : UserControl
         CropBorder.Height = cropRect.Height;
     }
 
+    /// <summary>
+    /// Montre le papier et ses marges, en mode « photo entière ».
+    ///
+    /// Le tirage, lui, fait déjà ce qu'il faut : <c>ImagePipeline</c> pose l'image dans le
+    /// format et complète en blanc (<c>Extent(…, MagickColors.White)</c>). C'est l'écran
+    /// qui mentait — il affichait la photo bord à bord et se contentait d'annoncer les
+    /// marges par une phrase. On ne pouvait donc pas juger de la place qu'elles prennent,
+    /// qui est pourtant toute la question quand on choisit ce mode.
+    ///
+    /// Le papier est le plus grand rectangle au format du tirage qui tienne dans la scène ;
+    /// la photo y est réduite pour y entrer entière. Les deux étant centrés sur la scène,
+    /// une simple mise à l'échelle autour de son centre suffit à poser la photo au bon
+    /// endroit — pas de mise en page à refaire, donc rien qui puisse dériver du calcul de
+    /// <see cref="DisplayRect"/> dont dépend le recadrage.
+    /// </summary>
+    private void DessinerLePapier(bool remplir, Rect display)
+    {
+        if (remplir)
+        {
+            Papier.Visibility = Visibility.Collapsed;
+            Photo.RenderTransform = Transform.Identity;
+            return;
+        }
+
+        var papierLargeur = Math.Min(Stage.ActualWidth, Stage.ActualHeight * TargetAspect);
+        var papierHauteur = papierLargeur / TargetAspect;
+        if (papierLargeur <= 0 || papierHauteur <= 0) return;
+
+        Canvas.SetLeft(Papier, (Stage.ActualWidth - papierLargeur) / 2);
+        Canvas.SetTop(Papier, (Stage.ActualHeight - papierHauteur) / 2);
+        Papier.Width = papierLargeur;
+        Papier.Height = papierHauteur;
+        Papier.Visibility = Visibility.Visible;
+
+        var facteur = Math.Min(papierLargeur / display.Width, papierHauteur / display.Height);
+        Photo.RenderTransform = new ScaleTransform(
+            facteur, facteur, Stage.ActualWidth / 2, Stage.ActualHeight / 2);
+    }
+
     private void OnStageSizeChanged(object sender, SizeChangedEventArgs e) => Redraw();
 
     // ----- interactions -----
 
+    /// <summary>
+    /// Déplace le cadrage d'un geste donné <b>en pixels de curseur</b> : la photo suit le
+    /// doigt, donc la fenêtre de recadrage part à l'inverse — d'où le signe.
+    ///
+    /// C'est le même sens que sur la surface de recadrage de l'écran d'édition, et il a
+    /// fallu deux passages pour le poser (01/08/2026) : deux écrans qui recadrent en sens
+    /// contraire, c'est un cadrage sur deux qui part de travers.
+    /// </summary>
     private void Pan(double dxPx, double dyPx)
     {
         var display = DisplayRect();
         if (display.IsEmpty || _fit != FitMode.Fill) return;
-        _crop = CropMath.Pan(_crop, dxPx / display.Width, dyPx / display.Height);
+        _crop = CropMath.Pan(_crop, -dxPx / display.Width, -dyPx / display.Height);
         Redraw();
     }
 
@@ -239,14 +284,39 @@ public partial class CropEditorView : UserControl
         _dragLast = pos;
     }
 
-    // Pas de zoom pour un cran de molette standard (Delta = 120), étalé sur ~150 ms
-    // par le SmoothZoomDriver : franc au total, continu à l'écran.
-    private const double WheelZoomStep = 1.10;
+    /// <summary>
+    /// Un cran de molette = <b>un pixel d'écran</b> sur le cadrage, molette vers l'avant
+    /// pour serrer. Même geste que sur la surface de l'écran d'édition.
+    ///
+    /// Le pas valait 10 % de la taille en cours, étalés sur une seconde par un lisseur.
+    /// Deux défauts, et le second était le pire :
+    ///
+    /// — un pas proportionnel est d'autant plus gros que le cadrage l'est déjà, et cela se
+    ///   voyait avancer par marches ;
+    /// — le lisseur continuait d'appliquer son zoom pendant une seconde APRÈS le dernier
+    ///   cran. L'opérateur qui zoomait, voyait que ça n'allait pas et cliquait aussitôt
+    ///   sur « Réinitialiser » voyait le cadrage repartir de plus belle : le reste du zoom
+    ///   retombait dessus juste après. D'où « le bouton Réinitialiser ne fonctionne pas »
+    ///   (signalé le 01/08/2026) — il fonctionnait, c'est le zoom en vol qui le défaisait.
+    ///
+    /// Au pixel près et sans animation, il n'y a plus ni marche ni zoom en retard : ce
+    /// qu'on voit à l'écran est l'état réel, tout le temps.
+    /// </summary>
+    private void OnStageWheel(object sender, MouseWheelEventArgs e)
+    {
+        // 120 est le cran de Windows ; une molette fine en envoie des fractions
+        var crans = e.Delta / 120.0;
+        if (crans == 0) return;
 
-    private void OnStageWheel(object sender, MouseWheelEventArgs e) =>
-        // molette vers soi = zoom (cadre plus serré) ; l'exposant suit Delta pour
-        // gérer les molettes haute résolution qui envoient moins de 120 par cran.
-        _smoothZoom.Add(Math.Pow(WheelZoomStep, -e.Delta / 120.0));
+        var display = DisplayRect();
+        if (display.IsEmpty) return;
+
+        var largeurEcran = _crop.Width * display.Width;
+        if (largeurEcran <= 2) return;
+
+        Zoom((largeurEcran - crans) / largeurEcran);
+        e.Handled = true;
+    }
 
     private void OnManipulationStarting(object? sender, ManipulationStartingEventArgs e)
     {
@@ -259,17 +329,16 @@ public partial class CropEditorView : UserControl
         Pan(e.DeltaManipulation.Translation.X, e.DeltaManipulation.Translation.Y);
         var scale = e.DeltaManipulation.Scale.X;
         if (Math.Abs(scale - 1) > 0.001)
-        {
-            // Le pincement doit coller aux doigts : pas de lissage, et on solde
-            // un éventuel zoom molette encore en vol pour éviter qu'il dérive sous les doigts.
-            _smoothZoom.Cancel();
             Zoom(1 / scale); // écarter les doigts = zoom = cadre plus serré
-        }
+
         e.Handled = true;
     }
 
-    private void OnZoomIn(object sender, RoutedEventArgs e) => _smoothZoom.Add(1 / 1.25);
-    private void OnZoomOut(object sender, RoutedEventArgs e) => _smoothZoom.Add(1.25);
+    /// <summary>Pas des boutons + et − : franc, puisqu'on ne les presse pas en rafale.</summary>
+    private const double PasBouton = 1.25;
+
+    private void OnZoomIn(object sender, RoutedEventArgs e) => Zoom(1 / PasBouton);
+    private void OnZoomOut(object sender, RoutedEventArgs e) => Zoom(PasBouton);
 
     private void OnRotate(object sender, RoutedEventArgs e) => Rotate(1);
 

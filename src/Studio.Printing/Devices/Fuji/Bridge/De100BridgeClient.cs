@@ -18,6 +18,38 @@ public sealed class De100BridgeClient : IAsyncDisposable
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Délai accordé à un ENVOI de tirage, bien plus long que pour le reste.
+    ///
+    /// Un même délai de 30 s valait pour toutes les commandes, y compris <c>submit</c>.
+    /// Or le SDK Fuji retient <c>PIF_Print</c> tant que la machine n'a pas pris l'ordre en
+    /// charge, et un DE100 en train de sortir la commande précédente met couramment plus
+    /// de trente secondes. On déclarait donc l'impression en échec alors qu'elle partait :
+    /// la commande 01-017 du 01/08/2026 a échoué ainsi pendant que la machine tirait les
+    /// deux précédentes.
+    ///
+    /// La conséquence n'est pas anodine : l'enveloppe reste « partie sans confirmation »,
+    /// et l'opérateur se voit proposer de réimprimer ce qui est peut-être déjà passé. Un
+    /// délai trop court coûte donc des tirages en double — exactement ce qu'on cherche à
+    /// ne jamais provoquer.
+    ///
+    /// <b>On n'en profite pas pour réessayer.</b> Si l'envoi finit malgré tout par expirer,
+    /// la règle est inchangée : rien n'est renvoyé automatiquement, l'opérateur tranche.
+    /// </summary>
+    private static readonly TimeSpan SubmitTimeout = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// Délai par commande. Court pour tout ce qui interroge — l'écran attend la réponse,
+    /// et un relais muet ne doit pas figer le bandeau des machines pendant des minutes —
+    /// long pour ce qui engage la machine.
+    /// </summary>
+    private TimeSpan DelaiPour(string command) => command switch
+    {
+        De100Commands.Submit => SubmitTimeout,
+        De100Commands.Cancel => SubmitTimeout,
+        _ => _timeout,
+    };
+
     private readonly ConcurrentDictionary<string, TaskCompletionSource<De100Message>> _pending = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly TimeSpan _timeout;
@@ -211,6 +243,25 @@ public sealed class De100BridgeClient : IAsyncDisposable
         return string.IsNullOrEmpty(stderr) ? message : message + "\n\n" + stderr;
     }
 
+    /// <summary>
+    /// Le message d'expiration. Sur un envoi il doit dire l'essentiel : on ne SAIT PAS si
+    /// le tirage est parti. L'opérateur qui lit « échec » sans cette réserve réimprime, et
+    /// sort la commande en double.
+    /// </summary>
+    private static string Expire(string command, TimeSpan attente)
+    {
+        var duree = attente.TotalSeconds >= 90
+            ? $"{attente.TotalMinutes:0} min"
+            : $"{attente.TotalSeconds:0} s";
+
+        var message = $"Le relais DE100 n'a pas répondu à « {command} » en {duree}.";
+
+        if (command is not (De100Commands.Submit or De100Commands.Cancel)) return message;
+
+        return message + "\n\nLe tirage a peut-être malgré tout été pris par la machine : " +
+               "VÉRIFIEZ SUR LE MINILAB avant de réimprimer. Rien n'a été renvoyé automatiquement.";
+    }
+
     private async Task<T?> SendAsync<T>(string command, object? payload = null)
     {
         if (!IsConnected)
@@ -230,9 +281,10 @@ public sealed class De100BridgeClient : IAsyncDisposable
             _writeLock.Release();
         }
 
-        using var delai = new CancellationTokenSource(_timeout);
+        var attente = DelaiPour(command);
+        using var delai = new CancellationTokenSource(attente);
         await using var abandon = delai.Token.Register(() => waiter.TrySetException(
-            new TimeoutException($"Le relais DE100 n'a pas répondu à « {command} » en {_timeout.TotalSeconds:0} s.")));
+            new TimeoutException(Expire(command, attente))));
 
         De100Message response;
         try

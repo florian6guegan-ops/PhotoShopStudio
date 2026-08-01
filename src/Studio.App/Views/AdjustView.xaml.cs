@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
@@ -35,8 +36,22 @@ public partial class AdjustView : UserControl
     /// <summary>Empêche les curseurs de déclencher un rendu pendant qu'on les initialise.</summary>
     private bool _initialise;
 
-    /// <summary>Annule l'aperçu précédent dès qu'un nouveau est demandé : seul le dernier compte.</summary>
-    private CancellationTokenSource? _enCours;
+    /// <summary>
+    /// Derniers réglages demandés mais pas encore rendus, et rendu en cours.
+    ///
+    /// C'est le nœud de la lenteur : bouger un curseur produit des dizaines de demandes
+    /// par seconde, et l'ancienne version les lançait TOUTES. Un jeton d'annulation ne
+    /// servait à rien — ImageMagick ne s'interrompt pas au milieu d'un masque flou : les
+    /// rendus périmés s'exécutaient quand même, l'un après l'autre, et l'aperçu traînait
+    /// derrière le curseur de tout le retard accumulé.
+    ///
+    /// Ici il n'y a jamais qu'un rendu en vol et un seul en attente : celui qui finit
+    /// reprend le dernier réglage demandé et laisse tomber tous ceux du milieu, qui
+    /// n'auraient de toute façon jamais été vus.
+    /// </summary>
+    private ImageAdjustments? _enAttente;
+
+    private bool _rendEnCours;
 
     /// <param name="photos">Chemins des photos concernées ; la première sert d'aperçu.</param>
     /// <param name="depart">Réglages de départ, généralement ceux de la première photo.</param>
@@ -157,45 +172,69 @@ public partial class AdjustView : UserControl
     }
 
     /// <summary>
-    /// Recalcule l'aperçu hors du fil d'affichage. Bouger un curseur produit des dizaines
-    /// de demandes par seconde : chacune annule la précédente, seule la dernière est
-    /// affichée, sinon l'image sauterait entre des états déjà périmés.
+    /// Recalcule l'aperçu hors du fil d'affichage, en ne gardant que la dernière demande.
+    ///
+    /// Voir <see cref="_enAttente"/> : tant qu'un rendu est en vol, les mouvements de
+    /// curseur ne font qu'écraser les réglages en attente. Celui qui finit enchaîne sur
+    /// le plus récent, et s'arrête quand plus rien n'a bougé.
+    ///
+    /// <b>Un seul rendu, en pleine définition et tout compris.</b> Il y en avait deux : un
+    /// brouillon en demi-taille et sans relief pendant le geste, puis l'image définitive à
+    /// l'arrêt. C'était l'aveu qu'un aperçu coûtait 590 ms. Depuis
+    /// <c>PixelCorrections</c> il en coûte une quinzaine : montrer autre chose que l'image
+    /// juste n'aurait plus d'excuse, et le clignotement du brouillon remplacé par le
+    /// définitif disparaît avec lui.
     /// </summary>
     private async Task RafraichirApercu()
     {
-        if (_apercu is not { } rendu) return;
+        if (_apercu is null) return;
 
-        _enCours?.Cancel();
-        var jeton = new CancellationTokenSource();
-        _enCours = jeton;
+        _enAttente = _reglages.Clone();
+        if (_rendEnCours) return;
 
-        var reglages = _reglages.Clone();
-
+        _rendEnCours = true;
         try
         {
-            var png = await Task.Run(() => rendu.Render(reglages), jeton.Token);
-            if (jeton.IsCancellationRequested) return;
+            while (_enAttente is { } reglages)
+            {
+                _enAttente = null;
 
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.StreamSource = new MemoryStream(png);
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.EndInit();
-            bitmap.Freeze();
+                if (_apercu is not { } rendu) return;   // l'écran s'est refermé
 
-            PreviewImage.Source = bitmap;
+                var image = await Task.Run(() => Composer(rendu, reglages));
+                if (image is not null) PreviewImage.Source = image;
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // un réglage plus récent est déjà en route
+            _rendEnCours = false;
+        }
+    }
+
+    /// <summary>
+    /// Le rendu lui-même, entièrement hors du fil d'affichage — l'image est gelée avant
+    /// de revenir, ce qui la rend utilisable telle quelle par l'interface.
+    /// </summary>
+    private static BitmapSource? Composer(PreviewRenderer rendu, ImageAdjustments reglages)
+    {
+        try
+        {
+            var apercu = rendu.RenderPixels(reglages);
+
+            var image = BitmapSource.Create(
+                apercu.Width, apercu.Height, 96, 96, PixelFormats.Bgra32, null,
+                apercu.Bgra, apercu.Width * 4);
+            image.Freeze();
+            return image;
         }
         catch (ObjectDisposedException)
         {
-            // l'écran s'est refermé entre-temps
+            return null;   // l'écran s'est refermé pendant le rendu
         }
         catch (Exception ex)
         {
             FileLog.Write("Corrections : rendu de l'aperçu", ex);
+            return null;
         }
     }
 
@@ -235,7 +274,7 @@ public partial class AdjustView : UserControl
 
     private void Liberer()
     {
-        _enCours?.Cancel();
+        _enAttente = null;
         _apercu?.Dispose();
         _apercu = null;
     }

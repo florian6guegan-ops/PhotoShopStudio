@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.IO;
 using System.Threading.Tasks;
 using Studio.App.Infrastructure;
@@ -50,15 +51,63 @@ internal partial class EditSelectionView : UserControl
         _imprimer = imprimer;
         _courante = photos[0];
 
+        // rien n'est visé en entrant : on travaille la photo affichée, et l'on vise
+        // plusieurs photos au Ctrl+clic quand on veut régler d'un coup
+        foreach (var photo in _photos) photo.Ciblee = false;
+
         InitializeComponent();
 
         Strip.ItemsSource = _photos;
         Sliders.ItemsSource = ConstruireReglages();
 
+        BrancherSurface();
+        BrancherRaccourcis();
         ShowCrop();
-        Refresh();
+        SetCurrent(_courante);
 
         Loaded += (_, _) => Focus(); // sans le focus, ni C ni T ne nous parviennent
+    }
+
+    /// <summary>
+    /// Les raccourcis de la grille valent ici aussi.
+    ///
+    /// Ctrl+A manquait à cet écran : il n'existait que sur la grille, et son écoute est
+    /// retirée dès qu'on la quitte. On se retrouvait donc sans aucun moyen de reprendre
+    /// toute la sélection — or c'est lui qui commande ce que les corrections touchent.
+    /// </summary>
+    private void BrancherRaccourcis() =>
+        new KeyMap()
+            .OnCtrl(Key.A, ToutCocher)
+            .OnCtrl(Key.W, () =>
+            {
+                GrayscaleToggle.IsChecked = GrayscaleToggle.IsChecked != true;
+                OnGrayscaleChanged(GrayscaleToggle, new RoutedEventArgs());
+            })
+            .Attach(this);
+
+    /// <summary>Vise toutes les photos, ou plus aucune si elles le sont déjà.</summary>
+    private void ToutCocher()
+    {
+        var toutVise = _photos.Count > 0 && _photos.All(p => p.Ciblee);
+        foreach (var photo in _photos) photo.Ciblee = !toutVise;
+
+        Refresh();
+    }
+
+    /// <summary>
+    /// La surface mène les gestes de recadrage ; l'écran ne fait qu'en tirer les
+    /// conséquences. Elle ne connaît ni le panier ni les produits : elle bouge un cadre,
+    /// et c'est ici qu'on le reporte sur la photo.
+    /// </summary>
+    private void BrancherSurface()
+    {
+        Surface.Changed += (_, _) =>
+        {
+            if (Surface.Crop is { } cadre) Appliquer(_courante, cadre);
+        };
+
+        Surface.TiltRequested += (_, sens) => Redresser(_courante, sens);
+        Surface.FrameRotationRequested += (_, _) => PivoterCadre(_courante);
     }
 
     /// <summary>Libellé du bouton de mode, lu par la liaison du panneau.</summary>
@@ -71,10 +120,7 @@ internal partial class EditSelectionView : UserControl
 
     private void Refresh()
     {
-        // surtout PAS la vignette ici : Refresh est appelé après chaque geste, et il
-        // écrasait la source haute définition par les 360 px de la bande — l'aperçu
-        // redevenait flou dès qu'on touchait à un réglage.
-        RedessinerApercu();
+        MontrerSurface();
 
         var rang = _photos.IndexOf(_courante) + 1;
         PreviewCaption.Text =
@@ -84,11 +130,37 @@ internal partial class EditSelectionView : UserControl
         var total = _photos.Sum(p => (p.Product?.Price ?? 0) * p.Quantity);
         SummaryText.Text = $"{_photos.Count} photo(s) · {tirages} tirage(s) · {total:0.00} €";
 
+        FormatButton.Content = _courante.Product is { } produit
+            ? $"Format : {produit.Name}"
+            : "Format : à choisir";
+        FitButton.Content = FitLabel;
+
+        GrayscaleToggle.IsChecked = _courante.Adjustments.Grayscale;
         AutoLevelsToggle.IsChecked = _courante.Adjustments.AutoLevels;
         AutoContrastToggle.IsChecked = _courante.Adjustments.AutoContrast;
         AutoColorToggle.IsChecked = _courante.Adjustments.AutoColor;
 
+        MettreLeCompteAJour();
+
         foreach (var reglage in (IEnumerable<Reglage>)Sliders.ItemsSource) reglage.Relire(_courante.Adjustments);
+    }
+
+    /// <summary>
+    /// Dit noir sur blanc ce que le panneau de correction va toucher.
+    ///
+    /// Sans cela, rien à l'écran ne distingue « je corrige cette photo » de « je corrige
+    /// les trente-deux » — et c'est précisément ce qui a fait croire que les boutons ne
+    /// se défaisaient pas.
+    /// </summary>
+    private void MettreLeCompteAJour()
+    {
+        var visees = _photos.Count(p => p.Ciblee);
+
+        CorrectScopeText.Text = visees > 0
+            ? $"Les corrections portent sur les {visees} photo(s) visées. " +
+              "Ctrl+A n'en vise plus aucune."
+            : "Les corrections portent sur la photo affichée. " +
+              "Ctrl+clic sur une vignette pour en viser plusieurs, Ctrl+A pour toutes.";
     }
 
     /// <summary>
@@ -99,38 +171,172 @@ internal partial class EditSelectionView : UserControl
     /// garde donc deux définitions — la petite pour la bande, la grande pour l'aperçu —
     /// et une seule et même composition pour les deux.
     /// </summary>
-    private readonly Dictionary<string, BitmapSource> _hautesDefinitions = new();
+    private readonly CacheImages _hautesDefinitions = new();
 
     private const int PreviewBoxPx = 1600;
 
-    /// <summary>Redessine la photo touchée : vignette ET grand aperçu, pour voir en direct.</summary>
+    /// <summary>
+    /// Quelques images seulement, les dernières servies.
+    ///
+    /// Une commande de trente-deux photos gardait trente-deux aperçus de 1600 px, soit
+    /// près de deux cents méga-octets — doublés par les images préparées pour la surface.
+    /// L'application ramait et frôlait le plantage (signalé le 01/08/2026). Quatre
+    /// suffisent : on ne regarde qu'une photo à la fois, et revenir à la précédente doit
+    /// rester immédiat.
+    /// </summary>
+    private sealed class CacheImages
+    {
+        private const int Maximum = 4;
+
+        private readonly Dictionary<string, BitmapSource> _images = new();
+        private readonly List<string> _ordre = new(); // du plus ancien au plus récemment servi
+
+        public bool TryGet(string cle, out BitmapSource image)
+        {
+            if (!_images.TryGetValue(cle, out var trouvee))
+            {
+                image = null!;
+                return false;
+            }
+
+            _ordre.Remove(cle);
+            _ordre.Add(cle);
+            image = trouvee;
+            return true;
+        }
+
+        public void Set(string cle, BitmapSource image)
+        {
+            _images[cle] = image;
+            _ordre.Remove(cle);
+            _ordre.Add(cle);
+
+            while (_ordre.Count > Maximum)
+            {
+                _images.Remove(_ordre[0]);
+                _ordre.RemoveAt(0);
+            }
+        }
+
+        public void Remove(string cle)
+        {
+            _images.Remove(cle);
+            _ordre.Remove(cle);
+        }
+    }
+
+    /// <summary>Redessine la photo touchée : vignette ET surface, pour voir en direct.</summary>
     private void Redessiner(PhotoGridView.PhotoItem photo)
     {
         photo.RefreshThumbnail();
-        if (ReferenceEquals(photo, _courante)) RedessinerApercu();
+        if (ReferenceEquals(photo, _courante)) MontrerSurface();
     }
 
-    private void RedessinerApercu()
-    {
-        if (_hautesDefinitions.TryGetValue(_courante.Path, out var source))
-        {
-            var compose = _courante.Compose(source);
-            Preview.Source = compose;
+    /// <summary>
+    /// Les photos préparées pour la surface : quarts de tour et corrections appliqués,
+    /// sans redressement ni cadre.
+    ///
+    /// Elles sont gardées, car le recadrage se refait à chaque pixel de glissement : les
+    /// recomposer à chaque fois ferait passer la photo par ImageMagick des dizaines de
+    /// fois par seconde, et le geste collerait. Ce sont les corrections et les quarts de
+    /// tour qui les périment — voir <see cref="Perimer"/>.
+    /// </summary>
+    private readonly CacheImages _photosPretes = new();
 
-            // si l'aperçu reste flou, c'est ici qu'on le verra : une image composée à
-            // 360 px alors qu'on a chargé 1600 trahit une source qui n'est pas la bonne
-            if (compose is System.Windows.Media.Imaging.BitmapSource rendu && rendu.PixelWidth < 800)
-                FileLog.Write($"Aperçu : composé en {rendu.PixelWidth}×{rendu.PixelHeight} " +
-                              $"alors que la source fait {source.PixelWidth}×{source.PixelHeight}");
+    /// <summary>
+    /// Change dès que ce que la surface doit montrer change : correction, quart de tour,
+    /// ou passage à une autre photo. C'est ce compteur qui dit à la préparation en tâche
+    /// de fond si son résultat vaut encore quelque chose à son retour.
+    /// </summary>
+    private int _versionSurface;
+
+    /// <summary>À appeler dès que les PIXELS de la photo changent, pas son cadrage.</summary>
+    private void Perimer(PhotoGridView.PhotoItem photo)
+    {
+        _photosPretes.Remove(photo.Path);
+        _versionSurface++;
+    }
+
+    /// <summary>
+    /// Montre la photo courante et son cadre sur la surface.
+    ///
+    /// Le cadrage se refait à chaque pixel de glissement : la photo préparée est donc
+    /// gardée, et ce chemin-là ne coûte rien. Si elle manque, on montre la vignette en
+    /// attendant et on prépare à côté — jamais sur le fil de l'interface.
+    /// </summary>
+    private void MontrerSurface()
+    {
+        var cadre = Cadre(_courante);
+        var angle = _courante.FineRotationDegrees;
+
+        if (_photosPretes.TryGet(_courante.Path, out var prete))
+        {
+            Surface.Show(prete, cadre, angle);
             return;
         }
 
-        Preview.Source = _courante.Thumbnail; // le temps que la haute définition arrive
+        Surface.Show(_courante.SourceThumbnail, cadre, angle);
+        PreparerEnFond();
+    }
+
+    private bool _preparationEnCours;
+
+    /// <summary>
+    /// Prépare l'image de la surface à côté, une seule à la fois.
+    ///
+    /// Si les réglages ont encore bougé pendant le calcul, on recommence au lieu de
+    /// garder un résultat périmé : l'affichage saute les états intermédiaires plutôt que
+    /// de prendre du retard sur la main de l'opérateur. C'est ce qui remplace l'ancien
+    /// calcul en ligne, qui figeait l'écran à chaque cran de curseur.
+    /// </summary>
+    private async void PreparerEnFond()
+    {
+        if (_preparationEnCours) return;
+        _preparationEnCours = true;
+
+        try
+        {
+            int version;
+            do
+            {
+                version = _versionSurface;
+
+                var photo = _courante;
+                var source = _hautesDefinitions.TryGet(photo.Path, out var haute)
+                    ? haute
+                    : photo.SourceThumbnail;
+                if (source is null) return;
+
+                // instantané des réglages : l'opérateur continue de bouger les curseurs
+                // pendant le calcul, et les lire depuis l'autre fil serait une course
+                var reglages = photo.Adjustments.Clone();
+                var quarts = photo.RotationQuarterTurns;
+
+                var preparee = await Task.Run(
+                    () => PhotoGridView.PhotoItem.ComposerPhoto(source, quarts, reglages));
+
+                // rien n'a bougé pendant le calcul : le résultat vaut, on le garde
+                if (version != _versionSurface) continue;
+
+                _photosPretes.Set(photo.Path, preparee);
+                if (ReferenceEquals(photo, _courante))
+                    Surface.Show(preparee, Cadre(photo), photo.FineRotationDegrees);
+            }
+            while (version != _versionSurface);
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Aperçu : préparation impossible", ex);
+        }
+        finally
+        {
+            _preparationEnCours = false;
+        }
     }
 
     private async void ChargerHauteDefinition(PhotoGridView.PhotoItem photo)
     {
-        if (_hautesDefinitions.ContainsKey(photo.Path)) return;
+        if (_hautesDefinitions.TryGet(photo.Path, out _)) return;
 
         try
         {
@@ -145,10 +351,12 @@ internal partial class EditSelectionView : UserControl
             bitmap.EndInit();
             bitmap.Freeze();
 
-            _hautesDefinitions[photo.Path] = bitmap;
+            _hautesDefinitions.Set(photo.Path, bitmap);
             FileLog.Write($"Aperçu : {photo.Name} chargé en {bitmap.PixelWidth}×{bitmap.PixelHeight}");
 
-            if (ReferenceEquals(photo, _courante)) RedessinerApercu();
+            // la surface montrait la vignette en attendant : elle est à refaire
+            Perimer(photo);
+            if (ReferenceEquals(photo, _courante)) MontrerSurface();
         }
         catch (Exception ex)
         {
@@ -162,6 +370,8 @@ internal partial class EditSelectionView : UserControl
     private void SetCurrent(PhotoGridView.PhotoItem photo)
     {
         _courante = photo;
+        _versionSurface++; // ce que la surface doit montrer a changé
+
         Cadre(photo); // crée le cadre au format du produit, ou le reprend
         ChargerHauteDefinition(photo);
         Refresh();
@@ -182,60 +392,72 @@ internal partial class EditSelectionView : UserControl
     /// <summary>Le plus grand cadre de ce rapport qui tient dans l'image, centré.</summary>
 
     /// <summary>
-    /// Les photos qu'un « appliquer à tout » touche : celles restées cochées.
+    /// Les photos que les réglages touchent : celles qu'on a visées au Ctrl+clic.
     ///
-    /// Toutes arrivent cochées ; c'est Ctrl+clic dans la bande qui en écarte. Si l'on a
-    /// tout décoché, on retombe sur la photo courante plutôt que de ne rien faire — un
-    /// bouton qui ne fait rien laisse croire à une panne.
+    /// Aucune n'est visée en entrant : on règle la photo affichée, et l'on ne vise
+    /// plusieurs photos qu'en le demandant. Si rien n'est visé, on retombe donc sur la
+    /// photo courante — un bouton qui ne fait rien laisse croire à une panne.
+    ///
+    /// Ce n'est PAS <c>Selected</c>, qui dit ce qui part à l'impression : viser une photo
+    /// pour la corriger ne doit rien changer à la commande.
     /// </summary>
     private List<PhotoGridView.PhotoItem> Visees()
     {
-        var cochees = _photos.Where(p => p.Selected).ToList();
-        return cochees.Count > 0 ? cochees : [_courante];
+        var visees = _photos.Where(p => p.Ciblee).ToList();
+        return visees.Count > 0 ? visees : [_courante];
     }
 
     // — recadrage à la souris —
 
     /// <summary>
-    /// Un cadre par photo, tenu entre deux gestes. C'est lui qui porte la vérité : le
-    /// <see cref="CropSpec"/> de la photo n'en est que la traduction pour le rendu.
-    /// </summary>
-    private readonly Dictionary<string, FramedCrop> _cadres = new();
-
-    /// <summary>
-    /// Le cadre d'une photo, créé au premier besoin AU FORMAT DU PRODUIT.
+    /// Le cadre d'une photo — porté par la photo elle-même (<c>PhotoItem.Cadre</c>), et
+    /// non plus par cet écran.
     ///
-    /// Le format est fixé ici une fois pour toutes : le cadre ne changera plus de
-    /// proportions, donc aucun geste ne peut le faire dériver. C'est tout l'intérêt du
-    /// modèle de DiLand, et ce qui manquait à la version précédente.
+    /// C'est lui qui porte la vérité : le <see cref="CropSpec"/> n'en est que la
+    /// traduction pour le rendu. Le tenir ici revenait à ne le calculer que pour les
+    /// photos qu'on ouvrait — les autres partaient à l'impression sans cadrage.
     /// </summary>
-    private FramedCrop? Cadre(PhotoGridView.PhotoItem photo)
-    {
-        if (_cadres.TryGetValue(photo.Path, out var connu)) return connu;
-        if (photo.Product is not { } produit) return null;
-        if (photo.SourceAspect <= 0) return null; // définition pas encore lue
-
-        // le cadre suit l'orientation de la photo, comme le fait le rendu (OrientCanvas)
-        var (largeur, hauteur) = (produit.WidthMm, produit.HeightMm);
-        if (photo.SourceAspect >= 1 != largeur >= hauteur)
-            (largeur, hauteur) = (hauteur, largeur);
-
-        var pixels = photo.SourcePixels;
-        var cadre = new FramedCrop(pixels.Width, pixels.Height, largeur, hauteur);
-
-        // on reprend le cadrage déjà enregistré, s'il y en a un
-        if (!photo.Crop.IsFull) cadre.SetFromCropSpec(photo.Crop);
-
-        _cadres[photo.Path] = cadre;
-        Appliquer(photo, cadre);
-        return cadre;
-    }
+    private static FramedCrop? Cadre(PhotoGridView.PhotoItem photo) => photo.Cadre;
 
     /// <summary>Reporte le cadre sur la photo et redessine — le seul point de conversion.</summary>
     private void Appliquer(PhotoGridView.PhotoItem photo, FramedCrop cadre)
     {
         photo.Crop = cadre.ToCropSpec();
-        Redessiner(photo);
+
+        VignetteBientot(photo);
+        if (ReferenceEquals(photo, _courante)) MontrerSurface();
+    }
+
+    private readonly HashSet<PhotoGridView.PhotoItem> _vignettesEnRetard = new();
+    private bool _vignettesPlanifiees;
+
+    /// <summary>
+    /// Refait les vignettes au premier moment de calme.
+    ///
+    /// Un glissement lève un événement par pixel parcouru, et un curseur de correction
+    /// touche d'un coup les trente-deux photos cochées. Les refaire à chaque fois ferait
+    /// coller le geste. En priorité <c>Background</c>, elles attendent que la file des
+    /// mouvements de souris soit vide : la bande suit à l'œil, et la surface, elle, est
+    /// déjà à jour de son côté.
+    ///
+    /// Les photos s'accumulent dans un ensemble : la version précédente n'en retenait
+    /// qu'une et laissait les autres avec leur ancienne vignette.
+    /// </summary>
+    private void VignetteBientot(PhotoGridView.PhotoItem photo)
+    {
+        _vignettesEnRetard.Add(photo);
+
+        if (_vignettesPlanifiees) return;
+        _vignettesPlanifiees = true;
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            _vignettesPlanifiees = false;
+
+            var aRefaire = _vignettesEnRetard.ToList();
+            _vignettesEnRetard.Clear();
+            foreach (var attardee in aRefaire) attardee.RefreshThumbnail();
+        }));
     }
 
     /// <summary>Fait glisser la photo derrière le cadre.</summary>
@@ -275,17 +497,29 @@ internal partial class EditSelectionView : UserControl
         // triviale et surtout SANS EFFET DE BORD : la photo se replace toute seule pour
         // couvrir le nouveau cadre. L'ancienne version échangeait les côtés du recadrage,
         // ce qui ne faisait rien du tout quand celui-ci valait l'image entière.
-        var pixels = photo.SourcePixels;
-        var pivote = new FramedCrop(pixels.Width, pixels.Height, ancien.FrameHeight, ancien.FrameWidth);
+        var pixels = photo.PixelsVus;
+        var pivote = new FramedCrop(pixels.Width, pixels.Height, ancien.FrameHeight, ancien.FrameWidth)
+        {
+            RotationDegrees = ancien.RotationDegrees,
+        };
 
-        _cadres[photo.Path] = pivote;
+        photo.RemplacerCadre(pivote);
         Appliquer(photo, pivote);
     }
 
+    /// <summary>
+    /// Pivote la PHOTO d'un quart de tour. Ses deux côtés s'échangent : le cadre est donc
+    /// refait, et le cadrage repart du centre — ses repères viennent de changer de sens,
+    /// le garder donnerait un cadrage pris ailleurs que là où on l'avait posé.
+    /// </summary>
     private void PivoterPhoto(PhotoGridView.PhotoItem photo, int sens)
     {
+        // le cadre et le cadrage repartent du centre d'eux-mêmes (voir PhotoItem)
         photo.RotationQuarterTurns = (photo.RotationQuarterTurns + sens + 4) % 4;
+
+        Perimer(photo); // les pixels tournent : la photo prête pour la surface est à refaire
         Redessiner(photo);
+        Refresh();
     }
 
     /// <summary>Un degré par cran de molette : DiLand stocke un angle ENTIER.</summary>
@@ -308,10 +542,13 @@ internal partial class EditSelectionView : UserControl
         if (Cadre(photo) is { } cadre)
         {
             cadre.RotationDegrees = photo.FineRotationDegrees;
-            Appliquer(photo, cadre);
+            Appliquer(photo, cadre); // redessine vignette et surface
+        }
+        else
+        {
+            Redessiner(photo);
         }
 
-        Redessiner(photo);
         Refresh();
     }
 
@@ -340,11 +577,11 @@ internal partial class EditSelectionView : UserControl
         if (Cible(sender) is not { } photo) return;
         Tracer(nameof(OnStripDown), photo);
 
-        // Ctrl maintenue : on restreint le tir. Toutes les photos arrivent ici cochées ;
-        // Ctrl+clic en écarte, pour qu'un réglage ne parte que sur celles qu'on vise.
+        // Ctrl maintenue : on vise. Rien n'est visé au départ ; Ctrl+clic ajoute une photo
+        // à ce que les réglages toucheront, sans rien changer à ce qui sera imprimé.
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
-            photo.Selected = !photo.Selected;
+            photo.Ciblee = !photo.Ciblee;
             SetCurrent(photo);
             return;
         }
@@ -407,40 +644,9 @@ internal partial class EditSelectionView : UserControl
         e.Handled = true;
     }
 
-    // — mêmes gestes sur le grand aperçu, sans touche à maintenir —
-
-    private void OnPreviewDown(object sender, MouseButtonEventArgs e)
-    {
-        _glisse = true;
-        _glisseSur = _courante;
-        _dernierPoint = e.GetPosition(this);
-        Stage.CaptureMouse();
-    }
-
-    private void OnPreviewMove(object sender, MouseEventArgs e) => OnStripMove(sender, e);
-
-    private void OnPreviewUp(object sender, MouseButtonEventArgs e)
-    {
-        _glisse = false;
-        _glisseSur = null;
-        Stage.ReleaseMouseCapture();
-    }
-
-    private void OnPreviewWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (TTenue) Redresser(_courante, e.Delta > 0 ? 1 : -1);
-        else Zoomer(_courante, e.Delta > 0);
-
-        e.Handled = true;
-    }
-
-    private void OnPreviewRightClick(object sender, MouseButtonEventArgs e)
-    {
-        if (!CTenue) return;
-
-        PivoterCadre(_courante);
-        e.Handled = true;
-    }
+    // Les gestes du grand aperçu vivent désormais dans la surface elle-même
+    // (CropSurface), branchée par BrancherSurface : elle n'y demande aucune touche à
+    // maintenir, puisqu'elle ne sert qu'à ça.
 
     // — panneaux —
 
@@ -459,6 +665,39 @@ internal partial class EditSelectionView : UserControl
         CorrectPanel.Visibility = Visibility.Visible;
     }
 
+    /// <summary>
+    /// Change le format du tirage sans repasser par la grille.
+    ///
+    /// Le cadre se refait tout seul au nouveau format (voir <c>PhotoItem.Product</c>), et
+    /// l'aperçu le montre aussitôt : c'est le seul moyen de juger un changement de format
+    /// sur une photo, puisqu'un 10×15 et un 13×18 ne coupent pas au même endroit.
+    /// </summary>
+    private void OnPickFormat(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button bouton) return;
+
+        ProductMenu.Ouvrir(bouton, _courante.Product, _courante.Finish, (produit, finition) =>
+        {
+            // le format suit les photos visées, comme les corrections : c'est ainsi qu'on
+            // tire trois photos d'une planche en 13×18 et le reste en 10×15, sans repasser
+            // par la grille
+            var visees = Visees();
+            foreach (var photo in visees)
+            {
+                photo.Product = produit;
+                photo.Finish = finition;
+                VignetteBientot(photo);
+            }
+
+            FileLog.Write($"Format « {produit.Name} » sur {visees.Count} photo(s)");
+
+            // les pixels ne changent pas, mais le cadre oui : la surface doit le relire
+            _versionSurface++;
+            MontrerSurface();
+            Refresh();
+        });
+    }
+
     private void OnRotateFrame(object sender, RoutedEventArgs e) => PivoterCadre(_courante);
     private void OnRotatePhoto(object sender, RoutedEventArgs e) => PivoterPhoto(_courante, 1);
 
@@ -475,11 +714,23 @@ internal partial class EditSelectionView : UserControl
         Refresh();
     }
 
+    /// <summary>
+    /// Repart de zéro : plus de quart de tour, plus de redressement, et le cadre au
+    /// milieu de la photo.
+    ///
+    /// Le cadre doit être remis lui aussi, et pas seulement le <c>CropSpec</c> : c'est lui
+    /// qui porte la vérité, et le laisser en place ferait revenir l'ancien cadrage au
+    /// premier geste suivant.
+    /// </summary>
     private void OnResetCrop(object sender, RoutedEventArgs e)
     {
-        _courante.Crop = CropSpec.Full;
         _courante.RotationQuarterTurns = 0;
+        _courante.FineRotationDegrees = 0;
+        _courante.OublierCadre();
+
+        Perimer(_courante);
         Redessiner(_courante);
+        Refresh();
     }
 
     /// <summary>Le cadrage de la photo courante, repris sur toute la planche d'un geste.</summary>
@@ -496,50 +747,94 @@ internal partial class EditSelectionView : UserControl
 
     // — corrections —
 
+    /// <summary>
+    /// Noir et blanc — le <c>Grayscale</c> du modèle, déjà appliqué par le rendu et par
+    /// la grille (Ctrl+W). Il manquait seulement ici, sur l'écran où l'on corrige.
+    /// </summary>
+    private void OnGrayscaleChanged(object sender, RoutedEventArgs e)
+    {
+        var actif = GrayscaleToggle.IsChecked == true;
+        Regler($"noir et blanc {(actif ? "activé" : "annulé")}", a => a.Grayscale = actif);
+    }
+
     private void OnAutoChanged(object sender, RoutedEventArgs e)
     {
-        _courante.Adjustments.AutoLevels = AutoLevelsToggle.IsChecked == true;
-        _courante.Adjustments.AutoContrast = AutoContrastToggle.IsChecked == true;
-        _courante.Adjustments.AutoColor = AutoColorToggle.IsChecked == true;
-        Redessiner(_courante);
+        var (niveaux, contraste, couleur) =
+            (AutoLevelsToggle.IsChecked == true,
+             AutoContrastToggle.IsChecked == true,
+             AutoColorToggle.IsChecked == true);
+
+        Regler($"auto niveaux={niveaux} contraste={contraste} couleur={couleur}", a =>
+        {
+            a.AutoLevels = niveaux;
+            a.AutoContrast = contraste;
+            a.AutoColor = couleur;
+        });
     }
 
     private void OnResetAdjustments(object sender, RoutedEventArgs e)
     {
-        _courante.Adjustments = new ImageAdjustments();
-        Redessiner(_courante);
-        Refresh();
+        // remise à neuf complète : on repart d'un objet vierge plutôt que de remettre
+        // chaque champ à zéro, pour qu'un réglage ajouté plus tard ne soit pas oublié ici
+        foreach (var photo in Visees()) photo.Adjustments = new ImageAdjustments();
+
+        Regler("corrections annulées", _ => { });
+        Refresh(); // les curseurs et les bascules doivent revenir à zéro eux aussi
     }
 
-    private void OnCorrectToAll(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Applique un réglage à TOUTES les photos cochées — c'est le modèle de DiLand, et
+    /// celui que l'opérateur a en tête.
+    ///
+    /// Chaque bouton ne touchait que la photo courante : ré-appuyer dessus ne défaisait
+    /// donc la correction que sur elle, les autres la gardaient, et « Annuler les
+    /// corrections » n'en libérait qu'une sur trente-deux. Signalé le 01/08/2026.
+    ///
+    /// Pour ne corriger qu'une photo, Ctrl+A décoche tout : le réglage retombe alors sur
+    /// la seule photo courante (voir <see cref="Visees"/>).
+    /// </summary>
+    private void Regler(string quoi, Action<ImageAdjustments> reglage)
     {
-        foreach (var photo in Visees())
+        var visees = Visees();
+        foreach (var photo in visees)
         {
-            // un exemplaire par photo : un objet partagé ferait qu'un réglage ultérieur
-            // sur l'une déborderait sur toutes les autres
-            photo.Adjustments = _courante.Adjustments.Clone();
-            Redessiner(photo);
+            reglage(photo.Adjustments);
+            Perimer(photo);
+            VignetteBientot(photo);
         }
+
+        // aucun test ne clique : sans cette trace, on ne saurait pas ce qu'un bouton a
+        // réellement touché ni sur combien de photos
+        FileLog.Write($"Correction « {quoi} » sur {visees.Count} photo(s)");
+
+        MontrerSurface();
+        MettreLeCompteAJour();
+    }
+
+    /// <summary>Une correction change les pixels : la photo de la surface est à refaire.</summary>
+    private void Corrigee(PhotoGridView.PhotoItem photo)
+    {
+        Perimer(photo);
+        Redessiner(photo);
     }
 
     /// <summary>Un curseur du panneau, façon Lightroom.</summary>
     private sealed class Reglage : ObservableObject
     {
         private readonly Func<ImageAdjustments, double> _lire;
-        private readonly Action<ImageAdjustments, double> _ecrire;
-        private readonly Action _change;
-        private ImageAdjustments _cible = new();
+        private readonly Action<double> _appliquer;
         private double _valeur;
 
+        /// <param name="lire">Relit la valeur sur la photo courante, pour placer le curseur.</param>
+        /// <param name="appliquer">Porte la valeur sur toutes les photos visées.</param>
         public Reglage(string nom, double min, double max,
-            Func<ImageAdjustments, double> lire, Action<ImageAdjustments, double> ecrire, Action change)
+            Func<ImageAdjustments, double> lire, Action<double> appliquer)
         {
             Nom = nom;
             Min = min;
             Max = max;
             _lire = lire;
-            _ecrire = ecrire;
-            _change = change;
+            _appliquer = appliquer;
         }
 
         public string Nom { get; }
@@ -555,39 +850,53 @@ internal partial class EditSelectionView : UserControl
             {
                 if (!Set(ref _valeur, value)) return;
                 OnPropertyChanged(nameof(Affichage));
-                _ecrire(_cible, value);
-                _change();
+
+                if (_relecture) return; // on replace le curseur, ce n'est pas un geste
+                _appliquer(value);
             }
         }
 
-        /// <summary>Reprend la valeur de la photo courante, sans déclencher de rendu.</summary>
+        private bool _relecture;
+
+        /// <summary>Reprend la valeur de la photo courante, sans rien appliquer.</summary>
         public void Relire(ImageAdjustments cible)
         {
-            _cible = cible;
-            _valeur = _lire(cible);
-            OnPropertyChanged(nameof(Valeur));
-            OnPropertyChanged(nameof(Affichage));
+            _relecture = true;
+            try
+            {
+                _valeur = _lire(cible);
+                OnPropertyChanged(nameof(Valeur));
+                OnPropertyChanged(nameof(Affichage));
+            }
+            finally
+            {
+                _relecture = false;
+            }
         }
     }
 
     private List<Reglage> ConstruireReglages()
     {
-        void Change() => Redessiner(_courante);
+        // chaque curseur porte sur les photos cochées, comme les bascules au-dessus
+        Reglage Curseur(string nom, double min, double max,
+            Func<ImageAdjustments, double> lire, Action<ImageAdjustments, double> ecrire) =>
+            new(nom, min, max, lire,
+                valeur => Regler($"{nom} → {valeur:0.##}", a => ecrire(a, valeur)));
 
         return
         [
-            new("Exposition (IL)", -2, 2, a => a.Exposure, (a, v) => a.Exposure = v, Change),
-            new("Contraste", -100, 100, a => a.Contrast, (a, v) => a.Contrast = v, Change),
-            new("Hautes lumières", -100, 100, a => a.Highlights, (a, v) => a.Highlights = v, Change),
-            new("Ombres", -100, 100, a => a.Shadows, (a, v) => a.Shadows = v, Change),
-            new("Blancs", -100, 100, a => a.Whites, (a, v) => a.Whites = v, Change),
-            new("Noirs", -100, 100, a => a.Blacks, (a, v) => a.Blacks = v, Change),
-            new("Température", -100, 100, a => a.Temperature, (a, v) => a.Temperature = v, Change),
-            new("Teinte", -100, 100, a => a.Tint, (a, v) => a.Tint = v, Change),
-            new("Vibrance", -100, 100, a => a.Vibrance, (a, v) => a.Vibrance = v, Change),
-            new("Saturation", -100, 100, a => a.Saturation, (a, v) => a.Saturation = v, Change),
-            new("Clarté", -100, 100, a => a.Clarity, (a, v) => a.Clarity = v, Change),
-            new("Netteté", 0, 100, a => a.Sharpness, (a, v) => a.Sharpness = v, Change),
+            Curseur("Exposition (IL)", -2, 2, a => a.Exposure, (a, v) => a.Exposure = v),
+            Curseur("Contraste", -100, 100, a => a.Contrast, (a, v) => a.Contrast = v),
+            Curseur("Hautes lumières", -100, 100, a => a.Highlights, (a, v) => a.Highlights = v),
+            Curseur("Ombres", -100, 100, a => a.Shadows, (a, v) => a.Shadows = v),
+            Curseur("Blancs", -100, 100, a => a.Whites, (a, v) => a.Whites = v),
+            Curseur("Noirs", -100, 100, a => a.Blacks, (a, v) => a.Blacks = v),
+            Curseur("Température", -100, 100, a => a.Temperature, (a, v) => a.Temperature = v),
+            Curseur("Teinte", -100, 100, a => a.Tint, (a, v) => a.Tint = v),
+            Curseur("Vibrance", -100, 100, a => a.Vibrance, (a, v) => a.Vibrance = v),
+            Curseur("Saturation", -100, 100, a => a.Saturation, (a, v) => a.Saturation = v),
+            Curseur("Clarté", -100, 100, a => a.Clarity, (a, v) => a.Clarity = v),
+            Curseur("Netteté", 0, 100, a => a.Sharpness, (a, v) => a.Sharpness = v),
         ];
     }
 

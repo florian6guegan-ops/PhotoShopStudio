@@ -2,18 +2,46 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
-        <!-- Tuile facon DiLand : grande cible tactile, titre lisible de loin,
-             sous-titre qui dit ce que le bouton fait vraiment. -->
-        <Style x:Key="Tuile" TargetType="Button">
-            <Setter Property="Margin" Value="8"/>
+        <!-- Réglages du poste : nécessaires, mais pas ce qu'on fait vingt fois par jour.
+             Petits, en haut à gauche, hors du chemin. -->
+        <Style x:Key="Secondaire" TargetType="Button">
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="fond" Background="{TemplateBinding Background}" CornerRadius="12"
+                        <Border x:Name="fond" Background="{TemplateBinding Background}" CornerRadius="8"
+                                BorderBrush="#3A4652" BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="fond" Property="Background" Value="{StaticResource PanelBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Les trois gestes du métier : grands, colorés, impossibles à manquer. -->
+        <Style x:Key="Principale" TargetType="Button">
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="MinHeight" Value="150"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="fond" Background="{TemplateBinding Background}" CornerRadius="14"
                                 BorderBrush="{StaticResource AccentBrush}" BorderThickness="2">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -29,8 +57,9 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
         <Style x:Key="TuileTitre" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="FontSize" Value="27"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -43,39 +72,65 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="Margin" Value="16,6,16,0"/>
         </Style>
+
+        <!-- Bouton d'action sur une ligne de commande de borne -->
+        <Style x:Key="ActionLigne" TargetType="Button">
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="#33FFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="fond" Background="{TemplateBinding Background}" CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="fond" Property="Background" Value="#55FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="fond" Property="Background" Value="#22000000"/>
+                                <Setter Property="Foreground" Value="#99FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Que voulez-vous faire ?" Style="{StaticResource PageTitle}"
-                   HorizontalAlignment="Center"/>
-
-        <UniformGrid Grid.Row="1" Columns="3" Rows="3">
-            <Button Style="{StaticResource Tuile}" Click="OnNewOrder"
-                    AutomationProperties.Name="Nouvelle commande"
-                    Background="{StaticResource AccentBrush}">
-                <StackPanel>
-                    <TextBlock Text="Nouvelle commande" Style="{StaticResource TuileTitre}"
-                               Foreground="White"/>
-                    <TextBlock Text="Tirages à partir d'une carte, d'une clé ou d'un CD"
-                               Style="{StaticResource TuileSousTitre}" Foreground="#DDFFFFFF"/>
-                </StackPanel>
+        <!-- 1. le secondaire, en haut à gauche -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,18">
+            <Button Style="{StaticResource Secondaire}" Click="OnStats"
+                    AutomationProperties.Name="Statistiques">Statistiques</Button>
+            <Button Style="{StaticResource Secondaire}" Click="OnOrders"
+                    AutomationProperties.Name="Commandes du jour">Commandes du jour</Button>
+            <Button Style="{StaticResource Secondaire}" Click="OnCatalog"
+                    AutomationProperties.Name="Catalogue et imprimantes">Catalogue et imprimantes</Button>
+            <Button Style="{StaticResource Secondaire}" Click="OnMachineStatus"
+                    AutomationProperties.Name="État des machines">État des machines</Button>
+            <Button x:Name="LargeFormatButton" Style="{StaticResource Secondaire}" Click="OnLargeFormatQueue"
+                    AutomationProperties.Name="Agrandissements">
+                <TextBlock x:Name="LargeFormatTitle" Text="Agrandissements"/>
             </Button>
+        </StackPanel>
 
-            <Button Style="{StaticResource Tuile}" Click="OnPhoneUpload"
-                    AutomationProperties.Name="Photos d'un téléphone">
-                <StackPanel>
-                    <TextBlock Text="Photos d'un téléphone" Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Le client envoie ses photos depuis son mobile"
-                               Style="{StaticResource TuileSousTitre}"/>
-                </StackPanel>
-            </Button>
-
-            <Button Style="{StaticResource Tuile}" Click="OnIdPhoto"
+        <!-- 2. les trois gestes du métier -->
+        <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,20">
+            <Button Style="{StaticResource Principale}" Click="OnIdPhoto"
                     AutomationProperties.Name="Photos d'identité">
                 <StackPanel>
                     <TextBlock Text="Photos d'identité" Style="{StaticResource TuileTitre}"/>
@@ -84,59 +139,137 @@
                 </StackPanel>
             </Button>
 
-            <Button Style="{StaticResource Tuile}" Click="OnOrders"
-                    AutomationProperties.Name="Commandes du jour">
+            <Button Style="{StaticResource Principale}" Click="OnTirages"
+                    Background="{StaticResource AccentBrush}"
+                    AutomationProperties.Name="Tirages">
                 <StackPanel>
-                    <TextBlock Text="Commandes du jour" Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Suivre, réimprimer, imprimer un ticket"
+                    <TextBlock Text="Tirages" Style="{StaticResource TuileTitre}" Foreground="White"/>
+                    <TextBlock Text="À partir d'une carte, d'une clé ou d'un CD"
+                               Style="{StaticResource TuileSousTitre}" Foreground="#DDFFFFFF"/>
+                </StackPanel>
+            </Button>
+
+            <Button Style="{StaticResource Principale}" Click="OnPhoneUpload"
+                    AutomationProperties.Name="Photos d'un téléphone">
+                <StackPanel>
+                    <TextBlock Text="Photos d'un téléphone" Style="{StaticResource TuileTitre}"/>
+                    <TextBlock Text="Le client envoie ses photos depuis son mobile"
                                Style="{StaticResource TuileSousTitre}"/>
-                </StackPanel>
-            </Button>
-
-            <Button Style="{StaticResource Tuile}" Click="OnMachineStatus"
-                    AutomationProperties.Name="État des machines">
-                <StackPanel>
-                    <TextBlock Text="État des machines" Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Papier, encres, tirages restants par format"
-                               Style="{StaticResource TuileSousTitre}"/>
-                </StackPanel>
-            </Button>
-
-            <Button x:Name="LargeFormatButton" Style="{StaticResource Tuile}" Click="OnLargeFormatQueue"
-                    AutomationProperties.Name="Agrandissements à tirer">
-                <StackPanel>
-                    <TextBlock x:Name="LargeFormatTitle" Text="Agrandissements à tirer"
-                               Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Grands formats à sortir sur l'Epson"
-                               Style="{StaticResource TuileSousTitre}"/>
-                </StackPanel>
-            </Button>
-
-            <Button x:Name="KioskOrdersButton" Style="{StaticResource Tuile}" Click="OnKioskOrders"
-                    AutomationProperties.Name="Commandes des bornes">
-                <StackPanel>
-                    <TextBlock x:Name="KioskOrdersTitle" Text="Commandes des bornes"
-                               Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Reprendre les commandes reçues par DiLand"
-                               Style="{StaticResource TuileSousTitre}"/>
-                </StackPanel>
-            </Button>
-
-            <Button Style="{StaticResource Tuile}" Click="OnCatalog"
-                    AutomationProperties.Name="Catalogue et imprimantes">
-                <StackPanel>
-                    <TextBlock Text="Catalogue et imprimantes" Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Formats, prix, finitions" Style="{StaticResource TuileSousTitre}"/>
-                </StackPanel>
-            </Button>
-
-            <Button Style="{StaticResource Tuile}" Click="OnStats"
-                    AutomationProperties.Name="Statistiques">
-                <StackPanel>
-                    <TextBlock Text="Statistiques" Style="{StaticResource TuileTitre}"/>
-                    <TextBlock Text="Ventes et volumes" Style="{StaticResource TuileSousTitre}"/>
                 </StackPanel>
             </Button>
         </UniformGrid>
+
+        <!-- 3. le récepteur des commandes de bornes -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" Margin="2,0,2,10">
+                <Button DockPanel.Dock="Right" Style="{StaticResource Secondaire}" Margin="8,0,0,0"
+                        Click="OnKioskHistory" AutomationProperties.Name="Historique des bornes">
+                    Historique
+                </Button>
+                <Button DockPanel.Dock="Right" Style="{StaticResource Secondaire}" Margin="8,0,0,0"
+                        Click="OnKioskRefresh" AutomationProperties.Name="Actualiser les bornes">
+                    Actualiser
+                </Button>
+                <TextBlock x:Name="KioskTitle" Text="Commandes des bornes" FontSize="22" FontWeight="Bold"
+                           Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <Border Grid.Row="1" Background="#0E141A" CornerRadius="12" Padding="8">
+                <Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="KioskList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- La couleur DIT l'état : bleu tant qu'il n'y a rien
+                                         à surveiller, orange dès que la machine tire. -->
+                                    <Border Background="{Binding Fond}" CornerRadius="10"
+                                            Margin="0,0,0,8" Padding="16,12">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" Text="{Binding Numero}" FontSize="30"
+                                                       FontWeight="Bold" Foreground="White"
+                                                       VerticalAlignment="Center" Margin="0,0,18,0"/>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Titre}" FontSize="19" FontWeight="SemiBold"
+                                                           Foreground="White" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Detail}" FontSize="14"
+                                                           Foreground="#DDFFFFFF" TextTrimming="CharacterEllipsis"/>
+
+                                                <!-- avancement réel : ce qui SORT de la machine -->
+                                                <Grid Visibility="{Binding AvancementVisible}" Margin="0,8,24,0">
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+
+                                                    <TextBlock Grid.Row="0" Text="{Binding AvancementTexte}"
+                                                               FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+
+                                                    <ProgressBar Grid.Row="1" Height="10" Margin="0,4,0,0"
+                                                                 Minimum="0" Maximum="1"
+                                                                 Value="{Binding Fraction, Mode=OneWay}"
+                                                                 IsIndeterminate="{Binding Indetermine, Mode=OneWay}">
+                                                        <ProgressBar.Template>
+                                                            <ControlTemplate TargetType="ProgressBar">
+                                                                <Border Background="#44000000" CornerRadius="5"
+                                                                        ClipToBounds="True">
+                                                                    <Grid>
+                                                                        <Rectangle x:Name="PART_Track"/>
+                                                                        <Border x:Name="PART_Indicator"
+                                                                                HorizontalAlignment="Left"
+                                                                                Background="White" CornerRadius="5"/>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </ProgressBar.Template>
+                                                    </ProgressBar>
+                                                </Grid>
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <Button Style="{StaticResource ActionLigne}" Content="Modifier"
+                                                        Tag="{Binding}" Click="OnKioskModify"
+                                                        IsEnabled="{Binding ActionsPossibles}"
+                                                        ToolTip="Recadrer et corriger avant de tirer"/>
+                                                <Button Style="{StaticResource ActionLigne}" Content="Télécharger"
+                                                        Tag="{Binding}" Click="OnKioskDownload"
+                                                        ToolTip="Copier les photos dans le dossier Téléchargements"/>
+                                                <Button Style="{StaticResource ActionLigne}" Content="Imprimer"
+                                                        Tag="{Binding}" Click="OnKioskPrint"
+                                                        IsEnabled="{Binding ActionsPossibles}"
+                                                        Background="{StaticResource OkBrush}"
+                                                        ToolTip="Tirer la commande telle quelle, sans retouche"/>
+                                                <Button Style="{StaticResource ActionLigne}" Content="Supprimer"
+                                                        Tag="{Binding}" Click="OnKioskDismiss"
+                                                        IsEnabled="{Binding ActionsPossibles}"
+                                                        Background="#99B3261E" Margin="14,0,0,0"
+                                                        ToolTip="Retirer la commande de la liste — les photos de la borne ne sont pas touchées"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="KioskEmpty" Style="{StaticResource Hint}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               TextAlignment="Center" Margin="24"
+                               Text="Aucune commande de borne en attente."/>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

@@ -30,8 +30,8 @@ public partial class PrintFormatView : UserControl
         if ((sender as Button)?.Tag is not FormatRow ligne) return;
 
         // le format est choisi : la sélection des photos démarre déjà sur ce produit
-        Navigator.Go(new SourcePickerView(root =>
-            Navigator.Go(new PhotoGridView(root, ligne.Produit.Code),
+        Navigator.Go(new SourcePickerView((root, profond) =>
+            Navigator.Go(new PhotoGridView(root, ligne.Produit.Code, avecSousDossiers: profond),
                 $"{ligne.Nom} — choisir les photos")),
             $"{ligne.Nom} — choisir le support");
     }

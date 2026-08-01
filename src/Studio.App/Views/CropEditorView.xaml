@@ -24,15 +24,24 @@
                   ManipulationStarting="OnManipulationStarting"
                   ManipulationDelta="OnManipulationDelta"
                   SizeChanged="OnStageSizeChanged">
+                <!-- Le PAPIER, en mode « entier » : le rectangle blanc au format du
+                     tirage, derrière la photo. C'est lui qui montre les marges — sans
+                     lui, le mode annonçait des bords blancs par une phrase et affichait
+                     la photo bord à bord, donc exactement ce qu'il ne ferait pas
+                     (signalé le 01/08/2026). -->
+                <Canvas x:Name="FondPapier" IsHitTestVisible="False">
+                    <Rectangle x:Name="Papier" Fill="White" Visibility="Collapsed"/>
+                </Canvas>
+
                 <Image x:Name="Photo" Stretch="Uniform" Margin="0"/>
                 <Canvas x:Name="Overlay" IsHitTestVisible="False">
                     <Path x:Name="Shade" Fill="#A6000000"/>
                     <Rectangle x:Name="CropBorder" Stroke="White" StrokeThickness="3"/>
                 </Canvas>
                 <TextBlock x:Name="FitMessage" Visibility="Collapsed"
-                           Foreground="White" FontSize="24" FontWeight="SemiBold"
+                           Foreground="White" FontSize="20" FontWeight="SemiBold"
                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"
-                           Text="La photo entière sera imprimée, avec des marges blanches si besoin."/>
+                           Text="Photo entière : le blanc autour, c'est la marge du papier."/>
             </Grid>
         </Border>
 

@@ -54,8 +54,13 @@ public sealed class FramedCrop
     public double Height { get; private set; }
 
     /// <summary>
-    /// Autorise la photo à laisser du vide dans le cadre. Faux par défaut, comme chez
-    /// DiLand : un tirage avec une bande blanche imprévue est un tirage perdu.
+    /// Autorise la photo à laisser du vide dans le cadre — c'est le mode « photo entière »,
+    /// où le tirage sort avec des marges blanches plutôt que recoupé. Faux par défaut,
+    /// comme chez DiLand : une bande blanche IMPRÉVUE est un tirage perdu.
+    ///
+    /// À poser avant <see cref="Reset"/>, qui n'en tire pas la même taille de départ. Le
+    /// constructeur appelle <c>Reset</c> avant que ce drapeau ne soit posé : un cadre créé
+    /// pour ce mode doit donc être réinitialisé une fois de plus.
     /// </summary>
     public bool AllowsWhiteMargins { get; set; }
 
@@ -88,7 +93,12 @@ public sealed class FramedCrop
     /// Le raisonnement tient en une bascule : « la photo tournée de θ couvre le cadre »
     /// équivaut à « le cadre tourné de −θ tient dans la photo droite ». Or la photo est
     /// un rectangle droit : il suffit donc qu'elle couvre la boîte englobante du cadre
-    /// incliné. C'est exact, et non une approximation.
+    /// incliné.
+    ///
+    /// La photo tourne autour du CENTRE DU CADRE — c'est la convention de ce modèle, et
+    /// c'est elle qui rend la bascule exacte : le cadre tourné autour de son propre
+    /// centre y reste centré, sa boîte englobante aussi. Le rendu doit tourner la photo
+    /// au même endroit, ce dont <see cref="Canevas"/> se charge.
     /// </summary>
     private (double Width, double Height) EncombrementRequis()
     {
@@ -101,16 +111,70 @@ public sealed class FramedCrop
     }
 
     /// <summary>
-    /// Replace la photo : la plus petite taille qui couvre entièrement le cadre, centrée.
-    /// C'est le cadrage de départ, et celui sur lequel « Réinitialiser » revient.
+    /// Le canevas que le redressement produit : la photo tournée, coins vides compris.
+    ///
+    /// C'est LUI que le rendu recadre. <c>ImagePipeline</c> tourne l'image, puis applique
+    /// les fractions du <see cref="CropSpec"/> sur le résultat ; DiLand fait pareil, en
+    /// passant à son <c>FramedImageCropControl</c> une image déjà redressée. Les
+    /// fractions doivent donc se compter ici, sur le canevas, et non sur la photo droite
+    /// — sinon le tirage sort décalé de tout ce que la rotation a ajouté, et va chercher
+    /// des coins vides que l'écran ne montrait pas.
+    /// </summary>
+    private (double Left, double Top, double Width, double Height) Canevas()
+    {
+        var radians = _rotationDegrees * Math.PI / 180;
+        var cos = Math.Abs(Math.Cos(radians));
+        var sin = Math.Abs(Math.Sin(radians));
+
+        var largeur = Width * cos + Height * sin;
+        var hauteur = Width * sin + Height * cos;
+
+        // la photo tourne autour du centre du cadre : le centre du canevas est donc le
+        // centre de la photo, tourné du même angle autour du centre du cadre
+        var (cx, cy) = AutourDuCadre(X + Width / 2, Y + Height / 2, radians);
+
+        return (cx - largeur / 2, cy - hauteur / 2, largeur, hauteur);
+    }
+
+    /// <summary>Tourne un point autour du centre du cadre, dans le sens des aiguilles.</summary>
+    private (double X, double Y) AutourDuCadre(double x, double y, double radians)
+    {
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+
+        var dx = x - FrameWidth / 2;
+        var dy = y - FrameHeight / 2;
+
+        return (FrameWidth / 2 + dx * cos - dy * sin,
+                FrameHeight / 2 + dx * sin + dy * cos);
+    }
+
+    /// <summary>
+    /// Replace la photo, centrée dans le cadre. C'est le cadrage de départ, et celui sur
+    /// lequel « Réinitialiser » revient.
+    ///
+    /// Deux tailles possibles, selon le mode du produit :
+    /// « remplir le format », la plus petite qui COUVRE le cadre — rien de blanc, mais on
+    /// coupe ; « photo entière », la plus grande qui TIENNE dedans — rien de coupé, mais
+    /// des marges blanches. Le mode se déclare par <see cref="AllowsWhiteMargins"/> avant
+    /// d'appeler ceci.
     /// </summary>
     public void Reset()
     {
-        Width = LargeurMinimale();
+        Width = AllowsWhiteMargins ? LargeurContenue() : LargeurMinimale();
         Height = Width / ImageAspect;
 
         Centrer();
     }
+
+    /// <summary>
+    /// La plus grande photo qui tienne entière dans le cadre — le mode « photo entière ».
+    ///
+    /// Le redressement n'entre pas en compte : quand le blanc est permis, une photo
+    /// inclinée n'a plus de coin vide à éviter, c'est justement ce que les marges
+    /// absorbent.
+    /// </summary>
+    private double LargeurContenue() => Math.Min(FrameWidth, FrameHeight * ImageAspect);
 
     /// <summary>
     /// La plus petite photo qui couvre encore le cadre, redressement compris. En dessous,
@@ -129,14 +193,50 @@ public sealed class FramedCrop
     }
 
     /// <summary>
-    /// Pas de zoom de DiLand : un vingtième du plus grand côté de l'image, rapporté au
-    /// cadre. Le pas est donc constant, et non proportionnel — le geste garde la même
-    /// sensibilité qu'on soit très zoomé ou pas.
+    /// Un cran de molette : 10 % de la taille actuelle de la photo.
+    ///
+    /// Le pas a fait deux allers-retours, et les deux extrêmes ont été essayés en
+    /// boutique. Il valait d'abord 4 % du cadre — jugé trop fin le 01/08/2026. Il est
+    /// alors passé à un vingtième du plus grand côté de l'image, à la façon de DiLand :
+    /// une photo de 6000 px avançait de la MOITIÉ de sa largeur d'un seul cran, ce qui a
+    /// été jugé trop brutal le même jour.
+    ///
+    /// D'où ce pas-ci : multiplicatif, donc identique quelle que soit la définition — une
+    /// photo de 6000 px et une de 1200 px avancent du même dixième, et l'opérateur n'a
+    /// pas à réapprendre le geste d'une photo à l'autre.
+    ///
+    /// <b>Il ne sert plus à la grande surface de recadrage</b>, où la molette avance
+    /// désormais d'un pixel d'écran par cran (voir <see cref="WidenBy"/>) : c'est
+    /// justement le côté proportionnel de ce pas-ci qui faisait avancer le cadrage par
+    /// marches. Il reste celui des vignettes de la bande, où l'on cadre gros et vite.
     /// </summary>
-    private double PasZoom => Math.Max(FrameWidth, FrameHeight) / 20.0;
+    public const double PasZoomMolette = 1.10;
 
-    public void ZoomIn() => Zoom(PasZoom);
-    public void ZoomOut() => Zoom(-PasZoom);
+    public void ZoomIn() => ScaleBy(PasZoomMolette);
+    public void ZoomOut() => ScaleBy(1 / PasZoomMolette);
+
+    /// <summary>
+    /// Élargit la photo d'une quantité <b>fixe</b>, exprimée en unités de cadre.
+    ///
+    /// C'est ce qu'il faut à la molette de la surface de recadrage : là, un cran vaut un
+    /// pixel d'écran, ni plus ni moins. Un pas multiplicatif — même petit — reste
+    /// proportionnel à la taille en cours, donc gros quand la photo est grosse : c'est
+    /// exactement ce qui faisait avancer le cadrage par marches (signalé le 01/08/2026).
+    /// Un pas fixe, lui, ne peut pas faire de marche puisqu'il vaut déjà le plus petit
+    /// écart visible.
+    /// </summary>
+    public void WidenBy(double deltaLargeur) => Zoom(deltaLargeur);
+
+    /// <summary>
+    /// Agrandit la photo d'un facteur — le geste du pincement, qui est multiplicatif là où
+    /// la molette de DiLand avance par pas fixes. Même bornage : la photo ne peut pas
+    /// descendre sous la taille qui couvre le cadre.
+    /// </summary>
+    public void ScaleBy(double facteur)
+    {
+        if (facteur <= 0) throw new ArgumentOutOfRangeException(nameof(facteur));
+        Zoom(Width * facteur - Width);
+    }
 
     private void Zoom(double delta)
     {
@@ -160,6 +260,36 @@ public sealed class FramedCrop
         // zoom autour du centre du cadre, comme lui
         X += (ancienneLargeur - Width) / 2;
         Y += (ancienneHauteur - Height) / 2;
+
+        Contraindre();
+    }
+
+    /// <summary>
+    /// Redimensionne la photo en gardant un point fixe — la poignée de coin.
+    ///
+    /// Tirer un coin de la photo doit laisser le coin opposé où il est : un seul côté
+    /// s'agrandit, et l'on cadre par là où l'on tire. Le zoom ordinaire, lui, grandit des
+    /// deux côtés à la fois, ce qui oblige à replacer la photo après chaque cran.
+    /// </summary>
+    /// <param name="nouvelleLargeur">Largeur voulue pour la photo, en unités de cadre.</param>
+    /// <param name="ancreX">Point qui ne doit pas bouger — en pratique le coin opposé.</param>
+    /// <param name="ancreY">Idem, en ordonnée.</param>
+    public void ResizeAnchored(double nouvelleLargeur, double ancreX, double ancreY)
+    {
+        if (!AllowsWhiteMargins)
+            nouvelleLargeur = Math.Max(nouvelleLargeur, LargeurMinimale());
+
+        if (nouvelleLargeur <= 0) return;
+
+        var facteur = nouvelleLargeur / Width;
+
+        // le point d'ancrage garde sa position : tout le reste s'éloigne ou se rapproche
+        // de lui proportionnellement
+        X = ancreX - (ancreX - X) * facteur;
+        Y = ancreY - (ancreY - Y) * facteur;
+
+        Width = nouvelleLargeur;
+        Height = Width / ImageAspect;
 
         Contraindre();
     }
@@ -215,10 +345,12 @@ public sealed class FramedCrop
     /// </summary>
     public CropSpec ToCropSpec()
     {
-        var x = (0 - X) / Width;
-        var y = (0 - Y) / Height;
-        var largeur = FrameWidth / Width;
-        var hauteur = FrameHeight / Height;
+        var (gauche, haut, largeurCanevas, hauteurCanevas) = Canevas();
+
+        var x = (0 - gauche) / largeurCanevas;
+        var y = (0 - haut) / hauteurCanevas;
+        var largeur = FrameWidth / largeurCanevas;
+        var hauteur = FrameHeight / hauteurCanevas;
 
         // une photo autorisée à laisser du blanc peut déborder du [0,1] : on borne, le
         // rendu complétera en blanc de son côté
@@ -243,10 +375,27 @@ public sealed class FramedCrop
             return;
         }
 
-        Width = FrameWidth / crop.Width;
-        Height = FrameHeight / crop.Height;
-        X = -crop.X * Width;
-        Y = -crop.Y * Height;
+        // le recadrage enregistré porte sur le canevas redressé : on remonte d'abord au
+        // canevas, puis à la photo droite qui, tournée, le produit
+        var largeurCanevas = FrameWidth / crop.Width;
+        var hauteurCanevas = FrameHeight / crop.Height;
+
+        var radians = _rotationDegrees * Math.PI / 180;
+        var cos = Math.Abs(Math.Cos(radians));
+        var sin = Math.Abs(Math.Sin(radians));
+
+        // largeurCanevas = Width·cos + Height·sin, avec Height = Width / rapport
+        Width = largeurCanevas / (cos + sin / ImageAspect);
+        Height = Width / ImageAspect;
+
+        // le centre du canevas, ramené autour du centre du cadre à celui de la photo
+        var (cx, cy) = AutourDuCadre(
+            -crop.X * largeurCanevas + largeurCanevas / 2,
+            -crop.Y * hauteurCanevas + hauteurCanevas / 2,
+            -radians);
+
+        X = cx - Width / 2;
+        Y = cy - Height / 2;
 
         Contraindre();
     }

@@ -1,0 +1,70 @@
+<UserControl x:Class="Studio.App.Controls.CropSurface"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Fond sombre : le voile et le liseré du cadre ne se lisent que sur du sombre,
+         et une photo claire cesse de se confondre avec l'écran. -->
+    <Grid x:Name="Root" Background="#263238" ClipToBounds="True"
+          IsManipulationEnabled="True"
+          SizeChanged="OnSizeChanged"
+          MouseLeftButtonDown="OnMouseDown"
+          MouseLeftButtonUp="OnMouseUp"
+          MouseMove="OnMouseMove"
+          MouseWheel="OnWheel"
+          MouseRightButtonUp="OnRightClick"
+          ManipulationStarting="OnManipulationStarting"
+          ManipulationDelta="OnManipulationDelta">
+
+        <Canvas x:Name="Scene" IsHitTestVisible="False">
+            <!-- Le PAPIER : le format du tirage, en blanc, sous la photo. Il ne se voit
+                 qu'en mode « photo entière », où la photo ne couvre plus tout le cadre —
+                 et ce qui dépasse d'elle est alors exactement la marge blanche qui
+                 sortira de la machine. Sans lui on voyait le fond gris de l'écran, qui ne
+                 dit rien du tirage. -->
+            <Rectangle x:Name="Papier" Fill="White"/>
+
+            <!-- La photo, DERRIÈRE le cadre : c'est elle qui bouge et grandit.
+                 Stretch="Fill" et non "Uniform" : le rectangle qu'on lui donne a déjà
+                 ses proportions, et Uniform y ajouterait des marges invisibles qui
+                 décaleraient le cadrage de quelques pixels. -->
+            <Image x:Name="Photo" Stretch="Fill"/>
+
+            <!-- Ce que le tirage laissera de côté, assombri : l'opérateur voit d'un coup
+                 d'œil ce qu'il coupe. Une photo déjà rognée à l'écran ne le dit pas. -->
+            <Path x:Name="Voile" Fill="#A6000000"/>
+
+            <!-- Le cadre, immobile : c'est le format du tirage. -->
+            <Rectangle x:Name="Cadre" Stroke="White" StrokeThickness="3"/>
+
+            <!-- Poignées aux quatre COINS DU CADRE : on tire un coin vers l'extérieur pour
+                 élargir le cadrage, le coin opposé restant en place. Sur le cadre et non
+                 sur la photo — c'est le rectangle du tirage qu'on redimensionne, comme
+                 dans n'importe quel outil de recadrage. -->
+            <Ellipse x:Name="Poignee0" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Ellipse x:Name="Poignee1" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Ellipse x:Name="Poignee2" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Ellipse x:Name="Poignee3" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+
+            <!-- Encoches au MILIEU de chaque côté du cadre : elles tirent le côté seul, le
+                 côté opposé restant en place. Un coin fait bouger deux bords à la fois, ce
+                 qui oblige à rattraper l'autre ensuite ; c'est par un côté qu'on cadre
+                 quand on ne veut redécouvrir que le haut, ou que la droite.
+
+                 Elles sont couchées dans le sens du bord qu'elles commandent — barre
+                 horizontale en haut et en bas, verticale à gauche et à droite — pour que
+                 leur forme dise dans quel sens elles tirent. -->
+            <Rectangle x:Name="PoigneeHaut" Width="38" Height="14" RadiusX="7" RadiusY="7"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Rectangle x:Name="PoigneeDroite" Width="14" Height="38" RadiusX="7" RadiusY="7"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Rectangle x:Name="PoigneeBas" Width="38" Height="14" RadiusX="7" RadiusY="7"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Rectangle x:Name="PoigneeGauche" Width="14" Height="38" RadiusX="7" RadiusY="7"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+        </Canvas>
+
+        <TextBlock x:Name="Consigne" Foreground="#B0BEC5" FontSize="16"
+                   HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
+                   IsHitTestVisible="False"
+                   Text="Faites glisser la photo · coins et encoches : recadrer · molette : zoom au pixel · clic droit : pivoter le cadre · T + molette : redresser"/>
+    </Grid>
+</UserControl>

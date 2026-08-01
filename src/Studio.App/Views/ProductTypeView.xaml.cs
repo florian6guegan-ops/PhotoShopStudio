@@ -26,8 +26,8 @@ public partial class ProductTypeView : UserControl
     /// </summary>
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
         Navigator.Go(new IdDocumentPickerView(document =>
-            Navigator.Go(new SourcePickerView(root =>
-                Navigator.Go(new IdPhotoView(root, document),
+            Navigator.Go(new SourcePickerView((root, profond) =>
+                Navigator.Go(new IdPhotoView(root, document, profond),
                     $"{document.Country} — {document.Document}")),
                 "Photos d'identité — choisir le support")),
             "Photos d'identité — choisir le document");

@@ -24,6 +24,7 @@ public partial class IdPhotoView : UserControl
     private static readonly Brush NeutralBrush = Brushes.White;
 
     private readonly string _rootPath;
+    private readonly bool _avecSousDossiers;
     private readonly List<StripItem> _photos = new();
     private CancellationTokenSource? _loadCts;
     private int _quantity = 1;
@@ -50,17 +51,16 @@ public partial class IdPhotoView : UserControl
     private NormPoint? _chin;
     private string? _markerDrag;   // "Crown", "Chin", ou null
 
-    private readonly SmoothZoomDriver _smoothZoom;
-
     /// <param name="rootPath">Dossier des photos.</param>
     /// <param name="document">
     /// Norme visée. Null = norme française, le cas courant de la boutique.
     /// </param>
-    public IdPhotoView(string rootPath, IdDocumentSpec? document = null)
+    /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
+    public IdPhotoView(string rootPath, IdDocumentSpec? document = null, bool avecSousDossiers = true)
     {
         _rootPath = rootPath;
+        _avecSousDossiers = avecSousDossiers;
         _document = document ?? IdDocumentSpec.France;
-        _smoothZoom = new SmoothZoomDriver(Zoom);
         InitializeComponent();
 
         TitleText.Text = _document.Country == "France"
@@ -84,11 +84,7 @@ public partial class IdPhotoView : UserControl
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         Loaded += async (_, _) => await LoadStripAsync();
-        Unloaded += (_, _) =>
-        {
-            _loadCts?.Cancel();
-            _smoothZoom.Cancel();
-        };
+        Unloaded += (_, _) => _loadCts?.Cancel();
     }
 
     private sealed record ProductChoice(Product Product)
@@ -104,10 +100,17 @@ public partial class IdPhotoView : UserControl
 
         if (_photos.Count == 0)
         {
-            var files = await Task.Run(() => PhotoScanner.Scan(_rootPath), ct);
+            var files = await Task.Run(
+                () => PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct),
+                ct);
             foreach (var file in files)
                 _photos.Add(new StripItem(file));
             PhotoStrip.ItemsSource = _photos;
+
+            // sans photo, la bande reste vide : on le dit là où l'aperçu s'afficherait
+            if (_photos.Count == 0)
+                EmptyText.Text = "Aucune photo dans ce dossier — revenez en arrière " +
+                                 "pour en choisir un autre.";
         }
 
         var thumbnails = App.Services.Thumbnails;
@@ -481,11 +484,15 @@ public partial class IdPhotoView : UserControl
     /// <summary>Proportions du cadre : celles du document visé, pas un 35/45 figé.</summary>
     private double TargetAspect => _document.WidthMm / _document.HeightMm;
 
+    /// <summary>
+    /// La photo suit le doigt, donc la fenêtre de recadrage part à l'inverse — même sens
+    /// que sur les deux autres écrans qui recadrent (01/08/2026).
+    /// </summary>
     private void Pan(double dxPx, double dyPx)
     {
         var display = DisplayRect();
         if (display.IsEmpty) return;
-        _crop = CropMath.Pan(_crop, dxPx / display.Width, dyPx / display.Height);
+        _crop = CropMath.Pan(_crop, -dxPx / display.Width, -dyPx / display.Height);
         Redraw();
     }
 
@@ -523,12 +530,29 @@ public partial class IdPhotoView : UserControl
         _dragLast = pos;
     }
 
-    // Pas de zoom pour un cran de molette standard (Delta = 120), étalé sur ~150 ms
-    // par le SmoothZoomDriver : franc au total, continu à l'écran.
-    private const double WheelZoomStep = 1.10;
+    /// <summary>
+    /// Un cran de molette = un pixel d'écran sur le cadrage, molette vers l'avant pour
+    /// serrer. Même geste que sur les deux autres écrans qui recadrent.
+    ///
+    /// Le lisseur a disparu avec le pas proportionnel : il rendait le zoom saccadé, et
+    /// surtout il continuait de s'appliquer une seconde après le dernier cran — de quoi
+    /// défaire par-derrière un recadrage automatique ou une remise à zéro déclenchés
+    /// juste après (voir <c>CropEditorView.OnStageWheel</c>).
+    /// </summary>
+    private void OnStageWheel(object sender, MouseWheelEventArgs e)
+    {
+        var crans = e.Delta / 120.0;
+        if (crans == 0) return;
 
-    private void OnStageWheel(object sender, MouseWheelEventArgs e) =>
-        _smoothZoom.Add(Math.Pow(WheelZoomStep, -e.Delta / 120.0));
+        var display = DisplayRect();
+        if (display.IsEmpty) return;
+
+        var largeurEcran = _crop.Width * display.Width;
+        if (largeurEcran <= 2) return;
+
+        Zoom((largeurEcran - crans) / largeurEcran);
+        e.Handled = true;
+    }
 
     private void OnManipulationStarting(object? sender, ManipulationStartingEventArgs e)
     {
@@ -541,11 +565,8 @@ public partial class IdPhotoView : UserControl
         Pan(e.DeltaManipulation.Translation.X, e.DeltaManipulation.Translation.Y);
         var scale = e.DeltaManipulation.Scale.X;
         if (Math.Abs(scale - 1) > 0.001)
-        {
-            // Le pincement colle aux doigts : pas de lissage, et on solde le zoom molette en vol.
-            _smoothZoom.Cancel();
             Zoom(1 / scale);
-        }
+
         e.Handled = true;
     }
 

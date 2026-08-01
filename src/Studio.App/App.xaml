@@ -78,6 +78,54 @@
             </Setter>
         </Style>
 
+        <!-- Bascule d'un réglage : elle doit dire d'un coup d'œil si elle est enclenchée.
+             Le style par défaut de WPF marque l'état coché par un gris à peine plus
+             foncé, invisible sur fond sombre — on ne savait pas si le noir et blanc était
+             actif (signalé le 01/08/2026). Ici l'état coché change le fond, le liseré et
+             la couleur du texte : trois signaux plutôt qu'un. -->
+        <Style x:Key="ToggleTile" TargetType="ToggleButton">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="MinHeight" Value="44"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                CornerRadius="10" BorderBrush="#3A4652" BorderThickness="2"
+                                Padding="{TemplateBinding Padding}">
+                            <DockPanel LastChildFill="True">
+                                <!-- La pastille dit l'état même à qui ne distingue pas
+                                     bien les couleurs, et de loin. -->
+                                <TextBlock x:Name="marque" DockPanel.Dock="Left" Text="○"
+                                           FontSize="18" Margin="0,0,10,0"
+                                           VerticalAlignment="Center"/>
+                                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="White"/>
+                                <Setter TargetName="marque" Property="Text" Value="✓"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#6B7883"/>
+                                <Setter TargetName="border" Property="Background" Value="#1A222A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Titre d'écran : orangé, comme les titres de DiLand -->
         <Style x:Key="PageTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="34"/>

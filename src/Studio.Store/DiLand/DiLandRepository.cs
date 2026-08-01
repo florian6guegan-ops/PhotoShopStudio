@@ -296,14 +296,50 @@ public sealed class DiLandRepository
         return noms;
     }
 
-    /// <summary>Emplacement d'une photo sur le disque, dans le dossier de sa commande.</summary>
+    /// <summary>
+    /// Marque que DiLand ajoute au NOM DES FICHIERS d'une commande qu'il a traitée.
+    ///
+    /// Tout y passe : <c>Order.xml</c> devient <c>Order.xml_p</c>, et chaque photo
+    /// <c>F\xxx.jpg</c> devient <c>F\xxx.jpg_p</c>. Sa base, elle, garde le nom d'origine
+    /// — c'est donc au lecteur de faire le rapprochement.
+    /// </summary>
+    private const string SuffixeTraite = "_p";
+
+    /// <summary>
+    /// Emplacement d'une photo sur le disque, dans le dossier de sa commande.
+    ///
+    /// On essaie le nom de la base, puis le nom marqué <see cref="SuffixeTraite"/>. Sans
+    /// cette reprise, TOUTE commande déjà traitée par DiLand devenait inouvrable : la
+    /// base annonçait ses photos, le disque les avait sous un autre nom, et l'écran
+    /// répondait « aucune photo n'a pu être récupérée » (constaté le 01/08/2026 sur les
+    /// neuf commandes en attente, sauf la seule que DiLand n'avait pas encore touchée).
+    ///
+    /// Le chemin nu est rendu quand aucun des deux n'existe : à l'appelant de constater
+    /// que le fichier manque, comme avant.
+    /// </summary>
     public string PhotoPath(DiLandOrder order, DiLandOrderPhoto photo)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(photo);
 
-        return Path.Combine(OrdersDirectory, order.DirectoryName, "F", photo.FileName);
+        var attendu = Path.Combine(OrdersDirectory, order.DirectoryName, "F", photo.FileName);
+        if (File.Exists(attendu)) return attendu;
+
+        var traite = attendu + SuffixeTraite;
+        return File.Exists(traite) ? traite : attendu;
     }
+
+    /// <summary>
+    /// Le nom sous lequel une photo doit être RECOPIÉE, débarrassé de la marque de DiLand.
+    ///
+    /// Recopier <c>xxx.jpg_p</c> tel quel donnerait un fichier dont l'extension n'est plus
+    /// celle d'une image : plus rien ne le reconnaîtrait comme une photo, ni la planche de
+    /// vignettes ni le catalogue de formats.
+    /// </summary>
+    public static string CleanFileName(string fileName) =>
+        fileName.EndsWith(SuffixeTraite, StringComparison.Ordinal)
+            ? fileName[..^SuffixeTraite.Length]
+            : fileName;
 
     private SqliteConnection OpenSnapshot()
     {
@@ -343,6 +379,56 @@ public sealed class DiLandRepository
             .Where(f => !Path.GetFileName(f).StartsWith("O_", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>Vrai si le fichier porte la marque des commandes déjà traitées par DiLand.</summary>
+    public static bool IsProcessedName(string fileName) =>
+        fileName.EndsWith(SuffixeTraite, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Longueur du début de fichier que DiLand brouille, en octets.
+    ///
+    /// Relevée le 01/08/2026 sur les commandes de la boutique : exactement 1024. Une photo
+    /// de 1 Mo ne se décode avec AUCUNE autre valeur — un préfixe plus court laisse du
+    /// brouillage dans l'en-tête, un plus long abîme les données d'image qui suivent.
+    /// </summary>
+    private const int LongueurBrouillee = 1024;
+
+    /// <summary>Clé du brouillage : un simple XOR, le même octet partout.</summary>
+    private const byte CleBrouillage = 0x07;
+
+    /// <summary>
+    /// Recopie une photo de DiLand en la remettant en clair.
+    ///
+    /// <b>DiLand ne se contente pas de renommer les fichiers d'une commande traitée : il
+    /// en BROUILLE le début.</b> Les 1024 premiers octets sont passés au XOR 0x07, ce qui
+    /// détruit l'en-tête de l'image — <c>FF D8 FF E0</c> devient <c>F8 DF F8 E7</c>. Le
+    /// fichier reste une photo entière, mais plus aucun logiciel ne sait l'ouvrir.
+    ///
+    /// C'est ce qui restait après la correction du nom : les commandes s'ouvraient enfin,
+    /// et chaque photo était aussitôt écartée comme illisible (01/08/2026).
+    ///
+    /// La copie est refaite à chaque fois pour un fichier brouillé, sans quoi une copie
+    /// abîmée par une version antérieure resterait en place indéfiniment.
+    /// </summary>
+    public void CopyPhotoTo(DiLandOrder order, DiLandOrderPhoto photo, string destination)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        ArgumentNullException.ThrowIfNull(photo);
+
+        var source = PhotoPath(order, photo);
+
+        if (!IsProcessedName(source))
+        {
+            if (!File.Exists(destination)) File.Copy(source, destination);
+            return;
+        }
+
+        var octets = File.ReadAllBytes(source);
+        var combien = Math.Min(LongueurBrouillee, octets.Length);
+        for (var i = 0; i < combien; i++) octets[i] ^= CleBrouillage;
+
+        File.WriteAllBytes(destination, octets);
     }
 
     private int CountPhotos(string directoryName)

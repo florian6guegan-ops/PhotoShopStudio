@@ -36,7 +36,8 @@
             </StackPanel>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <Grid Grid.Row="1">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="PhotosGrid">
                 <!-- « réduire » et « agrandir » agissent sur toute la planche d'un coup :
                      une mise à l'échelle vaut mieux que de recalculer chaque vignette. -->
@@ -98,6 +99,28 @@
             </ItemsControl>
         </ScrollViewer>
 
+            <!-- Dossier sans photos : on le DIT, et on propose d'en choisir un autre.
+                 La planche restait vide et muette, l'opérateur devant le client. -->
+            <StackPanel x:Name="EmptyPanel" Visibility="Collapsed"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="🗀" FontSize="64" HorizontalAlignment="Center"
+                           Foreground="{StaticResource MutedBrush}"/>
+                <TextBlock x:Name="EmptyText" Style="{StaticResource Hint}" FontSize="22"
+                           Margin="0,16,0,0" MaxWidth="620" TextAlignment="Center"/>
+                <Button Style="{StaticResource BigButton}" MinWidth="0" Padding="26,12"
+                        FontSize="20" Margin="0,24,0,0" HorizontalAlignment="Center"
+                        Click="OnChangeFolder">Choisir un autre dossier</Button>
+            </StackPanel>
+
+            <!-- Trop de photos pour une seule planche : on le dit au lieu de tomber. -->
+            <Border x:Name="TruncatedBanner" Visibility="Collapsed"
+                    Background="{StaticResource TitleBrush}" CornerRadius="8" Padding="14,10"
+                    VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,4,0,0">
+                <TextBlock x:Name="TruncatedText" Foreground="#12181E" FontSize="15"
+                           FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="760"/>
+            </Border>
+        </Grid>
+
         <!-- Barre d'action.
              Grille et non DockPanel : dans un DockPanel le groupe de gauche se sert en
              premier, et « Imprimer » finissait hors écran sur une fenêtre étroite. C'est
@@ -133,6 +156,10 @@
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             VerticalAlignment="Center" Margin="16,0,0,0">
+                    <Button x:Name="IndexButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="20,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
+                            ToolTip="Une planche avec les vignettes NUMÉROTÉES de la sélection, au format choisi — le client coche, on tire ensuite"
+                            Click="OnIndexSheet">Planche index</Button>
                     <Button x:Name="ModifyButton" Style="{StaticResource FlatButton}" MinHeight="56"
                             Padding="26,0" FontSize="18" Margin="0,0,20,0" IsEnabled="False"
                             ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"

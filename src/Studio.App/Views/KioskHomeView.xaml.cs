@@ -14,8 +14,8 @@ public partial class KioskHomeView : UserControl
     public KioskHomeView() => InitializeComponent();
 
     private void OnStart(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new SourcePickerView(root =>
-            Navigator.Go(new KioskGridView(root), "Choisissez vos photos")),
+        Navigator.Go(new SourcePickerView((root, profond) =>
+            Navigator.Go(new KioskGridView(root, profond), "Choisissez vos photos")),
             "Où sont vos photos ?");
 
     // ----- sortie staff -----
