@@ -7,7 +7,9 @@ using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
 using Studio.Printing.Devices.Fuji;
+using Studio.Imaging;
 using Studio.Store;
+using Studio.Store.DiLand;
 
 namespace Studio.App.Views;
 
@@ -20,19 +22,28 @@ public partial class PhotoGridView : UserControl
     private readonly List<PhotoItem> _photos = new();
     private CancellationTokenSource? _thumbnailCts;
     private int _quantity = 1;
+    private readonly long? _commandeBorne;
 
     /// <param name="rootPath">Dossier des photos à proposer.</param>
     /// <param name="produitParDefaut">
     /// Format déjà choisi en amont, comme dans le parcours de DiLand. Vide = premier
     /// produit du catalogue, l'opérateur choisira dans la liste.
     /// </param>
-    public PhotoGridView(string rootPath, string? produitParDefaut = null)
+    /// <param name="commandeBorne">
+    /// OID de la commande de borne à l'origine de ces photos, s'il y en a une. Elle reste
+    /// affichée dans « Commandes des bornes » jusqu'à ce que le tirage soit sorti : c'est
+    /// l'impression réussie, ici, qui la fait basculer dans l'historique.
+    /// </param>
+    public PhotoGridView(string rootPath, string? produitParDefaut = null, long? commandeBorne = null)
     {
         _rootPath = rootPath;
+        _commandeBorne = commandeBorne;
         InitializeComponent();
 
         var choix = App.Services.Catalog.Enabled.Select(p => new ProductChoice(p)).ToList();
         ProductCombo.ItemsSource = choix;
+
+        AttachShortcuts();
 
         var prechoisi = produitParDefaut is null
             ? -1
@@ -42,6 +53,8 @@ public partial class PhotoGridView : UserControl
         Loaded += async (_, _) =>
         {
             await ScanAndLoadAsync();
+
+            Focus(); // sans le focus, aucune touche ne nous parvient
             await LoadMachinesAsync();
         };
         Unloaded += (_, _) => _thumbnailCts?.Cancel();
@@ -79,6 +92,12 @@ public partial class PhotoGridView : UserControl
             {
                 var bytes = await Task.Run(() => thumbnails.GetJpeg(photo.Path), ct);
                 photo.SetSourceThumbnail(ToBitmap(bytes));
+
+                // définition et rapport, affichés sur la vignette comme chez DiLand :
+                // l'opérateur voit tout de suite ce qu'il peut tirer sans perte
+                var (largeur, hauteur) = await Task.Run(
+                    () => ImagePipeline.GetOrientedSize(photo.Path, 0), ct);
+                photo.SetSourceSize(largeur, hauteur);
             }
             catch (OperationCanceledException) { return; }
             catch (Exception)
@@ -127,17 +146,97 @@ public partial class PhotoGridView : UserControl
     private void OnPhotoClicked(object sender, MouseButtonEventArgs e)
     {
         if ((sender as Border)?.Tag is not PhotoItem photo) return;
+
+        // un clic coche ou décoche, comme le SelectionMode.Multiple de DiLand : ici on
+        // compose la commande, il n'y a rien à restreindre. Le tri à la touche Ctrl est
+        // dans l'écran Modifier, là où il sert à viser quelques photos d'un réglage.
+        Toggle(photo);
+    }
+
+    /// <summary>Ajoute une photo à la commande, ou l'en retire.</summary>
+    private void Toggle(PhotoItem photo)
+    {
         if (!photo.Selected && photo.Product is null)
         {
             // première sélection : la photo prend le produit et la quantité du bandeau
             photo.Product = DefaultProduct;
             photo.Quantity = _quantity;
         }
+
         photo.Selected = !photo.Selected;
 
-        // cocher désigne la photo pour le bouton « Recadrer » ; décocher ne la désigne pas
+        // la dernière photo touchée est celle que « Recadrer » vise
         if (photo.Selected) _photoCourante = photo;
         else if (ReferenceEquals(_photoCourante, photo)) _photoCourante = null;
+    }
+
+    // — barre d'outils de la planche (réduire, agrandir, tout, aucun, trier) —
+
+    private void OnSmaller(object sender, RoutedEventArgs e) => Zoom(1 / 1.15);
+    private void OnBigger(object sender, RoutedEventArgs e) => Zoom(1.15);
+
+    private void Zoom(double facteur)
+    {
+        // bornes larges mais réelles : sous 0,5 on ne distingue plus un visage, au-delà
+        // de 2 on ne voit plus assez de photos pour choisir
+        var echelle = Math.Clamp(GridZoom.ScaleX * facteur, 0.5, 2.0);
+        GridZoom.ScaleX = echelle;
+        GridZoom.ScaleY = echelle;
+    }
+
+    private void OnSelectAll(object sender, RoutedEventArgs e)
+    {
+        if (_photos.All(p => p.Selected)) return; // déjà tout pris : le bouton ne défait pas
+        SelectAll();
+    }
+
+    private void OnSelectNone(object sender, RoutedEventArgs e)
+    {
+        foreach (var photo in _photos) photo.Selected = false;
+        _photoCourante = null;
+    }
+
+    private bool _triParDate;
+
+    /// <summary>Bascule entre tri par nom et tri par date de prise de vue, comme « trier » chez DiLand.</summary>
+    private void OnSort(object sender, RoutedEventArgs e)
+    {
+        _triParDate = !_triParDate;
+
+        var triees = _triParDate
+            ? _photos.OrderBy(p => File.GetLastWriteTime(p.Path)).ToList()
+            : _photos.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        _photos.Clear();
+        _photos.AddRange(triees);
+
+        PhotosGrid.ItemsSource = null;
+        PhotosGrid.ItemsSource = _photos;
+        UpdateSummary();
+    }
+
+    /// <summary>Ctrl+A : toute la planche d'un coup, comme chez DiLand.</summary>
+    private void SelectAll()
+    {
+        // tout est déjà pris : on décoche, pour que la même touche défasse
+        var toutPris = _photos.Count > 0 && _photos.All(p => p.Selected);
+
+        foreach (var photo in _photos)
+        {
+            if (toutPris)
+            {
+                photo.Selected = false;
+                continue;
+            }
+
+            if (photo.Selected) continue;
+            photo.Product ??= DefaultProduct;
+            photo.Quantity = _quantity;
+            photo.Selected = true;
+        }
+
+        if (toutPris) _photoCourante = null;
+        else _photoCourante ??= _photos.LastOrDefault();
     }
 
     private void OnCartChanged()
@@ -205,14 +304,25 @@ public partial class PhotoGridView : UserControl
         TotalText.Text = selected.Count == 0 ? "" : $"{total:0.00} €";
         PrintButton.IsEnabled = selected.Count > 0;
 
-        var courante = _photoCourante is { Selected: true, Product: not null };
-        CropButton.IsEnabled = courante;
-        CropButton.Content = courante ? $"Recadrer {_photoCourante!.Name}" : "Recadrer";
-        CropAllButton.IsEnabled = selected.Count(p => p.Product is not null) > 0;
+        ModifyButton.IsEnabled = selected.Count > 0;
+        ModifyButton.Content = selected.Count > 1 ? $"Modifier ({selected.Count})" : "Modifier";
+    }
 
-        // les corrections ne dépendent pas du produit : une photo cochée suffit
-        AdjustButton.IsEnabled = selected.Count > 0;
-        AdjustButton.Content = selected.Count > 1 ? $"Corriger ({selected.Count})" : "Corriger";
+    /// <summary>
+    /// Ouvre l'écran de travail sur la sélection : recadrage et corrections, la planche
+    /// restant sous les yeux. L'impression part de là, une fois tout réglé.
+    /// </summary>
+    private void OnModify(object sender, RoutedEventArgs e)
+    {
+        var choisies = _photos.Where(p => p.Selected).ToList();
+        if (choisies.Count == 0) return;
+
+        // un produit est indispensable pour connaître la forme du cadre
+        foreach (var photo in choisies) photo.Product ??= DefaultProduct;
+
+        Navigator.Go(
+            new EditSelectionView(choisies, () => OnPrint(this, new RoutedEventArgs())),
+            $"Modifier — {choisies.Count} photo(s)");
     }
 
     // ----- bandeau : s'applique à toutes les photos cochées -----
@@ -257,6 +367,120 @@ public partial class PhotoGridView : UserControl
     /// </summary>
     private PhotoItem? _photoCourante;
 
+    // — raccourcis clavier, repris de DiLand —
+
+    /// <summary>
+    /// Les photos sur lesquelles agit un raccourci : celles qui sont cochées, ou à défaut
+    /// la dernière touchée. C'est la règle de DiLand, qui applique ses commandes à
+    /// <c>SelectedItems</c> — on règle une planche entière d'un geste.
+    /// </summary>
+    private List<PhotoItem> Cibles()
+    {
+        var choisies = _photos.Where(p => p.Selected).ToList();
+        if (choisies.Count > 0) return choisies;
+
+        return _photoCourante is null ? [] : [_photoCourante];
+    }
+
+    /// <summary>Fixe la quantité des photos visées, en les ajoutant à la commande si besoin.</summary>
+    private void SetQuantityOnTargets(int quantite)
+    {
+        foreach (var photo in Cibles())
+        {
+            if (quantite <= 0)
+            {
+                photo.Selected = false;
+                continue;
+            }
+
+            if (!photo.Selected)
+            {
+                photo.Product ??= DefaultProduct;
+                photo.Selected = true;
+            }
+
+            photo.Quantity = quantite;
+        }
+    }
+
+    private void ChangeQuantityOnTargets(int delta)
+    {
+        foreach (var photo in Cibles())
+        {
+            if (!photo.Selected) continue;
+            photo.Quantity = Math.Max(1, photo.Quantity + delta);
+        }
+    }
+
+    /// <summary>
+    /// Corrections au clavier, sur les photos visées.
+    ///
+    /// DiLand règle trois canaux indépendants (R, V, B) ; notre modèle d'image travaille
+    /// en température et teinte, qui couvrent le même espace autrement. La correspondance
+    /// est donc approchée, et assumée : les touches font ce que l'opérateur attend — plus
+    /// rouge, plus vert, plus bleu — sans ajouter un axe au pipeline pour trois raccourcis.
+    /// </summary>
+    private void Correct(Action<ImageAdjustments> reglage)
+    {
+        foreach (var photo in Cibles())
+        {
+            reglage(photo.Adjustments);
+            photo.RefreshThumbnail();
+        }
+    }
+
+    private const double PasLumiere = 0.15;  // en diaphragmes, comme l'exposition
+    private const double PasCouleur = 8;     // sur l'échelle −100..100
+
+    private void AttachShortcuts()
+    {
+        Focusable = true;
+
+        var map = new KeyMap()
+            .OnCtrl(Key.A, SelectAll)
+            .On(Key.C, () => OnCropCurrent(this, new RoutedEventArgs()))
+            .On([Key.Add, Key.OemPlus], () => ChangeQuantityOnTargets(1))
+            .On([Key.Subtract, Key.OemMinus], () => ChangeQuantityOnTargets(-1))
+            .On([Key.D0, Key.NumPad0], () => SetQuantityOnTargets(0))
+            .On(Key.F, () => Correct(r => r.Exposure += PasLumiere))
+            .On(Key.V, () => Correct(r => r.Exposure -= PasLumiere))
+            .On(Key.G, () => Correct(r => r.Temperature = Borne(r.Temperature + PasCouleur)))
+            .On(Key.B, () => Correct(r => r.Temperature = Borne(r.Temperature - PasCouleur)))
+            .On(Key.H, () => Correct(r => r.Tint = Borne(r.Tint - PasCouleur)))
+            .On(Key.N, () => Correct(r => r.Tint = Borne(r.Tint + PasCouleur)))
+            .On(Key.J, () => Correct(r => r.Temperature = Borne(r.Temperature - PasCouleur)))
+            .On(Key.M, () => Correct(r => r.Temperature = Borne(r.Temperature + PasCouleur)))
+            .OnCtrl(Key.W, () => Correct(r => r.Grayscale = !r.Grayscale))
+            .OnCtrl(Key.O, () => Correct(r =>
+            {
+                var neutre = new ImageAdjustments();
+                foreach (var p in typeof(ImageAdjustments).GetProperties().Where(p => p.CanWrite))
+                    p.SetValue(r, p.GetValue(neutre));
+            }))
+            .OnCtrl(Key.Left, () => Rotate(-1))
+            .OnCtrl(Key.Right, () => Rotate(1));
+
+        // 1 à 9 : la quantité directement, comme chez DiLand
+        for (var chiffre = 1; chiffre <= 9; chiffre++)
+        {
+            var valeur = chiffre;
+            map.On([Key.D0 + chiffre, Key.NumPad0 + chiffre], () => SetQuantityOnTargets(valeur));
+        }
+
+        map.Attach(this);
+    }
+
+    private static double Borne(double valeur) => Math.Clamp(valeur, -100, 100);
+
+    private void Rotate(int direction)
+    {
+        foreach (var photo in Cibles())
+        {
+            photo.RotationQuarterTurns = (photo.RotationQuarterTurns + direction + 4) % 4;
+            photo.RefreshThumbnail();
+        }
+    }
+
     private void OnCropCurrent(object sender, RoutedEventArgs e)
     {
         if (_photoCourante is { } photo && photo.Selected)
@@ -268,12 +492,37 @@ public partial class PhotoGridView : UserControl
     /// « modifier tout » de DiLand. Sur une commande de vingt tirages, régler chaque
     /// cadrage en repassant par la grille serait interminable.
     /// </summary>
+    /// <summary>
+    /// Applique un même cadrage à toutes les photos cochées, en une fois.
+    ///
+    /// C'est le « modifier tout » de DiLand. On ne défile PLUS les photos une par une :
+    /// le cadre de chacune se lit sur sa vignette, donc l'opérateur voit tout de suite
+    /// celles qui demandent une reprise, et n'ouvre que celles-là.
+    /// </summary>
     private void OnCropAll(object sender, RoutedEventArgs e)
     {
         var aRegler = _photos.Where(p => p.Selected && p.Product is not null).ToList();
         if (aRegler.Count == 0) return;
 
-        EditSequence(aRegler, 0);
+        // on règle sur la photo courante, ou à défaut la première cochée
+        var modele = _photoCourante is { Product: not null } courante && courante.Selected
+            ? courante
+            : aRegler[0];
+
+        var produit = modele.Product!;
+        var depart = new CropEditorView.State(
+            modele.Crop, modele.RotationQuarterTurns, modele.FitOverride ?? produit.DefaultFit);
+
+        Navigator.Go(new CropEditorView(modele.Path, produit, depart, resultat =>
+        {
+            foreach (var photo in aRegler)
+            {
+                photo.Crop = resultat.Crop;
+                photo.RotationQuarterTurns = resultat.RotationQuarterTurns;
+                photo.FitOverride = resultat.Fit == produit.DefaultFit ? null : resultat.Fit;
+                photo.RefreshThumbnail();
+            }
+        }), $"Recadrage appliqué à {aRegler.Count} photo(s)");
     }
 
     /// <summary>
@@ -304,16 +553,6 @@ public partial class PhotoGridView : UserControl
                     }
                 }),
             aCorriger.Count > 1 ? $"Corrections — {aCorriger.Count} photos" : "Corrections");
-    }
-
-    private void EditSequence(List<PhotoItem> photos, int index)
-    {
-        if (index >= photos.Count) return;
-
-        EditCrop(photos[index],
-            titre: $"Recadrage {index + 1} sur {photos.Count}",
-            // l'éditeur se referme juste après son rappel : on enchaîne au tour d'après
-            onClosed: () => Dispatcher.BeginInvoke(() => EditSequence(photos, index + 1)));
     }
 
     private void EditCrop(PhotoItem photo, Action? onClosed, string titre = "Recadrage")
@@ -389,7 +628,7 @@ public partial class PhotoGridView : UserControl
         var services = App.Services;
         var items = selected
             .Select(p => new DraftItem(p.Path, p.Product!, p.Quantity, p.Crop,
-                p.RotationQuarterTurns, p.FitOverride, p.Adjustments, null, p.Finish))
+                p.RotationQuarterTurns, p.FineRotationDegrees, p.FitOverride, p.Adjustments, null, p.Finish))
             .ToList();
 
         PrintButton.IsEnabled = false;
@@ -398,9 +637,24 @@ public partial class PhotoGridView : UserControl
         {
             var order = await Task.Run(() =>
             {
-                var created = services.Orders.CreateOrder("Operateur", items);
+                var created = services.Orders.CreateOrder(
+                    _commandeBorne is null ? "Operateur" : DiLandImporter.SourceName, items);
+
+                // le lien est noté AVANT d'imprimer : si Studio est coupé en cours de
+                // tirage, la commande de borne reste rattachée à sa commande Studio et
+                // se referme toute seule au prochain passage dans la liste
+                if (_commandeBorne is { } borne)
+                    services.DiLandImport.Journal.AttachStudioOrder(borne, created.Id);
+
                 foreach (var envelope in created.Envelopes)
                     services.Printer.PrintEnvelope(created, envelope);
+
+                // seul un tirage réellement sorti ferme la commande de borne : une
+                // enveloppe en attente d'impression manuelle (Epson) ne compte pas
+                if (_commandeBorne is { } oid &&
+                    created.Envelopes.All(e => e.Status == EnvelopeStatus.Printed))
+                    services.DiLandImport.MarkPrinted(oid, created.Id);
+
                 return created;
             });
 
@@ -424,7 +678,7 @@ public partial class PhotoGridView : UserControl
     }
 
     /// <summary>Une photo de la grille et, si elle est cochée, sa ligne de panier.</summary>
-    private sealed class PhotoItem : ObservableObject
+    internal sealed class PhotoItem : ObservableObject
     {
         private readonly Action _cartChanged;
         private ImageSource? _thumbnail;
@@ -445,6 +699,19 @@ public partial class PhotoGridView : UserControl
         // recadrage et réglages, renseignés par l'éditeur (CropEditorView)
         public CropSpec Crop { get; set; } = CropSpec.Full;
         public int RotationQuarterTurns { get; set; }
+
+        /// <summary>
+        /// Redressement fin, en degrés — le « Tilt » de DiLand (touche T), qu'il stocke
+        /// sous <c>FineRotationAngle</c>. Distinct des quarts de tour : on redresse un
+        /// horizon penché de deux degrés, on ne le fait pas basculer de quatre-vingt-dix.
+        /// </summary>
+        public double FineRotationDegrees { get; set; }
+
+        /// <summary>Définition du fichier d'origine, une fois orienté.</summary>
+        public (int Width, int Height) SourcePixels => (_sourceWidth, _sourceHeight);
+
+        /// <summary>Rapport largeur/hauteur du fichier d'origine, une fois orienté.</summary>
+        public double SourceAspect => _sourceHeight == 0 ? 1 : _sourceWidth / (double)_sourceHeight;
         public FitMode? FitOverride { get; set; }
         public ImageAdjustments Adjustments { get; set; } = new();
 
@@ -474,20 +741,114 @@ public partial class PhotoGridView : UserControl
             if (RotationQuarterTurns != 0)
                 display = new TransformedBitmap(display, new RotateTransform(90 * RotationQuarterTurns));
 
-            if (!Crop.IsFull && Crop.IsValid)
-            {
-                var x = (int)Math.Round(Crop.X * display.PixelWidth);
-                var y = (int)Math.Round(Crop.Y * display.PixelHeight);
-                var w = Math.Clamp((int)Math.Round(Crop.Width * display.PixelWidth), 1, display.PixelWidth - x);
-                var h = Math.Clamp((int)Math.Round(Crop.Height * display.PixelHeight), 1, display.PixelHeight - y);
-                display = new CroppedBitmap(display, new Int32Rect(x, y, w, h));
-            }
+            Thumbnail = Compose(_sourceThumbnail);
+        }
+
+        /// <summary>
+        /// Construit l'image affichable à partir d'une source : rotation, corrections,
+        /// puis le cadre du tirage par-dessus.
+        ///
+        /// Isolé pour que la vignette et le grand aperçu suivent EXACTEMENT le même
+        /// chemin, à la seule différence de la définition de la source — sinon l'un
+        /// montrerait autre chose que l'autre.
+        /// </summary>
+        public ImageSource Compose(BitmapSource source)
+        {
+            BitmapSource display = source;
+            if (RotationQuarterTurns != 0)
+                display = new TransformedBitmap(display, new RotateTransform(90 * RotationQuarterTurns));
+
+            // le redressement fin après les quarts de tour, comme au rendu final
+            if (Math.Abs(FineRotationDegrees) > 0.01)
+                display = RedresserFin(display, FineRotationDegrees);
 
             if (display.CanFreeze) display.Freeze();
 
-            // les corrections en dernier : elles s'appliquent à ce qui sera réellement
-            // tiré, donc après le recadrage et la rotation
-            Thumbnail = ThumbnailAdjuster.Apply(display, Adjustments);
+            // les corrections d'abord : elles s'appliquent à la photo, pas au cadre
+            var corrigee = ThumbnailAdjuster.Apply(display, Adjustments);
+
+            // puis le cadre du tirage PAR-DESSUS la photo entière, au lieu de découper.
+            // C'est la vue d'ensemble de DiLand : d'un coup d'œil sur la planche, on voit
+            // ce que chaque tirage gardera ET ce qu'il coupera. Une vignette déjà rognée
+            // ne dit pas ce qu'on perd, et oblige à ouvrir les photos une par une.
+            return DessinerCadre(corrigee, Crop);
+        }
+
+        /// <summary>
+        /// Redressement de quelques degrés, rendu à la main.
+        ///
+        /// PAS avec <c>TransformedBitmap</c> : WPF n'y accepte que des échelles, des
+        /// retournements et des rotations à 90°, et refuse tout autre angle par une
+        /// exception — « La transformation doit être une combinaison d'échelles, de
+        /// retournements et de rotations à 90 degrés ». Elle remontait à chaque redessin
+        /// et faisait tomber d'un coup C, C+clic droit et T+molette (01/08/2026).
+        ///
+        /// Le canevas est agrandi pour contenir l'image inclinée, sans quoi les coins
+        /// seraient coupés au lieu d'être laissés au cadrage.
+        /// </summary>
+        private static BitmapSource RedresserFin(BitmapSource source, double degres)
+        {
+            var radians = degres * Math.PI / 180;
+            double largeur = source.PixelWidth;
+            double hauteur = source.PixelHeight;
+
+            var cos = Math.Abs(Math.Cos(radians));
+            var sin = Math.Abs(Math.Sin(radians));
+            var largeurRendue = (int)Math.Ceiling(largeur * cos + hauteur * sin);
+            var hauteurRendue = (int)Math.Ceiling(largeur * sin + hauteur * cos);
+
+            var visuel = new DrawingVisual();
+            using (var dessin = visuel.RenderOpen())
+            {
+                dessin.PushTransform(new TranslateTransform(largeurRendue / 2.0, hauteurRendue / 2.0));
+                dessin.PushTransform(new RotateTransform(degres));
+                dessin.DrawImage(source, new Rect(-largeur / 2, -hauteur / 2, largeur, hauteur));
+                dessin.Pop();
+                dessin.Pop();
+            }
+
+            var rendu = new RenderTargetBitmap(largeurRendue, hauteurRendue, 96, 96, PixelFormats.Pbgra32);
+            rendu.Render(visuel);
+            rendu.Freeze();
+            return rendu;
+        }
+
+        /// <summary>Dessine le cadre jaune du tirage sur la vignette, comme DiLand.</summary>
+        private static ImageSource DessinerCadre(ImageSource photo, CropSpec crop)
+        {
+            if (photo is not BitmapSource source) return photo;
+            if (!crop.IsValid) return photo;
+
+            var largeur = source.PixelWidth;
+            var hauteur = source.PixelHeight;
+            if (largeur <= 0 || hauteur <= 0) return photo;
+
+            var visuel = new DrawingVisual();
+            using (var dessin = visuel.RenderOpen())
+            {
+                dessin.DrawImage(source, new Rect(0, 0, largeur, hauteur));
+
+                var cadre = new Rect(
+                    crop.X * largeur, crop.Y * hauteur,
+                    crop.Width * largeur, crop.Height * hauteur);
+
+                // voile sur ce qui sera coupé : le cadre seul se perd sur une photo claire
+                var voile = new SolidColorBrush(Color.FromArgb(110, 0, 0, 0));
+                var dehors = new CombinedGeometry(
+                    GeometryCombineMode.Exclude,
+                    new RectangleGeometry(new Rect(0, 0, largeur, hauteur)),
+                    new RectangleGeometry(cadre));
+                dessin.DrawGeometry(voile, null, dehors);
+
+                var trait = new Pen(Brushes.Yellow, Math.Max(2, largeur / 90.0));
+                trait.Freeze();
+                dessin.DrawRectangle(null, trait, cadre);
+            }
+
+            var rendu = new RenderTargetBitmap(largeur, hauteur, 96, 96, PixelFormats.Pbgra32);
+            rendu.Render(visuel);
+            rendu.Freeze();
+            return rendu;
         }
 
         public bool Selected
@@ -497,6 +858,7 @@ public partial class PhotoGridView : UserControl
             {
                 if (!Set(ref _selected, value)) return;
                 OnPropertyChanged(nameof(BorderBrush));
+                OnPropertyChanged(nameof(TileBrush));
                 OnPropertyChanged(nameof(CheckVisibility));
                 OnPropertyChanged(nameof(CartVisibility));
                 _cartChanged();
@@ -545,6 +907,45 @@ public partial class PhotoGridView : UserControl
         public Brush BorderBrush => Selected
             ? (Brush)Application.Current.Resources["AccentBrush"]
             : Brushes.Transparent;
+
+        /// <summary>
+        /// Fond de la vignette : orange dès qu'elle est retenue, comme chez DiLand. Le
+        /// choix saute aux yeux d'un bout à l'autre de la planche, ce qu'un liseré fin
+        /// ne permet pas — c'est ce qui compte quand on sert un client au comptoir.
+        /// </summary>
+        public Brush TileBrush => Selected
+            ? (Brush)Application.Current.Resources["TitleBrush"]
+            : (Brush)Application.Current.Resources["PanelBrush"];
+
+        private int _sourceWidth;
+        private int _sourceHeight;
+
+        /// <summary>Définition du fichier d'origine, notée à la lecture de la vignette.</summary>
+        public void SetSourceSize(int width, int height)
+        {
+            _sourceWidth = width;
+            _sourceHeight = height;
+            OnPropertyChanged(nameof(SizeLabel));
+            OnPropertyChanged(nameof(RatioLabel));
+            OnPropertyChanged(nameof(BadgeVisibility));
+        }
+
+        public string SizeLabel => _sourceWidth == 0 ? "" : $"{_sourceWidth} x {_sourceHeight}";
+
+        /// <summary>Rapport du plus grand côté au plus petit, comme l'affiche DiLand (« 2.3 »).</summary>
+        public string RatioLabel
+        {
+            get
+            {
+                if (_sourceWidth == 0 || _sourceHeight == 0) return "";
+                var grand = Math.Max(_sourceWidth, _sourceHeight);
+                var petit = Math.Min(_sourceWidth, _sourceHeight);
+                return (grand / (double)petit).ToString("0.0",
+                    System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        public Visibility BadgeVisibility => _sourceWidth == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         public Visibility CheckVisibility => Selected ? Visibility.Visible : Visibility.Collapsed;
         public Visibility CartVisibility => Selected ? Visibility.Visible : Visibility.Collapsed;

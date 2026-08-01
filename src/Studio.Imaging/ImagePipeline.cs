@@ -12,6 +12,7 @@ public sealed record RenderRequest(
     int TargetHeightPx,
     CropSpec Crop,
     int RotationQuarterTurns,
+    double FineRotationDegrees,
     FitMode Fit,
     int BorderPx,
     ImageAdjustments Adjustments,
@@ -209,6 +210,17 @@ public static class ImagePipeline
         var turns = ((request.RotationQuarterTurns % 4) + 4) % 4;
         if (turns != 0)
             image.Rotate(90 * turns);
+
+        // redressement fin APRÈS les quarts de tour, et avant le recadrage : le cadre que
+        // l'opérateur a posé à l'écran l'a été sur l'image déjà redressée. Le fond blanc
+        // remplit les coins libérés par la rotation ; c'est au cadrage de les exclure,
+        // et l'écran les montre pour qu'on puisse le faire en connaissance de cause.
+        if (Math.Abs(request.FineRotationDegrees) > 0.01)
+        {
+            image.BackgroundColor = MagickColors.White;
+            image.Rotate(request.FineRotationDegrees);
+            image.ResetPage();
+        }
 
         if (!request.Crop.IsFull)
         {

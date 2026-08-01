@@ -8,20 +8,41 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- Titre centré et barre d'outils, comme l'écran « Sélectionnez les photos »
+             de DiLand : les opérateurs cherchent « tout » et « aucun » à cet endroit. -->
         <StackPanel Grid.Row="0">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
-                           Text="Touchez les photos à imprimer"/>
-                <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            </DockPanel>
-            <!-- le bouton de recadrage passait inaperçu : on dit ici ce qu'il fait -->
-            <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10" TextWrapping="Wrap"
-                       Text="En bas à droite : « Recadrer » agit sur la dernière photo choisie, « Recadrer tout » passe en revue toutes les photos cochées. On y règle le cadrage, l'orientation du cadre et les marges blanches."/>
+            <TextBlock Text="Sélectionnez les photos" FontSize="40"
+                       Foreground="{StaticResource TitleBrush}"
+                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
+                        FontSize="16" Margin="6,0" Click="OnSmaller"
+                        ToolTip="Vignettes plus petites">réduire</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
+                        FontSize="16" Margin="6,0" Click="OnBigger"
+                        ToolTip="Vignettes plus grandes">agrandir</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
+                        FontSize="16" Margin="6,0" Click="OnSelectAll"
+                        ToolTip="Tout choisir (Ctrl+A)">tout</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
+                        FontSize="16" Margin="6,0" Click="OnSelectNone"
+                        ToolTip="Ne rien choisir">aucun</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
+                        FontSize="16" Margin="6,0" Click="OnSort"
+                        ToolTip="Trier par nom ou par date">trier</Button>
+                <TextBlock x:Name="CountText" Style="{StaticResource Hint}" FontSize="17"
+                           VerticalAlignment="Center" Margin="24,0,0,0"/>
+            </StackPanel>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="PhotosGrid">
+                <!-- « réduire » et « agrandir » agissent sur toute la planche d'un coup :
+                     une mise à l'échelle vaut mieux que de recalculer chaque vignette. -->
+                <ItemsControl.LayoutTransform>
+                    <ScaleTransform x:Name="GridZoom" ScaleX="1" ScaleY="1"/>
+                </ItemsControl.LayoutTransform>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapPanel/>
@@ -29,53 +50,47 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="220" Height="270" Margin="8" CornerRadius="10"
-                                Background="{StaticResource CardBrush}"
-                                BorderThickness="4"
-                                BorderBrush="{Binding BorderBrush}"
+                        <!-- Vignette de DiLand : la photo au centre sur un fond qui vire à
+                             l'orange dès qu'elle est retenue, le nom en bas à gauche, la
+                             définition et le rapport en haut à droite, et le compteur qui
+                             n'apparaît que sur les photos de la commande. -->
+                        <Border Width="210" Height="230"
+                                Margin="3" Background="{Binding TileBrush}"
                                 MouseLeftButtonUp="OnPhotoClicked" Tag="{Binding}">
                             <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+                                <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="4"/>
 
-                                <Image Grid.Row="0" Source="{Binding Thumbnail}" Stretch="Uniform" Margin="6"/>
-                                <Border Grid.Row="0" Background="{StaticResource OkBrush}" CornerRadius="8"
-                                        Width="40" Height="40" HorizontalAlignment="Right" VerticalAlignment="Top"
-                                        Margin="6" Visibility="{Binding CheckVisibility}">
-                                    <TextBlock Text="✓" Foreground="White" FontSize="24" FontWeight="Bold"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Row="0" Text="{Binding Name}" FontSize="12"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           VerticalAlignment="Bottom" HorizontalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" Margin="8,0,8,2"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            VerticalAlignment="Top" Visibility="{Binding BadgeVisibility}">
+                                    <Border Background="#CC000000" Padding="5,2">
+                                        <TextBlock Text="{Binding SizeLabel}" FontSize="11" Foreground="White"/>
+                                    </Border>
+                                    <Border Background="#CC7E57C2" Padding="5,2">
+                                        <TextBlock Text="{Binding RatioLabel}" FontSize="11" Foreground="White"/>
+                                    </Border>
+                                </StackPanel>
 
-                                <!-- Bandeau panier : produit sur une ligne, actions sur la suivante.
-                                     Tout tenait sur une seule ligne de 44 px : le bouton de recadrage
-                                     s'y réduisait à un pictogramme que la police ne sait pas dessiner. -->
-                                <Border Grid.Row="1" CornerRadius="0,0,6,6"
-                                        Background="#1AFFFFFF" Visibility="{Binding CartVisibility}">
-                                    <StackPanel Margin="5,4">
-                                        <Button Style="{StaticResource FlatButton}" Height="30" Padding="6,0"
-                                                FontSize="13" HorizontalContentAlignment="Left"
-                                                ToolTip="Changer le format ou le produit"
-                                                Content="{Binding ProductLabel}"
-                                                Click="OnPickProduct" Tag="{Binding}"/>
-                                        <DockPanel Margin="0,5,0,0">
-                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                                                        HorizontalAlignment="Right">
-                                                <Button Style="{StaticResource FlatButton}" Width="36" Height="36"
-                                                        Padding="0" FontSize="20" Click="OnTileMinus" Tag="{Binding}">−</Button>
-                                                <TextBlock Text="{Binding QuantityLabel}" FontSize="17" FontWeight="Bold"
-                                                           VerticalAlignment="Center" MinWidth="30" TextAlignment="Center"/>
-                                                <Button Style="{StaticResource FlatButton}" Width="36" Height="36"
-                                                        Padding="0" FontSize="20" Click="OnTilePlus" Tag="{Binding}">+</Button>
-                                            </StackPanel>
-                                        </DockPanel>
-                                    </StackPanel>
+                                <Border Background="#CC000000" Padding="5,2"
+                                        HorizontalAlignment="Left" VerticalAlignment="Bottom">
+                                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="White"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="130"/>
                                 </Border>
+
+                                <!-- Compteur : − rouge, quantité, + vert, comme chez DiLand -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom" Visibility="{Binding CartVisibility}">
+                                    <Button Width="34" Height="34" Padding="0" FontSize="20" FontWeight="Bold"
+                                            Background="{StaticResource DangerBrush}" Foreground="White"
+                                            BorderThickness="0" Click="OnTileMinus" Tag="{Binding}">−</Button>
+                                    <Border Background="#CC000000" MinWidth="30">
+                                        <TextBlock Text="{Binding QuantityLabel}" FontSize="17" FontWeight="Bold"
+                                                   Foreground="White" HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+                                    </Border>
+                                    <Button Width="34" Height="34" Padding="0" FontSize="20" FontWeight="Bold"
+                                            Background="{StaticResource OkBrush}" Foreground="White"
+                                            BorderThickness="0" Click="OnTilePlus" Tag="{Binding}">+</Button>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -83,43 +98,45 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <!-- Barre d'action : produit et quantité pour la sélection, impression -->
+        <!-- Barre d'action.
+             Grille et non DockPanel : dans un DockPanel le groupe de gauche se sert en
+             premier, et « Imprimer » finissait hors écran sur une fenêtre étroite. C'est
+             ce défaut qui empêchait de conclure une commande le 01/08/2026. -->
         <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Produit :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <ComboBox x:Name="ProductCombo" MinWidth="320" FontSize="22" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center"
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="Produit :" Style="{StaticResource Hint}"
+                               VerticalAlignment="Center" Margin="0,0,8,6"/>
+                    <ComboBox x:Name="ProductCombo" MinWidth="280" FontSize="20" Padding="10,8"
+                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,20,6"
                               SelectionChanged="OnDefaultProductChanged"/>
-                    <TextBlock Text="Quantité :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="24,0,8,0"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="56" MinHeight="56" Padding="0"
-                            FontSize="26" Click="OnQuantityMinus">−</Button>
-                    <TextBlock x:Name="QuantityText" Text="1" FontSize="26" FontWeight="Bold"
-                               VerticalAlignment="Center" MinWidth="48" TextAlignment="Center"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="56" MinHeight="56" Padding="0"
-                            FontSize="26" Click="OnQuantityPlus">+</Button>
-                    <TextBlock Text="(s'applique aux photos cochées)" Style="{StaticResource Hint}"
-                               VerticalAlignment="Center" Margin="16,0,0,0" FontSize="14"/>
-                    <TextBlock Text="Minilab :" Style="{StaticResource Hint}" VerticalAlignment="Center"
-                               Margin="24,0,8,0"/>
-                    <ComboBox x:Name="MachineCombo" MinWidth="300" FontSize="16" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center"
+                    <TextBlock Text="Quantité :" Style="{StaticResource Hint}"
+                               VerticalAlignment="Center" Margin="0,0,8,6"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="24" Click="OnQuantityMinus" Margin="0,0,0,6">−</Button>
+                    <TextBlock x:Name="QuantityText" Text="1" FontSize="24" FontWeight="Bold"
+                               VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Margin="0,0,0,6"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="24" Click="OnQuantityPlus" Margin="0,0,20,6">+</Button>
+                    <TextBlock Text="Minilab :" Style="{StaticResource Hint}"
+                               VerticalAlignment="Center" Margin="0,0,8,6"/>
+                    <ComboBox x:Name="MachineCombo" MinWidth="260" FontSize="15" Padding="10,8"
+                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,0,6"
                               ToolTip="Machine du minilab et papier qui y est chargé"
                               SelectionChanged="OnMachineChanged"/>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="CropButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="18,0" FontSize="17" Margin="0,0,10,0" IsEnabled="False"
-                            ToolTip="Recadrer la dernière photo choisie"
-                            Click="OnCropCurrent">Recadrer</Button>
-                    <Button x:Name="CropAllButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="18,0" FontSize="17" Margin="0,0,20,0" IsEnabled="False"
-                            ToolTip="Passer en revue toutes les photos cochées, l'une après l'autre"
-                            Click="OnCropAll">Recadrer tout</Button>
-                    <Button x:Name="AdjustButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="18,0" FontSize="17" Margin="0,0,20,0" IsEnabled="False"
-                            ToolTip="Exposition, ombres, hautes lumières, couleur — appliqués à toutes les photos cochées"
-                            Click="OnAdjust">Corriger</Button>
+                </WrapPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="16,0,0,0">
+                    <Button x:Name="ModifyButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="26,0" FontSize="18" Margin="0,0,20,0" IsEnabled="False"
+                            ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"
+                            Click="OnModify">Modifier</Button>
                     <TextBlock x:Name="TotalText" FontSize="24" FontWeight="Bold"
                                VerticalAlignment="Center" Margin="0,0,16,0"/>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
@@ -127,7 +144,7 @@
                         🖨  Imprimer
                     </Button>
                 </StackPanel>
-            </DockPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

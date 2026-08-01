@@ -8,12 +8,29 @@ namespace Studio.Tests;
 /// </summary>
 public class De100FormatsTests
 {
+    /// <summary>
+    /// Les côtés « rouleau » déclarés par le pilote de DiLand. Le 148 est celui de l'A5,
+    /// qui sort en travers d'un rouleau de 210 ; le 210 porte la famille 21 cm et l'A4.
+    /// Ces deux-là manquaient au premier relevé — le DE100 de la boutique a tourné avec
+    /// un rouleau de 210 mm le matin du 01/08/2026, formats que Studio croyait alors
+    /// impossibles.
+    /// </summary>
     [Fact]
     public void Le_catalogue_couvre_les_largeurs_de_rouleau_de_la_boutique()
     {
         var largeurs = De100Formats.All.Select(f => f.ShortSideMm).Distinct().OrderBy(w => w);
 
-        Assert.Equal([89, 102, 127, 152, 203], largeurs);
+        Assert.Equal([89, 102, 127, 148, 152, 203, 210], largeurs);
+    }
+
+    /// <summary>Un rouleau de 210 doit proposer l'A4 et la famille 21 cm.</summary>
+    [Theory]
+    [InlineData("A4")]
+    [InlineData("A5")]
+    [InlineData("21xL")]
+    public void Le_rouleau_de_210_propose_la_famille_21_cm(string format)
+    {
+        Assert.Contains(format, De100Formats.ForPaperWidth(210).Select(f => f.Name));
     }
 
     [Theory]

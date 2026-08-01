@@ -635,7 +635,7 @@ public partial class IdPhotoView : UserControl
         var adjustments = new ImageAdjustments { Grayscale = GrayscaleCheck.IsChecked == true };
         var items = new List<DraftItem>
         {
-            new(_current.Path, choice.Product, _quantity, _crop, 0, null, adjustments, _copies,
+            new(_current.Path, choice.Product, _quantity, _crop, 0, 0, null, adjustments, _copies,
                 FinishCombo.SelectedItem as string),
         };
 

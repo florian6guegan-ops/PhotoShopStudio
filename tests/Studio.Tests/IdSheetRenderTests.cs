@@ -46,7 +46,7 @@ public class IdSheetRenderTests : IDisposable
         var hauteur = cellHeightPx ?? CellH;
 
         ImagePipeline.RenderIdSheetToFile(
-            new RenderRequest(_source, CellW, hauteur, CropSpec.Full, 0, FitMode.Fill, 0,
+            new RenderRequest(_source, CellW, hauteur, CropSpec.Full, 0, 0, FitMode.Fill, 0,
                 new ImageAdjustments()),
             copies, gapMm, cutMarks: true,
             SheetW, SheetH, sortie, Dpi,

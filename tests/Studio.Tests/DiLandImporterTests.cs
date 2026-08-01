@@ -38,7 +38,7 @@ public class DiLandImporterTests : IDisposable
         new Product { Code = "10x15-dnp", Name = "10x15", WidthMm = 152, HeightMm = 102,
                       Output = ProductOutput.Printer, PrinterName = "DS620", Enabled = true },
         new Product { Code = "10x15", Name = "10x15", WidthMm = 152, HeightMm = 102,
-                      Output = ProductOutput.FujiMinilab, Enabled = true },
+                      Output = ProductOutput.FujiMinilab, Enabled = true, Price = 0.60m },
         new Product { Code = "21x29-7", Name = "21x29,7", WidthMm = 297, HeightMm = 210,
                       Output = ProductOutput.FujiMinilab, Enabled = true },
     ];
@@ -184,8 +184,11 @@ public class DiLandImporterTests : IDisposable
     // — pas de doublon —
 
     /// <summary>
-    /// Le dossier d'une commande Studio porte son numéro du jour : sans registre, une
+    /// Le dossier d'une commande Studio porte son numéro du jour : sans journal, une
     /// deuxième reprise créerait un doublon au lieu d'écraser.
+    ///
+    /// La commande reste affichée entre-temps — c'est voulu — mais le bouton « Reprendre »
+    /// ne doit plus rien créer.
     /// </summary>
     [Fact]
     public void Une_commande_n_est_reprise_qu_une_fois()
@@ -197,17 +200,20 @@ public class DiLandImporterTests : IDisposable
         var seconde = importateur.Import(borne);
 
         Assert.False(seconde.Succeeded);
-        Assert.Empty(importateur.Pending());
+        Assert.Single(new OrderFolderStore(Path.Combine(_root, "orders")).ScanRecent());
     }
 
-    /// <summary>Le registre survit au redémarrage de l'application, sinon tout serait repris deux fois.</summary>
+    /// <summary>Le journal survit au redémarrage, sinon tout serait repris deux fois.</summary>
     [Fact]
-    public void Le_registre_survit_au_redemarrage()
+    public void Le_journal_survit_au_redemarrage()
     {
         var premier = Importateur();
         premier.Import(premier.Pending().Single());
 
-        Assert.Empty(Importateur().Pending());
+        var apresRedemarrage = Importateur();
+
+        Assert.False(apresRedemarrage.Import(apresRedemarrage.Pending().Single()).Succeeded);
+        Assert.Single(new OrderFolderStore(Path.Combine(_root, "orders")).ScanRecent());
     }
 
     // — ouvrir pour retoucher —
@@ -259,32 +265,170 @@ public class DiLandImporterTests : IDisposable
         Assert.Equal(2, Directory.GetFiles(seconde.PhotosDirectory).Length);
     }
 
+    // — la commande reste tant qu'elle n'est pas tirée —
+
     /// <summary>
     /// Ouvrir ne crée aucune commande : elle naîtra à l'impression, comme au comptoir.
-    /// Mais la commande sort de la liste d'attente, pour ne pas être traitée deux fois.
+    ///
+    /// Et surtout, la commande RESTE dans la liste : ouverte puis abandonnée en route,
+    /// elle doit encore sauter aux yeux de l'opérateur suivant. C'est ce que la boutique
+    /// demande — une commande ne disparaît qu'une fois le tirage sorti.
     /// </summary>
     [Fact]
-    public void Ouvrir_sort_la_commande_de_l_attente_sans_rien_creer()
+    public void Ouvrir_ne_cree_rien_et_laisse_la_commande_dans_la_liste()
     {
         var importateur = Importateur();
         var borne = importateur.Pending().Single();
 
-        importateur.MarkTaken(borne);
+        importateur.MarkInProgress(borne);
 
-        Assert.Empty(importateur.Pending());
-        Assert.Equal([borne.Oid], importateur.Taken().Select(c => c.Oid));
+        Assert.Equal([borne.Oid], importateur.Pending().Select(c => c.Oid));
+        Assert.Equal(KioskOrderStage.InProgress, importateur.StageOf(borne));
+        Assert.Empty(importateur.History());
         Assert.False(Directory.Exists(Path.Combine(_root, "orders", borne.Date.Year.ToString())));
     }
 
+    /// <summary>Reprise n'est pas tirée : la commande reste à faire tant que rien n'est sorti.</summary>
     [Fact]
-    public void Les_commandes_deja_reprises_restent_consultables()
+    public void Une_commande_reprise_reste_dans_la_liste_jusqu_au_tirage()
     {
         var importateur = Importateur();
         var borne = importateur.Pending().Single();
 
         importateur.Import(borne);
 
-        Assert.Contains(importateur.Taken(), c => c.Oid == borne.Oid);
+        Assert.Equal([borne.Oid], importateur.Pending().Select(c => c.Oid));
+        Assert.Equal(KioskOrderStage.InProgress, importateur.StageOf(borne));
+    }
+
+    /// <summary>Une fois le tirage sorti, la commande quitte la liste pour l'historique.</summary>
+    [Fact]
+    public void Le_tirage_fait_basculer_la_commande_dans_l_historique()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+        importateur.Import(borne);
+
+        Imprimer();
+
+        Assert.Empty(importateur.Pending());
+        var historique = importateur.History().Single();
+        Assert.Equal(borne.Oid, historique.Oid);
+        Assert.Equal(KioskOrderStage.Printed, historique.Stage);
+    }
+
+    /// <summary>
+    /// Studio peut être redémarré entre la reprise et le tirage : la commande se referme
+    /// quand même, parce que la vérité est lue sur le disque et non gardée en mémoire.
+    /// </summary>
+    [Fact]
+    public void La_bascule_survit_a_un_redemarrage()
+    {
+        var borne = Importateur().Pending().Single();
+        Importateur().Import(borne);
+
+        Imprimer();
+
+        Assert.Empty(Importateur().Pending());
+        Assert.Contains(Importateur().History(), e => e.Oid == borne.Oid);
+    }
+
+    /// <summary>
+    /// Une enveloppe seulement envoyée au spouleur ne compte pas comme tirée : tant que
+    /// rien n'est sorti, la commande reste à faire.
+    /// </summary>
+    [Fact]
+    public void Une_enveloppe_seulement_envoyee_ne_ferme_pas_la_commande()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+        importateur.Import(borne);
+
+        Imprimer(EnvelopeStatus.Spooled);
+
+        Assert.Equal([borne.Oid], importateur.Pending().Select(c => c.Oid));
+    }
+
+    /// <summary>
+    /// La porte de sortie : une commande que DiLand a imprimée de son côté doit pouvoir
+    /// être retirée, sinon elle resterait affichée pour toujours.
+    /// </summary>
+    [Fact]
+    public void Une_commande_retiree_a_la_main_passe_a_l_historique()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+
+        importateur.Dismiss(borne);
+
+        Assert.Empty(importateur.Pending());
+        Assert.Equal(KioskOrderStage.Dismissed, importateur.History().Single().Stage);
+    }
+
+    /// <summary>Retirée par erreur, elle doit pouvoir revenir dans la liste.</summary>
+    [Fact]
+    public void Une_commande_retiree_par_erreur_peut_revenir()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+        importateur.Dismiss(borne);
+
+        importateur.Journal.Reopen(borne.Oid);
+
+        Assert.Equal([borne.Oid], importateur.Pending().Select(c => c.Oid));
+    }
+
+    /// <summary>Une commande déjà reprise ne l'est pas deux fois : ce serait un doublon de tirage.</summary>
+    [Fact]
+    public void Une_commande_reprise_n_est_pas_reprise_deux_fois()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+        importateur.Import(borne);
+
+        var seconde = importateur.Import(borne);
+
+        Assert.False(seconde.Succeeded);
+        Assert.Contains("déjà reprise", seconde.Warnings);
+    }
+
+    /// <summary>
+    /// L'historique doit rester lisible même quand DiLand a purgé la commande de sa base :
+    /// le journal garde sa propre copie du contenu et du client.
+    /// </summary>
+    [Fact]
+    public void L_historique_garde_le_contenu_de_la_commande()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+
+        importateur.Dismiss(borne);
+
+        var entree = importateur.History().Single();
+        Assert.Equal(borne.Number, entree.Number);
+        Assert.Contains("10x15", entree.Summary);
+    }
+
+    /// <summary>Le total affiché est celui de ce qu'on tirera, au tarif du catalogue.</summary>
+    [Fact]
+    public void Le_total_ne_compte_que_les_produits_du_catalogue()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+
+        // 3 tirages 10x15 à 0,60 € ; l'agenda spirale est hors catalogue
+        Assert.Equal(1.80m, importateur.Quote(borne));
+    }
+
+    /// <summary>Marque toutes les enveloppes de la commande Studio créée, comme le ferait un tirage.</summary>
+    private void Imprimer(EnvelopeStatus statut = EnvelopeStatus.Printed)
+    {
+        var store = new OrderFolderStore(Path.Combine(_root, "orders"));
+        foreach (var commande in store.ScanRecent())
+        {
+            foreach (var enveloppe in commande.Envelopes) enveloppe.Status = statut;
+            store.Save(commande);
+        }
     }
 
     // — choix du produit —

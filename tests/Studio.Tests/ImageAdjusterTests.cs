@@ -222,4 +222,107 @@ public class ImageAdjusterTests
         Assert.InRange(g, 0, 255);
         Assert.InRange(b, 0, 255);
     }
+
+    // — corrections automatiques, reprises de DiLand —
+
+    /// <summary>Un dégradé terne : de quoi laisser aux automatismes de la marge.</summary>
+    private static MagickImage Terne()
+    {
+        var image = new MagickImage(MagickColors.Black, 60, 60);
+        using var pixels = image.GetPixels();
+        for (var y = 0; y < 60; y++)
+            for (var x = 0; x < 60; x++)
+            {
+                // valeurs resserrées entre 90 et 150 : contraste faible, à étirer
+                var v = (byte)(90 + x);
+                pixels.SetPixel(x, y, [v, v, v]);
+            }
+        return image;
+    }
+
+    /// <summary>Sans réglage, rien ne doit bouger : les automatismes sont des bascules.</summary>
+    [Fact]
+    public void Les_corrections_automatiques_sont_inactives_par_defaut()
+    {
+        Assert.True(new ImageAdjustments().IsNeutral);
+    }
+
+    [Theory]
+    [InlineData("niveaux")]
+    [InlineData("contraste")]
+    public void Un_automatisme_de_ton_etire_une_image_terne(string lequel)
+    {
+        using var image = Terne();
+
+        var a = new ImageAdjustments();
+        if (lequel == "niveaux") a.AutoLevels = true; else a.AutoContrast = true;
+        Assert.False(a.IsNeutral);
+
+        ImageAdjuster.Apply(image, a);
+
+        // l'écart entre le point le plus sombre et le plus clair doit s'être creusé
+        using var pixels = image.GetPixels();
+        var sombre = pixels.GetPixel(0, 30).GetChannel(0);
+        var clair = pixels.GetPixel(59, 30).GetChannel(0);
+
+        Assert.True(clair - sombre > 59,
+            $"{lequel} : écart {clair - sombre}, attendu plus large que les 59 d'origine");
+    }
+
+    /// <summary>Une dominante jaune doit être ramenée vers le neutre.</summary>
+    [Fact]
+    public void La_couleur_automatique_attenue_une_dominante()
+    {
+        using var image = new MagickImage(MagickColors.Black, 60, 60);
+        using (var pixels = image.GetPixels())
+            for (var y = 0; y < 60; y++)
+                for (var x = 0; x < 60; x++)
+                    pixels.SetPixel(x, y, [(byte)(100 + x * 2), (byte)(95 + x * 2), (byte)(40 + x)]);
+
+        var avant = Couleur(image);
+        var ecartAvant = avant.R - avant.B;
+
+        ImageAdjuster.Apply(image, new ImageAdjustments { AutoColor = true });
+
+        var apres = Couleur(image);
+        Assert.True(apres.R - apres.B < ecartAvant,
+            $"dominante non atténuée : {ecartAvant} avant, {apres.R - apres.B} après");
+    }
+
+    /// <summary>
+    /// Sur une image déjà en noir et blanc, corriger une dominante n'a plus d'objet et
+    /// ne doit pas réintroduire de couleur.
+    /// </summary>
+    [Fact]
+    public void La_couleur_automatique_ne_recolore_pas_un_noir_et_blanc()
+    {
+        using var image = Uni(180, 120, 60);
+
+        ImageAdjuster.Apply(image, new ImageAdjustments { Grayscale = true, AutoColor = true });
+
+        // on lit la couleur composée, et non les canaux : une image passée en noir et
+        // blanc n'en a plus qu'un seul, et interroger le vert renverrait 0 à tort
+        using var pixels = image.GetPixels();
+        var couleur = pixels.GetPixel(20, 20).ToColor()!;
+
+        Assert.Equal(couleur.R, couleur.G);
+        Assert.Equal(couleur.G, couleur.B);
+    }
+
+    /// <summary>Les trois ensemble ne doivent produire ni débordement ni valeur aberrante.</summary>
+    [Fact]
+    public void Les_trois_automatismes_cumules_restent_dans_la_plage()
+    {
+        using var image = Terne();
+
+        ImageAdjuster.Apply(image, new ImageAdjustments
+        {
+            AutoLevels = true, AutoContrast = true, AutoColor = true, Exposure = 0.4,
+        });
+
+        var (r, g, b) = Couleur(image);
+        Assert.InRange(r, 0, 255);
+        Assert.InRange(g, 0, 255);
+        Assert.InRange(b, 0, 255);
+    }
 }

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Studio.Core.Domain;
 
 namespace Studio.Store.DiLand;
@@ -25,9 +24,13 @@ public sealed record DiLandImportOutcome(
 /// DiLand garde les siennes : on ne fait que lire et copier. Ses photos ne sont ni
 /// déplacées ni supprimées, et sa base n'est jamais ouverte (voir <see cref="DiLandRepository"/>).
 ///
-/// Une commande n'est reprise qu'une fois. Le registre des reprises est tenu à part,
-/// car le dossier d'une commande Studio porte son numéro du jour : sans registre, une
-/// deuxième reprise créerait un doublon au lieu d'écraser.
+/// Une commande n'est reprise qu'une fois. Le suivi est tenu à part dans un journal
+/// (voir <see cref="KioskOrderJournal"/>), car le dossier d'une commande Studio porte son
+/// numéro du jour : sans journal, une deuxième reprise créerait un doublon au lieu d'écraser.
+///
+/// Une commande reste affichée à l'opérateur TANT QUE le tirage n'est pas sorti. L'ouvrir
+/// ou la reprendre la passe « en cours » ; seule l'impression la fait basculer dans
+/// l'historique, qui se conserve un mois.
 /// </summary>
 public sealed class DiLandImporter
 {
@@ -37,9 +40,6 @@ public sealed class DiLandImporter
     private readonly DiLandRepository _depot;
     private readonly OrderService _commandes;
     private readonly IReadOnlyList<Product> _catalogue;
-    private readonly string _registrePath;
-
-    private HashSet<long>? _dejaReprises;
 
     public DiLandImporter(
         DiLandRepository depot,
@@ -50,19 +50,136 @@ public sealed class DiLandImporter
         _depot = depot;
         _commandes = commandes;
         _catalogue = catalogue;
-        _registrePath = registrePath;
+        Journal = new KioskOrderJournal(registrePath);
     }
 
-    /// <summary>Commandes de bornes pas encore reprises, de la plus ancienne à la plus récente.</summary>
+    /// <summary>Le suivi des commandes de bornes : ce qui reste à faire, et ce qui a été fait.</summary>
+    public KioskOrderJournal Journal { get; }
+
+    /// <summary>
+    /// Commandes de bornes à traiter — celles que personne n'a prises, et celles qui sont
+    /// en cours mais dont le tirage n'est pas sorti. De la plus ancienne à la plus récente :
+    /// on sert dans l'ordre d'arrivée.
+    ///
+    /// Volontairement léger : l'écran d'accueil appelle cette méthode sur le fil de
+    /// l'interface pour afficher le nombre de commandes en attente. Lire le détail de
+    /// chaque commande ici bloquerait l'application au démarrage — le détail se lit
+    /// écran par écran, avec <see cref="Summarize"/>.
+    /// </summary>
     public IReadOnlyList<DiLandOrder> Pending(int limit = 50)
     {
         if (!_depot.RefreshSnapshot()) return [];
 
-        var registre = Registre();
+        Reconcile();
+
         return _depot.ReadKioskOrdersAfter(0, 4000)
-            .Where(c => !registre.Contains(c.Oid))
+            .Where(c => !Journal.IsClosed(c.Oid))
             .TakeLast(limit)
             .ToList();
+    }
+
+    /// <summary>Le contenu d'une commande et son total, en une seule lecture de la base.</summary>
+    /// <param name="Lines">Un libellé par produit, avec le nombre de tirages.</param>
+    /// <param name="Total">Ce que coûterait la commande à notre tarif.</param>
+    public sealed record KioskOrderSummary(IReadOnlyList<string> Lines, decimal Total);
+
+    /// <summary>
+    /// Ce qu'il faut afficher pour une commande : son contenu et son prix.
+    ///
+    /// Les deux sortent d'une seule lecture des lignes — la liste en affiche cinquante,
+    /// et interroger la base deux fois par commande se sentirait à l'écran.
+    /// </summary>
+    public KioskOrderSummary Summarize(DiLandOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        var libelles = new List<string>();
+        var total = 0m;
+
+        foreach (var ligne in _depot.LinesOf(order))
+        {
+            var produit = MatchProduct(ligne.ProductName);
+            if (produit is null)
+            {
+                libelles.Add($"{ligne.ProductName} × {ligne.PrintCount} (non repris)");
+                continue;
+            }
+
+            libelles.Add($"{ligne.ProductName} × {ligne.PrintCount}");
+
+            var tirages = Math.Max(1, ligne.PrintCount);
+            total += produit.UnitPriceFor(tirages) * tirages;
+        }
+
+        return new KioskOrderSummary(libelles, total);
+    }
+
+    /// <summary>L'état d'une commande de borne : à traiter, en cours, tirée, retirée.</summary>
+    public KioskOrderStage StageOf(DiLandOrder order) =>
+        Journal.Find(order.Oid)?.Stage ?? KioskOrderStage.Waiting;
+
+    /// <summary>
+    /// Les commandes closes du dernier mois, la plus récente d'abord. C'est l'historique :
+    /// il vit dans le journal, pas dans DiLand, et survit donc aux purges de ce dernier.
+    /// </summary>
+    public IReadOnlyList<KioskOrderEntry> History()
+    {
+        Reconcile();
+        return Journal.History();
+    }
+
+    /// <summary>
+    /// Ferme les commandes dont le tirage est sorti depuis la dernière consultation.
+    ///
+    /// On ne se fie pas à un événement en mémoire : Studio peut être redémarré entre la
+    /// reprise et l'impression, et l'impression peut être lancée depuis « Commandes du
+    /// jour ». La vérité est sur le disque, dans la commande Studio elle-même — une
+    /// commande de borne est tirée quand toutes les enveloppes de sa commande le sont.
+    /// </summary>
+    public void Reconcile()
+    {
+        var aSuivre = Journal.All()
+            .Where(e => e.IsOpen && e.StudioOrderId is not null)
+            .ToList();
+
+        if (aSuivre.Count == 0) return;
+
+        var recentes = _commandes.Recent((int)KioskOrderJournal.Retention.TotalDays)
+            .ToDictionary(o => o.Id);
+
+        foreach (var entree in aSuivre)
+        {
+            if (!recentes.TryGetValue(entree.StudioOrderId!.Value, out var commande)) continue;
+
+            var tiree = commande.Envelopes.Count > 0 &&
+                        commande.Envelopes.All(e => e.Status == EnvelopeStatus.Printed);
+
+            if (tiree) Journal.MarkPrinted(entree.Oid);
+        }
+    }
+
+    /// <summary>
+    /// Ce que coûterait la commande à notre tarif. Les produits que Studio ne sait pas
+    /// vendre ne sont pas comptés : le total affiché est celui de ce qu'on tirera.
+    /// </summary>
+    public decimal Quote(DiLandOrder order) => Summarize(order).Total;
+
+    /// <summary>
+    /// Recopie dans le journal ce qu'il faut pour afficher la commande plus tard.
+    ///
+    /// Appelé au moment où l'on prend la commande en charge, pas à chaque affichage :
+    /// l'historique se constitue de ce qui a été traité, et cette lecture coûte une
+    /// requête à la base de DiLand.
+    /// </summary>
+    private void Note(DiLandOrder order)
+    {
+        var resume = Summarize(order);
+
+        Journal.Describe(
+            order.Oid, order.Number, order.DailyNumber, order.Date,
+            order.EndUserName ?? "",
+            string.Join("   ·   ", resume.Lines),
+            resume.Total);
     }
 
     /// <summary>
@@ -70,16 +187,7 @@ public sealed class DiLandImporter
     /// nombre de tirages, et la mention de ce que Studio ne sait pas vendre. C'est ce qu'il
     /// faut lire avant de décider de reprendre.
     /// </summary>
-    public IReadOnlyList<string> Describe(DiLandOrder order)
-    {
-        ArgumentNullException.ThrowIfNull(order);
-
-        return _depot.LinesOf(order)
-            .Select(l => MatchProduct(l.ProductName) is null
-                ? $"{l.ProductName} × {l.PrintCount} (non repris)"
-                : $"{l.ProductName} × {l.PrintCount}")
-            .ToList();
-    }
+    public IReadOnlyList<string> Describe(DiLandOrder order) => Summarize(order).Lines;
 
     /// <summary>
     /// Reprend une commande : copie ses photos dans le dossier Studio et crée la commande
@@ -93,7 +201,9 @@ public sealed class DiLandImporter
 
         var avertissements = new List<string>();
 
-        if (Registre().Contains(order.Oid))
+        // une commande n'est reprise qu'une fois : une deuxième reprise créerait une
+        // deuxième commande Studio, donc un doublon de tirage
+        if (Journal.Find(order.Oid) is { } suivi && (suivi.StudioOrderId is not null || !suivi.IsOpen))
             return new DiLandImportOutcome(order, null, ["déjà reprise"]);
 
         var photos = new List<DraftItem>();
@@ -122,6 +232,7 @@ public sealed class DiLandImporter
                     Quantity: Math.Max(1, photo.Quantity),
                     Crop: CropOf(photo),
                     RotationQuarterTurns: QuarterTurns(photo.Angle),
+                    FineRotationDegrees: 0, // les bornes ne redressent pas
                     FitOverride: null,
                     Adjustments: new ImageAdjustments()));
             }
@@ -140,7 +251,9 @@ public sealed class DiLandImporter
                 ? $"Borne {order.DailyNumber}"
                 : order.EndUserName);
 
-        Enregistrer(order.Oid);
+        // reprise ≠ tirée : la commande reste affichée jusqu'à ce que le tirage sorte
+        Note(order);
+        Journal.MarkInProgress(order.Oid, creee.Id);
 
         return new DiLandImportOutcome(order, creee, avertissements);
     }
@@ -201,27 +314,31 @@ public sealed class DiLandImporter
     /// <summary>
     /// Marque une commande comme prise en charge sans rien créer : elle a été ouverte pour
     /// être retouchée, la commande Studio naîtra à l'impression.
+    ///
+    /// Elle RESTE dans la liste de l'opérateur : tant que le tirage n'est pas sorti, la
+    /// commande est à faire. C'est ce qui évite qu'une commande ouverte puis oubliée
+    /// disparaisse sans que personne ne s'en aperçoive.
     /// </summary>
-    public void MarkTaken(DiLandOrder order)
+    public void MarkInProgress(DiLandOrder order)
     {
         ArgumentNullException.ThrowIfNull(order);
-        Enregistrer(order.Oid);
+        Note(order);
+        Journal.MarkInProgress(order.Oid);
     }
 
     /// <summary>
-    /// Commandes de bornes déjà prises en charge, de la plus récente à la plus ancienne.
-    /// Sert à les retrouver quand une reprise a été faite par erreur ou abandonnée.
+    /// Le tirage est sorti : la commande quitte la liste pour l'historique.
+    /// Appelé après une impression réussie, pas avant.
     /// </summary>
-    public IReadOnlyList<DiLandOrder> Taken(int limit = 30)
-    {
-        if (!_depot.RefreshSnapshot()) return [];
+    public void MarkPrinted(long oid, Guid? studioOrderId = null) =>
+        Journal.MarkPrinted(oid, studioOrderId);
 
-        var registre = Registre();
-        return _depot.ReadKioskOrdersAfter(0, 4000)
-            .Where(c => registre.Contains(c.Oid))
-            .Reverse()
-            .Take(limit)
-            .ToList();
+    /// <summary>Retire une commande sans tirage de notre côté (DiLand l'a faite, ou annulation).</summary>
+    public void Dismiss(DiLandOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        Note(order);
+        Journal.Dismiss(order.Oid);
     }
 
     /// <summary>
@@ -270,36 +387,4 @@ public sealed class DiLandImporter
         return quarts < 0 ? quarts + 4 : quarts;
     }
 
-    // — registre des reprises —
-
-    private HashSet<long> Registre()
-    {
-        if (_dejaReprises is not null) return _dejaReprises;
-
-        try
-        {
-            _dejaReprises = File.Exists(_registrePath)
-                ? JsonSerializer.Deserialize<HashSet<long>>(File.ReadAllText(_registrePath)) ?? []
-                : [];
-        }
-        catch (Exception e) when (e is IOException or JsonException)
-        {
-            // registre illisible : on repart d'un registre vide plutôt que de bloquer la
-            // reprise ; le pire risque est un doublon, visible et corrigeable
-            _dejaReprises = [];
-        }
-
-        return _dejaReprises;
-    }
-
-    private void Enregistrer(long oid)
-    {
-        var registre = Registre();
-        registre.Add(oid);
-
-        var dossier = Path.GetDirectoryName(_registrePath);
-        if (!string.IsNullOrEmpty(dossier)) Directory.CreateDirectory(dossier);
-
-        AtomicFile.WriteAllText(_registrePath, JsonSerializer.Serialize(registre));
-    }
 }

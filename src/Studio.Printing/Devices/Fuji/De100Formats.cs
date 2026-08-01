@@ -25,11 +25,14 @@ public sealed record De100Format(
 public sealed record De100FormatAvailability(De100Format Format, int RemainingPrints);
 
 /// <summary>
-/// Formats du minilab Fuji Frontier DE100, relevés dans le pilote de DiLand.
+/// Formats du minilab Fuji Frontier DE100, relevés dans le pilote de DiLand
+/// (<c>FujiDE100PrinterDriver.GetFormatsInternal</c>, revérifié le 01/08/2026 — la
+/// famille 21 cm manquait au premier relevé).
 ///
-/// Un format n'est tirable que si la largeur du rouleau chargé correspond à l'un de ses
-/// deux côtés. DiLand s'arrête là et annonce une quantité illimitée ; on va plus loin en
-/// estimant le nombre de tirages possibles avec le papier qui reste.
+/// Un format n'est tirable que si la largeur du rouleau chargé correspond EXACTEMENT à
+/// l'un de ses deux côtés (DiLand teste <c>Math.Abs(largeur - côté) &lt;= 0</c>). Il
+/// s'arrête là et annonce une quantité illimitée ; on va plus loin en estimant le nombre
+/// de tirages possibles avec le papier qui reste.
 /// </summary>
 public static class De100Formats
 {
@@ -68,6 +71,10 @@ public static class De100Formats
         new("20x27", "20xL", 203, 273),
         new("20x30", "20xL", 203, 307),
         new("20x40", "20xL", 203, 400),
+        new("21xS", "21xS", 210, 50, IsVariable: true),
+        new("21xL", "21xL", 210, 210, IsVariable: true),
+        new("A4", "21xL", 210, 297),
+        new("A5", "21xS", 148, 210),
     ];
 
     /// <summary>

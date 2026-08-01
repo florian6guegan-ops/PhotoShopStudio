@@ -35,6 +35,7 @@ public static class ImageAdjuster
         if (a.Grayscale)
             image.Grayscale(PixelIntensityMethod.Rec709Luma);
 
+        ApplyAuto(image, a);
         ApplyTone(image, a);
 
         if (!a.Grayscale)
@@ -44,6 +45,29 @@ public static class ImageAdjuster
         }
 
         ApplyDetail(image, a);
+    }
+
+    /// <summary>
+    /// Les trois corrections automatiques de DiLand, appliquées avant les réglages fins.
+    ///
+    /// L'ordre entre elles n'est pas indifférent : la dominante se neutralise d'abord,
+    /// sinon l'étirement des niveaux la fige en l'amplifiant canal par canal. Le contraste
+    /// vient en dernier, sur une image déjà juste en couleur.
+    /// </summary>
+    private static void ApplyAuto(IMagickImage<byte> image, ImageAdjustments a)
+    {
+        // sur une image déjà désaturée, corriger une dominante n'a plus d'objet
+        if (a.AutoColor && !a.Grayscale)
+            image.WhiteBalance();
+
+        // « niveaux » : chaque canal est étiré sur toute la plage
+        if (a.AutoLevels)
+            image.AutoLevel();
+
+        // « contraste » : on étire la luminosité sans redistribuer les canaux entre eux,
+        // ce qui préserve l'équilibre des couleurs — c'est ce qui le distingue des niveaux
+        if (a.AutoContrast)
+            image.Normalize();
     }
 
     /// <summary>

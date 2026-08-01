@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Text.Json;
+using ImageMagick;
 using Studio.Core.Catalog;
 using Studio.Core.Domain;
 using Studio.Imaging;
@@ -168,6 +169,13 @@ public sealed class PrintOrchestrator
     private void SubmitToMinilab(Order order, Envelope envelope, List<RenderedPage> pages)
     {
         var machine = ChooseMinilabMachine(pages);
+        var paperWidthMm = _minilab!.LoadedPaperWidthMm(machine);
+
+        // vérifié AVANT le moindre envoi : demander un format que le rouleau chargé ne
+        // permet pas ne donne pas un tirage plus petit, mais un tirage faux — la machine
+        // avertit que le papier n'est pas adapté et gâche la feuille. Constaté en
+        // boutique le 01/08/2026.
+        EnsurePaperFits(pages, machine, paperWidthMm);
 
         WriteSpoolState(order, envelope, SpoolState.Spooled);
         envelope.Status = EnvelopeStatus.Spooled;
@@ -177,23 +185,21 @@ public sealed class PrintOrchestrator
 
         // la finition doit être celle du papier réellement chargé : annoncer « brillant »
         // sur du lustré fausse le rendu
-        var surface = _minilab!.LoadedSurface(machine);
+        var surface = _minilab.LoadedSurface(machine);
 
         var handles = new List<string>();
         foreach (var page in pages)
         {
             var product = page.Product;
-
-            // le minilab attend le grand côté en premier, en millimètres
-            var longSide = Math.Max(page.WidthMm, page.HeightMm);
-            var shortSide = Math.Min(page.WidthMm, page.HeightMm);
+            var (largeur, longueur) = MinilabPrintSize(page.WidthMm, page.HeightMm, paperWidthMm);
+            var image = FitPageToRoll(page, largeur, longueur);
 
             var job = new De100PrintJob(
                 JobId: $"{order.DisplayNumber}-{envelope.Number}-{handles.Count + 1:000}",
-                ImagePath: page.Path,
-                WidthMm: longSide,
-                HeightMm: shortSide,
-                PrintSizeName: MinilabSizeName(product, longSide, shortSide),
+                ImagePath: image,
+                WidthMm: largeur,
+                HeightMm: longueur,
+                PrintSizeName: MinilabSizeName(product, largeur, longueur),
                 Surface: surface,
                 Copies: page.Copies);
 
@@ -222,15 +228,169 @@ public sealed class PrintOrchestrator
                 : pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)));
 
     /// <summary>
+    /// Refuse l'enveloppe entière si l'un de ses formats ne peut pas sortir du rouleau
+    /// chargé. Le contrôle porte sur toutes les pages avant le premier envoi : sur une
+    /// enveloppe de trois pages dont la deuxième est impossible, il ne faut pas non plus
+    /// avoir tiré la première.
+    /// </summary>
+    private void EnsurePaperFits(List<RenderedPage> pages, char machine, int paperWidthMm)
+    {
+        // largeur inconnue (machine avare en informations) : on laisse passer plutôt que
+        // de bloquer la boutique sur un défaut de remontée
+        if (paperWidthMm <= 0) return;
+
+        foreach (var page in pages)
+        {
+            if (FitsPaperWidth(page.WidthMm, page.HeightMm, paperWidthMm)) continue;
+
+            var petitCote = Math.Min(page.WidthMm, page.HeightMm);
+
+            // on annonce les produits du catalogue qui sortiraient VRAIMENT de ce rouleau,
+            // et non les noms de format du minilab : c'est en produits que l'opérateur
+            // parle au client, et la liste des formats sous-estime ce qui est possible
+            // (elle ignore les tirages à bandes blanches)
+            var possibles = _catalog.Enabled
+                .Where(p => p.Output == ProductOutput.FujiMinilab)
+                .Where(p => FitsPaperWidth(p.WidthMm, p.HeightMm, paperWidthMm))
+                .Select(p => p.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // le plus étroit des rouleaux qui conviendrait, pour dire lequel charger
+            var rouleau = De100Formats.All
+                .Select(f => f.ShortSideMm)
+                .Concat(De100Formats.All.Select(f => f.LengthMm))
+                .Where(largeur => largeur >= petitCote)
+                .DefaultIfEmpty(0)
+                .Min();
+
+            throw new InvalidOperationException(
+                $"Le rouleau chargé dans la machine {machine} fait {paperWidthMm} mm de large : " +
+                $"le {page.Product.Name} a besoin d'au moins {petitCote:0} mm. " +
+                "Rien n'a été envoyé au minilab.\n\n" +
+                (possibles.Count > 0
+                    ? "Ce papier permet : " + string.Join(", ", possibles) + "."
+                    : "Aucun produit du catalogue ne sort de ce rouleau.") +
+                (rouleau > 0 ? $"\n\nPour ce produit, chargez le rouleau de {rouleau} mm." : ""));
+        }
+    }
+
+    /// <summary>
+    /// Règle du minilab, isolée pour être vérifiable : le tirage sort si le côté qui se
+    /// pose en travers du rouleau y tient.
+    ///
+    /// Ce n'est PAS une égalité. DiLand tire un 13×18 sur du 152 : le côté de 127 se pose
+    /// en travers, et les 25 mm qui restent sortent en bandes blanches (mode « produits
+    /// flexibles », voir <see cref="MinilabPrintSize"/>). Vérifié dans son journal, qui
+    /// montre 26 envois « 152x180 ». Seul un rouleau plus étroit que le petit côté rend
+    /// le tirage réellement impossible.
+    /// </summary>
+    internal static bool FitsPaperWidth(double pageWidthMm, double pageHeightMm, int paperWidthMm) =>
+        Math.Min(pageWidthMm, pageHeightMm) <= paperWidthMm + Tolerance;
+
+    /// <summary>
+    /// Cale la page sur ce que le minilab va réellement tirer : la photo se pose le long
+    /// du rouleau, et les bandes blanches comblent la différence de largeur.
+    ///
+    /// Sans ce calage, la machine reçoit une image de 127 mm de large en annonçant un
+    /// tirage de 152 : elle l'étire, et la photo sort déformée. C'est la contrepartie du
+    /// mode « produits flexibles » de DiLand, qui compose lui aussi l'image à la taille
+    /// du rouleau avant d'envoyer (<c>ResizeImage</c> dans son pilote).
+    ///
+    /// La rotation suit la même règle que lui : une photo paysage tirée sur un rouleau
+    /// plus étroit que son grand côté part dans l'autre sens — elle ne rentrerait pas
+    /// autrement.
+    /// </summary>
+    /// <returns>Le fichier à envoyer : l'original si rien n'était à corriger.</returns>
+    private static string FitPageToRoll(RenderedPage page, double rollWidthMm, double lengthMm)
+    {
+        const int dpi = 300; // le DE100 travaille à 300 ppp, quel que soit le produit
+
+        var cibleW = MmPx.ToPixels(rollWidthMm, dpi);
+        var cibleH = MmPx.ToPixels(lengthMm, dpi);
+
+        using var image = new MagickImage(page.Path);
+
+        var pivote = image.Width > image.Height != cibleW > cibleH && image.Width != image.Height;
+        if (pivote) image.Rotate(90);
+
+        if (!pivote && image.Width == (uint)cibleW && image.Height == (uint)cibleH)
+            return page.Path;
+
+        image.BackgroundColor = MagickColors.White;
+        image.Extent((uint)cibleW, (uint)cibleH, Gravity.Center, MagickColors.White);
+
+        var sortie = Path.Combine(
+            Path.GetDirectoryName(page.Path)!,
+            Path.GetFileNameWithoutExtension(page.Path) + "-rouleau.png");
+
+        image.Write(sortie);
+        return sortie;
+    }
+
+    /// <summary>
+    /// Les deux cotes que le minilab attend, en millimètres : la largeur du rouleau
+    /// d'abord, la longueur de coupe ensuite.
+    ///
+    /// C'est la règle du pilote de DiLand, relevée par décompilation le 01/08/2026, et
+    /// elle ne se devine pas : la première cote n'est PAS le grand côté du tirage, c'est
+    /// TOUJOURS la largeur du rouleau chargé. La seconde est la longueur de coupe, une
+    /// fois la page posée en travers du rouleau dans le sens qui gâche le moins.
+    ///
+    /// Vérifiée sur les 9 336 tirages du journal de DiLand : les douze cotes distinctes
+    /// qu'il a envoyées depuis juillet sont toutes reproduites à l'identique, sur les
+    /// trois rouleaux qui se sont succédé (152, 203, 210).
+    ///
+    /// L'erreur coûte cher et se voit mal : sur un rouleau de 152, un 10×15 donne
+    /// « 152x102 » dans les deux raisonnements (son grand côté EST la largeur du
+    /// rouleau), donc tout semble marcher. Un 15×20 donne « 152x203 » ici et « 203x152 »
+    /// avec la règle du grand côté — la machine comprend alors qu'on lui demande un
+    /// rouleau de 203, avertit que le papier n'est pas adapté, et gâche le tirage.
+    /// C'est exactement ce qui est arrivé en boutique le 01/08/2026.
+    /// </summary>
+    /// <param name="paperWidthMm">Largeur du rouleau chargé ; 0 = inconnue.</param>
+    internal static (double PaperWidthMm, double LengthMm) MinilabPrintSize(
+        double pageWidthMm, double pageHeightMm, int paperWidthMm)
+    {
+        // largeur inconnue : on retombe sur le grand côté, faute de mieux
+        if (paperWidthMm <= 0)
+            return (Math.Max(pageWidthMm, pageHeightMm), Math.Min(pageWidthMm, pageHeightMm));
+
+        // la page se pose dans un sens ou dans l'autre : chacun de ses deux côtés peut
+        // aller en travers du rouleau. On ne garde que ceux qui y tiennent, et on prend
+        // le plus large — c'est lui qui laisse le moins de blanc de chaque côté.
+        var poses = new[]
+        {
+            (EnTravers: pageWidthMm, Longueur: pageHeightMm),
+            (EnTravers: pageHeightMm, Longueur: pageWidthMm),
+        };
+
+        var possible = poses
+            .Where(p => p.EnTravers <= paperWidthMm + Tolerance)
+            .OrderByDescending(p => p.EnTravers)
+            .ToList();
+
+        // rien ne tient : le rouleau est plus étroit que le petit côté. On rend quand
+        // même une cote cohérente, EnsurePaperFits refusera avant le moindre envoi.
+        return possible.Count == 0
+            ? (paperWidthMm, Math.Max(pageWidthMm, pageHeightMm))
+            : (paperWidthMm, possible[0].Longueur);
+    }
+
+    /// <summary>Jeu admis sur les cotes en millimètres, arrondis de rendu compris.</summary>
+    private const double Tolerance = 1.5;
+
+    /// <summary>
     /// Nom de format attendu par le minilab.
     ///
-    /// Ce n'est PAS le nom commercial : le DE100 attend « 152x102 », les millimètres
-    /// grand côté en premier. Envoyer « 10x15 » ferait rejeter la commande. Un produit
-    /// peut malgré tout imposer son propre libellé.
+    /// Ce n'est PAS le nom commercial : le DE100 attend « 152x203 », les millimètres,
+    /// largeur de rouleau en premier (voir <see cref="MinilabPrintSize"/>). Envoyer
+    /// « 15x20 » ferait rejeter la commande. Un produit peut malgré tout imposer son
+    /// propre libellé.
     /// </summary>
-    internal static string MinilabSizeName(Product product, double longSideMm, double shortSideMm) =>
+    internal static string MinilabSizeName(Product product, double paperWidthMm, double lengthMm) =>
         string.IsNullOrWhiteSpace(product.MinilabPrintSizeName)
-            ? $"{longSideMm:0}x{shortSideMm:0}"
+            ? $"{paperWidthMm:0}x{lengthMm:0}"
             : product.MinilabPrintSizeName!;
 
     /// <summary>
@@ -336,7 +496,7 @@ public sealed class PrintOrchestrator
                         var cellH = MmPx.ToPixels(sheet.CellHeightMm, product.Dpi);
                         ImagePipeline.RenderIdSheetToFile(new RenderRequest(
                                 sourcePath, cellW, cellH,
-                                item.Crop, item.RotationQuarterTurns, FitMode.Fill, 0,
+                                item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees, FitMode.Fill, 0,
                                 item.Adjustments, iccPath),
                             item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
                             targetW, targetH, output, product.Dpi,
@@ -352,6 +512,7 @@ public sealed class PrintOrchestrator
                             itemW, itemH,
                             item.Crop,
                             item.RotationQuarterTurns,
+                            item.FineRotationDegrees,
                             item.FitOverride ?? product.DefaultFit,
                             borderPx,
                             item.Adjustments,

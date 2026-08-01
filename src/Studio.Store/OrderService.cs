@@ -9,6 +9,7 @@ public sealed record DraftItem(
     int Quantity,
     CropSpec Crop,
     int RotationQuarterTurns,
+    double FineRotationDegrees,
     FitMode? FitOverride,
     ImageAdjustments Adjustments,
     /// <summary>Planches identité : nombre de photos sur la planche, null = celui du produit.</summary>
@@ -31,6 +32,9 @@ public sealed class OrderService
         _store = store;
         _counter = counter;
     }
+
+    /// <summary>Commandes des N derniers jours, la plus récente d'abord.</summary>
+    public IReadOnlyList<Order> Recent(int days = 30) => _store.ScanRecent(days);
 
     /// <param name="id">Clé d'idempotence fournie par le créateur (borne, téléphone) ; null = générée.</param>
     public Order CreateOrder(string source, IReadOnlyList<DraftItem> items, string? customerName = null, Guid? id = null)
@@ -85,6 +89,7 @@ public sealed class OrderService
                         Quantity = item.Quantity,
                         Crop = item.Crop,
                         RotationQuarterTurns = item.RotationQuarterTurns,
+                        FineRotationDegrees = item.FineRotationDegrees,
                         FitOverride = item.FitOverride,
                         SheetCopiesOverride = item.SheetCopiesOverride,
                         Finish = item.Finish,

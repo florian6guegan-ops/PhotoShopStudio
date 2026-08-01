@@ -13,6 +13,23 @@ public sealed class ImageAdjustments
 {
     public bool Grayscale { get; set; }
 
+    /// <summary>
+    /// Trois corrections automatiques, reprises telles quelles de DiLand — où ce sont
+    /// aussi des bascules, et non des actions qu'on subit (<c>AutoLevels</c>,
+    /// <c>AutoContrast</c>, <c>AutoColor</c>, chacune avec son « annuler »).
+    ///
+    /// Elles s'appliquent AVANT les réglages fins : l'opérateur redresse d'un clic, puis
+    /// affine s'il le juge utile. Dans l'autre ordre, l'automatique effacerait son travail.
+    /// </summary>
+    /// <summary>Étire chaque canal sur toute la plage : le classique « niveaux ».</summary>
+    public bool AutoLevels { get; set; }
+
+    /// <summary>Étire le contraste sans toucher à l'équilibre des couleurs.</summary>
+    public bool AutoContrast { get; set; }
+
+    /// <summary>Neutralise une dominante de couleur (intérieur jaune, ombre bleue).</summary>
+    public bool AutoColor { get; set; }
+
     /// <summary>Exposition en diaphragmes : +1 double la lumière, −1 la divise par deux.</summary>
     public double Exposure { get; set; }
 
@@ -55,7 +72,8 @@ public sealed class ImageAdjustments
     public double Sharpness { get; set; }
 
     public bool IsNeutral =>
-        !Grayscale && Exposure == 0 && Brightness == 0 && Contrast == 0 &&
+        !Grayscale && !AutoLevels && !AutoContrast && !AutoColor &&
+        Exposure == 0 && Brightness == 0 && Contrast == 0 &&
         Highlights == 0 && Shadows == 0 && Whites == 0 && Blacks == 0 &&
         Temperature == 0 && Tint == 0 && Saturation == 0 && Vibrance == 0 &&
         Clarity == 0 && Sharpness == 0;
@@ -72,6 +90,8 @@ public sealed class OrderItem
     public int Quantity { get; set; } = 1;
     /// <summary>Rotation utilisateur en quarts de tour horaires (0..3), après orientation EXIF.</summary>
     public int RotationQuarterTurns { get; set; }
+    /// <summary>Redressement fin en degrés (« Tilt » de DiLand), appliqué après les quarts de tour.</summary>
+    public double FineRotationDegrees { get; set; }
     public CropSpec Crop { get; set; } = CropSpec.Full;
     /// <summary>Si null, le mode par défaut du produit s'applique.</summary>
     public FitMode? FitOverride { get; set; }

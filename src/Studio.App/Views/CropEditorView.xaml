@@ -36,29 +36,42 @@
             </Grid>
         </Border>
 
-        <!-- Barre d'action -->
+        <!-- Barre d'action.
+             Grille et non DockPanel : dans un DockPanel, le groupe de gauche se sert en
+             premier et peut ne rien laisser à « Valider », qui disparaît alors de
+             l'écran — l'opérateur ne peut plus finir sa commande (constaté le
+             01/08/2026). Ici la colonne « Auto » de droite est servie d'abord, donc
+             Valider est toujours visible, et les outils de gauche passent à la ligne
+             quand la fenêtre est trop étroite. -->
         <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                    <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnRotate"
-                            ToolTip="Fait pivoter la PHOTO d'un quart de tour">⟳ Pivoter la photo</Button>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource FlatButton}" MinWidth="150" Margin="0,0,12,8" Click="OnRotate"
+                            ToolTip="Fait pivoter la PHOTO d'un quart de tour (Ctrl+←, Ctrl+→)">⟳ Pivoter la photo</Button>
                     <Button x:Name="FrameToggle" Style="{StaticResource FlatButton}" MinWidth="200"
-                            Margin="12,0,0,0" Click="OnToggleFrame"
+                            Margin="0,0,12,8" Click="OnToggleFrame"
                             ToolTip="Bascule le CADRE entre portrait et paysage, sans toucher à la photo"/>
                     <Button x:Name="FitToggle" Style="{StaticResource FlatButton}" MinWidth="180"
-                            Margin="12,0,0,0" Click="OnToggleFit"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="90" Margin="24,0,0,0"
-                            FontSize="30" Click="OnZoomOut">−</Button>
-                    <TextBlock Text="Zoom" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="12,0"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="90" FontSize="30" Click="OnZoomIn">+</Button>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="170" Margin="24,0,0,0"
-                            Click="OnReset">Réinitialiser</Button>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                            Margin="0,0,12,8" Click="OnToggleFit"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="90" Margin="12,0,12,8"
+                            FontSize="30" Click="OnZoomOut" ToolTip="Dézoomer">−</Button>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="90" Margin="0,0,12,8"
+                            FontSize="30" Click="OnZoomIn" ToolTip="Zoomer (Z)">+</Button>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="170" Margin="12,0,0,8"
+                            Click="OnReset" ToolTip="Annule le recadrage (R)">Réinitialiser</Button>
+                </WrapPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                     <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnCancel">Annuler</Button>
-                    <Button Style="{StaticResource BigButton}" Margin="12,0,0,0" Click="OnApply">✓ Valider</Button>
+                    <Button Style="{StaticResource BigButton}" Margin="12,0,0,0" Click="OnApply"
+                            ToolTip="Valide le recadrage (Ctrl+I)">✓ Valider</Button>
                 </StackPanel>
-            </DockPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

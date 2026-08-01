@@ -24,7 +24,7 @@ public class ImagePipelineTests : IDisposable
     }
 
     private static RenderRequest Request(string source, int w, int h, FitMode fit = FitMode.Fill, int border = 0) =>
-        new(source, w, h, CropSpec.Full, 0, fit, border, new ImageAdjustments());
+        new(source, w, h, CropSpec.Full, 0, 0, fit, border, new ImageAdjustments());
 
     [Fact]
     public void Fill_ProducesExactTargetDimensions()

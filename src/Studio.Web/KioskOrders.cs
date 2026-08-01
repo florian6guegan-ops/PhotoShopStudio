@@ -51,7 +51,7 @@ public sealed class KioskOrderReceiver
                 Path.Combine(photosFolder, Path.GetFileName(i.File)),
                 _catalog.Require(i.ProductCode),
                 Math.Clamp(i.Quantity, 1, 99),
-                CropSpec.Full, 0, null, new ImageAdjustments())).ToList();
+                CropSpec.Full, 0, 0, null, new ImageAdjustments())).ToList();
 
             var order = _orders.CreateOrder(dto.Source, items, dto.CustomerName, dto.Id);
             var ack = new KioskAck(order.DailyNumber, order.DisplayNumber, order.Total);

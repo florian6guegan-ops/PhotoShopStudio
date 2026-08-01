@@ -35,7 +35,7 @@ public class OrderServiceTests : IDisposable
     }
 
     private static DraftItem Draft(string path, Product product, int qty = 1) =>
-        new(path, product, qty, CropSpec.Full, 0, null, new ImageAdjustments());
+        new(path, product, qty, CropSpec.Full, 0, 0, null, new ImageAdjustments());
 
     [Fact]
     public void CreateOrder_GroupsEnvelopesByPrinterChannel()

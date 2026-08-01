@@ -50,8 +50,38 @@ public partial class CropEditorView : UserControl
         UpdateFitToggle();
         UpdateFrameToggle();
 
-        Loaded += async (_, _) => await LoadPhotoAsync();
+        AttachShortcuts();
+
+        Loaded += async (_, _) =>
+        {
+            await LoadPhotoAsync();
+            // sans le focus, les flèches et Ctrl+I n'arriveraient jamais jusqu'ici
+            Focus();
+        };
         Unloaded += (_, _) => _smoothZoom.Cancel();
+    }
+
+    /// <summary>
+    /// Les touches de DiLand, à l'identique — un opérateur qui a dix ans de DiLand dans
+    /// les doigts ne doit rien réapprendre. Relevées dans son <c>EditPhotosView</c>.
+    /// </summary>
+    private void AttachShortcuts()
+    {
+        Focusable = true;
+
+        new KeyMap()
+            .On(Key.R, () => Reset())
+            .On(Key.Z, () => _smoothZoom.Add(1 / 1.25))
+            .On([Key.Add, Key.OemPlus], () => _smoothZoom.Add(1 / 1.25))
+            .On([Key.Subtract, Key.OemMinus], () => _smoothZoom.Add(1.25))
+            .On(Key.C, ToggleFit)
+            .On(Key.T, ToggleFrame)
+            .On(Key.Escape, Navigator.Back)
+            .OnCtrl(Key.I, Apply)
+            .OnCtrl(Key.P, Navigator.Back)
+            .OnCtrl(Key.Left, () => Rotate(-1))
+            .OnCtrl(Key.Right, () => Rotate(1))
+            .Attach(this);
     }
 
     /// <summary>
@@ -241,16 +271,21 @@ public partial class CropEditorView : UserControl
     private void OnZoomIn(object sender, RoutedEventArgs e) => _smoothZoom.Add(1 / 1.25);
     private void OnZoomOut(object sender, RoutedEventArgs e) => _smoothZoom.Add(1.25);
 
-    private void OnRotate(object sender, RoutedEventArgs e)
+    private void OnRotate(object sender, RoutedEventArgs e) => Rotate(1);
+
+    /// <param name="direction">+1 pour un quart de tour horaire, −1 antihoraire.</param>
+    private void Rotate(int direction)
     {
-        _turns = (_turns + 1) % 4;
+        _turns = (_turns + direction + 4) % 4;
         ApplyRotation();
         ResetCrop(); // les repères changent : on repart du recadrage centré maximal
         UpdateFrameToggle();
         Redraw();
     }
 
-    private void OnToggleFit(object sender, RoutedEventArgs e)
+    private void OnToggleFit(object sender, RoutedEventArgs e) => ToggleFit();
+
+    private void ToggleFit()
     {
         _fit = _fit == FitMode.Fill ? FitMode.Fit : FitMode.Fill;
         UpdateFitToggle();
@@ -260,8 +295,10 @@ public partial class CropEditorView : UserControl
     private void UpdateFitToggle() =>
         FitToggle.Content = _fit == FitMode.Fill ? "Mode : Remplir" : "Mode : Entier";
 
+    private void OnToggleFrame(object sender, RoutedEventArgs e) => ToggleFrame();
+
     /// <summary>Bascule le cadre entre portrait et paysage, la photo restant telle quelle.</summary>
-    private void OnToggleFrame(object sender, RoutedEventArgs e)
+    private void ToggleFrame()
     {
         _frameLandscape = !(TargetAspect > 1);
         ResetCrop(); // le cadre change de proportions : on repart d'un recadrage centré
@@ -272,7 +309,9 @@ public partial class CropEditorView : UserControl
     private void UpdateFrameToggle() =>
         FrameToggle.Content = TargetAspect > 1 ? "Cadre : paysage" : "Cadre : portrait";
 
-    private void OnReset(object sender, RoutedEventArgs e)
+    private void OnReset(object sender, RoutedEventArgs e) => Reset();
+
+    private void Reset()
     {
         _turns = 0;
         _fit = FitMode.Fill;
@@ -286,7 +325,9 @@ public partial class CropEditorView : UserControl
 
     private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Back();
 
-    private void OnApply(object sender, RoutedEventArgs e)
+    private void OnApply(object sender, RoutedEventArgs e) => Apply();
+
+    private void Apply()
     {
         // en mode Entier le recadrage n'a pas de sens : on repart de l'image complète
         var crop = _fit == FitMode.Fill ? _crop : CropSpec.Full;

@@ -20,6 +20,13 @@ public interface IMinilabPrinter
     /// </summary>
     De100Surface LoadedSurface(char machineId);
 
+    /// <summary>
+    /// Largeur du rouleau réellement chargé, en millimètres. C'est elle qui décide des
+    /// formats tirables : demander un 15×20 sur un rouleau de 10 cm ne sort pas un 15×20,
+    /// la machine avertit et gâche du papier. 0 = largeur inconnue, on ne bloque alors rien.
+    /// </summary>
+    int LoadedPaperWidthMm(char machineId);
+
     /// <summary>Envoie un tirage et renvoie le handle de commande attribué par le minilab.</summary>
     string Submit(De100PrintJob job, char machineId);
 }
@@ -84,6 +91,14 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
 
         var info = _client.GetPrinterInfoAsync(machineId).GetAwaiter().GetResult();
         return info?.Media?.Surface ?? De100Surface.Glossy;
+    }
+
+    public int LoadedPaperWidthMm(char machineId)
+    {
+        EnsureConnected();
+
+        var info = _client.GetPrinterInfoAsync(machineId).GetAwaiter().GetResult();
+        return info?.Media?.PaperWidthMm ?? 0;
     }
 
     /// <summary>
