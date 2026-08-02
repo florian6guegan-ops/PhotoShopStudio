@@ -166,4 +166,4 @@ une régression du code. `Get-Process Studio.De100Host | Stop-Process` et tout r
 - [x] Catalogue de la boutique sauvegardé dans `catalog/boutique/`, avec
       `tools\Sauver-Catalogue.cmd` pour le rafraîchir. **Le lancer après chaque changement du
       catalogue**, sinon la copie vieillit en silence
-- [ ] `main` n'a pas bougé : la fusion de `pilotes-de100-dnp` reste à faire
+- [x] Fusionné dans `main` et poussé — `main` porte maintenant la version courante
