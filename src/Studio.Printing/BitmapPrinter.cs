@@ -49,10 +49,25 @@ public static class BitmapPrinter
         var h100 = (int)Math.Round(heightMm / 25.4 * 100);
         // certains pilotes (dont Microsoft Print to PDF) ignorent les formats personnalisés
         // et retombent en A4 : on privilégie donc un format déclaré par le pilote quand
-        // il correspond aux dimensions demandées (à ~1,5 mm près), dans les deux orientations
-        doc.DefaultPageSettings.PaperSize =
-            FindDriverPaperSize(doc.PrinterSettings, w100, h100)
-            ?? new PaperSize("Format produit", w100, h100);
+        // il correspond aux dimensions demandées, dans les deux orientations
+        var formatPilote = FindDriverPaperSize(doc.PrinterSettings, w100, h100);
+
+        // Une imprimante qui ne déclare QUE des formats privés n'accepte rien d'autre.
+        //
+        // La DS620 en publie onze (RawKind 119 à 129), et pas un seul format standard : son
+        // firmware sélectionne le média par cet identifiant. Un PaperSize fabriqué ici porte
+        // RawKind 0, soit DMPAPER_USER — la machine reçoit une forme qu'elle ne connaît pas
+        // et JETTE le travail, sans erreur ni page. C'est ce qui est arrivé aux planches
+        // d'identité les 01 et 02/08/2026 : le journal montre « page obtenue 152×102 mm
+        // (Format produit) », et rien n'est sorti.
+        //
+        // On préfère donc refuser en nommant les formats disponibles. Les pilotes qui
+        // savent composer un format libre (Print to PDF, XPS…) déclarent, eux, des formats
+        // standard : le repli leur reste ouvert.
+        if (formatPilote is null && DeclareUniquementDesFormatsPrives(doc.PrinterSettings))
+            throw FormatIntrouvable(printerName, widthMm, heightMm, doc.PrinterSettings);
+
+        doc.DefaultPageSettings.PaperSize = formatPilote ?? new PaperSize("Format produit", w100, h100);
         doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         doc.OriginAtMargins = false;
         doc.PrintController = new StandardPrintController(); // pas de fenêtre de progression
@@ -102,21 +117,117 @@ public static class BitmapPrinter
     }
 
     /// <summary>
-    /// Cherche parmi les formats déclarés par le pilote un format aux dimensions
-    /// demandées (tolérance ~1,5 mm), dans les deux orientations.
+    /// Vérifie que le pilote saura sortir ce format — <b>avant</b> le moindre envoi.
+    ///
+    /// À appeler au début de l'enveloppe : la même vérification a lieu dans
+    /// <see cref="Print"/>, mais elle y survient une fois l'enveloppe déjà marquée « remise
+    /// au spouleur », ce qui la ferait proposer à la réimpression au démarrage suivant alors
+    /// que rien n'est parti.
+    /// </summary>
+    public static void EnsurePageSizeAvailable(string printerName, double widthMm, double heightMm)
+    {
+        var settings = new PrinterSettings { PrinterName = printerName };
+        if (!settings.IsValid)
+            throw new InvalidOperationException($"Imprimante invalide ou hors ligne : « {printerName} »");
+
+        var w100 = (int)Math.Round(widthMm / 25.4 * 100);
+        var h100 = (int)Math.Round(heightMm / 25.4 * 100);
+
+        if (FindDriverPaperSize(settings, w100, h100) is not null) return;
+        if (!DeclareUniquementDesFormatsPrives(settings)) return;
+
+        throw FormatIntrouvable(printerName, widthMm, heightMm, settings);
+    }
+
+    private static InvalidOperationException FormatIntrouvable(
+        string printerName, double widthMm, double heightMm, PrinterSettings settings) =>
+        new($"L'imprimante « {printerName} » n'accepte que ses propres formats de papier, et aucun " +
+            $"ne correspond à {widthMm:0.#} × {heightMm:0.#} mm. Rien n'a été imprimé.\n\n" +
+            "Formats acceptés : " + DecrireLesFormats(settings) + ".\n\n" +
+            "Corrigez les dimensions du produit dans Catalogue pour qu'elles tombent sur l'un d'eux.");
+
+    /// <summary>
+    /// Le format déclaré par le pilote qui convient le mieux au tirage demandé, dans l'une
+    /// ou l'autre orientation, ou null s'il n'y en a aucun.
+    ///
+    /// Trois règles, dans cet ordre :
+    ///
+    /// 1. <b>jamais plus petit</b> que le tirage (au-delà de <see cref="Rognage"/>) — une
+    ///    page trop courte rogne l'image en silence ;
+    /// 2. <b>pas trop grand</b> non plus (<see cref="Etirement"/>) : l'image est ensuite
+    ///    dessinée aux dimensions de la page retenue, donc un format bien plus large
+    ///    l'étirerait. Sur une planche d'identité, un demi-millimètre de trop suffit à
+    ///    faire refuser la photo au guichet ;
+    /// 3. entre les candidats, <b>le plus proche</b>.
+    ///
+    /// L'ancienne version n'acceptait qu'un écart de 1,5 mm et prenait le premier venu :
+    /// le (6x4) de la DS620, à 156,2 × 104,9 mm, était écarté pour une planche déclarée à
+    /// 152 × 102, et le travail partait sur un format que la machine ne connaît pas.
     /// </summary>
     private static PaperSize? FindDriverPaperSize(PrinterSettings settings, int width100, int height100)
     {
-        const int tolerance = 6; // centièmes de pouce ≈ 1,5 mm
-
-        PaperSize? swappedMatch = null;
-        foreach (PaperSize paper in settings.PaperSizes)
-        {
-            if (Math.Abs(paper.Width - width100) <= tolerance && Math.Abs(paper.Height - height100) <= tolerance)
-                return paper;
-            if (Math.Abs(paper.Width - height100) <= tolerance && Math.Abs(paper.Height - width100) <= tolerance)
-                swappedMatch ??= paper;
-        }
-        return swappedMatch;
+        var formats = settings.PaperSizes.Cast<PaperSize>().ToList();
+        var retenu = ChoisirFormat(formats.Select(p => (p.Width, p.Height)).ToList(), width100, height100);
+        return retenu < 0 ? null : formats[retenu];
     }
+
+    /// <summary>
+    /// La règle de choix, isolée du pilote pour être vérifiable : aucun poste de
+    /// développement n'a de DS620 branchée.
+    /// </summary>
+    /// <param name="formats">Formats déclarés par le pilote, en centièmes de pouce.</param>
+    /// <returns>Indice du format retenu, ou −1 si aucun ne convient.</returns>
+    internal static int ChoisirFormat(IReadOnlyList<(int Width, int Height)> formats,
+        int width100, int height100)
+    {
+        var retenu = -1;
+        var meilleureNote = int.MaxValue;
+
+        for (var i = 0; i < formats.Count; i++)
+        {
+            var (w, h) = formats[i];
+
+            // le format déclaré peut l'être dans l'autre sens (« PR (4x6) » contre « (6x4) ») :
+            // c'est l'appelant qui bascule ensuite la page en paysage
+            foreach (var (largeur, hauteur, retourne) in new[] { (w, h, false), (h, w, true) })
+            {
+                var dLargeur = largeur - width100;
+                var dHauteur = hauteur - height100;
+
+                if (dLargeur < -Rognage || dHauteur < -Rognage) continue;
+                if (dLargeur > Etirement || dHauteur > Etirement) continue;
+
+                // à écart égal, le format déclaré DANS LE BON SENS l'emporte : il évite la
+                // bascule en paysage, donc un aller-retour de plus par le pilote
+                var note = 2 * (Math.Abs(dLargeur) + Math.Abs(dHauteur)) + (retourne ? 1 : 0);
+                if (note >= meilleureNote) continue;
+
+                meilleureNote = note;
+                retenu = i;
+            }
+        }
+        return retenu;
+    }
+
+    /// <summary>Ce qu'on accepte de perdre sur un bord, en centièmes de pouce (~1,5 mm).</summary>
+    private const int Rognage = 6;
+
+    /// <summary>Ce qu'on accepte d'étirer sur un bord, en centièmes de pouce (~2,5 mm).</summary>
+    private const int Etirement = 10;
+
+    /// <summary>
+    /// Vrai si le pilote ne publie aucun format standard : ses formats sont des formes
+    /// privées, identifiées par un numéro que lui seul comprend (les onze de la DS620).
+    /// Lui demander autre chose ne donne pas un tirage approximatif, mais aucun tirage.
+    /// </summary>
+    private static bool DeclareUniquementDesFormatsPrives(PrinterSettings settings)
+    {
+        var formats = settings.PaperSizes.Cast<PaperSize>().ToList();
+        return formats.Count > 0 && formats.All(p => p.Kind == PaperKind.Custom);
+    }
+
+    private static string DecrireLesFormats(PrinterSettings settings) =>
+        string.Join(", ", settings.PaperSizes
+            .Cast<PaperSize>()
+            .Select(p => $"{p.PaperName} ({p.Width / 100.0 * 25.4:0.#} × {p.Height / 100.0 * 25.4:0.#} mm)"));
 }

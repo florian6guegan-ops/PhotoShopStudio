@@ -140,5 +140,33 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
 
+        <!-- Texte courant posé sur le fond sombre.
+
+             WPF donne le NOIR à tout TextBlock qui n'hérite pas d'autre chose : sur nos
+             cartes (#1E2731), l'écriture disparaît purement et simplement. C'est ce qui
+             rendait illisibles les quantités, les totaux et la moitié de la fiche produit
+             (signalé le 02/08/2026).
+
+             Aucun style IMPLICITE n'est posé, et c'est délibéré : il repeindrait aussi le
+             contenu des menus déroulants et des listes, qui gardent le fond clair du
+             système — on troquerait du noir sur noir contre du blanc sur blanc. Un
+             TextBlock hérite en revanche de la couleur du Bouton ou du Contrôle qui le
+             contient : à l'intérieur d'un BigButton ou d'un FlatButton, il n'y a rien à
+             faire.
+
+             RÈGLE : tout TextBlock posé directement dans un Grid, un Border ou une
+             StackPanel doit porter une couleur — ce style, Hint, PageTitle, ou la sienne. -->
+        <Style x:Key="Texte" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        </Style>
+
+        <!-- Valeur chiffrée d'un réglage : quantité, nombre de copies, total. -->
+        <Style x:Key="Valeur" TargetType="TextBlock" BasedOn="{StaticResource Texte}">
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+        </Style>
+
     </Application.Resources>
 </Application>

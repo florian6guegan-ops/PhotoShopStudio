@@ -57,4 +57,16 @@ public enum FitMode
 {
     Fill, // « plein » : recadre pour remplir le format
     Fit,  // « entier » : image complète avec marges blanches
+
+    /// <summary>
+    /// « Polaroid » : la photo remplit une fenêtre presque carrée, posée dans un cadre blanc
+    /// aux cotes du film 600 — marges fines sur trois côtés, large bande en bas.
+    ///
+    /// La teinte délavée et chaude du Polaroid vient AVEC : c'est une seule et même
+    /// intention, et l'opérateur qui veut des couleurs franches choisit un tirage ordinaire.
+    ///
+    /// Ajouté EN FIN d'énumération : les commandes déjà enregistrées portent des valeurs
+    /// numériques qu'il ne faut pas déplacer.
+    /// </summary>
+    Polaroid,
 }

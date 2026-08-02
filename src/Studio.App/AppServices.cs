@@ -70,6 +70,15 @@ public sealed class AppServices
     public required BackupConfig Backup { get; init; }
 
     /// <summary>
+    /// Le WiFi du magasin, pour le code QR de connexion de l'écran « téléphone ».
+    ///
+    /// Il est saisi à la main parce que ce poste n'a PAS de carte sans fil : Windows n'a
+    /// donc aucun profil à lire. Laissé vide, on retombe sur la lecture automatique, qui
+    /// vaudra pour un poste portable.
+    /// </summary>
+    public required WifiConfig Wifi { get; init; }
+
+    /// <summary>
     /// Les impressions en cours. Partagé par toute l'application : c'est lui qui permet
     /// de rendre la main à l'opérateur pendant qu'une commande s'imprime.
     /// </summary>
@@ -166,6 +175,10 @@ public sealed class AppServices
 
         var minilab = new De100BridgePrinter { Log = message => FileLog.Write(message) };
 
+        // Les agrandissements journalisaient déjà média, placement et durées — dans le vide,
+        // faute d'abonné. C'est la seule trace du temps passé à réduire, convertir et spouler.
+        Studio.Printing.LargeFormat.LargeFormatPrinter.Log = message => FileLog.Write(message);
+
         var services = new AppServices
         {
             DataRoot = dataRoot,
@@ -174,12 +187,16 @@ public sealed class AppServices
             Orders = new OrderService(store, counter),
             // le minilab se connecte à la demande : construire l'objet ne démarre pas le relais
             Minilab = minilab,
-            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog"), minilab),
+            Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog"), minilab)
+            {
+                Log = message => FileLog.Write(message),
+            },
             Thumbnails = new ThumbnailService(Path.Combine(dataRoot, "cache")),
             Upload = new UploadServer(Path.Combine(dataRoot, "incoming")),
             Mode = LoadConfig<ModeConfig>(Path.Combine(dataRoot, "config", "mode.json")),
             Ticket = LoadConfig<TicketConfig>(Path.Combine(dataRoot, "config", "ticket.json")),
             Backup = LoadConfig<BackupConfig>(Path.Combine(dataRoot, "config", "backup.json")),
+            Wifi = LoadConfig<WifiConfig>(Path.Combine(dataRoot, "config", "wifi.json")),
         };
 
         // Ce que la MACHINE a réellement sorti, par opposition à ce qu'on lui a envoyé.
@@ -203,6 +220,6 @@ public sealed class AppServices
     public void ReloadCatalog()
     {
         Catalog = ProductCatalog.Load(ProductsJson);
-        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir);
+        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir) { Log = message => FileLog.Write(message) };
     }
 }

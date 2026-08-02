@@ -35,6 +35,7 @@ internal partial class EditSelectionView : UserControl
 {
     private readonly List<PhotoGridView.PhotoItem> _photos;
     private readonly Action _imprimer;
+    private readonly Action? _personnalise;
     private PhotoGridView.PhotoItem _courante;
 
     private Point _dernierPoint;
@@ -43,12 +44,18 @@ internal partial class EditSelectionView : UserControl
 
     /// <param name="photos">Les photos retenues, dans l'ordre de la planche.</param>
     /// <param name="imprimer">Lance l'impression de la sélection, telle que la prépare l'écran précédent.</param>
-    public EditSelectionView(List<PhotoGridView.PhotoItem> photos, Action imprimer)
+    /// <param name="personnalise">
+    /// Bascule la commande vers une taille libre. Null quand elle y est déjà, ou quand
+    /// l'écran appelant ne sait pas la faire.
+    /// </param>
+    public EditSelectionView(List<PhotoGridView.PhotoItem> photos, Action imprimer,
+        Action? personnalise = null)
     {
         ArgumentNullException.ThrowIfNull(photos);
 
         _photos = photos;
         _imprimer = imprimer;
+        _personnalise = personnalise;
         _courante = photos[0];
 
         // rien n'est visé en entrant : on travaille la photo affichée, et l'on vise
@@ -110,11 +117,17 @@ internal partial class EditSelectionView : UserControl
         Surface.FrameRotationRequested += (_, _) => PivoterCadre(_courante);
     }
 
+    /// <summary>Cadrage effectif de la photo courante : le sien, sinon celui du produit.</summary>
+    private FitMode CadrageCourant =>
+        _courante.FitOverride ?? _courante.Product?.DefaultFit ?? FitMode.Fill;
+
     /// <summary>Libellé du bouton de mode, lu par la liaison du panneau.</summary>
-    public string FitLabel =>
-        (_courante.FitOverride ?? _courante.Product?.DefaultFit ?? FitMode.Fill) == FitMode.Fill
-            ? "Mode : remplir le format"
-            : "Mode : photo entière";
+    public string FitLabel => CadrageCourant switch
+    {
+        FitMode.Fill => "Mode : remplir le format",
+        FitMode.Polaroid => "Mode : Polaroid",
+        _ => "Mode : photo entière",
+    };
 
     // — affichage —
 
@@ -134,6 +147,21 @@ internal partial class EditSelectionView : UserControl
             ? $"Format : {produit.Name}"
             : "Format : à choisir";
         FitButton.Content = FitLabel;
+
+        // le Polaroid n'est pas un mode qu'on bascule : c'est la forme du produit
+        FitButton.IsEnabled = CadrageCourant != FitMode.Polaroid;
+
+        // le contour ne se conçoit qu'avec du blanc à recouper : les marges de la « photo
+        // entière », ou le cadre du Polaroid — dont le bord est justement ce qu'on découpe
+        var aRecouper = CadrageCourant is FitMode.Fit or FitMode.Polaroid;
+        CutBorderCheck.IsEnabled = aRecouper;
+        CutBorderCheck.IsChecked = _courante.CutBorder;
+        CutBorderCheck.ToolTip = CadrageCourant switch
+        {
+            FitMode.Fit => "Trace un trait noir de 0,2 mm sur le bord de la photo, à suivre aux ciseaux.",
+            FitMode.Polaroid => "Trace le bord du Polaroid, bande blanche du bas comprise : c'est là qu'on coupe.",
+            _ => "Sans objet en « remplir le format » : la photo occupe tout le tirage, il n'y a rien à recouper.",
+        };
 
         GrayscaleToggle.IsChecked = _courante.Adjustments.Grayscale;
         AutoLevelsToggle.IsChecked = _courante.Adjustments.AutoLevels;
@@ -676,30 +704,61 @@ internal partial class EditSelectionView : UserControl
     {
         if (sender is not Button bouton) return;
 
-        ProductMenu.Ouvrir(bouton, _courante.Product, _courante.Finish, (produit, finition) =>
+        ProductMenu.Ouvrir(bouton, _courante.Product, _courante.Finish,
+            (produit, finition) => PoserLeFormat(produit, finition),
+            // la taille libre s'applique à TOUTE la commande, pas aux seules photos visées :
+            // une planche ne mélange pas deux tailles. L'écran appelant s'en charge et nous
+            // reprend la main.
+            personnalise: _personnalise,
+            // un agrandissement, lui, se pose photo par photo comme n'importe quel format :
+            // c'est un vrai produit du catalogue, pas une planche à composer
+            agrandissement: () => Navigator.Go(
+                new CustomEnlargementView(produit => PoserLeFormat(produit, null)),
+                "Agrandissement personnalisé"));
+    }
+
+    /// <summary>
+    /// Applique un format aux photos visées.
+    ///
+    /// Le format suit les photos visées, comme les corrections : c'est ainsi qu'on tire trois
+    /// photos d'une planche en 13×18 et le reste en 10×15, sans repasser par la grille.
+    /// </summary>
+    private void PoserLeFormat(Product produit, string? finition)
+    {
+        var visees = Visees();
+        foreach (var photo in visees)
         {
-            // le format suit les photos visées, comme les corrections : c'est ainsi qu'on
-            // tire trois photos d'une planche en 13×18 et le reste en 10×15, sans repasser
-            // par la grille
-            var visees = Visees();
-            foreach (var photo in visees)
-            {
-                photo.Product = produit;
-                photo.Finish = finition;
-                VignetteBientot(photo);
-            }
+            photo.Product = produit;
+            photo.Finish = finition;
+            VignetteBientot(photo);
+        }
 
-            FileLog.Write($"Format « {produit.Name} » sur {visees.Count} photo(s)");
+        FileLog.Write($"Format « {produit.Name} » sur {visees.Count} photo(s)");
 
-            // les pixels ne changent pas, mais le cadre oui : la surface doit le relire
-            _versionSurface++;
-            MontrerSurface();
-            Refresh();
-        });
+        // les pixels ne changent pas, mais le cadre oui : la surface doit le relire
+        _versionSurface++;
+        MontrerSurface();
+        Refresh();
     }
 
     private void OnRotateFrame(object sender, RoutedEventArgs e) => PivoterCadre(_courante);
     private void OnRotatePhoto(object sender, RoutedEventArgs e) => PivoterPhoto(_courante, 1);
+
+    /// <summary>
+    /// Le contour de découpe, posé sur toutes les photos VISÉES — comme les corrections.
+    ///
+    /// Une commande de vingt tirages à marges blanches se recoupe entière : cocher photo par
+    /// photo n'aurait servi personne.
+    /// </summary>
+    private void OnCutBorderChanged(object sender, RoutedEventArgs e)
+    {
+        var actif = CutBorderCheck.IsChecked == true;
+        var visees = Visees();
+
+        foreach (var photo in visees) photo.CutBorder = actif;
+
+        FileLog.Write($"Contour de découpe {(actif ? "activé" : "retiré")} sur {visees.Count} photo(s)");
+    }
 
     private void OnToggleFit(object sender, RoutedEventArgs e)
     {
@@ -707,6 +766,11 @@ internal partial class EditSelectionView : UserControl
         if (produit is null) return;
 
         var actuel = _courante.FitOverride ?? produit.DefaultFit;
+
+        // le Polaroid ne se bascule pas : sortir de ce mode donnerait un tirage sans cadre
+        // que rien ne signalerait. Le bouton est grisé, ceci n'est qu'une ceinture de plus.
+        if (actuel == FitMode.Polaroid) return;
+
         var voulu = actuel == FitMode.Fill ? FitMode.Fit : FitMode.Fill;
         _courante.FitOverride = voulu == produit.DefaultFit ? null : voulu;
 

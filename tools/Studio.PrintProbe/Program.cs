@@ -13,6 +13,7 @@ return args switch
 {
     ["list"] => ListPrinters(),
     ["addforms"] => AddShopForms(),
+    ["papier", var printer, var w, var h] => CheckPaper(printer, ParseMm(w), ParseMm(h)),
     ["devmode", var printer, var file] => CaptureDevMode(printer, file),
     ["test", var printer, var w, var h] => PrintTestPage(printer, ParseMm(w), ParseMm(h), null),
     ["test", var printer, var w, var h, var pdf] => PrintTestPage(printer, ParseMm(w), ParseMm(h), pdf),
@@ -29,6 +30,7 @@ static int Usage()
     Console.WriteLine("""
         Studio.PrintProbe — diagnostic impression
           list                                  liste les imprimantes et leurs formats
+          papier <imprimante> <Lmm> <Hmm>       ce format passera-t-il ? (n'imprime rien)
           devmode <imprimante> <fichier.bin>    capture les réglages pilote (dialogue)
           test <imprimante> <Lmm> <Hmm> [pdf]   page de test calibrée (règle cm)
         """);
@@ -68,6 +70,29 @@ static int ListPrinters()
         Console.WriteLine();
     }
     return 0;
+}
+
+/// <summary>
+/// Dit si un format sortira de cette imprimante, sans gâcher une feuille.
+///
+/// C'est le contrôle qui manquait : une DS620 à qui on demande un format qu'elle ne
+/// déclare pas accepte le travail et ne sort rien. On peut désormais le vérifier avant
+/// d'enregistrer un produit au catalogue.
+/// </summary>
+static int CheckPaper(string printer, double widthMm, double heightMm)
+{
+    Console.WriteLine($"Format demandé : {widthMm:0.#} × {heightMm:0.#} mm sur « {printer} »");
+    try
+    {
+        BitmapPrinter.EnsurePageSizeAvailable(printer, widthMm, heightMm);
+        Console.WriteLine("  ✓ le pilote a une forme pour ce format — le tirage sortira.");
+        return 0;
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.WriteLine("  ✗ " + ex.Message);
+        return 1;
+    }
 }
 
 static int CaptureDevMode(string printer, string file)

@@ -95,8 +95,26 @@ public sealed class OrderItem
     public CropSpec Crop { get; set; } = CropSpec.Full;
     /// <summary>Si null, le mode par défaut du produit s'applique.</summary>
     public FitMode? FitOverride { get; set; }
+    /// <summary>
+    /// Contour noir sur le bord de la photo, à suivre aux ciseaux. Sans objet en « remplir le
+    /// format », où la photo occupe tout le tirage et où il n'y a rien à recouper.
+    /// </summary>
+    public bool CutBorder { get; set; }
     /// <summary>Planches identité : nombre de photos sur la planche. Si null, celui du produit s'applique.</summary>
     public int? SheetCopiesOverride { get; set; }
+
+    /// <summary>
+    /// Planches identité : taille d'une case, en millimètres. Null = celle du produit.
+    ///
+    /// C'est le DOCUMENT visé qui la fixe, et non le papier : un passeport espagnol fait
+    /// 26 × 32 mm là où le français fait 35 × 45. Le produit ne porte qu'une seule cellule,
+    /// et l'écran d'identité en propose 274 — sans cette valeur, toutes les planches
+    /// sortaient au format français, quel que soit le document choisi à l'écran précédent.
+    /// </summary>
+    public double? SheetCellWidthMm { get; set; }
+
+    /// <summary>Hauteur de la case ; voir <see cref="SheetCellWidthMm"/>.</summary>
+    public double? SheetCellHeightMm { get; set; }
     /// <summary>Nom de la finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
     public string? Finish { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();
@@ -110,8 +128,40 @@ public sealed class OrderLine
     public decimal UnitPrice { get; set; }
     public List<OrderItem> Items { get; set; } = new();
 
+    /// <summary>
+    /// Taille demandée par l'opérateur pour le format « personnalisé », en millimètres.
+    ///
+    /// Non nulle = la ligne est une PLANCHE : ses <see cref="Items"/> ne sont plus des
+    /// tirages pleine page mais des cases à caser côte à côte, et
+    /// <see cref="ProductCode"/> désigne le PAPIER que le logiciel a retenu pour les
+    /// contenir. Tout le circuit d'impression continue donc de voir un produit ordinaire du
+    /// catalogue — c'est ce qui permet au minilab de fonctionner sans rien savoir de cette
+    /// nouveauté.
+    /// </summary>
+    public double? CustomCellWidthMm { get; set; }
+
+    /// <summary>Hauteur de la case ; voir <see cref="CustomCellWidthMm"/>.</summary>
+    public double? CustomCellHeightMm { get; set; }
+
+    /// <summary>Vrai quand la ligne est une planche à taille choisie.</summary>
+    public bool IsCustomSheet => CustomCellWidthMm is > 0 && CustomCellHeightMm is > 0;
+
+    /// <summary>Nombre de cases demandées, planches personnalisées comprises.</summary>
     public int TotalPrints => Items.Sum(i => i.Quantity);
-    public decimal Total => UnitPrice * TotalPrints;
+
+    /// <summary>
+    /// Ce qui est facturé.
+    ///
+    /// Une planche personnalisée est facturée AU PAPIER : une planche 13×18 coûte un tirage
+    /// 13×18, quel que soit le nombre de photos qu'on y a casées. Le nombre de planches est
+    /// posé dans <see cref="SheetCount"/> au moment où le logiciel choisit le papier — il ne
+    /// se recalcule pas ici, sous peine de changer le prix d'une commande déjà encaissée si
+    /// le catalogue bouge.
+    /// </summary>
+    public decimal Total => UnitPrice * (IsCustomSheet ? Math.Max(1, SheetCount) : TotalPrints);
+
+    /// <summary>Nombre de planches à tirer ; n'a de sens que pour une ligne personnalisée.</summary>
+    public int SheetCount { get; set; }
 }
 
 /// <summary>

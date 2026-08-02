@@ -49,6 +49,28 @@ public sealed class PriceTier
 {
     public int FromQuantity { get; set; } = 1;
     public decimal UnitPrice { get; set; }
+
+    /// <summary>
+    /// Prix unitaire applicable : le palier le plus avantageux déjà atteint, ou
+    /// <paramref name="basePrice"/> s'il n'y a pas de palier.
+    ///
+    /// Posé ici plutôt que dans <see cref="Product"/> parce que le choix du papier d'une
+    /// planche personnalisée doit appliquer la MÊME règle sans avoir de produit sous la
+    /// main — deux règles de tarif finiraient par diverger, et l'écart se verrait en caisse.
+    /// </summary>
+    public static decimal UnitPriceFor(IReadOnlyList<PriceTier> tiers, decimal basePrice, int quantity)
+    {
+        if (quantity < 1)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "La quantité doit être au moins 1.");
+        if (tiers is null || tiers.Count == 0) return basePrice;
+
+        var applicable = tiers
+            .Where(t => t.FromQuantity <= quantity)
+            .OrderByDescending(t => t.FromQuantity)
+            .FirstOrDefault();
+
+        return applicable?.UnitPrice ?? basePrice;
+    }
 }
 
 public sealed class Product
@@ -103,21 +125,66 @@ public sealed class Product
     public string Channel => string.IsNullOrEmpty(PrinterChannel) ? PrinterName : PrinterChannel!;
 
     /// <summary>
+    /// Copie complète et indépendante.
+    ///
+    /// Le Catalogue s'en sert pour deux gestes : éditer sans salir le catalogue en mémoire
+    /// si l'opérateur annule, et dupliquer. Dans les deux cas, <b>un champ oublié ici est un
+    /// champ perdu</b>.
+    ///
+    /// Il en manquait huit quand cette copie vivait dans l'écran : <see cref="Output"/>,
+    /// <see cref="MinilabMachineId"/>, <see cref="MinilabPrintSizeName"/>,
+    /// <see cref="PriceTiers"/>, et quatre de <see cref="SheetSpec"/>. Modifier un tirage du
+    /// minilab le transformait donc en produit imprimante — <see cref="Output"/> retombait
+    /// sur son défaut — et effaçait ses paliers de tarif.
+    ///
+    /// Elle est posée ICI, et non dans l'écran, pour être vérifiable : un essai compare la
+    /// liste des propriétés de la classe à ce que la copie restitue, et échoue dès qu'une
+    /// propriété est ajoutée sans être recopiée.
+    /// </summary>
+    public Product Copy() => new()
+    {
+        Code = Code,
+        Name = Name,
+        WidthMm = WidthMm,
+        HeightMm = HeightMm,
+        PrinterName = PrinterName,
+        Output = Output,
+        MinilabMachineId = MinilabMachineId,
+        MinilabPrintSizeName = MinilabPrintSizeName,
+        PrinterChannel = PrinterChannel,
+        Dpi = Dpi,
+        Price = Price,
+        DefaultFit = DefaultFit,
+        BorderMm = BorderMm,
+        IccProfile = IccProfile,
+        DevmodeFile = DevmodeFile,
+        Finishes = Finishes
+            .Select(f => new FinishOption
+            {
+                Name = f.Name,
+                DevmodeFile = f.DevmodeFile,
+                IccProfile = f.IccProfile,
+            })
+            .ToList(),
+        PriceTiers = PriceTiers
+            .Select(t => new PriceTier { FromQuantity = t.FromQuantity, UnitPrice = t.UnitPrice })
+            .ToList(),
+        Sheet = Sheet is null ? null : new SheetSpec
+        {
+            Copies = Sheet.Copies,
+            CellWidthMm = Sheet.CellWidthMm,
+            CellHeightMm = Sheet.CellHeightMm,
+            GapMm = Sheet.GapMm,
+            CutMarks = Sheet.CutMarks,
+            CutBorder = Sheet.CutBorder,
+            DateStamp = Sheet.DateStamp,
+        },
+        Enabled = Enabled,
+    };
+
+    /// <summary>
     /// Prix unitaire applicable pour <paramref name="quantity"/> exemplaires : le palier
     /// le plus avantageux déjà atteint. Sans palier défini, c'est <see cref="Price"/>.
     /// </summary>
-    public decimal UnitPriceFor(int quantity)
-    {
-        if (quantity < 1)
-            throw new ArgumentOutOfRangeException(nameof(quantity), "La quantité doit être au moins 1.");
-        if (PriceTiers.Count == 0)
-            return Price;
-
-        var applicable = PriceTiers
-            .Where(t => t.FromQuantity <= quantity)
-            .OrderByDescending(t => t.FromQuantity)
-            .FirstOrDefault();
-
-        return applicable?.UnitPrice ?? Price;
-    }
+    public decimal UnitPriceFor(int quantity) => PriceTier.UnitPriceFor(PriceTiers, Price, quantity);
 }

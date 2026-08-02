@@ -45,8 +45,8 @@
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Style="{StaticResource FlatButton}" Width="48" Height="44" Padding="0"
                                                 FontSize="24" Click="OnTileMinus" Tag="{Binding}">−</Button>
-                                        <TextBlock Text="{Binding QuantityLabel}" FontSize="24" FontWeight="Bold"
-                                                   VerticalAlignment="Center" MinWidth="46" TextAlignment="Center"/>
+                                        <TextBlock Text="{Binding QuantityLabel}" Style="{StaticResource Valeur}"
+                                                   MinWidth="46"/>
                                         <Button Style="{StaticResource FlatButton}" Width="48" Height="44" Padding="0"
                                                 FontSize="24" Click="OnTilePlus" Tag="{Binding}">+</Button>
                                     </StackPanel>

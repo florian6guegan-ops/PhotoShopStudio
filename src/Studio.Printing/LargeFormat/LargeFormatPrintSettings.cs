@@ -29,11 +29,18 @@ public sealed class LargeFormatPrintSettings
     /// <summary>Profil de l'image source, pour information (« Profil du document »).</summary>
     public string DocumentProfile { get; set; } = "sRGB IEC61966-2.1";
 
+    /// <summary>
+    /// Le profil ICC réellement incorporé au fichier, s'il y en a un : c'est le point de
+    /// DÉPART de la conversion. Null = sRGB, ce que l'atelier produit par défaut.
+    /// </summary>
+    public byte[]? DocumentProfileIcc { get; set; }
+
     public ColorHandling ColorHandling { get; set; } = ColorHandling.PrinterManagesColor;
 
     /// <summary>
     /// Profil ICC du couple papier/encre, utilisé seulement quand l'application gère les
-    /// couleurs. Chemin d'un fichier de <c>catalog/icc</c> ou du dossier couleurs de Windows.
+    /// couleurs. CHEMIN COMPLET d'un fichier de <c>catalog/icc</c> ou du dossier couleur de
+    /// Windows — un simple nom de fichier ne suffit pas à ouvrir le profil.
     /// </summary>
     public string? PrinterProfile { get; set; }
 
@@ -55,6 +62,17 @@ public sealed class LargeFormatPrintSettings
     public double TopMm { get; set; }
 
     public double LeftMm { get; set; }
+
+    /// <summary>
+    /// Trace un contour noir sur le bord du tirage, pour le recouper à la sortie.
+    ///
+    /// Un agrandissement posé sur une feuille plus grande sort entouré de blanc : rien ne dit
+    /// alors où passer les ciseaux. Le trait est FIN — deux dixièmes de millimètre, à cheval sur
+    /// le bord — pour que le coup de ciseaux le fasse disparaître ; un trait large laisserait un
+    /// liseré noir sur la photo coupée. Même règle que les planches identité
+    /// (<c>ImagePipeline.DrawCutBorders</c>).
+    /// </summary>
+    public bool CutBorder { get; set; }
 
     /// <summary>
     /// Vraie ou fausse combinaison ? Renvoie les problèmes qui empêcheraient d'imprimer,
@@ -97,6 +115,7 @@ public sealed class LargeFormatPrintSettings
         DevModeBytes = DevModeBytes?.ToArray(),
         Landscape = Landscape,
         DocumentProfile = DocumentProfile,
+        DocumentProfileIcc = DocumentProfileIcc?.ToArray(),
         ColorHandling = ColorHandling,
         PrinterProfile = PrinterProfile,
         RenderingIntent = RenderingIntent,
@@ -107,5 +126,6 @@ public sealed class LargeFormatPrintSettings
         Center = Center,
         TopMm = TopMm,
         LeftMm = LeftMm,
+        CutBorder = CutBorder,
     };
 }

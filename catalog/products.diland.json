@@ -699,6 +699,23 @@
                        ]
     },
     {
+        "Code":  "bord-blanc-21x29-7",
+        "Name":  "Bord blanc 21x29,7",
+        "WidthMm":  210,
+        "HeightMm":  297,
+        "PrinterName":  "",
+        "Output":  "FujiMinilab",
+        "Dpi":  300,
+        "Price":  7.9,
+        "DefaultFit":  "Fit",
+        "BorderMm":  5,
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ],
+        "PrinterChannel":  "Minilab DE100"
+    },
+    {
         "Code":  "21x29-7",
         "Name":  "21x29,7",
         "WidthMm":  210,

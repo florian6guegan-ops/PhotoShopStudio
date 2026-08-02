@@ -39,17 +39,13 @@ public partial class PhoneUploadView : UserControl
             var (session, url) = App.Services.Upload.CreateSession();
             _session = session;
 
-            using var stream = new MemoryStream(QrPng.For(url));
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.StreamSource = stream;
-            bitmap.EndInit();
-            bitmap.Freeze();
-            QrImage.Source = bitmap;
+            QrImage.Source = EnImage(QrPng.For(url));
             UrlText.Text = url;
 
             _poll.Start();
+
+            // le WiFi vient après : il interroge netsh, l'écran ne doit pas l'attendre
+            await AfficherLeWifiAsync();
         }
         catch (Exception ex)
         {
@@ -59,6 +55,49 @@ public partial class PhoneUploadView : UserControl
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
             Navigator.Back();
         }
+    }
+
+    /// <summary>
+    /// Le code de connexion au réseau, quand ce poste en connaît un.
+    ///
+    /// <b>Sans profil lisible, il n'y a pas de message d'erreur</b> : la colonne disparaît et
+    /// le code d'envoi reprend son titre sans numéro. Un poste en Ethernet est un cas normal,
+    /// pas une panne — et l'opérateur ne peut rien y faire depuis cet écran.
+    /// </summary>
+    private async Task AfficherLeWifiAsync()
+    {
+        // config/wifi.json d'abord : le poste de l'atelier n'a pas de carte sans fil, donc
+        // aucun profil que Windows saurait rendre. La lecture automatique ne sert que sur
+        // un portable, et netsh démarre deux processus — hors du fil d'interface.
+        var reseau = App.Services.Wifi.Network() ?? await Task.Run(WifiQr.Current);
+        if (reseau is null) return;
+
+        try
+        {
+            WifiQrImage.Source = EnImage(WifiQr.Png(reseau));
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Code QR WiFi impossible à produire pour « {reseau.Ssid} »", ex);
+            return;
+        }
+
+        WifiSsidText.Text = reseau.Ssid;
+        WifiPanel.Visibility = Visibility.Visible;
+        UploadStepText.Text = "2.  Envoyer les photos";
+    }
+
+    /// <summary>Un PNG en mémoire, gelé : ces codes ne changent plus une fois affichés.</summary>
+    private static BitmapImage EnImage(byte[] png)
+    {
+        using var flux = new MemoryStream(png);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = flux;
+        image.EndInit();
+        image.Freeze();
+        return image;
     }
 
     private void RefreshCount()

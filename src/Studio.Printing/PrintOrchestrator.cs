@@ -76,6 +76,15 @@ public sealed class PrintOrchestrator
     private readonly string _catalogDir;
     private readonly IMinilabPrinter? _minilab;
 
+    /// <summary>
+    /// Journal optionnel : trace la durée de rendu de chaque tirage.
+    ///
+    /// Le rendu écrit un PNG aux dimensions du produit — 48 Mpx pour un 50×70 à 300 ppp — et
+    /// c'est lui qui s'exécute quand l'opérateur appuie sur « Imprimer » dans la grille,
+    /// AVANT que la boîte d'agrandissement ne s'ouvre. Les deux attentes se confondaient.
+    /// </summary>
+    public Action<string>? Log { get; set; }
+
     /// <param name="catalogDir">Dossier catalog/ contenant les DEVMODE et profils ICC.</param>
     /// <param name="minilab">
     /// Accès au minilab Fuji. Null = les produits qui en dépendent seront refusés
@@ -146,6 +155,13 @@ public sealed class PrintOrchestrator
                         "il faut un processus relais.\n\n" +
                         "En attendant, choisissez un produit imprimé sur la DS620.");
             }
+
+            // Le format doit être vérifié ICI, avant le rendu et avant que l'enveloppe ne
+            // passe à « Spooled ». Une imprimante à sublimation ne connaît que ses propres
+            // formes de papier : lui en demander une autre ne donne pas un tirage
+            // approximatif mais AUCUN tirage, et sans erreur. Voir BitmapPrinter.
+            foreach (var produit in products.DistinctBy(p => p.Code))
+                BitmapPrinter.EnsurePageSizeAvailable(produit.PrinterName, produit.WidthMm, produit.HeightMm);
         }
 
         WriteSpoolState(order, envelope, SpoolState.Rendering);
@@ -499,7 +515,9 @@ public sealed class PrintOrchestrator
             Path.GetDirectoryName(page.Path)!,
             Path.GetFileNameWithoutExtension(page.Path) + "-rouleau.png");
 
-        image.Write(sortie);
+        // même règle que les rendus : la compression maximale de Magick.NET coûte huit fois
+        // le prix de la compression rapide, sur des images que rien ne conserve
+        MagickInit.Write(image, sortie);
         return sortie;
     }
 
@@ -620,11 +638,22 @@ public sealed class PrintOrchestrator
         var dossier = _store.GetRendersFolder(order);
         if (!Directory.Exists(dossier)) return [];
 
+        // l'extension n'est plus fixe : les agrandissements sortent en JPEG, les planches
+        // en PNG (voir Extension). C'est le PRÉFIXE qui identifie l'enveloppe.
         return Directory
-            .GetFiles(dossier, $"env{envelope.Number:00}-*.png")
+            .GetFiles(dossier, $"env{envelope.Number:00}-*")
+            .Where(f => RendusConnus.Contains(Path.GetExtension(f)))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
     }
+
+    /// <summary>
+    /// Extensions qu'un rendu peut porter. Le dossier des rendus contient aussi les images
+    /// recalées pour le rouleau du minilab (<c>…-rouleau.png</c>), que le préfixe ne suffit
+    /// pas à écarter — mais elles ne concernent pas le circuit manuel.
+    /// </summary>
+    private static readonly HashSet<string> RendusConnus =
+        new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg" };
 
     /// <summary>L'opérateur confirme que le tirage est bien sorti (rien à réimprimer).</summary>
     public void ConfirmPrinted(Order order, Envelope envelope)
@@ -643,6 +672,29 @@ public sealed class PrintOrchestrator
     /// </summary>
     private sealed record RenderedPage(
         string Path, int Copies, double WidthMm, double HeightMm, Product Product, string? Finish);
+
+    /// <summary>
+    /// Extension du fichier rendu, donc son format.
+    ///
+    /// <b>JPEG pour les agrandissements, PNG pour tout le reste.</b> Ce n'est pas une
+    /// préférence esthétique, c'est une mesure : l'encodeur PNG de Magick.NET met
+    /// <b>12 secondes</b> à écrire un 40×50 à 300 ppp (27,9 Mpx) là où le JPEG en qualité 95
+    /// met <b>0,7 seconde</b>, quel que soit le niveau de compression demandé. Sur deux
+    /// tirages, c'est vingt-deux secondes rendues à l'opérateur, devant le client.
+    ///
+    /// Deux raisons de ne pas l'étendre au reste :
+    ///
+    /// 1. <b>Le minilab</b> reçoit le fichier tel quel, par le SDK Fuji. Ses formats ne se
+    ///    vérifient pas depuis un poste de développement, et un tirage raté coûte du papier.
+    ///    Ses rendus sont d'ailleurs petits (un 10×15 fait 2 Mpx) : il n'y a rien à y gagner.
+    /// 2. <b>Les planches</b> portent des contours de découpe de deux dixièmes de millimètre
+    ///    et de la date en petits caractères, autour desquels le JPEG laisse des franges.
+    ///
+    /// Les agrandissements, eux, ne sont relus que par nous (GDI+, boîte grand format), et
+    /// leur source est déjà un JPEG d'appareil ou de scanner.
+    /// </summary>
+    private static string Extension(Product product) =>
+        product.Output == ProductOutput.ManualFile && product.Sheet is null ? ".jpg" : ".png";
 
     private List<RenderedPage> RenderEnvelope(Order order, Envelope envelope,
         IProgress<PrintProgress>? progression = null, CancellationToken ct = default)
@@ -664,82 +716,218 @@ public sealed class PrintOrchestrator
             var targetH = MmPx.ToPixels(product.HeightMm, product.Dpi);
             var borderPx = MmPx.ToPixels(product.BorderMm, product.Dpi);
 
-            for (var i = 0; i < line.Items.Count; i++)
+            // format « personnalisé » : la ligne ne donne pas un tirage par photo mais des
+            // planches où les photos sont casées côte à côte
+            if (line.IsCustomSheet)
             {
-                // rien n'est parti à ce stade : on peut s'arrêter net, sans conséquence
-                ct.ThrowIfCancellationRequested();
-
-                var item = line.Items[i];
-                var output = Path.Combine(rendersDir, $"env{envelope.Number:00}-{line.ProductCode}-{i + 1:000}.png");
-
-                // canevas orienté comme la photo (une paysage part en 15×10, pas rognée en 10×15) ;
-                // les planches (identité) gardent leur orientation fixe
-                var sourcePath = Path.Combine(photosDir, item.FileName);
-                var (itemW, itemH) = (targetW, targetH);
-                var (widthMm, heightMm) = (product.WidthMm, product.HeightMm);
-                if (product.Sheet is null)
-                {
-                    var (imgW, imgH) = ImagePipeline.GetOrientedSize(sourcePath, item.RotationQuarterTurns);
-
-                    // le recadrage se compte sur l'image REDRESSÉE : c'est dans ce repère
-                    // qu'il faut juger de son orientation, sinon un cadrage presque carré
-                    // peut partir en paysage alors qu'il a été posé en portrait
-                    var (toileW, toileH) = CropMath.TiltedCanvas(imgW, imgH, item.FineRotationDegrees);
-
-                    (itemW, itemH) = CropMath.OrientCanvas(targetW, targetH,
-                        (int)Math.Round(toileW), (int)Math.Round(toileH), item.Crop);
-                    if (itemW != targetW)
-                        (widthMm, heightMm) = (product.HeightMm, product.WidthMm);
-                }
-
-                // le profil de la finition (média) l'emporte sur celui du produit
-                var iccFile = product.Finishes
-                                  .FirstOrDefault(f => string.Equals(f.Name, item.Finish, StringComparison.OrdinalIgnoreCase))
-                                  ?.IccProfile
-                              ?? product.IccProfile;
-                var iccPath = iccFile is not null
-                    ? Path.Combine(_catalogDir, "icc", iccFile)
-                    : null;
-
-                if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
-                {
-                    if (product.Sheet is { } sheet)
-                    {
-                        // planche identité : la cellule est rendue en Fill au format cellule
-                        var cellW = MmPx.ToPixels(sheet.CellWidthMm, product.Dpi);
-                        var cellH = MmPx.ToPixels(sheet.CellHeightMm, product.Dpi);
-                        ImagePipeline.RenderIdSheetToFile(new RenderRequest(
-                                sourcePath, cellW, cellH,
-                                item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees, FitMode.Fill, 0,
-                                item.Adjustments, iccPath),
-                            item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
-                            targetW, targetH, output, product.Dpi,
-                            sheet.CutBorder,
-                            // la date de la commande, pas l'heure du rendu : une planche
-                            // rejouée après un incident doit porter la même mention
-                            sheet.DateStamp ? order.CreatedAt.DateTime : null);
-                    }
-                    else
-                    {
-                        ImagePipeline.RenderToFile(new RenderRequest(
-                            sourcePath,
-                            itemW, itemH,
-                            item.Crop,
-                            item.RotationQuarterTurns,
-                            item.FineRotationDegrees,
-                            item.FitOverride ?? product.DefaultFit,
-                            borderPx,
-                            item.Adjustments,
-                            iccPath),
-                            output, product.Dpi);
-                    }
-                }
-
-                pages.Add(new RenderedPage(output, item.Quantity, widthMm, heightMm, product, item.Finish));
-                progression?.Report(new PrintProgress(PrintProgress.Rendu, pages.Count, total));
+                pages.AddRange(RenderCustomSheets(envelope, line, product, photosDir,
+                    rendersDir, pages.Count, progression, total, ct));
+                continue;
             }
+
+            // Les photos d'une ligne sont rendues EN PARALLÈLE.
+            //
+            // Magick.NET est livré sans OpenMP sur ce poste (ResourceLimits.Thread vaut 1 et
+            // refuse d'être changé) : un rendu occupe donc UN cœur sur les huit. Les faire à
+            // la queue leu leu laissait la machine à 12 % pendant que le client attendait.
+            //
+            // Le parallélisme est bridé à quatre : chaque rendu d'agrandissement tient une
+            // cinquantaine de mégapixels en mémoire, et ImageMagick bascule sur le disque
+            // au-delà de son budget de 2 Go (voir MagickInit) — ce qui coûterait plus cher
+            // que le gain.
+            var rendus = new RenderedPage?[line.Items.Count];
+            var dejaFaites = pages.Count;
+            var faits = 0;
+
+            var options = new ParallelOptions
+            {
+                CancellationToken = ct,
+                MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 4),
+            };
+
+            try
+            {
+                Parallel.For(0, line.Items.Count, options, i =>
+                {
+                    var item = line.Items[i];
+                    var output = Path.Combine(rendersDir,
+                        $"env{envelope.Number:00}-{line.ProductCode}-{i + 1:000}{Extension(product)}");
+
+                    // canevas orienté comme la photo (une paysage part en 15×10, pas rognée en 10×15) ;
+                    // les planches (identité) gardent leur orientation fixe
+                    var sourcePath = Path.Combine(photosDir, item.FileName);
+                    var (itemW, itemH) = (targetW, targetH);
+                    var (widthMm, heightMm) = (product.WidthMm, product.HeightMm);
+                    if (product.Sheet is null)
+                    {
+                        var (imgW, imgH) = ImagePipeline.GetOrientedSize(sourcePath, item.RotationQuarterTurns);
+
+                        // le recadrage se compte sur l'image REDRESSÉE : c'est dans ce repère
+                        // qu'il faut juger de son orientation, sinon un cadrage presque carré
+                        // peut partir en paysage alors qu'il a été posé en portrait
+                        var (toileW, toileH) = CropMath.TiltedCanvas(imgW, imgH, item.FineRotationDegrees);
+
+                        (itemW, itemH) = CropMath.OrientCanvas(targetW, targetH,
+                            (int)Math.Round(toileW), (int)Math.Round(toileH), item.Crop);
+                        if (itemW != targetW)
+                            (widthMm, heightMm) = (product.HeightMm, product.WidthMm);
+                    }
+
+                    var iccPath = IccPath(product, item.Finish);
+
+                    var chrono = System.Diagnostics.Stopwatch.StartNew();
+                    if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
+                    {
+                        if (product.Sheet is { } sheet)
+                        {
+                            // planche identité : la cellule est rendue en Fill au format cellule
+                            //
+                            // La taille de la case vient de l'ARTICLE quand il en porte une :
+                            // c'est le document visé qui la fixe (26 × 32 mm pour un passeport
+                            // espagnol), et le produit n'en connaît qu'une. Sans cela, toutes
+                            // les planches sortaient au format français.
+                            var cellW = MmPx.ToPixels(item.SheetCellWidthMm ?? sheet.CellWidthMm, product.Dpi);
+                            var cellH = MmPx.ToPixels(item.SheetCellHeightMm ?? sheet.CellHeightMm, product.Dpi);
+                            ImagePipeline.RenderIdSheetToFile(new RenderRequest(
+                                    sourcePath, cellW, cellH,
+                                    item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees, FitMode.Fill, 0,
+                                    item.Adjustments, iccPath),
+                                item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
+                                targetW, targetH, output, product.Dpi,
+                                sheet.CutBorder,
+                                // la date de la commande, pas l'heure du rendu : une planche
+                                // rejouée après un incident doit porter la même mention
+                                sheet.DateStamp ? order.CreatedAt.DateTime : null);
+                        }
+                        else
+                        {
+                            ImagePipeline.RenderToFile(new RenderRequest(
+                                sourcePath,
+                                itemW, itemH,
+                                item.Crop,
+                                item.RotationQuarterTurns,
+                                item.FineRotationDegrees,
+                                item.FitOverride ?? product.DefaultFit,
+                                borderPx,
+                                item.Adjustments,
+                                iccPath,
+                                item.CutBorder),
+                                output, product.Dpi);
+                        }
+                    }
+
+                    Log?.Invoke($"Rendu {Path.GetFileName(output)} ({itemW}×{itemH} px, {product.Dpi} ppp) " +
+                                $"en {chrono.ElapsedMilliseconds} ms");
+
+                    // la place dans la liste est celle de la photo, pas celle de la fin du
+                    // rendu : l'ordre des tirages ne doit rien devoir au hasard des fils
+                    rendus[i] = new RenderedPage(output, item.Quantity, widthMm, heightMm, product, item.Finish);
+
+                    progression?.Report(new PrintProgress(
+                        PrintProgress.Rendu, dejaFaites + Interlocked.Increment(ref faits), total));
+                });
+            }
+            catch (AggregateException groupe) when (groupe.InnerExceptions.Count > 0)
+            {
+                // Parallel.For emballe ce que le corps a levé. L'opérateur doit lire
+                // « fichier illisible : 003.jpg », et non « une ou plusieurs erreurs se
+                // sont produites ».
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                    .Capture(groupe.InnerExceptions[0]).Throw();
+            }
+
+            pages.AddRange(rendus.Select(p => p!));
         }
         return pages;
+    }
+
+    /// <summary>
+    /// Les planches d'une ligne « personnalisée ».
+    ///
+    /// La ligne porte le PAPIER dans <c>ProductCode</c> et la taille des cases dans
+    /// <c>CustomCell*Mm</c> : on recalcule ici la capacité et l'orientation de la case, au
+    /// lieu de les enregistrer dans la commande. C'est volontaire — le calcul est déterministe
+    /// et vit à un seul endroit ; le mémoriser dans la commande créerait un second endroit
+    /// susceptible de diverger du premier après un changement de catalogue.
+    ///
+    /// Chaque planche est une page à un exemplaire : les copies d'une même photo sont des
+    /// cases de la planche, pas des tirages répétés.
+    /// </summary>
+    private IEnumerable<RenderedPage> RenderCustomSheets(Envelope envelope,
+        OrderLine line, Product product, string photosDir, string rendersDir,
+        int dejaFaites, IProgress<PrintProgress>? progression, int total, CancellationToken ct)
+    {
+        var celluleWmm = line.CustomCellWidthMm!.Value;
+        var celluleHmm = line.CustomCellHeightMm!.Value;
+
+        var papier = new PaperOption(product.Code, product.Name, product.WidthMm, product.HeightMm, product.Dpi);
+        var (parPlanche, pivotee) = CustomSheetLayout.CapacityOf(papier, celluleWmm, celluleHmm);
+
+        if (parPlanche < 1)
+            throw new InvalidOperationException(
+                $"Une photo de {celluleWmm:0.#} × {celluleHmm:0.#} mm ne tient pas sur un " +
+                $"{product.Name}. Rien n'a été imprimé.");
+
+        var plan = new CustomSheetPlan(papier, 0, parPlanche, pivotee);
+        var (celluleW, celluleH) = CustomSheetLayout.CellPixels(plan, celluleWmm, celluleHmm);
+
+        var planches = CustomSheetLayout.Distribute(
+            line.Items.Select(i => i.Quantity).ToList(), parPlanche);
+
+        for (var n = 0; n < planches.Count; n++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var output = Path.Combine(rendersDir,
+                $"env{envelope.Number:00}-{line.ProductCode}-perso-{n + 1:000}.png");
+
+            if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
+            {
+                var cellules = planches[n]
+                    .Select(place =>
+                    {
+                        var item = line.Items[place.PhotoIndex];
+                        return new ImagePipeline.SheetCell(
+                            new RenderRequest(
+                                Path.Combine(photosDir, item.FileName),
+                                celluleW, celluleH,
+                                item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees,
+                                // la taille demandée est exacte : la photo remplit sa case,
+                                // le cadrage a été posé pour ce rapport dans l'écran d'édition
+                                item.FitOverride ?? FitMode.Fill,
+                                0,
+                                item.Adjustments,
+                                IccPath(product, item.Finish)),
+                            place.Copies);
+                    })
+                    .ToList();
+
+                ImagePipeline.RenderCustomSheetToFile(
+                    cellules, SheetSpec.DefaultGapMm, cutMarks: true,
+                    MmPx.ToPixels(product.WidthMm, product.Dpi),
+                    MmPx.ToPixels(product.HeightMm, product.Dpi),
+                    output, product.Dpi,
+                    // le contour est le seul repère utile : on coupe une planche aux ciseaux
+                    cutBorder: true);
+            }
+
+            yield return new RenderedPage(output, 1, product.WidthMm, product.HeightMm,
+                product, line.Items[0].Finish);
+
+            progression?.Report(new PrintProgress(
+                PrintProgress.Rendu, Math.Min(total, dejaFaites + n + 1), total));
+        }
+    }
+
+    /// <summary>Profil ICC applicable : celui de la finition (média) l'emporte sur celui du produit.</summary>
+    private string? IccPath(Product product, string? finish)
+    {
+        var fichier = product.Finishes
+                          .FirstOrDefault(f => string.Equals(f.Name, finish, StringComparison.OrdinalIgnoreCase))
+                          ?.IccProfile
+                      ?? product.IccProfile;
+
+        return fichier is not null ? Path.Combine(_catalogDir, "icc", fichier) : null;
     }
 
     private void PrintPages(List<RenderedPage> pages, string? pdfPath, string documentName,
@@ -814,3 +1002,4 @@ public sealed class PrintOrchestrator
         AtomicFile.WriteAllText(SpoolStatePath(order, envelope), JsonSerializer.Serialize(new SpoolState(status, DateTimeOffset.Now)));
     }
 }
+

@@ -43,6 +43,14 @@
                                             MinHeight="48" MinWidth="150" FontSize="18" Padding="12,6"
                                             ToolTip="Brillant, mat, lustré… : une capture du pilote par finition"
                                             Click="OnEditFinishes" Tag="{Binding}">✨ Finitions</Button>
+                                    <!-- En dernier, et rouge : c'est le seul geste irréversible
+                                         de cet écran. Un produit cité par une commande récente
+                                         est désactivé au lieu d'être supprimé. -->
+                                    <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
+                                            MinHeight="48" MinWidth="70" FontSize="18" Padding="12,6"
+                                            Foreground="{StaticResource DangerBrush}"
+                                            ToolTip="Supprimer ce produit du catalogue"
+                                            Click="OnDeleteProduct" Tag="{Binding}">🗑</Button>
                                 </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"

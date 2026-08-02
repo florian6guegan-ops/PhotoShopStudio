@@ -224,8 +224,26 @@ public partial class HomeView : UserControl
     /// </summary>
     private void OnKioskModify(object sender, RoutedEventArgs e)
     {
+        if ((sender as FrameworkElement)?.Tag is CommandeBorne ligne) OuvrirLaBorne(ligne, taille: null);
+    }
+
+    /// <summary>
+    /// Ouvre la commande dans une taille qui n'est pas au catalogue.
+    ///
+    /// Les bornes ne proposent que des formats standard : un client qui veut du 5,5 × 8 cm
+    /// commande donc du 10×15 et le dit au comptoir. On demande la taille, puis ses photos
+    /// s'ouvrent directement dedans.
+    /// </summary>
+    private void OnKioskCustom(object sender, RoutedEventArgs e)
+    {
         if ((sender as FrameworkElement)?.Tag is not CommandeBorne ligne) return;
 
+        Navigator.Go(new CustomSizeView(taille => OuvrirLaBorne(ligne, taille)),
+            "Taille personnalisée");
+    }
+
+    private void OuvrirLaBorne(CommandeBorne ligne, CustomSize? taille)
+    {
         var importateur = App.Services.DiLandImport;
         var travail = Path.Combine(App.Services.DataRoot, "diland", "travail");
 
@@ -241,9 +259,16 @@ public partial class HomeView : UserControl
 
             importateur.MarkInProgress(ligne.Order);
 
+            // en taille libre, le format commandé n'a plus cours : c'est la taille saisie
+            // qui décide, et le papier sera choisi d'après la quantité
             Navigator.Go(
-                new PhotoGridView(prete.PhotosDirectory, prete.ProductCode, ligne.Oid),
-                $"Borne #{ligne.Order.Number} — {prete.PhotoCount} photo(s)");
+                new PhotoGridView(prete.PhotosDirectory,
+                    taille is null ? prete.ProductCode : null,
+                    ligne.Oid,
+                    taillePerso: taille),
+                taille is null
+                    ? $"Borne #{ligne.Order.Number} — {prete.PhotoCount} photo(s)"
+                    : $"Borne #{ligne.Order.Number} — {taille.Libelle} — {prete.PhotoCount} photo(s)");
         }
         catch (Exception ex)
         {

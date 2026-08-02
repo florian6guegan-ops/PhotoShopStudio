@@ -87,38 +87,70 @@ public partial class CatalogView : UserControl
         Refresh();
     }
 
-    private static Product Clone(Product p) => new()
+    /// <summary>
+    /// Supprime un produit du catalogue.
+    ///
+    /// <b>Un produit cité par une commande récente n'est pas supprimé mais DÉSACTIVÉ.</b>
+    /// Tout le circuit d'impression appelle <c>ProductCatalog.Require(code)</c>, qui lève
+    /// si le code a disparu : une commande en attente de réimpression deviendrait
+    /// inexploitable, et l'opérateur ne pourrait plus la rejouer. Désactivé, le produit
+    /// sort des listes de vente mais reste lisible par les commandes qui le citent.
+    ///
+    /// La fenêtre d'examen est celle des écrans qui montrent les commandes (30 jours) :
+    /// au-delà, une commande n'est plus atteignable depuis l'application.
+    /// </summary>
+    private void OnDeleteProduct(object sender, RoutedEventArgs e)
     {
-        Code = p.Code,
-        Name = p.Name,
-        WidthMm = p.WidthMm,
-        HeightMm = p.HeightMm,
-        PrinterName = p.PrinterName,
-        PrinterChannel = p.PrinterChannel,
-        Dpi = p.Dpi,
-        Price = p.Price,
-        DefaultFit = p.DefaultFit,
-        BorderMm = p.BorderMm,
-        IccProfile = p.IccProfile,
-        DevmodeFile = p.DevmodeFile,
-        Finishes = p.Finishes
-            .Select(f => new FinishOption
-            {
-                Name = f.Name,
-                DevmodeFile = f.DevmodeFile,
-                IccProfile = f.IccProfile,
-            })
-            .ToList(),
-        Sheet = p.Sheet is null ? null : new SheetSpec
+        if ((sender as Button)?.Tag is not ProductRow row) return;
+        var product = row.Product;
+
+        var commandes = App.Services.Store.ScanRecent(days: 30);
+        var citations = ProductCatalog.CountReferences(product.Code, commandes);
+
+        if (citations > 0)
         {
-            Copies = p.Sheet.Copies,
-            CellWidthMm = p.Sheet.CellWidthMm,
-            CellHeightMm = p.Sheet.CellHeightMm,
-            GapMm = p.Sheet.GapMm,
-            CutMarks = p.Sheet.CutMarks,
-        },
-        Enabled = p.Enabled,
-    };
+            if (!product.Enabled)
+            {
+                MessageBox.Show(
+                    $"« {product.Name} » est cité par {citations} commande(s) des 30 derniers jours : " +
+                    "le supprimer les rendrait impossibles à réimprimer.\n\n" +
+                    "Il est déjà désactivé — il ne sera plus proposé à la vente. Vous pourrez le " +
+                    "supprimer quand ces commandes seront sorties de la fenêtre des 30 jours.",
+                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var reponse = MessageBox.Show(
+                $"« {product.Name} » est cité par {citations} commande(s) des 30 derniers jours : " +
+                "le supprimer les rendrait impossibles à réimprimer.\n\n" +
+                "Le désactiver à la place ? Il disparaîtra des listes de vente sans rien casser.",
+                "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (reponse != MessageBoxResult.Yes) return;
+
+            product.Enabled = false;
+            Signaler(SaveCatalog(App.Services.Catalog.All));
+            Refresh();
+            return;
+        }
+
+        var confirmation = MessageBox.Show(
+            $"Supprimer « {product.Name} » du catalogue ?\n\n" +
+            "Aucune commande récente ne le cite. Cette action est définitive.",
+            "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes) return;
+
+        Signaler(SaveCatalog(App.Services.Catalog.All.Where(p => p.Code != product.Code)));
+        Refresh();
+    }
+
+    private static void Signaler(string? erreur)
+    {
+        if (erreur is not null)
+            MessageBox.Show(erreur, "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+
+    /// <summary>Copie complète : voir <see cref="Product.Copy"/>, où vit la règle.</summary>
+    private static Product Clone(Product p) => p.Copy();
 
     private void OnEditFinishes(object sender, RoutedEventArgs e)
     {

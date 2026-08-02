@@ -56,21 +56,53 @@ public static class IndexSheet
     /// <param name="Dpi">Résolution du tirage.</param>
     /// <param name="Title">Titre porté en haut de chaque planche.</param>
     /// <param name="Date">Date portée en bas ; celle de la commande, pas celle du rendu.</param>
+    /// <param name="Aspects">
+    /// Rapports largeur/hauteur des photos, ORIENTÉS, dans le même ordre que
+    /// <paramref name="Photos"/> — quand l'appelant les connaît déjà. La planche-contact les a
+    /// lus en affichant ses vignettes : les redemander revenait à rouvrir tous les fichiers
+    /// pour une information déjà à l'écran. Null, ou de longueur différente : on les lit.
+    /// Une valeur nulle ou négative dans la liste vaut « inconnu » et sera lue.
+    /// </param>
     public sealed record Request(
         IReadOnlyList<string> Photos,
         int SheetWidthPx,
         int SheetHeightPx,
         int Dpi,
         string Title,
-        DateTime Date);
+        DateTime Date,
+        IReadOnlyList<double>? Aspects = null);
 
     /// <summary>Ce qu'une planche a coûté et contient, pour le dire à l'opérateur.</summary>
     /// <param name="Files">Les planches rendues, dans l'ordre.</param>
     /// <param name="PerSheet">Vignettes par planche.</param>
     /// <param name="Columns">Colonnes de la grille retenue.</param>
     /// <param name="Rows">Lignes de la grille retenue.</param>
+    /// <param name="Thumbnails">
+    /// Vignette JPEG de chaque planche, dans l'ordre de <paramref name="Files"/>, tirée de
+    /// l'image encore en mémoire. L'appelant qui veut montrer la planche n'a donc pas à
+    /// relire — et redécoder — le fichier qu'on vient d'écrire.
+    /// </param>
     public sealed record Result(
-        IReadOnlyList<string> Files, int PerSheet, int Columns, int Rows);
+        IReadOnlyList<string> Files, int PerSheet, int Columns, int Rows,
+        IReadOnlyList<byte[]> Thumbnails);
+
+    /// <summary>Côté de la vignette rendue avec chaque planche, pour l'affichage en grille.</summary>
+    private const int VignettePlancheePx = 360;
+
+    /// <summary>
+    /// Finesse maximale d'une vignette de planche, quelle que soit la taille de la cellule.
+    ///
+    /// <b>Pourquoi un plafond.</b> Sur un 30×40 à 300 ppp, une cellule fait 751 px : sans
+    /// plafond on demandait du 1024, on manquait le cache de la planche-contact, et les
+    /// trente-six fichiers de 39 Mpx repassaient au décodeur — 5 109 ms sur les 6,3 s du rendu.
+    ///
+    /// <b>Pourquoi 512 suffit.</b> Sur la plus grande cellule qu'on rencontre (63 mm de large),
+    /// cela fait encore ~206 ppp imprimés. Une planche d'index sert à DÉSIGNER une photo : le
+    /// client y coche un numéro. Les 413 ppp que donnait le palier 1024 ne servaient personne,
+    /// et se payaient à chaque planche. C'est aussi la taille du cache de la grille
+    /// (<see cref="ThumbnailService.Defaut"/>) : les deux se rejoignent toujours.
+    /// </summary>
+    private const int VignetteMaximalePx = ThumbnailService.Defaut;
 
     /// <summary>
     /// Rend les planches et renvoie les fichiers écrits.
@@ -104,26 +136,90 @@ public static class IndexSheet
             request.SheetWidthPx, request.SheetHeightPx, request.Photos.Count,
             marge, ecart, titre, pied, numero,
             MmPx.ToPixels(VignetteMinimaleMm, dpi),
-            RapportDominant(request.Photos));
+            RapportDominant(request.Photos, request.Aspects));
 
-        // Les vignettes sont demandées à la taille où elles seront posées, pas plus : au
-        // pixel près c'est ce qui distingue une planche rendue en deux secondes d'une
-        // planche rendue en trente.
-        var boite = Math.Max(64, plan.Cells.Max(c => Math.Max(c.Width, c.Height)));
+        // Les vignettes sont demandées à la taille où elles seront posées, pas plus — et
+        // jamais au-delà du plafond, voir VignetteMaximalePx.
+        var boite = Math.Clamp(
+            plan.Cells.Max(c => Math.Max(c.Width, c.Height)), 64, VignetteMaximalePx);
 
-        var fichiers = new List<string>(plan.Pages);
+        // toutes les cellules ont la même taille, d'une planche à l'autre : les vignettes
+        // peuvent donc être préparées une fois pour toutes, avant la moindre composition
+        var enCache = PrechargerLesVignettes(
+            request.Photos, plan.Cells[0], numero, boite, thumbnails);
 
-        for (var page = 0; page < plan.Pages; page++)
+        try
         {
-            var chemin = Path.Combine(
-                outputDirectory,
-                plan.Pages == 1 ? $"{baseName}.jpg" : $"{baseName}-{page + 1:00}.jpg");
+            var fichiers = new List<string>(plan.Pages);
+            var apercus = new List<byte[]>(plan.Pages);
 
-            RendrePlanche(request, plan, page, numero, boite, thumbnails, chemin);
-            fichiers.Add(chemin);
+            for (var page = 0; page < plan.Pages; page++)
+            {
+                var chemin = Path.Combine(
+                    outputDirectory,
+                    plan.Pages == 1 ? $"{baseName}.jpg" : $"{baseName}-{page + 1:00}.jpg");
+
+                apercus.Add(RendrePlanche(request, plan, page, numero, enCache, chemin));
+                fichiers.Add(chemin);
+            }
+
+            return new Result(fichiers, plan.PerPage, plan.Columns, plan.Rows, apercus);
         }
+        finally
+        {
+            foreach (var vignette in enCache.Values) vignette.Dispose();
+        }
+    }
 
-        return new Result(fichiers, plan.PerPage, plan.Columns, plan.Rows);
+    /// <summary>
+    /// Lit, décode ET redimensionne toutes les vignettes AVANT de composer — en parallèle.
+    ///
+    /// C'est là que passait le temps : vingt-neuf fichiers ouverts, décodés et mis à l'échelle
+    /// à la file, sur un seul cœur, pendant que le client attend au comptoir. Ces trois
+    /// opérations sont indépendantes d'une photo à l'autre ; seule la composition ne l'est
+    /// pas, puisqu'il n'y a qu'une image cible — elle reste donc séquentielle, et ne coûte
+    /// plus qu'une recopie.
+    ///
+    /// Une photo illisible n'entre simplement pas dans le dictionnaire : sa case restera
+    /// blanche, avec son numéro, comme avant.
+    /// </summary>
+    private static Dictionary<string, IMagickImage<byte>> PrechargerLesVignettes(
+        IReadOnlyList<string> photos, PixelRect cellule, int hauteurNumero, int boite,
+        ThumbnailService thumbnails)
+    {
+        var pretes = new Dictionary<string, IMagickImage<byte>>(
+            photos.Count, StringComparer.OrdinalIgnoreCase);
+        var verrou = new object();
+
+        Parallel.ForEach(photos.Distinct(StringComparer.OrdinalIgnoreCase), chemin =>
+        {
+            MagickImage? vignette = null;
+            try
+            {
+                vignette = new MagickImage(thumbnails.GetJpeg(chemin, boite));
+
+                var rapport = vignette.Height == 0 ? 1 : vignette.Width / (double)vignette.Height;
+                var place = IndexSheetLayout.PlaceVignette(cellule, hauteurNumero, rapport);
+
+                vignette.Resize(new MagickGeometry((uint)place.Width, (uint)place.Height)
+                {
+                    IgnoreAspectRatio = true,
+                });
+            }
+            catch (Exception)
+            {
+                vignette?.Dispose(); // une photo écartée ne doit pas laisser d'image derrière
+                return;              // case blanche, la planche sort quand même
+            }
+
+            lock (verrou)
+            {
+                // un même fichier deux fois dans la sélection : une seule vignette suffit
+                if (!pretes.TryAdd(chemin, vignette)) vignette.Dispose();
+            }
+        });
+
+        return pretes;
     }
 
     /// <summary>
@@ -134,34 +230,52 @@ public static class IndexSheet
     /// directement en taille de vignette. La médiane suit l'orientation dominante sans se
     /// laisser emporter par deux photos tournées.
     ///
-    /// Les fichiers ne sont que « pingés » : on lit l'en-tête, jamais les pixels.
+    /// Les rapports que l'appelant connaît déjà sont repris tels quels ; les autres seulement
+    /// sont « pingés » — on lit alors l'en-tête, jamais les pixels — et en parallèle.
     /// </summary>
-    private static double RapportDominant(IReadOnlyList<string> photos)
+    private static double RapportDominant(
+        IReadOnlyList<string> photos, IReadOnlyList<double>? connus)
     {
+        var fournis = connus is not null && connus.Count == photos.Count ? connus : null;
+
         var rapports = new List<double>(photos.Count);
+        var aLire = new List<string>();
 
-        foreach (var chemin in photos)
+        for (var i = 0; i < photos.Count; i++)
         {
-            try
+            if (fournis is not null && fournis[i] > 0) rapports.Add(fournis[i]);
+            else aLire.Add(photos[i]);
+        }
+
+        if (aLire.Count > 0)
+        {
+            var lus = new double[aLire.Count];
+
+            Parallel.For(0, aLire.Count, i =>
             {
-                using var image = new MagickImage();
-                image.Ping(chemin);
+                try
+                {
+                    using var image = new MagickImage();
+                    image.Ping(aLire[i]);
 
-                var largeur = (double)image.Width;
-                var hauteur = (double)image.Height;
+                    var largeur = (double)image.Width;
+                    var hauteur = (double)image.Height;
 
-                // l'orientation EXIF compte : un portrait pris à l'horizontale est stocké
-                // couché, et sa vignette sera pourtant debout
-                if (image.Orientation is OrientationType.LeftTop or OrientationType.RightTop
-                    or OrientationType.RightBottom or OrientationType.LeftBottom)
-                    (largeur, hauteur) = (hauteur, largeur);
+                    // l'orientation EXIF compte : un portrait pris à l'horizontale est stocké
+                    // couché, et sa vignette sera pourtant debout
+                    if (image.Orientation is OrientationType.LeftTop or OrientationType.RightTop
+                        or OrientationType.RightBottom or OrientationType.LeftBottom)
+                        (largeur, hauteur) = (hauteur, largeur);
 
-                if (largeur > 0 && hauteur > 0) rapports.Add(largeur / hauteur);
-            }
-            catch (Exception)
-            {
-                // photo illisible : elle ne pèsera pas sur la forme de la grille
-            }
+                    if (largeur > 0 && hauteur > 0) lus[i] = largeur / hauteur;
+                }
+                catch (Exception)
+                {
+                    // photo illisible : elle ne pèsera pas sur la forme de la grille
+                }
+            });
+
+            rapports.AddRange(lus.Where(r => r > 0));
         }
 
         if (rapports.Count == 0) return IndexSheetLayout.RapportParDefaut;
@@ -170,9 +284,10 @@ public static class IndexSheet
         return rapports[rapports.Count / 2];
     }
 
-    private static void RendrePlanche(
-        Request request, IndexSheetLayout.Plan plan, int page,
-        int hauteurNumero, int boiteVignette, ThumbnailService thumbnails, string chemin)
+    /// <summary>Rend une planche, l'écrit, et renvoie sa vignette d'affichage.</summary>
+    private static byte[] RendrePlanche(
+        Request request, IndexSheetLayout.Plan plan, int page, int hauteurNumero,
+        IReadOnlyDictionary<string, IMagickImage<byte>> vignettes, string chemin)
     {
         using var planche = new MagickImage(
             MagickColors.White, (uint)request.SheetWidthPx, (uint)request.SheetHeightPx);
@@ -198,8 +313,8 @@ public static class IndexSheet
         {
             var cellule = plan.Cells[i - premier];
 
-            var pose = PoserLaVignette(request.Photos[i], cellule, hauteurNumero, boiteVignette,
-                                       thumbnails, planche);
+            var pose = PoserLaVignette(request.Photos[i], cellule, hauteurNumero,
+                                       vignettes, planche);
 
             // le numéro juste sous la vignette, et non en bas de la cellule : sur une
             // planche qui mêle portraits et paysages, un numéro aligné sur la cellule
@@ -223,6 +338,17 @@ public static class IndexSheet
         planche.Format = MagickFormat.Jpeg;
         planche.Quality = 92;
         planche.Write(chemin);
+
+        // la vignette est tirée de l'image ENCORE EN MÉMOIRE. Elle était auparavant obtenue
+        // en relisant le fichier qu'on venait d'écrire — un aller-retour disque et un
+        // décodage complets, pour une image qu'on tenait déjà.
+        //
+        // Réduction SUR PLACE, et non sur une copie : la planche est écrite, elle ne sert
+        // plus à rien d'autre, et cloner deux millions de pixels pour les jeter aussitôt
+        // coûtait à soi seul le sixième du temps de rendu.
+        planche.Thumbnail(VignettePlancheePx, VignettePlancheePx);
+        planche.Quality = 82;
+        return planche.ToByteArray(MagickFormat.Jpeg);
     }
 
     /// <summary>
@@ -233,30 +359,41 @@ public static class IndexSheet
     /// et vingt-neuf vignettes valent mieux qu'une erreur.
     /// </summary>
     private static PixelRect? PoserLaVignette(
-        string photo, PixelRect cellule, int hauteurNumero, int boite,
-        ThumbnailService thumbnails, MagickImage planche)
+        string photo, PixelRect cellule, int hauteurNumero,
+        IReadOnlyDictionary<string, IMagickImage<byte>> vignettes, MagickImage planche)
     {
+        // absente du dictionnaire = illisible : la case reste blanche, le numéro est tout de
+        // même écrit pour que la numérotation ne se décale pas d'une planche à l'autre
+        if (!vignettes.TryGetValue(photo, out var vignette)) return null;
+
         try
         {
-            using var vignette = new MagickImage(thumbnails.GetJpeg(photo, boite));
-
-            var rapport = vignette.Height == 0 ? 1 : vignette.Width / (double)vignette.Height;
-            var place = IndexSheetLayout.PlaceVignette(cellule, hauteurNumero, rapport);
-
-            vignette.Resize(new MagickGeometry((uint)place.Width, (uint)place.Height)
-            {
-                IgnoreAspectRatio = true,
-            });
+            // la vignette est déjà à la taille de sa place (voir PrechargerLesVignettes) :
+            // il ne reste qu'à la centrer dans SA cellule, qui change à chaque case
+            var place = Centrer(cellule, hauteurNumero, vignette.Width, vignette.Height);
 
             planche.Composite(vignette, place.X, place.Y, CompositeOperator.Over);
             return place;
         }
         catch (Exception)
         {
-            // photo illisible : la case reste blanche, le numéro est tout de même écrit
-            // pour que la numérotation ne se décale pas d'une planche à l'autre
             return null;
         }
+    }
+
+    /// <summary>
+    /// Centre une vignette déjà dimensionnée dans sa cellule, au-dessus de la place du numéro.
+    /// Même règle que <see cref="IndexSheetLayout.PlaceVignette"/>, dont la taille est ici
+    /// déjà connue.
+    /// </summary>
+    private static PixelRect Centrer(PixelRect cellule, int hauteurNumero, uint largeur, uint hauteur)
+    {
+        var disponible = Math.Max(1, cellule.Height - hauteurNumero);
+
+        return new PixelRect(
+            cellule.X + (cellule.Width - (int)largeur) / 2,
+            cellule.Y + (disponible - (int)hauteur) / 2,
+            (int)largeur, (int)hauteur);
     }
 
     /// <summary>

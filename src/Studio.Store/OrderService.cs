@@ -2,6 +2,25 @@ using Studio.Core.Domain;
 
 namespace Studio.Store;
 
+/// <summary>
+/// Format « personnalisé » : la taille demandée et le nombre de planches que le logiciel a
+/// retenu pour la contenir.
+///
+/// <see cref="SheetCount"/> vient de l'appelant et n'est PAS recalculé à la création de la
+/// commande : c'est lui qui fixe le prix, et un prix annoncé au client ne doit pas bouger
+/// parce que le catalogue a changé entre l'annonce et l'encaissement.
+/// </summary>
+public sealed record CustomSheetSpec(double CellWidthMm, double CellHeightMm, int SheetCount);
+
+/// <summary>
+/// Taille d'une case de planche identité, en millimètres : celle du document visé.
+///
+/// Un type nommé plutôt qu'un couple de <c>double?</c> — deux paramètres facultatifs
+/// voisins et de même type s'inversent sans que le compilateur bronche, et une planche
+/// espagnole sortirait en 32 × 26 mm.
+/// </summary>
+public sealed record SheetCellSize(double WidthMm, double HeightMm);
+
 /// <summary>Photo choisie par le client avec son produit, avant création de la commande.</summary>
 public sealed record DraftItem(
     string SourcePath,
@@ -15,7 +34,22 @@ public sealed record DraftItem(
     /// <summary>Planches identité : nombre de photos sur la planche, null = celui du produit.</summary>
     int? SheetCopiesOverride = null,
     /// <summary>Finition choisie (voir Product.Finishes), null = DEVMODE par défaut du produit.</summary>
-    string? Finish = null);
+    string? Finish = null,
+    /// <summary>Contour noir de découpe, quand le tirage sort avec des marges blanches.</summary>
+    bool CutBorder = false,
+    /// <summary>
+    /// Taille personnalisée : <paramref name="Product"/> désigne alors le PAPIER retenu, et
+    /// la photo n'occupe qu'une case de la planche. Null = tirage ordinaire.
+    /// </summary>
+    CustomSheetSpec? CustomSheet = null,
+    /// <summary>
+    /// Planches identité : taille d'une case en millimètres, celle du DOCUMENT visé.
+    /// Null = la cellule du produit s'applique (voir <see cref="OrderItem.SheetCellWidthMm"/>).
+    ///
+    /// Posée en DERNIER paramètre à dessein : les appelants passent les précédents par
+    /// position, et intercaler un paramètre les déplacerait tous.
+    /// </summary>
+    SheetCellSize? SheetCell = null);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -75,10 +109,19 @@ public sealed class OrderService
                 // le tarif dégressif se calcule sur le total du produit dans la commande,
                 // pas photo par photo : 30 tirages en 3 images restent 30 tirages
                 var totalQuantity = productGroup.Sum(i => i.Quantity);
+
+                // planche personnalisée : c'est le PAPIER qui est facturé, donc les paliers
+                // se comptent en planches et non en photos casées dessus
+                var planche = productGroup.First().CustomSheet;
+                var factureSur = planche is null ? totalQuantity : planche.SheetCount;
+
                 var line = new OrderLine
                 {
                     ProductCode = product.Code,
-                    UnitPrice = product.UnitPriceFor(Math.Max(totalQuantity, 1)),
+                    UnitPrice = product.UnitPriceFor(Math.Max(factureSur, 1)),
+                    CustomCellWidthMm = planche?.CellWidthMm,
+                    CustomCellHeightMm = planche?.CellHeightMm,
+                    SheetCount = planche?.SheetCount ?? 0,
                 };
                 foreach (var item in productGroup)
                 {
@@ -91,7 +134,10 @@ public sealed class OrderService
                         RotationQuarterTurns = item.RotationQuarterTurns,
                         FineRotationDegrees = item.FineRotationDegrees,
                         FitOverride = item.FitOverride,
+                        CutBorder = item.CutBorder,
                         SheetCopiesOverride = item.SheetCopiesOverride,
+                        SheetCellWidthMm = item.SheetCell?.WidthMm,
+                        SheetCellHeightMm = item.SheetCell?.HeightMm,
                         Finish = item.Finish,
                         Adjustments = item.Adjustments,
                     });

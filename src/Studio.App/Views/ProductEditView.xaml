@@ -51,12 +51,22 @@
                     <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Largeur × hauteur (mm)"/>
                     <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
                         <TextBox x:Name="WidthBox" Style="{StaticResource FieldBox}" Width="120"/>
-                        <TextBlock Text="×" FontSize="22" VerticalAlignment="Center" Margin="10,0,10,14"/>
+                        <TextBlock Text="×" Style="{StaticResource Texte}" FontSize="22"
+                                   VerticalAlignment="Center" Margin="10,0,10,14"/>
                         <TextBox x:Name="HeightBox" Style="{StaticResource FieldBox}" Width="120"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Imprimante"/>
-                    <ComboBox x:Name="PrinterCombo" Grid.Row="4" Grid.Column="1" FontSize="20" Padding="10,8" Margin="0,0,0,14"/>
+                    <!-- La SORTIE manquait à cette fiche : faute de pouvoir la saisir, elle
+                         retombait sur « file Windows » à chaque enregistrement, et un tirage
+                         du minilab s'en trouvait converti en tirage imprimante. -->
+                    <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Sortie et imprimante"/>
+                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
+                        <ComboBox x:Name="OutputCombo" MinWidth="300" FontSize="20" Padding="10,8"
+                                  Margin="0,0,12,14" VerticalAlignment="Center"
+                                  SelectionChanged="OnOutputChanged"/>
+                        <ComboBox x:Name="PrinterCombo" MinWidth="280" FontSize="20" Padding="10,8"
+                                  Margin="0,0,0,14" VerticalAlignment="Center"/>
+                    </StackPanel>
 
                     <TextBlock Grid.Row="5" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Cadrage par défaut"/>
                     <ComboBox x:Name="FitCombo" Grid.Row="5" Grid.Column="1" FontSize="20" Padding="10,8" Margin="0,0,0,14"
@@ -72,14 +82,17 @@
                     <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal">
                         <CheckBox x:Name="SheetCheck" VerticalAlignment="Center" Margin="0,0,16,14"
                                   Checked="OnSheetToggled" Unchecked="OnSheetToggled">
-                            <TextBlock Text="planche de copies" FontSize="18"/>
+                            <TextBlock Text="planche de copies" Style="{StaticResource Texte}" FontSize="18"/>
                         </CheckBox>
                         <TextBox x:Name="SheetCopiesBox" Style="{StaticResource FieldBox}" Width="80" IsEnabled="False"/>
-                        <TextBlock Text="copies de" FontSize="18" VerticalAlignment="Center" Margin="10,0,10,14"/>
+                        <TextBlock Text="copies de" Style="{StaticResource Texte}" FontSize="18"
+                                   VerticalAlignment="Center" Margin="10,0,10,14"/>
                         <TextBox x:Name="SheetWBox" Style="{StaticResource FieldBox}" Width="80" IsEnabled="False"/>
-                        <TextBlock Text="×" FontSize="20" VerticalAlignment="Center" Margin="8,0,8,14"/>
+                        <TextBlock Text="×" Style="{StaticResource Texte}" FontSize="20"
+                                   VerticalAlignment="Center" Margin="8,0,8,14"/>
                         <TextBox x:Name="SheetHBox" Style="{StaticResource FieldBox}" Width="80" IsEnabled="False"/>
-                        <TextBlock Text="mm" FontSize="18" VerticalAlignment="Center" Margin="8,0,0,14"/>
+                        <TextBlock Text="mm" Style="{StaticResource Texte}" FontSize="18"
+                                   VerticalAlignment="Center" Margin="8,0,0,14"/>
                     </StackPanel>
 
                     <TextBlock Grid.Row="9" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Profil couleur (ICC)"/>
@@ -92,7 +105,7 @@
 
                     <TextBlock Grid.Row="10" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Visible à la vente"/>
                     <CheckBox x:Name="EnabledCheck" Grid.Row="10" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,14">
-                        <TextBlock Text="produit proposé dans les listes" FontSize="18"/>
+                        <TextBlock Text="produit proposé dans les listes" Style="{StaticResource Texte}" FontSize="18"/>
                     </CheckBox>
                 </Grid>
             </Border>

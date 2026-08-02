@@ -39,13 +39,19 @@ public partial class PhotoGridView : UserControl
     /// borne, oui ; un dossier désigné dans l'explorateur, seulement si l'opérateur l'a
     /// demandé — sans quoi désigner un dossier parent revenait à lire tout un disque.
     /// </param>
+    /// <param name="taillePerso">
+    /// Format « personnalisé » : la taille voulue pour chaque photo. Le choix du produit
+    /// disparaît alors de l'écran — le papier est décidé à la validation, d'après la
+    /// quantité — et les photos partent en planches.
+    /// </param>
     public PhotoGridView(
         string rootPath, string? produitParDefaut = null, long? commandeBorne = null,
-        bool avecSousDossiers = true)
+        bool avecSousDossiers = true, CustomSize? taillePerso = null)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
         _commandeBorne = commandeBorne;
+        _taillePerso = taillePerso;
         InitializeComponent();
 
         var choix = App.Services.Catalog.Enabled.Select(p => new ProductChoice(p)).ToList();
@@ -57,6 +63,8 @@ public partial class PhotoGridView : UserControl
             ? -1
             : choix.FindIndex(c => c.Product.Code.Equals(produitParDefaut, StringComparison.OrdinalIgnoreCase));
         ProductCombo.SelectedIndex = prechoisi >= 0 ? prechoisi : 0;
+
+        if (taillePerso is not null) PasserEnTaillePersonnalisee(taillePerso);
 
         Loaded += async (_, _) =>
         {
@@ -83,7 +91,128 @@ public partial class PhotoGridView : UserControl
         public string Label => $"{Product.Name} — {Product.Price:0.00} €";
     }
 
-    private Product? DefaultProduct => (ProductCombo.SelectedItem as ProductChoice)?.Product;
+    // — format personnalisé —
+
+    /// <summary>
+    /// Taille demandée, ou null pour le parcours ordinaire.
+    ///
+    /// Elle peut arriver en cours de route : une commande de borne s'ouvre en 10×15 et le
+    /// client demande du 5,5×8 au comptoir. Voir <see cref="BasculerEnTaillePersonnalisee"/>.
+    /// </summary>
+    private CustomSize? _taillePerso;
+
+    /// <summary>
+    /// Le produit de travail du format personnalisé : il n'est PAS au catalogue.
+    ///
+    /// Il n'existe que pour donner à tout l'écran — cadres de recadrage, vignettes, écran
+    /// « Modifier », aperçus — le rapport largeur/hauteur voulu. Sans lui, il faudrait
+    /// enseigner la taille personnalisée à chacun de ces endroits. À la validation, il est
+    /// remplacé par le PAPIER retenu, qui, lui, est un vrai produit du catalogue : rien de
+    /// ce code fantôme ne descend jusqu'à la commande.
+    /// </summary>
+    private Product? _produitPerso;
+
+    /// <summary>Un papier proposé à l'opérateur, ou le choix automatique.</summary>
+    /// <param name="Papier">Null = « Automatique », le logiciel décide au meilleur prix.</param>
+    private sealed record PaperChoice(PaperOption? Papier, int ParPlanche)
+    {
+        public string? Code => Papier?.Code;
+
+        public string Label => Papier is null
+            ? "Automatique (au meilleur prix)"
+            : $"{Papier.Name} — {Papier.UnitPrice:0.00} € — {ParPlanche} par planche";
+    }
+
+    private void PasserEnTaillePersonnalisee(CustomSize taille)
+    {
+        _produitPerso = new Product
+        {
+            Code = "perso",
+            Name = $"Personnalisé {taille.Libelle}",
+            WidthMm = taille.WidthMm,
+            HeightMm = taille.HeightMm,
+            Dpi = 300,
+            Price = 0,
+            DefaultFit = FitMode.Fill,
+            Output = ProductOutput.FujiMinilab,
+        };
+
+        // La liste des produits cède la place à celle des PAPIERS : l'opérateur peut
+        // imposer le format de sortie au lieu de subir le calcul — il est le seul à savoir
+        // quel rouleau est chargé, et ce qu'il veut vendre. Le nombre de photos par planche
+        // est affiché sur chaque entrée : c'est ce qui rend le choix évident.
+        var papiers = CustomSizeView.PapiersDisponibles()
+            .Select(p => new
+            {
+                Papier = p,
+                Capacite = CustomSheetLayout.CapacityOf(p, taille.WidthMm, taille.HeightMm).PerSheet,
+            })
+            .Where(x => x.Capacite > 0)
+            .OrderBy(x => x.Papier.AreaMm2)
+            .Select(x => new PaperChoice(x.Papier, x.Capacite))
+            .ToList();
+
+        var choix = new List<PaperChoice> { new(null, 0) };
+        choix.AddRange(papiers);
+
+        ProductLabelText.Text = "Papier :";
+        ProductCombo.ItemsSource = choix;
+        ProductCombo.SelectedIndex = Math.Max(0,
+            choix.FindIndex(c => c.Code is not null
+                                 && c.Code.Equals(taille.PaperCode, StringComparison.OrdinalIgnoreCase)));
+
+        TaillePersoText.Text = taille.Libelle;
+        TaillePersoText.Visibility = Visibility.Visible;
+
+        // une planche index se tire à un format du catalogue : elle n'a pas de sens ici
+        IndexButton.Visibility = Visibility.Collapsed;
+    }
+
+    private bool EnTaillePersonnalisee => _taillePerso is not null;
+
+    /// <summary>
+    /// Demande une taille libre, puis y bascule les photos DÉJÀ ouvertes.
+    ///
+    /// C'est le cas du comptoir : la commande arrive d'une borne en 10×15, le client la voit
+    /// à l'écran et demande autre chose. Repartir de l'accueil pour retrouver le dossier
+    /// ferait perdre recadrages et corrections — ici, ils sont conservés, seul le cadre
+    /// change de rapport.
+    /// </summary>
+    private void DemanderUneTaillePersonnalisee()
+    {
+        Navigator.Go(new CustomSizeView(BasculerEnTaillePersonnalisee), "Taille personnalisée");
+    }
+
+    /// <summary>
+    /// Demande un agrandissement à taille libre, et applique le format retenu.
+    ///
+    /// Bien plus simple que la bascule en planche : le format d'agrandissement est un VRAI
+    /// produit du catalogue, créé à la validation. Il n'y a donc rien à enseigner au reste
+    /// de l'écran — juste à le poser sur les photos visées.
+    /// </summary>
+    /// <param name="appliquer">Ce qu'on fait du produit : une photo, la sélection…</param>
+    private static void DemanderUnAgrandissement(Action<Product> appliquer) =>
+        Navigator.Go(new CustomEnlargementView(appliquer), "Agrandissement personnalisé");
+
+    private void BasculerEnTaillePersonnalisee(CustomSize taille)
+    {
+        _taillePerso = taille;
+        PasserEnTaillePersonnalisee(taille);
+
+        // le format de TOUTES les photos change, cochées ou non : la planche est une seule
+        // ligne de commande, elle ne peut pas mélanger deux tailles
+        foreach (var photo in _photos) photo.Product = _produitPerso;
+
+        FileLog.Write($"Bascule en taille personnalisée {taille.Libelle} sur {_photos.Count} photo(s)");
+        UpdateSummary();
+    }
+
+    /// <summary>Papier imposé par l'opérateur, ou null s'il laisse le logiciel décider.</summary>
+    private string? PapierImpose =>
+        EnTaillePersonnalisee ? (ProductCombo.SelectedItem as PaperChoice)?.Code : null;
+
+    private Product? DefaultProduct =>
+        _produitPerso ?? (ProductCombo.SelectedItem as ProductChoice)?.Product;
 
     private async Task ScanAndLoadAsync()
     {
@@ -103,34 +232,89 @@ public partial class PhotoGridView : UserControl
             UpdateSummary();
         }
 
-        // vignettes en tâche de fond, une par une pour ne pas saturer le support
+        await ChargerLesVignettesAsync(ct);
+    }
+
+    /// <summary>Ce qu'une photo a donné : sa vignette et sa définition, ou l'échec de lecture.</summary>
+    private sealed record VignetteLue(PhotoItem Photo, byte[]? Jpeg, int Largeur, int Hauteur);
+
+    /// <summary>
+    /// Remplit la grille de ses vignettes.
+    ///
+    /// <b>En parallèle</b>, et non plus une par une : sur les 36 photos de 39 Mpx d'une commande
+    /// réelle, le chargement séquentiel prenait 5 594 ms contre 1 177 ms ici. C'est ce temps que
+    /// l'opérateur passait devant une planche grise — et c'est aussi lui qui rendait la planche
+    /// d'index lente, puisqu'elle part du cache que ce chargement remplit.
+    ///
+    /// <b>Une seule ouverture par photo.</b> La définition venait d'un seul appel de plus à
+    /// <c>GetOrientedSize</c>, soit un second parcours du fichier pour une information que la
+    /// vignette porte déjà : elle est lue une fois pour toutes, ici.
+    ///
+    /// <b>Par tranches, dans l'ordre de la planche.</b> Un seul grand lot laisserait la grille
+    /// vide jusqu'au bout — jusqu'à 1200 photos peuvent être affichées
+    /// (<see cref="PhotoScanner.MaxAffichable"/>). Les vignettes se posent donc de haut en bas,
+    /// tranche par tranche, comme avant, mais chaque tranche est lue sur tous les cœurs.
+    /// </summary>
+    private async Task ChargerLesVignettesAsync(CancellationToken ct)
+    {
         var thumbnails = App.Services.Thumbnails;
+        var aLire = _photos.Where(p => p.Thumbnail is null).ToList();
+        if (aLire.Count == 0) return;
+
+        // assez large pour occuper tous les cœurs, assez court pour que la planche se
+        // remplisse sous les yeux au lieu d'apparaître d'un bloc
+        var tranche = Math.Max(8, Environment.ProcessorCount * 2);
         var illisibles = new List<PhotoItem>();
 
-        foreach (var photo in _photos)
+        for (var debut = 0; debut < aLire.Count; debut += tranche)
         {
             if (ct.IsCancellationRequested) return;
-            if (photo.Thumbnail is not null) continue;
+
+            var lot = aLire.Skip(debut).Take(tranche).ToList();
+            var lues = new VignetteLue[lot.Count];
+
             try
             {
-                var bytes = await Task.Run(() => thumbnails.GetJpeg(photo.Path), ct);
-                photo.SetSourceThumbnail(ToBitmap(bytes));
+                await Task.Run(() => Parallel.For(0, lot.Count,
+                    new ParallelOptions { CancellationToken = ct }, i =>
+                    {
+                        var photo = lot[i];
+                        try
+                        {
+                            var jpeg = thumbnails.GetJpeg(photo.Path);
 
-                // définition et rapport, affichés sur la vignette comme chez DiLand :
-                // l'opérateur voit tout de suite ce qu'il peut tirer sans perte
-                var (largeur, hauteur) = await Task.Run(
-                    () => ImagePipeline.GetOrientedSize(photo.Path, 0), ct);
-                photo.SetSourceSize(largeur, hauteur);
+                            // définition et rapport, affichés sur la vignette comme chez DiLand :
+                            // l'opérateur voit tout de suite ce qu'il peut tirer sans perte
+                            var (largeur, hauteur) = ImagePipeline.GetOrientedSize(photo.Path, 0);
+                            lues[i] = new VignetteLue(photo, jpeg, largeur, hauteur);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // Fichier que le moteur d'image n'ouvre pas : extension trompeuse,
+                            // JPEG tronqué par une carte défaillante, fichier verrouillé. Il
+                            // RESTAIT dans la planche, sans vignette mais cochable — donc mis
+                            // dans une commande, pour échouer au rendu une fois le client parti.
+                            FileLog.Write($"Photo écartée, illisible : {photo.Path}", ex);
+                            lues[i] = new VignetteLue(photo, null, 0, 0);
+                        }
+                    }), ct);
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception ex)
+
+            if (ct.IsCancellationRequested) return;
+
+            foreach (var lue in lues)
             {
-                // Fichier que le moteur d'image n'ouvre pas : extension trompeuse, JPEG
-                // tronqué par une carte défaillante, fichier verrouillé. Il RESTAIT dans
-                // la planche, sans vignette mais cochable — donc mis dans une commande,
-                // pour échouer au rendu une fois le client parti.
-                FileLog.Write($"Photo écartée, illisible : {photo.Path}", ex);
-                illisibles.Add(photo);
+                if (lue is null) continue;
+
+                if (lue.Jpeg is null)
+                {
+                    illisibles.Add(lue.Photo);
+                    continue;
+                }
+
+                lue.Photo.SetSourceThumbnail(ToBitmap(lue.Jpeg));
+                lue.Photo.SetSourceSize(lue.Largeur, lue.Hauteur);
             }
         }
 
@@ -367,17 +551,108 @@ public partial class PhotoGridView : UserControl
         CountText.Text = selected.Count == 0
             ? $"{_photos.Count} photos trouvées"
             : $"{selected.Count} sélectionnée{(selected.Count > 1 ? "s" : "")} sur {_photos.Count}";
-        var total = selected.Sum(p => (p.Product?.Price ?? 0) * p.Quantity);
-        TotalText.Text = selected.Count == 0 ? "" : $"{total:0.00} €";
-        PrintButton.IsEnabled = selected.Count > 0;
+        if (EnTaillePersonnalisee)
+        {
+            ResumerLaPlanche(selected);
+        }
+        else
+        {
+            var total = selected.Sum(p => (p.Product?.Price ?? 0) * p.Quantity);
+            TotalText.Text = selected.Count == 0 ? "" : $"{total:0.00} €";
+            PrintButton.IsEnabled = selected.Count > 0;
+        }
 
         ModifyButton.IsEnabled = selected.Count > 0;
         ModifyButton.Content = selected.Count > 1 ? $"Modifier ({selected.Count})" : "Modifier";
 
+        // Une planche est là : le bouton la reprend, il n'en fabrique pas une seconde.
+        // Il en refaisait une à chaque appui, et l'opérateur qui rappuyait par réflexe se
+        // retrouvait avec deux, trois planches empilées en tête de grille, à décocher une à une.
+        if (_planchesIndex.Count > 0)
+        {
+            IndexButton.IsEnabled = true;
+            IndexButton.Content = _planchesIndex.Count > 1
+                ? $"Retirer les planches index ({_planchesIndex.Count})"
+                : "Retirer la planche index";
+            IndexButton.ToolTip = "Retire la planche index de la grille — rappuyer ensuite en refera une";
+            return;
+        }
+
         // une planche d'une seule vignette n'aurait pas de sens : on indexe un lot
         IndexButton.IsEnabled = selected.Count > 1;
         IndexButton.Content = selected.Count > 1 ? $"Planche index ({selected.Count})" : "Planche index";
+        IndexButton.ToolTip = "Une planche avec les vignettes NUMÉROTÉES de la sélection, " +
+                              "au format choisi — le client coche, on tire ensuite";
     }
+
+    /// <summary>
+    /// Le papier retenu pour la sélection en cours, ou null si rien n'est coché — ou si la
+    /// taille demandée ne tient sur aucun papier du catalogue.
+    /// </summary>
+    private (CustomSheetPlan Plan, Product Papier)? PlancheRetenue(IReadOnlyList<PhotoItem> selection)
+    {
+        if (_taillePerso is not { } taille || selection.Count == 0) return null;
+
+        var cases = selection.Sum(p => p.Quantity);
+        if (cases < 1) return null;
+
+        var plan = CustomSheetLayout.Choose(
+            cases, taille.WidthMm, taille.HeightMm, CustomSizeView.PapiersDisponibles(),
+            forcedPaperCode: PapierImpose);
+
+        if (plan is null) return null;
+
+        var papier = App.Services.Catalog.Find(plan.Paper.Code);
+        return papier is null ? null : (plan, papier);
+    }
+
+    /// <summary>
+    /// Ce que la sélection donnera : combien de planches, sur quel papier, et pour quel prix.
+    ///
+    /// C'est le seul endroit où l'opérateur voit le papier retenu avant d'imprimer. Le prix
+    /// suit le PAPIER — une planche 13×18 coûte un tirage 13×18, quel que soit le nombre de
+    /// photos qu'on y a casées.
+    /// </summary>
+    private void ResumerLaPlanche(IReadOnlyList<PhotoItem> selection)
+    {
+        if (selection.Count == 0)
+        {
+            TotalText.Text = "";
+            PrintButton.IsEnabled = false;
+            return;
+        }
+
+        var cases = selection.Sum(p => p.Quantity);
+
+        if (PlancheRetenue(selection) is not { } retenue)
+        {
+            TotalText.Text = "";
+            CountText.Text = PapierImpose is { } impose
+                ? $"{_taillePerso!.Libelle} ne tient pas sur le {impose} : choisissez un autre papier"
+                : $"{_taillePerso!.Libelle} : aucun papier du catalogue ne convient";
+            PrintButton.IsEnabled = false;
+            return;
+        }
+
+        var (plan, papier) = retenue;
+
+        CountText.Text =
+            $"{cases} photo{(cases > 1 ? "s" : "")} en {_taillePerso!.Libelle} → " +
+            $"{plan.Sheets} planche{(plan.Sheets > 1 ? "s" : "")} {papier.Name} " +
+            $"({plan.PerSheet} par planche)" +
+            (PapierImpose is null ? "" : " · papier imposé");
+
+        TotalText.Text = $"{plan.Paper.TotalPrice(plan.Sheets):0.00} €";
+        PrintButton.IsEnabled = true;
+    }
+
+    /// <summary>
+    /// Les planches d'index posées dans la grille, pour pouvoir les en retirer.
+    ///
+    /// C'est ce qui fait du bouton une bascule : sans mémoire de ce qu'il a produit, il ne
+    /// savait que produire encore.
+    /// </summary>
+    private readonly List<PhotoItem> _planchesIndex = new();
 
     /// <summary>
     /// Fabrique la planche d'index de la sélection et la remet dans la planche-contact
@@ -396,6 +671,13 @@ public partial class PhotoGridView : UserControl
     /// </summary>
     private async void OnIndexSheet(object sender, RoutedEventArgs e)
     {
+        // deuxième appui : on défait. Voir UpdateSummary.
+        if (_planchesIndex.Count > 0)
+        {
+            RetirerLesPlanchesIndex();
+            return;
+        }
+
         var choisies = _photos.Where(p => p.Selected).ToList();
         if (choisies.Count < 2) return;
 
@@ -408,6 +690,11 @@ public partial class PhotoGridView : UserControl
 
         var services = App.Services;
         var chemins = choisies.Select(p => p.Path).ToList();
+
+        // la grille a déjà lu la définition de chaque photo pour l'afficher sur la vignette :
+        // la planche s'en sert au lieu de rouvrir les fichiers. 0 = pas encore connue, elle
+        // sera lue. Voir IndexSheet.Request.Aspects.
+        var rapports = choisies.Select(p => p.SourceSizeKnown ? p.SourceAspect : 0).ToList();
 
         var largeur = MmPx.ToPixels(produit.WidthMm, produit.Dpi);
         var hauteur = MmPx.ToPixels(produit.HeightMm, produit.Dpi);
@@ -425,23 +712,29 @@ public partial class PhotoGridView : UserControl
         {
             var resultat = await Task.Run(() => IndexSheet.Render(
                 new IndexSheet.Request(chemins, largeur, hauteur, produit.Dpi,
-                    "Index", DateTime.Now),
+                    "Index", DateTime.Now, rapports),
                 services.Thumbnails, dossier));
 
-            foreach (var fichier in resultat.Files)
+            for (var i = 0; i < resultat.Files.Count; i++)
             {
-                var planche = new PhotoItem(fichier, OnCartChanged)
+                var planche = new PhotoItem(resultat.Files[i], OnCartChanged)
                 {
                     Product = produit,
                     Quantity = 1,
                     Selected = true,
                 };
 
-                var octets = await Task.Run(() => services.Thumbnails.GetJpeg(fichier));
-                planche.SetSourceThumbnail(ToBitmap(octets));
+                // vignette rendue avec la planche : plus de relecture du fichier écrit
+                planche.SetSourceThumbnail(ToBitmap(resultat.Thumbnails[i]));
 
                 _photos.Insert(0, planche);
+                _planchesIndex.Add(planche);
             }
+
+            // insertion en tête : la grille ne suit pas toute seule un ItemsSource qu'elle
+            // ne surveille pas
+            PhotosGrid.ItemsSource = null;
+            PhotosGrid.ItemsSource = _photos;
 
             FileLog.Write($"Planche index : {chemins.Count} photos, {resultat.Files.Count} planche(s) " +
                           $"de {resultat.PerSheet} ({resultat.Columns}×{resultat.Rows}) au format {produit.Name}");
@@ -462,6 +755,25 @@ public partial class PhotoGridView : UserControl
     }
 
     /// <summary>
+    /// Retire les planches d'index de la grille. Les fichiers rendus restent dans le cache :
+    /// ils ne coûtent rien et une planche déjà tirée peut avoir à être retirée du carton.
+    /// </summary>
+    private void RetirerLesPlanchesIndex()
+    {
+        foreach (var planche in _planchesIndex)
+        {
+            _photos.Remove(planche);
+            if (ReferenceEquals(_photoCourante, planche)) _photoCourante = null;
+        }
+
+        _planchesIndex.Clear();
+
+        PhotosGrid.ItemsSource = null;
+        PhotosGrid.ItemsSource = _photos;
+        UpdateSummary();
+    }
+
+    /// <summary>
     /// Ouvre l'écran de travail sur la sélection : recadrage et corrections, la planche
     /// restant sous les yeux. L'impression part de là, une fois tout réglé.
     /// </summary>
@@ -474,7 +786,10 @@ public partial class PhotoGridView : UserControl
         foreach (var photo in choisies) photo.Product ??= DefaultProduct;
 
         Navigator.Go(
-            new EditSelectionView(choisies, () => OnPrint(this, new RoutedEventArgs())),
+            new EditSelectionView(choisies, () => OnPrint(this, new RoutedEventArgs()),
+                // depuis « Modifier » aussi : c'est là que l'opérateur voit la photo en
+                // grand, donc là qu'on décide souvent de changer de format
+                personnalise: EnTaillePersonnalisee ? null : DemanderUneTaillePersonnalisee),
             $"Modifier — {choisies.Count} photo(s)");
     }
 
@@ -482,6 +797,14 @@ public partial class PhotoGridView : UserControl
 
     private void OnDefaultProductChanged(object sender, SelectionChangedEventArgs e)
     {
+        // en taille personnalisée, cette liste ne désigne plus un produit mais le PAPIER de
+        // sortie : les photos gardent leur format, seul le récapitulatif change
+        if (EnTaillePersonnalisee)
+        {
+            UpdateSummary();
+            return;
+        }
+
         if (DefaultProduct is null) return;
         foreach (var photo in _photos.Where(p => p.Selected))
             photo.Product = DefaultProduct;
@@ -732,13 +1055,23 @@ public partial class PhotoGridView : UserControl
 
     private void OnPickProduct(object sender, RoutedEventArgs e)
     {
+        // en taille personnalisée, toute la sélection part au même format : changer le
+        // produit d'une seule photo ferait une planche aux cases inégales
+        if (EnTaillePersonnalisee) return;
+
         if (sender is not Button button || button.Tag is not PhotoItem photo) return;
 
         ProductMenu.Ouvrir(button, photo.Product, photo.Finish, (produit, finition) =>
         {
             photo.Product = produit;
             photo.Finish = finition;
-        });
+        },
+        personnalise: DemanderUneTaillePersonnalisee,
+        agrandissement: () => DemanderUnAgrandissement(produit =>
+        {
+            photo.Product = produit;
+            photo.Finish = null;   // un agrandissement engendré ne déclare aucune finition
+        }));
     }
 
     private async void OnPrint(object sender, RoutedEventArgs e)
@@ -747,9 +1080,31 @@ public partial class PhotoGridView : UserControl
         if (selected.Count == 0) return;
 
         var services = App.Services;
+
+        // taille personnalisée : le produit fantôme cède la place au PAPIER retenu, et
+        // chaque photo devient une case de planche
+        CustomSheetSpec? planche = null;
+        var produitDeLaLigne = (Product?)null;
+        if (EnTaillePersonnalisee)
+        {
+            if (PlancheRetenue(selected) is not { } retenue)
+            {
+                MessageBox.Show(
+                    $"Une photo de {_taillePerso!.Libelle} ne tient sur aucun papier du catalogue. " +
+                    "Rien n'a été commandé.",
+                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            produitDeLaLigne = retenue.Papier;
+            planche = new CustomSheetSpec(
+                _taillePerso!.WidthMm, _taillePerso.HeightMm, retenue.Plan.Sheets);
+        }
+
         var items = selected
-            .Select(p => new DraftItem(p.Path, p.Product!, p.Quantity, p.Crop,
-                p.RotationQuarterTurns, p.FineRotationDegrees, p.FitOverride, p.Adjustments, null, p.Finish))
+            .Select(p => new DraftItem(p.Path, produitDeLaLigne ?? p.Product!, p.Quantity, p.Crop,
+                p.RotationQuarterTurns, p.FineRotationDegrees, p.FitOverride, p.Adjustments, null,
+                p.Finish, p.CutBorder, planche))
             .ToList();
 
         PrintButton.IsEnabled = false;
@@ -1010,7 +1365,13 @@ public partial class PhotoGridView : UserControl
                 var (largeurPx, hauteurPx) = PixelsVus;
                 if (largeurPx <= 0 || hauteurPx <= 0) return null; // définition pas encore lue
 
-                var (largeur, hauteur) = (_product.WidthMm, _product.HeightMm);
+                // Polaroid : le cadre montré est la FENÊTRE du film — presque carrée — et
+                // non la feuille. C'est elle que l'opérateur remplit ; lui montrer un
+                // 10×15 lui ferait cadrer sur des bords qui seront coupés.
+                var polaroid = (FitOverride ?? _product.DefaultFit) == FitMode.Polaroid;
+                var (largeur, hauteur) = polaroid
+                    ? (PolaroidFrame.WindowWidthMm, PolaroidFrame.WindowHeightMm)
+                    : (_product.WidthMm, _product.HeightMm);
 
                 // Orientation du cadre : celle d'un cadrage déjà posé s'il y en a un —
                 // l'opérateur a pu demander un tirage en travers de la photo, et la
@@ -1091,6 +1452,14 @@ public partial class PhotoGridView : UserControl
                 _cadre = null;
             }
         }
+        /// <summary>
+        /// Contour noir sur le bord de la photo, à suivre aux ciseaux.
+        ///
+        /// N'a de sens qu'en « photo entière » : c'est le seul mode où le tirage sort avec des
+        /// marges blanches, donc le seul où l'on ne sait pas où couper.
+        /// </summary>
+        public bool CutBorder { get; set; }
+
         public ImageAdjustments Adjustments { get; set; } = new();
 
         private BitmapSource? _sourceThumbnail;
@@ -1312,9 +1681,15 @@ public partial class PhotoGridView : UserControl
             }
         }
 
+        /// <summary>
+        /// Le prix n'est affiché QUE s'il y en a un : le format personnalisé est facturé au
+        /// papier de la planche, qui n'est choisi qu'à la validation. Annoncer « 0,00 € » sur
+        /// chaque vignette ferait croire à un tirage gratuit.
+        /// </summary>
         public string ProductLabel => _product is null
             ? "Produit…"
-            : $"{_product.Name}{(_finish is null ? "" : $" · {_finish}")} · {_product.Price:0.00} €";
+            : $"{_product.Name}{(_finish is null ? "" : $" · {_finish}")}" +
+              (_product.Price > 0 ? $" · {_product.Price:0.00} €" : "");
         public string QuantityLabel => _quantity.ToString();
 
         public Brush BorderBrush => Selected
@@ -1373,6 +1748,15 @@ public partial class PhotoGridView : UserControl
         }
 
         public string SizeLabel => _sourceWidth == 0 ? "" : $"{_sourceWidth} x {_sourceHeight}";
+
+        /// <summary>
+        /// La définition du fichier est-elle déjà connue ?
+        ///
+        /// <see cref="SourceAspect"/> répond 1 quand elle ne l'est pas, ce qui passe pour un
+        /// carré : la planche index taillerait sa grille sur des photos carrées imaginaires.
+        /// Les appelants qui se servent du rapport doivent donc demander d'abord.
+        /// </summary>
+        public bool SourceSizeKnown => _sourceWidth > 0 && _sourceHeight > 0;
 
         /// <summary>Rapport du plus grand côté au plus petit, comme l'affiche DiLand (« 2.3 »).</summary>
         public string RatioLabel

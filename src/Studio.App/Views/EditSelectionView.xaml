@@ -118,6 +118,14 @@
                                  chargement, et le bouton mentait dès le premier clic. -->
                             <Button x:Name="FitButton" Style="{StaticResource FlatButton}"
                                     MinHeight="44" FontSize="15" Margin="0,0,0,8" Click="OnToggleFit"/>
+                            <!-- Juste sous le bouton de mode : c'est là qu'on décide des marges
+                                 blanches, donc là qu'on décide du repère de coupe. La case est
+                                 grisée en « remplir le format », où il n'y a rien à recouper. -->
+                            <CheckBox x:Name="CutBorderCheck" FontSize="15" Margin="2,0,0,10"
+                                      Foreground="{StaticResource TextBrush}" VerticalContentAlignment="Center"
+                                      Content="Contour de découpe"
+                                      ToolTip="Trace un trait noir de 0,2 mm sur le bord de la photo, à suivre aux ciseaux quand le tirage sort avec des marges blanches."
+                                      Click="OnCutBorderChanged"/>
                             <Button Style="{StaticResource FlatButton}" MinHeight="44" FontSize="15"
                                     Margin="0,0,0,8" Click="OnResetCrop" Content="Réinitialiser"/>
                             <Button Style="{StaticResource FlatButton}" MinHeight="44" FontSize="15"

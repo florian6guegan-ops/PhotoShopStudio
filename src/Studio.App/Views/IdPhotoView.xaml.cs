@@ -67,9 +67,14 @@ public partial class IdPhotoView : UserControl
             ? $"Photo d'identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
             : $"{_document.Country} — {_document.Document} ({_document.WidthMm:0.#}×{_document.HeightMm:0.#} mm)";
 
+        // La capacité est celle du DOCUMENT visé, pas celle inscrite au produit : un
+        // passeport espagnol (26 × 32) tient à douze sur le papier où le français (35 × 45)
+        // tient à huit. Les papiers qui ne peuvent pas porter une seule case sont écartés
+        // de la liste plutôt que proposés puis refusés à l'impression.
         var sheetProducts = App.Services.Catalog.Enabled
             .Where(p => p.Sheet is not null)
-            .Select(p => new ProductChoice(p))
+            .Select(p => new ProductChoice(p, CapaciteDe(p, _document)))
+            .Where(c => c.Capacite > 0)
             .ToList();
         ProductCombo.ItemsSource = sheetProducts;
         ProductCombo.SelectedIndex = 0;
@@ -78,18 +83,39 @@ public partial class IdPhotoView : UserControl
         // aucune explication. On le dit à l'opérateur, qui peut activer le produit au Catalogue.
         if (sheetProducts.Count == 0)
             Loaded += (_, _) => MessageBox.Show(
-                "Aucun produit « planche identité » n'est activé dans le catalogue.\n\n" +
-                "Ouvrez Catalogue et activez un produit de type planche (ex. « Photos d'identité 35×45 ») " +
-                "pour pouvoir imprimer des photos d'identité.",
+                $"Aucun papier du catalogue ne peut porter une photo de " +
+                $"{_document.WidthMm:0.#} × {_document.HeightMm:0.#} mm.\n\n" +
+                "Ouvrez Catalogue et activez (ou créez) un produit de type planche assez grand " +
+                "pour ce document.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         Loaded += async (_, _) => await LoadStripAsync();
         Unloaded += (_, _) => _loadCts?.Cancel();
     }
 
-    private sealed record ProductChoice(Product Product)
+    /// <param name="Capacite">Cases du document visé qui tiennent sur ce papier.</param>
+    private sealed record ProductChoice(Product Product, int Capacite)
     {
-        public string Label => $"{Product.Name} — {Product.Price:0.00} €";
+        public string Label => $"{Product.Name} — {Capacite} par planche — {Product.Price:0.00} €";
+    }
+
+    /// <summary>
+    /// Nombre de photos du document visé qui tiennent sur ce papier, 0 si pas même une.
+    ///
+    /// Le calcul se fait en PIXELS et par <see cref="IdSheetLayout.MaxCopies"/> — celui-là
+    /// même qui posera la grille au rendu. Compter en millimètres donnerait parfois une case
+    /// de plus que la planche n'accepte, et l'impression échouerait après l'annonce du prix.
+    /// </summary>
+    private static int CapaciteDe(Product product, IdDocumentSpec document)
+    {
+        if (product.Sheet is not { } sheet) return 0;
+
+        return IdSheetLayout.MaxCopies(
+            MmPx.ToPixels(product.WidthMm, product.Dpi),
+            MmPx.ToPixels(product.HeightMm, product.Dpi),
+            MmPx.ToPixels(document.WidthMm, product.Dpi),
+            MmPx.ToPixels(document.HeightMm, product.Dpi),
+            MmPx.ToPixels(sheet.GapMm, product.Dpi));
     }
 
     private async Task LoadStripAsync()
@@ -589,25 +615,20 @@ public partial class IdPhotoView : UserControl
         CopiesText.Text = _copies.ToString();
     }
 
-    private int MaxCopiesForSelectedProduct()
-    {
-        if (ProductCombo.SelectedItem is not ProductChoice choice || choice.Product.Sheet is not { } sheet)
-            return 1;
+    private int MaxCopiesForSelectedProduct() =>
+        ProductCombo.SelectedItem is ProductChoice choice ? choice.Capacite : 1;
 
-        var product = choice.Product;
-        return IdSheetLayout.MaxCopies(
-            MmPx.ToPixels(product.WidthMm, product.Dpi),
-            MmPx.ToPixels(product.HeightMm, product.Dpi),
-            MmPx.ToPixels(sheet.CellWidthMm, product.Dpi),
-            MmPx.ToPixels(sheet.CellHeightMm, product.Dpi),
-            MmPx.ToPixels(sheet.GapMm, product.Dpi));
-    }
-
-    /// <summary>Changer de produit repart de sa disposition par défaut (planche de 6, de 8…).</summary>
+    /// <summary>
+    /// Changer de produit repart de la planche PLEINE.
+    ///
+    /// Le nombre de copies inscrit au produit (« planche de 8 ») vaut pour le format
+    /// français ; sur un document plus petit, il laisserait des places vides payées au même
+    /// prix — la planche est facturée au papier. L'opérateur peut toujours descendre.
+    /// </summary>
     private void OnProductChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ProductCombo.SelectedItem is not ProductChoice choice || choice.Product.Sheet is not { } sheet) return;
-        SetCopies(sheet.Copies);
+        if (ProductCombo.SelectedItem is not ProductChoice choice) return;
+        SetCopies(choice.Capacite);
         ShowFinishes(choice.Product);
     }
 
@@ -631,8 +652,10 @@ public partial class IdPhotoView : UserControl
         if (ProductCombo.SelectedItem is not ProductChoice choice)
         {
             MessageBox.Show(
-                "Aucun produit « planche identité » n'est activé dans le catalogue.\n\n" +
-                "Ouvrez Catalogue et activez un produit de type planche pour imprimer des photos d'identité.",
+                $"Aucun papier du catalogue ne peut porter une photo de " +
+                $"{_document.WidthMm:0.#} × {_document.HeightMm:0.#} mm.\n\n" +
+                "Ouvrez Catalogue et activez (ou créez) un produit de type planche assez grand " +
+                "pour ce document.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -644,10 +667,12 @@ public partial class IdPhotoView : UserControl
         }
 
         // avertit sans bloquer : l'opérateur reste juge (visage non détecté, photo médiocre…)
+        // le gabarit nommé est celui du document visé, pas un 35×45 figé
         if (_head is not null && !IdPhotoFr.Check(_crop, _head, _document).Compliant)
         {
             var answer = MessageBox.Show(
-                "Le cadrage ne respecte pas le gabarit 35×45.\nImprimer quand même ?",
+                $"Le cadrage ne respecte pas le gabarit {_document.WidthMm:0.#}×{_document.HeightMm:0.#}.\n" +
+                "Imprimer quand même ?",
                 "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (answer != MessageBoxResult.Yes) return;
         }
@@ -657,7 +682,9 @@ public partial class IdPhotoView : UserControl
         var items = new List<DraftItem>
         {
             new(_current.Path, choice.Product, _quantity, _crop, 0, 0, null, adjustments, _copies,
-                FinishCombo.SelectedItem as string),
+                FinishCombo.SelectedItem as string,
+                // la case suit le document, jamais celle inscrite au produit
+                SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm)),
         };
 
         PrintButton.IsEnabled = false;

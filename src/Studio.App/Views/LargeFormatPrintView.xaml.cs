@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Printing;
 using Studio.Printing.LargeFormat;
@@ -16,20 +17,48 @@ namespace Studio.App.Views;
 ///
 /// Le bouton « Paramètres d'impression… » ouvre la boîte du pilote Epson elle-même —
 /// c'est bien la fenêtre d'origine, pas une imitation.
+///
+/// <b>Rien de lourd n'est fait à l'ouverture.</b> Elle chargeait l'image entière en mémoire
+/// dans son constructeur — 195 Mo pour un 50×70 à 300 ppp — puis la REDÉCODAIT à chaque
+/// rafraîchissement de l'aperçu, c'est-à-dire à chaque clic. La fenêtre mettait plusieurs
+/// secondes à s'ouvrir et les cases suivantes « ne marchaient qu'une fois » : les clics
+/// tombaient pendant que le fil d'interface décodait. Désormais : l'en-tête du fichier seul à
+/// l'ouverture, un aperçu réduit chargé en tâche de fond, et l'image pleine résolution
+/// seulement au moment d'imprimer.
 /// </summary>
 public partial class LargeFormatPrintView : UserControl
 {
+    /// <summary>Largeur de décodage de l'aperçu : bien au-delà du cadre, sans commune mesure
+    /// avec l'image d'origine.</summary>
+    private const int ApercuPx = 1400;
+
     private readonly string _imagePath;
     private readonly string _catalogDir;
     private readonly Action _onDone;
     private readonly LargeFormatPrintSettings _settings = new();
-    private readonly Bitmap _image;
+
+    private readonly int _imageWidth;
+    private readonly int _imageHeight;
     private readonly double _sourceDpi;
+    private readonly byte[]? _documentProfile;
+
+    /// <summary>Aperçu réduit, gelé, chargé une seule fois. Null tant qu'il arrive.</summary>
+    private System.Windows.Media.ImageBrush? _apercu;
 
     private double _pageWidthMm = 210;
     private double _pageHeightMm = 297;
     private bool _loading = true;
     private bool _syncing;
+    private bool _impressionEnCours;
+
+    /// <summary>
+    /// L'échelle saisie avant de cocher « Ajuster au support », pour la rendre au décochage.
+    ///
+    /// Sans elle, l'ajustement écrivait sa propre échelle (320 %…) dans le champ, et décocher
+    /// reprenait cette valeur : la case ne revenait jamais en arrière, ce qui la faisait passer
+    /// pour bloquée.
+    /// </summary>
+    private string _echelleAvantAjustement = "100";
 
     /// <param name="imagePath">Fichier rendu à imprimer.</param>
     /// <param name="catalogDir">Dossier catalog/, pour la liste des profils ICC.</param>
@@ -43,47 +72,151 @@ public partial class LargeFormatPrintView : UserControl
         _catalogDir = catalogDir;
         _onDone = onDone;
 
-        _image = new Bitmap(imagePath);
-        // une image sans résolution déclarée est traitée à 300 ppp, la valeur de l'atelier
-        _sourceDpi = _image.HorizontalResolution > 1 ? _image.HorizontalResolution : 300;
+        // en-tête du fichier UNIQUEMENT : définition, résolution, profil incorporé. Aucun
+        // pixel n'est décodé ici, et c'est tout l'enjeu de l'ouverture immédiate. Le flux est
+        // refermé aussitôt : rien ne doit rester ouvert sur un fichier qu'on va relire.
+        using (var flux = File.OpenRead(imagePath))
+        {
+            var cadre = BitmapFrame.Create(flux,
+                BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
+
+            _imageWidth = cadre.PixelWidth;
+            _imageHeight = cadre.PixelHeight;
+
+            // Une image sans résolution déclarée est traitée à 300 ppp, la valeur de
+            // l'atelier — ce que le code disait déjà sans le faire : GDI+ ne rend jamais 0,
+            // il invente 96, et le test « > 1 » le laissait passer. Un fichier sans densité
+            // partait donc à 96 ppp, c'est-à-dire trois fois trop grand, et débordait de la
+            // feuille dès 100 %. Les rendus de l'atelier portent tous leur densité
+            // (ImagePipeline la pose) : ce repli ne concerne que les fichiers du dehors.
+            _sourceDpi = cadre.DpiX > 1 ? cadre.DpiX : 300;
+            _documentProfile = LireProfilIncorpore(cadre);
+        }
 
         TitleText.Text = title;
-        DocProfileText.Text = DescribeDocumentProfile();
+        DocProfileText.Text = _documentProfile is null
+            ? "sRGB IEC61966-2.1 (présumé)"
+            : "Profil ICC incorporé au fichier";
+        _settings.DocumentProfileIcc = _documentProfile;
 
-        LoadPrinters();
         LoadIccProfiles();
 
-        _loading = false;
-        RefreshPageSize();
-        UpdateAll();
+        Loaded += async (_, _) =>
+        {
+            await ChargerImprimantesAsync();
+            _loading = false;
+            UpdateAll();
+            await ChargerApercuAsync();
+        };
     }
 
-    private string DescribeDocumentProfile()
+    /// <summary>
+    /// Le profil ICC du fichier, s'il en porte un. Lu depuis les métadonnées, sans décoder.
+    /// </summary>
+    private static byte[]? LireProfilIncorpore(BitmapFrame cadre)
     {
-        // 0x8773 = ICC profile embarqué dans le fichier
-        var hasEmbedded = Array.IndexOf(_image.PropertyIdList, 0x8773) >= 0;
-        return hasEmbedded ? "Profil ICC incorporé au fichier" : "sRGB IEC61966-2.1 (présumé)";
+        try
+        {
+            var contexte = cadre.ColorContexts?.FirstOrDefault();
+            if (contexte is null) return null;
+
+            using var flux = contexte.OpenProfileStream();
+            if (flux is null) return null;
+
+            using var memoire = new MemoryStream();
+            flux.CopyTo(memoire);
+            var octets = memoire.ToArray();
+            return octets.Length > 0 ? octets : null;
+        }
+        catch (Exception)
+        {
+            // profil illisible ou format qui n'en porte pas : on repart de sRGB
+            return null;
+        }
     }
 
-    private void LoadPrinters()
+    /// <summary>
+    /// Liste des imprimantes et premier format papier, HORS du fil d'interface.
+    ///
+    /// <c>InstalledPrinters</c> comme <c>GetPageSizeMm</c> interrogent le spouleur, et une
+    /// file réseau endormie prend plusieurs secondes à répondre. La fenêtre s'affiche avant.
+    /// </summary>
+    private async Task ChargerImprimantesAsync()
     {
-        foreach (string printer in PrinterSettings.InstalledPrinters)
-            PrinterCombo.Items.Add(printer);
+        List<string> imprimantes;
+        try
+        {
+            imprimantes = await Task.Run(() =>
+                PrinterSettings.InstalledPrinters.Cast<string>().ToList());
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Liste des imprimantes indisponible", ex);
+            imprimantes = new List<string>();
+        }
+
+        foreach (var imprimante in imprimantes)
+            PrinterCombo.Items.Add(imprimante);
 
         // l'Epson est la machine des agrandissements : on la présélectionne si elle est là
-        var epson = PrinterCombo.Items.Cast<string>()
-            .FirstOrDefault(p => p.Contains("SC-P800", StringComparison.OrdinalIgnoreCase));
+        var epson = imprimantes.FirstOrDefault(p =>
+            p.Contains("SC-P800", StringComparison.OrdinalIgnoreCase));
 
-        PrinterCombo.SelectedItem = epson ?? PrinterCombo.Items.Cast<string>().FirstOrDefault();
+        PrinterCombo.SelectedItem = epson ?? imprimantes.FirstOrDefault();
+        _settings.PrinterName = PrinterCombo.SelectedItem as string ?? "";
+
+        await RefreshPageSizeAsync();
+    }
+
+    /// <summary>
+    /// Charge l'aperçu en tâche de fond, à la taille de l'écran et non à celle du tirage.
+    ///
+    /// Un seul décodage, une seule fois, réutilisé par tous les redessins : c'est le
+    /// remplacement du <c>new BitmapImage(new Uri(...))</c> que <see cref="DrawPreview"/>
+    /// refaisait à chaque appel.
+    /// </summary>
+    private async Task ChargerApercuAsync()
+    {
+        try
+        {
+            var image = await Task.Run(() =>
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(_imagePath);
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.DecodePixelWidth = Math.Min(ApercuPx, Math.Max(1, _imageWidth));
+                bitmap.EndInit();
+                bitmap.Freeze();
+                return bitmap;
+            });
+
+            var brosse = new System.Windows.Media.ImageBrush(image)
+            {
+                Stretch = System.Windows.Media.Stretch.Fill,
+            };
+            brosse.Freeze();
+            _apercu = brosse;
+
+            UpdateAll();
+        }
+        catch (Exception ex)
+        {
+            // l'aperçu n'est qu'un aperçu : sans lui, la boîte reste utilisable
+            FileLog.Write($"Aperçu de l'agrandissement illisible : {_imagePath}", ex);
+        }
     }
 
     private void LoadIccProfiles()
     {
-        PrinterProfileCombo.Items.Add("(aucun)");
-        foreach (var profile in IccProfiles.List(_catalogDir))
-            PrinterProfileCombo.Items.Add(profile);
+        PrinterProfileCombo.Items.Add(AucunProfil);
+        foreach (var profil in IccProfiles.Available(_catalogDir))
+            PrinterProfileCombo.Items.Add(profil);
+
         PrinterProfileCombo.SelectedIndex = 0;
     }
+
+    private const string AucunProfil = "(aucun)";
 
     // — lecture des champs —
 
@@ -110,8 +243,9 @@ public partial class LargeFormatPrintView : UserControl
             ? ColorHandling.ApplicationManagesColor
             : ColorHandling.PrinterManagesColor;
 
-        _settings.PrinterProfile = PrinterProfileCombo.SelectedIndex > 0
-            ? PrinterProfileCombo.SelectedItem as string
+        // le CHEMIN, pas le nom affiché : c'est lui qu'IccTransform ouvre
+        _settings.PrinterProfile = PrinterProfileCombo.SelectedItem is IccProfiles.Entry profil
+            ? profil.Path
             : null;
 
         _settings.RenderingIntent = IntentCombo.SelectedIndex switch
@@ -129,21 +263,34 @@ public partial class LargeFormatPrintView : UserControl
         _settings.ScalePercent = Math.Max(0.01, ParseDouble(ScaleBox.Text, 100));
         _settings.TopMm = PrintLayout.ToMm(ParseDouble(TopBox.Text, 0), _settings.Units);
         _settings.LeftMm = PrintLayout.ToMm(ParseDouble(LeftBox.Text, 0), _settings.Units);
+        _settings.CutBorder = CutBorderCheck.IsChecked == true;
     }
 
-    private void RefreshPageSize()
+    /// <summary>
+    /// Interroge le pilote pour la taille de feuille, hors du fil d'interface.
+    /// </summary>
+    private async Task RefreshPageSizeAsync()
     {
-        if (PrinterCombo.SelectedItem is not string printer || string.IsNullOrEmpty(printer)) return;
+        if (PrinterCombo.SelectedItem is not string imprimante || string.IsNullOrEmpty(imprimante))
+            return;
+
+        var devMode = _settings.DevModeBytes;
+        var paysage = OrientationCombo.SelectedIndex == 1;
+
         try
         {
-            var (w, h) = LargeFormatPrinter.GetPageSizeMm(printer, _settings.DevModeBytes,
-                OrientationCombo.SelectedIndex == 1);
+            var (w, h) = await Task.Run(() =>
+                LargeFormatPrinter.GetPageSizeMm(imprimante, devMode, paysage));
             _pageWidthMm = w;
             _pageHeightMm = h;
         }
         catch (InvalidOperationException)
         {
             // imprimante hors ligne : on garde la dernière taille connue plutôt que de planter
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Format papier indisponible pour « {imprimante} »", ex);
         }
     }
 
@@ -154,7 +301,7 @@ public partial class LargeFormatPrintView : UserControl
         if (_loading) return;
 
         ReadSettingsFromForm();
-        var placement = _settings.ComputePlacement(_image.Width, _image.Height, _sourceDpi,
+        var placement = _settings.ComputePlacement(_imageWidth, _imageHeight, _sourceDpi,
             _pageWidthMm, _pageHeightMm);
 
         SyncSizeBoxes(placement);
@@ -176,7 +323,7 @@ public partial class LargeFormatPrintView : UserControl
             problems.Add($"Résolution faible ({placement.EffectiveDpi:0} PPP) : le tirage risque d'être flou.");
 
         WarningText.Text = string.Join("\n", problems);
-        PrintButton.IsEnabled = _settings.Validate().Count == 0;
+        PrintButton.IsEnabled = !_impressionEnCours && _settings.Validate().Count == 0;
     }
 
     /// <summary>Reflète l'échelle dans les champs Largeur/Hauteur, sans boucler sur les événements.</summary>
@@ -220,14 +367,18 @@ public partial class LargeFormatPrintView : UserControl
         {
             Width = Math.Max(1, placement.WidthMm * scale),
             Height = Math.Max(1, placement.HeightMm * scale),
-            Fill = new System.Windows.Media.ImageBrush(
-                new System.Windows.Media.Imaging.BitmapImage(new Uri(_imagePath)))
-            {
-                Stretch = System.Windows.Media.Stretch.Fill,
-            },
-            Stroke = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(0x33, 0x33, 0x33)),
-            StrokeThickness = 1,
+            // tant que l'aperçu réduit n'est pas là, le tirage est figuré en gris : la boîte
+            // reste réglable sans attendre le décodage
+            Fill = (System.Windows.Media.Brush?)_apercu
+                   ?? new System.Windows.Media.SolidColorBrush(
+                       System.Windows.Media.Color.FromRgb(0xBB, 0xBB, 0xBB)),
+            // le contour de découpe se voit dans l'aperçu : noir franc et plus marqué que le
+            // simple liseré qui délimite la photo, pour que l'opérateur sache ce qui sortira
+            Stroke = _settings.CutBorder
+                ? System.Windows.Media.Brushes.Black
+                : new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(0x33, 0x33, 0x33)),
+            StrokeThickness = _settings.CutBorder ? 2 : 1,
         };
         Canvas.SetLeft(photo, originX + placement.LeftMm * scale);
         Canvas.SetTop(photo, originY + placement.TopMm * scale);
@@ -244,11 +395,25 @@ public partial class LargeFormatPrintView : UserControl
         UpdateAll();
     }
 
-    private void OnPrinterChanged(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Portrait ou paysage : il faut REDEMANDER la taille de feuille au pilote.
+    ///
+    /// La combo était câblée sur <see cref="OnSettingChanged"/>, qui ne fait que recalculer le
+    /// placement : <c>_pageWidthMm</c> et <c>_pageHeightMm</c> ne permutaient jamais, et
+    /// changer de disposition ne bougeait ni l'aperçu ni le centrage.
+    /// </summary>
+    private async void OnOrientationChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        await RefreshPageSizeAsync();
+        UpdateAll();
+    }
+
+    private async void OnPrinterChanged(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
         _settings.DevModeBytes = null; // les réglages pilote ne valent que pour une machine
-        RefreshPageSize();
+        await RefreshPageSizeAsync();
         UpdateAll();
     }
 
@@ -270,11 +435,26 @@ public partial class LargeFormatPrintView : UserControl
         UpdateAll();
     }
 
+    /// <summary>« Ajuster au support » : une vraie bascule, aller ET retour.</summary>
     private void OnFitChanged(object sender, RoutedEventArgs e)
     {
-        ScaleBox.IsEnabled = FitCheck.IsChecked != true;
-        WidthBox.IsEnabled = FitCheck.IsChecked != true;
-        HeightBox.IsEnabled = FitCheck.IsChecked != true;
+        var ajuste = FitCheck.IsChecked == true;
+
+        if (ajuste)
+        {
+            // on met de côté l'échelle de l'opérateur AVANT que l'ajustement n'écrive la sienne
+            _echelleAvantAjustement = ScaleBox.Text;
+        }
+        else
+        {
+            _syncing = true;
+            ScaleBox.Text = _echelleAvantAjustement;
+            _syncing = false;
+        }
+
+        ScaleBox.IsEnabled = !ajuste;
+        WidthBox.IsEnabled = !ajuste;
+        HeightBox.IsEnabled = !ajuste;
         UpdateAll();
     }
 
@@ -293,7 +473,7 @@ public partial class LargeFormatPrintView : UserControl
         if (voulueMm <= 0) return;
 
         _syncing = true;
-        ScaleBox.Text = PrintLayout.ScaleForWidth(_image.Width, _sourceDpi, voulueMm)
+        ScaleBox.Text = PrintLayout.ScaleForWidth(_imageWidth, _sourceDpi, voulueMm)
             .ToString("0.####", CultureInfo.CurrentCulture);
         _syncing = false;
         UpdateAll();
@@ -306,14 +486,14 @@ public partial class LargeFormatPrintView : UserControl
         if (voulueMm <= 0) return;
 
         _syncing = true;
-        ScaleBox.Text = PrintLayout.ScaleForHeight(_image.Height, _sourceDpi, voulueMm)
+        ScaleBox.Text = PrintLayout.ScaleForHeight(_imageHeight, _sourceDpi, voulueMm)
             .ToString("0.####", CultureInfo.CurrentCulture);
         _syncing = false;
         UpdateAll();
     }
 
     /// <summary>Ouvre la boîte du pilote Epson — la vraie, celle de Windows.</summary>
-    private void OnOpenDriverDialog(object sender, RoutedEventArgs e)
+    private async void OnOpenDriverDialog(object sender, RoutedEventArgs e)
     {
         if (PrinterCombo.SelectedItem is not string printer || string.IsNullOrEmpty(printer))
             return;
@@ -324,7 +504,7 @@ public partial class LargeFormatPrintView : UserControl
             if (devMode is not null)
             {
                 _settings.DevModeBytes = devMode;
-                RefreshPageSize();
+                await RefreshPageSizeAsync();
                 UpdateAll();
             }
         }
@@ -335,29 +515,70 @@ public partial class LargeFormatPrintView : UserControl
         }
     }
 
-    private void OnPrint(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// L'image pleine résolution n'est lue qu'ICI, une fois, au moment d'imprimer — et sur un
+    /// fil de fond, l'interface restant vivante.
+    /// </summary>
+    private async void OnPrint(object sender, RoutedEventArgs e)
     {
+        if (_impressionEnCours) return;
+
         ReadSettingsFromForm();
+
+        _impressionEnCours = true;
+        PrintButton.IsEnabled = false;
+        var libelle = PrintButton.Content;
+        PrintButton.Content = "Lecture du fichier…";
+
         try
         {
-            LargeFormatPrinter.Print(_image, _settings, _sourceDpi,
-                $"Studio Photo — {Path.GetFileNameWithoutExtension(_imagePath)}");
+            var reglages = _settings.Clone();
+            var dpi = _sourceDpi;
+            var chemin = _imagePath;
+
+            // Le bouton dit à quoi le temps passe. Sur un 50×70, la lecture du PNG et la
+            // remise au spouleur pèsent chacune plusieurs secondes : sans ces libellés, la
+            // fenêtre paraît figée et l'opérateur reclique.
+            var etape = new Progress<string>(texte => PrintButton.Content = texte);
+
+            await Task.Run(() =>
+            {
+                // le décodage est chronométré à part : sur un 50×70 à 300 ppp, le PNG fait
+                // 48 Mpx et c'est peut-être là que le temps passe. Sans cette ligne, la
+                // durée se confondait avec celle de l'impression.
+                var chrono = System.Diagnostics.Stopwatch.StartNew();
+                using var image = new Bitmap(chemin);
+                FileLog.Write(
+                    $"Agrandissement : décodage de {Path.GetFileName(chemin)} " +
+                    $"({image.Width}×{image.Height} px) en {chrono.ElapsedMilliseconds} ms");
+
+                ((IProgress<string>)etape).Report("Envoi à l'imprimante…");
+
+                chrono.Restart();
+                LargeFormatPrinter.Print(image, reglages, dpi,
+                    $"Studio Photo — {Path.GetFileNameWithoutExtension(chemin)}");
+                FileLog.Write($"Agrandissement : impression complète en {chrono.ElapsedMilliseconds} ms");
+            });
+
             MessageBox.Show("Tirage envoyé à l'imprimante.", "Studio Photo",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             Close();
         }
         catch (Exception ex)
         {
+            FileLog.Write($"Impression grand format échouée : {_imagePath}", ex);
             MessageBox.Show($"L'impression a échoué :\n{ex.Message}", "Studio Photo",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _impressionEnCours = false;
+            PrintButton.Content = libelle;
+            UpdateAll();
         }
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => Close();
 
-    private void Close()
-    {
-        _image.Dispose();
-        _onDone();
-    }
+    private void Close() => _onDone();
 }

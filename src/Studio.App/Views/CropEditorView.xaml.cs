@@ -91,6 +91,10 @@ public partial class CropEditorView : UserControl
     {
         get
         {
+            // Polaroid : ce que l'opérateur cadre, c'est la FENÊTRE du film — presque
+            // carrée — et non la feuille. Elle n'a pas d'orientation à choisir.
+            if (_fit == FitMode.Polaroid) return PolaroidFrame.WindowAspect;
+
             var aspect = _product.WidthMm / _product.HeightMm;
 
             bool cadrePaysage;
@@ -110,6 +114,13 @@ public partial class CropEditorView : UserControl
 
     /// <summary>Orientation du cadre imposée par l'opérateur ; null = suit la photo.</summary>
     private bool? _frameLandscape;
+
+    /// <summary>
+    /// Y a-t-il un cadrage à poser ? Oui en « remplir le format », oui sur un Polaroid — sa
+    /// fenêtre presque carrée découpe forcément dans la photo — non en « photo entière »,
+    /// où l'image est montrée telle quelle et bordée de blanc.
+    /// </summary>
+    private bool Recadre => _fit is FitMode.Fill or FitMode.Polaroid;
 
     private async Task LoadPhotoAsync()
     {
@@ -174,7 +185,7 @@ public partial class CropEditorView : UserControl
         var display = DisplayRect();
         if (display.IsEmpty) return;
 
-        var cropping = _fit == FitMode.Fill;
+        var cropping = Recadre;
         Overlay.Visibility = cropping ? Visibility.Visible : Visibility.Collapsed;
         FitMessage.Visibility = cropping ? Visibility.Collapsed : Visibility.Visible;
 
@@ -250,14 +261,14 @@ public partial class CropEditorView : UserControl
     private void Pan(double dxPx, double dyPx)
     {
         var display = DisplayRect();
-        if (display.IsEmpty || _fit != FitMode.Fill) return;
+        if (display.IsEmpty || !Recadre) return;
         _crop = CropMath.Pan(_crop, -dxPx / display.Width, -dyPx / display.Height);
         Redraw();
     }
 
     private void Zoom(double cropFactor)
     {
-        if (_displayBitmap is null || _fit != FitMode.Fill) return;
+        if (_displayBitmap is null || !Recadre) return;
         _crop = CropMath.Zoom(_crop, cropFactor,
             _displayBitmap.PixelWidth, _displayBitmap.PixelHeight, TargetAspect);
         Redraw();
@@ -356,13 +367,30 @@ public partial class CropEditorView : UserControl
 
     private void ToggleFit()
     {
+        // le Polaroid n'est pas un mode de cadrage qu'on bascule : c'est la forme du
+        // produit. La bascule est grisée, ceci n'est qu'une ceinture de plus.
+        if (_fit == FitMode.Polaroid) return;
+
         _fit = _fit == FitMode.Fill ? FitMode.Fit : FitMode.Fill;
         UpdateFitToggle();
         Redraw();
     }
 
-    private void UpdateFitToggle() =>
-        FitToggle.Content = _fit == FitMode.Fill ? "Mode : Remplir" : "Mode : Entier";
+    private void UpdateFitToggle()
+    {
+        FitToggle.Content = _fit switch
+        {
+            FitMode.Fill => "Mode : Remplir",
+            FitMode.Polaroid => "Mode : Polaroid",
+            _ => "Mode : Entier",
+        };
+
+        // ni le cadrage ni l'orientation ne se choisissent sur un Polaroid : la fenêtre du
+        // film est presque carrée et n'a pas de sens de pose
+        var polaroid = _fit == FitMode.Polaroid;
+        FitToggle.IsEnabled = !polaroid;
+        FrameToggle.IsEnabled = !polaroid;
+    }
 
     private void OnToggleFrame(object sender, RoutedEventArgs e) => ToggleFrame();
 
@@ -383,7 +411,9 @@ public partial class CropEditorView : UserControl
     private void Reset()
     {
         _turns = 0;
-        _fit = FitMode.Fill;
+        // « Réinitialiser » revient au cadrage du PRODUIT : sur un Polaroid, remettre
+        // « Remplir » ferait sortir un tirage sans cadre, que rien ne signalerait
+        _fit = _product.DefaultFit == FitMode.Polaroid ? FitMode.Polaroid : FitMode.Fill;
         _frameLandscape = null; // le cadre reprend l'orientation de la photo
         ApplyRotation();
         ResetCrop();
@@ -399,7 +429,7 @@ public partial class CropEditorView : UserControl
     private void Apply()
     {
         // en mode Entier le recadrage n'a pas de sens : on repart de l'image complète
-        var crop = _fit == FitMode.Fill ? _crop : CropSpec.Full;
+        var crop = Recadre ? _crop : CropSpec.Full;
         _onApply(new State(crop, _turns, _fit));
         Navigator.Back();
     }

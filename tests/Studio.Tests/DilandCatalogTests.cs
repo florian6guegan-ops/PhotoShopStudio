@@ -30,7 +30,10 @@ public class DilandCatalogTests
     public void Le_catalogue_se_charge()
     {
         Assert.NotEmpty(Catalogue.Value.All);
-        Assert.Equal(40, Catalogue.Value.All.Count);
+
+        // 40 produits repris de DiLand, plus le « Bord blanc 21x29,7 » ajouté le
+        // 02/08/2026 : DiLand n'en proposait pas, l'exploitant le vend.
+        Assert.Equal(41, Catalogue.Value.All.Count);
     }
 
     [Fact]
@@ -72,7 +75,8 @@ public class DilandCatalogTests
     {
         var bordBlanc = Catalogue.Value.All.Where(p => p.Name.StartsWith("Bord blanc", StringComparison.Ordinal)).ToList();
 
-        Assert.Equal(9, bordBlanc.Count);
+        // les 9 de DiLand + le 21x29,7 ajouté le 02/08/2026
+        Assert.Equal(10, bordBlanc.Count);
         Assert.All(bordBlanc, p =>
         {
             Assert.Equal(5, p.BorderMm);

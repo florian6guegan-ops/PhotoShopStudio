@@ -133,17 +133,22 @@
                 </Grid.ColumnDefinitions>
 
                 <WrapPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="Produit :" Style="{StaticResource Hint}"
+                    <TextBlock x:Name="ProductLabelText" Text="Produit :" Style="{StaticResource Hint}"
                                VerticalAlignment="Center" Margin="0,0,8,6"/>
                     <ComboBox x:Name="ProductCombo" MinWidth="280" FontSize="20" Padding="10,8"
                               DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,20,6"
                               SelectionChanged="OnDefaultProductChanged"/>
+                    <!-- Format personnalisé : la taille remplace le choix de produit, le
+                         papier n'étant décidé qu'à la validation, d'après la quantité. -->
+                    <TextBlock x:Name="TaillePersoText" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" Visibility="Collapsed"
+                               VerticalAlignment="Center" Margin="0,0,20,6"/>
                     <TextBlock Text="Quantité :" Style="{StaticResource Hint}"
                                VerticalAlignment="Center" Margin="0,0,8,6"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnQuantityMinus" Margin="0,0,0,6">−</Button>
-                    <TextBlock x:Name="QuantityText" Text="1" FontSize="24" FontWeight="Bold"
-                               VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" Margin="0,0,0,6"/>
+                    <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}"
+                               MinWidth="44" Margin="0,0,0,6"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnQuantityPlus" Margin="0,0,20,6">+</Button>
                     <TextBlock Text="Minilab :" Style="{StaticResource Hint}"
@@ -164,8 +169,7 @@
                             Padding="26,0" FontSize="18" Margin="0,0,20,0" IsEnabled="False"
                             ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"
                             Click="OnModify">Modifier</Button>
-                    <TextBlock x:Name="TotalText" FontSize="24" FontWeight="Bold"
-                               VerticalAlignment="Center" Margin="0,0,16,0"/>
+                    <TextBlock x:Name="TotalText" Style="{StaticResource Valeur}" Margin="0,0,16,0"/>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
                             Click="OnPrint" IsEnabled="False">
                         🖨  Imprimer

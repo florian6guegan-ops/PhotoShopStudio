@@ -23,8 +23,10 @@
             <Border Background="{StaticResource CardBrush}" CornerRadius="16" Padding="28"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
                 <StackPanel>
-                    <TextBlock Text="Code de sortie" FontSize="24" FontWeight="SemiBold" TextAlignment="Center"/>
-                    <TextBlock x:Name="PinDots" FontSize="34" TextAlignment="Center" Margin="0,10" MinHeight="44"/>
+                    <TextBlock Text="Code de sortie" Style="{StaticResource Texte}"
+                               FontSize="24" FontWeight="SemiBold" TextAlignment="Center"/>
+                    <TextBlock x:Name="PinDots" Style="{StaticResource Texte}"
+                               FontSize="34" TextAlignment="Center" Margin="0,10" MinHeight="44"/>
                     <UniformGrid Columns="3" Rows="4">
                         <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="1">1</Button>
                         <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="2">2</Button>

@@ -28,11 +28,8 @@ public partial class ProductEditView : UserControl
         TitleText.Text = isNew ? "Nouveau produit" : $"Modifier — {product.Name}";
 
         PrinterCombo.ItemsSource = PrinterSettings.InstalledPrinters.Cast<string>().ToList();
-        FitCombo.ItemsSource = new[]
-        {
-            "Remplir le format (recadre si besoin)",
-            "Photo entière (marges blanches si besoin)",
-        };
+        OutputCombo.ItemsSource = Sorties.Select(s => s.Libelle).ToList();
+        FitCombo.ItemsSource = Cadrages.Select(c => c.Libelle).ToList();
 
         NameBox.Text = product.Name;
         CodeBox.Text = product.Code;
@@ -41,7 +38,8 @@ public partial class ProductEditView : UserControl
         WidthBox.Text = product.WidthMm.ToString(CultureInfo.CurrentCulture);
         HeightBox.Text = product.HeightMm.ToString(CultureInfo.CurrentCulture);
         PrinterCombo.SelectedItem = string.IsNullOrEmpty(product.PrinterName) ? null : product.PrinterName;
-        FitCombo.SelectedIndex = product.DefaultFit == FitMode.Fill ? 0 : 1;
+        OutputCombo.SelectedIndex = Math.Max(0, Array.FindIndex(Sorties, s => s.Valeur == product.Output));
+        FitCombo.SelectedIndex = Math.Max(0, Array.FindIndex(Cadrages, c => c.Valeur == product.DefaultFit));
         BorderBox.Text = product.BorderMm.ToString(CultureInfo.CurrentCulture);
         DpiBox.Text = product.Dpi.ToString(CultureInfo.CurrentCulture);
         EnabledCheck.IsChecked = product.Enabled;
@@ -54,6 +52,47 @@ public partial class ProductEditView : UserControl
         SheetHBox.Text = (product.Sheet?.CellHeightMm ?? 45).ToString(CultureInfo.CurrentCulture);
         OnSheetToggled(this, new RoutedEventArgs());
     }
+
+    /// <summary>
+    /// Les trois circuits d'impression, dans les mots du comptoir.
+    ///
+    /// Ce choix n'était pas saisissable : <see cref="Product.Output"/> retombait donc sur
+    /// son défaut (file Windows) à chaque enregistrement, et un tirage du minilab devenait
+    /// un tirage imprimante sans que personne ne l'ait demandé.
+    /// </summary>
+    private static readonly (ProductOutput Valeur, string Libelle)[] Sorties =
+    [
+        (ProductOutput.Printer, "File d'impression Windows (DS620…)"),
+        (ProductOutput.FujiMinilab, "Minilab Fuji DE100 (SDK, pas le spouleur)"),
+        (ProductOutput.ManualFile, "Fichier repris à la main (Epson, Photoshop)"),
+    ];
+
+    /// <summary>
+    /// Seule la sortie « file Windows » exige une imprimante. Le minilab est piloté par le
+    /// SDK Fuji et les agrandissements sortent en fichiers : leur imposer une file
+    /// obligerait à en désigner une au hasard, et c'est exactement ce qui brouille le
+    /// routage des enveloppes.
+    /// </summary>
+    private bool ImprimanteRequise =>
+        OutputCombo.SelectedIndex >= 0 && Sorties[OutputCombo.SelectedIndex].Valeur == ProductOutput.Printer;
+
+    private void OnOutputChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PrinterCombo is null) return;   // appelé pendant InitializeComponent
+        PrinterCombo.IsEnabled = ImprimanteRequise;
+        if (!ImprimanteRequise) PrinterCombo.SelectedItem = null;
+    }
+
+    /// <summary>
+    /// Les cadrages proposés. Le Polaroid en est un : il pose la photo dans une fenêtre
+    /// presque carrée entourée du cadre blanc du film 600, bande large en bas.
+    /// </summary>
+    private static readonly (FitMode Valeur, string Libelle)[] Cadrages =
+    [
+        (FitMode.Fill, "Remplir le format (recadre si besoin)"),
+        (FitMode.Fit, "Photo entière (marges blanches si besoin)"),
+        (FitMode.Polaroid, "Polaroid (fenêtre carrée, bande blanche en bas)"),
+    ];
 
     /// <summary>Entrée « aucun profil » : la couleur est alors laissée au pilote (comportement d'origine).</summary>
     private const string NoIcc = "Aucun — le pilote gère la couleur";
@@ -113,15 +152,28 @@ public partial class ProductEditView : UserControl
         _product.Price = parsed.Price;
         _product.WidthMm = parsed.Width;
         _product.HeightMm = parsed.Height;
-        _product.PrinterName = (string)PrinterCombo.SelectedItem!;
-        _product.DefaultFit = FitCombo.SelectedIndex == 0 ? FitMode.Fill : FitMode.Fit;
+        _product.Output = Sorties[OutputCombo.SelectedIndex].Valeur;
+        _product.PrinterName = ImprimanteRequise ? (string)PrinterCombo.SelectedItem! : "";
+        _product.DefaultFit = Cadrages[FitCombo.SelectedIndex].Valeur;
         _product.BorderMm = parsed.Border;
         _product.Dpi = parsed.Dpi;
         _product.IccProfile = IccCombo.SelectedItem as string is { } icc && icc != NoIcc ? icc : null;
         _product.Enabled = EnabledCheck.IsChecked == true;
-        _product.Sheet = SheetCheck.IsChecked == true
-            ? new SheetSpec { Copies = parsed.SheetCopies, CellWidthMm = parsed.SheetW, CellHeightMm = parsed.SheetH }
-            : null;
+        // la fiche ne montre que trois des sept réglages de planche : les quatre autres
+        // (écart, repères, contour, date) sont CONSERVÉS. Les recréer à neuf effaçait
+        // l'horodatage exigé par l'administration sur les photos d'identité.
+        if (SheetCheck.IsChecked == true)
+        {
+            var planche = _product.Sheet ?? new SheetSpec();
+            planche.Copies = parsed.SheetCopies;
+            planche.CellWidthMm = parsed.SheetW;
+            planche.CellHeightMm = parsed.SheetH;
+            _product.Sheet = planche;
+        }
+        else
+        {
+            _product.Sheet = null;
+        }
 
         var saveError = _onSave(_product);
         if (saveError is not null)
@@ -144,7 +196,9 @@ public partial class ProductEditView : UserControl
         if (!TryParseDecimal(PriceBox.Text, out var price) || price < 0) return "Prix invalide.";
         if (!TryParseDouble(WidthBox.Text, out var width) || width <= 0) return "Largeur invalide.";
         if (!TryParseDouble(HeightBox.Text, out var height) || height <= 0) return "Hauteur invalide.";
-        if (PrinterCombo.SelectedItem is null) return "Choisissez une imprimante.";
+        if (OutputCombo.SelectedIndex < 0) return "Choisissez une sortie.";
+        if (ImprimanteRequise && PrinterCombo.SelectedItem is null)
+            return "Choisissez une imprimante — c'est une sortie « file d'impression Windows ».";
         if (!TryParseDouble(BorderBox.Text, out var border) || border < 0) return "Marge invalide.";
         if (!int.TryParse(DpiBox.Text, out var dpi) || dpi is < 72 or > 1200) return "Résolution invalide (72 à 1200 dpi).";
 

@@ -109,8 +109,7 @@
                                ToolTip="Nombre de photos sur une planche"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnCopiesMinus">−</Button>
-                    <TextBlock x:Name="CopiesText" Text="6" FontSize="24" FontWeight="Bold"
-                               VerticalAlignment="Center" MinWidth="44" TextAlignment="Center"/>
+                    <TextBlock x:Name="CopiesText" Text="6" Style="{StaticResource Valeur}" MinWidth="44"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnCopiesPlus">+</Button>
 
@@ -118,13 +117,12 @@
                                ToolTip="Nombre de tirages identiques"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnQuantityMinus">−</Button>
-                    <TextBlock x:Name="QuantityText" Text="1" FontSize="24" FontWeight="Bold"
-                               VerticalAlignment="Center" MinWidth="44" TextAlignment="Center"/>
+                    <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}" MinWidth="44"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnQuantityPlus">+</Button>
                     <CheckBox x:Name="GrayscaleCheck" VerticalAlignment="Center" Margin="24,0,0,0"
                               Checked="OnGrayscaleChanged" Unchecked="OnGrayscaleChanged">
-                        <TextBlock Text="Noir et blanc" FontSize="18"/>
+                        <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="18"/>
                     </CheckBox>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
@@ -133,7 +131,8 @@
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}" Margin="12,0,0,0"
                             Click="OnPrint" IsEnabled="False">🖨  Imprimer la planche</Button>
                 </StackPanel>
-                <TextBlock x:Name="ComplianceText" FontSize="19" FontWeight="SemiBold"
+                <TextBlock x:Name="ComplianceText" Style="{StaticResource Texte}"
+                           FontSize="19" FontWeight="SemiBold"
                            VerticalAlignment="Center" Margin="24,0" TextWrapping="Wrap"/>
             </DockPanel>
         </Border>

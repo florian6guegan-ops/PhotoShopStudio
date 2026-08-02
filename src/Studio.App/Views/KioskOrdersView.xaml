@@ -155,6 +155,11 @@
                                     <Button Content="Ouvrir" Style="{StaticResource ActionLigne}"
                                             Click="OnOpen" Tag="{Binding}"
                                             ToolTip="Ouvre les photos pour les recadrer et les corriger avant de tirer."/>
+                                    <!-- Le client a commandé un format standard et veut autre
+                                         chose au comptoir : on ouvre directement en taille libre. -->
+                                    <Button Content="Personnalisé…" Style="{StaticResource ActionLigne}"
+                                            Click="OnOpenCustom" Tag="{Binding}"
+                                            ToolTip="Ouvre les photos dans une taille au choix (5,5 × 8 cm…) au lieu du format commandé."/>
                                     <Button Content="Reprendre" Style="{StaticResource ActionLigne}"
                                             Click="OnImport" Tag="{Binding}"
                                             IsEnabled="{Binding CanImport}"

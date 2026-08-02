@@ -49,6 +49,28 @@ public sealed class ProductCatalog
             File.Move(tmp, productsJsonPath);
     }
 
+    /// <summary>
+    /// Nombre de commandes qui citent ce produit.
+    ///
+    /// Sert à décider si un produit peut être SUPPRIMÉ du catalogue ou seulement désactivé :
+    /// tout le circuit d'impression appelle <see cref="Require"/>, qui lève si le code a
+    /// disparu. Supprimer un produit encore cité rendrait ces commandes impossibles à
+    /// réimprimer — et c'est précisément l'écran des commandes du jour qui sert à rattraper
+    /// un tirage raté.
+    ///
+    /// On compte les COMMANDES et non les lignes : c'est ce nombre qu'on annonce à
+    /// l'opérateur, et « 3 commandes » lui parle là où « 47 lignes » ne dit rien.
+    /// </summary>
+    public static int CountReferences(string code, IEnumerable<Order> orders)
+    {
+        ArgumentNullException.ThrowIfNull(orders);
+        if (string.IsNullOrWhiteSpace(code)) return 0;
+
+        return orders.Count(o => o.Envelopes
+            .SelectMany(e => e.Lines)
+            .Any(l => string.Equals(l.ProductCode, code, StringComparison.OrdinalIgnoreCase)));
+    }
+
     /// <summary>Catalogue de démarrage : formats courants mappés sur Microsoft Print to PDF (aucun risque papier).</summary>
     public static List<Product> CreateDefaultProducts() => new()
     {

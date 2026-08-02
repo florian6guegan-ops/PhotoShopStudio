@@ -243,6 +243,12 @@
                                                         Tag="{Binding}" Click="OnKioskModify"
                                                         IsEnabled="{Binding ActionsPossibles}"
                                                         ToolTip="Recadrer et corriger avant de tirer"/>
+                                                <!-- Le client a commandé un format standard et veut
+                                                     autre chose au comptoir : on ouvre en taille libre. -->
+                                                <Button Style="{StaticResource ActionLigne}" Content="Personnalisé…"
+                                                        Tag="{Binding}" Click="OnKioskCustom"
+                                                        IsEnabled="{Binding ActionsPossibles}"
+                                                        ToolTip="Ouvrir les photos dans une taille au choix (5,5 × 8 cm…) au lieu du format commandé"/>
                                                 <Button Style="{StaticResource ActionLigne}" Content="Télécharger"
                                                         Tag="{Binding}" Click="OnKioskDownload"
                                                         ToolTip="Copier les photos dans le dossier Téléchargements"/>
