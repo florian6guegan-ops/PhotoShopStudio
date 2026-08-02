@@ -537,6 +537,30 @@ format.
 
 ---
 
+## Le catalogue de la boutique vit HORS du dépôt
+
+L'application lit `D:\PhotoStudioData\catalog\products.json`. Ce fichier n'est pas dans git :
+**changer un prix, un format ou capturer des réglages pilote ne se voit pas dans
+`git status`**, et le seul filet est `products.json.bak`, qui ne garde que la version d'avant.
+
+`catalog/boutique/` en tient une copie versionnée. Elle n'est **pas lue par l'application** —
+c'est une sauvegarde, rien d'autre. `tools\Sauver-Catalogue.cmd` la rafraîchit ; à lancer
+après chaque changement du catalogue, puis à committer. Le vrai risque de ce dossier est
+qu'on l'oublie : une copie vieille de trois mois donne une fausse impression de sécurité.
+
+**Le dépôt est PUBLIC.** Trois choses n'y entrent donc jamais :
+
+| | Pourquoi |
+|---|---|
+| `config\wifi.json` | il porte le **mot de passe** du réseau de la boutique |
+| `catalog\icc\*.icc` | fichiers du fabricant, et réimportables en deux clics depuis Catalogue |
+| `orders\`, `logs\`, `archive\` | noms de clients, photos, et ça grossit tous les jours |
+
+Les prix, eux, ne sont pas un secret : ils sont affichés au comptoir, et `products.diland.json`
+comme `diland-prices.json` les portent déjà dans le dépôt.
+
+---
+
 ## Environnement : la clé de registre du SDK Fuji
 
 Le SDK DE100 (`PModuleIF.dll`, chargé par le relais 32 bits) crée

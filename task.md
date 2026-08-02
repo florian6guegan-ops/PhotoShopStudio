@@ -161,4 +161,9 @@ une régression du code. `Get-Process Studio.De100Host | Stop-Process` et tout r
       discrète, elle peut être poussée (`AppliquerTeintePolaroid`)
 - [ ] Remplir `D:\PhotoStudioData\config\wifi.json` (SSID + mot de passe) — sans lui, le
       second code QR ne s'affiche pas
-- [ ] Rien n'est commité : la copie de travail portait déjà des modifications de la 3ᵉ passe
+- [x] Commité et poussé sur `origin/pilotes-de100-dnp` (le commit emporte aussi la fin de la
+      3ᵉ passe, restée non commitée — les fichiers portaient les deux, impossible à séparer)
+- [x] Catalogue de la boutique sauvegardé dans `catalog/boutique/`, avec
+      `tools\Sauver-Catalogue.cmd` pour le rafraîchir. **Le lancer après chaque changement du
+      catalogue**, sinon la copie vieillit en silence
+- [ ] `main` n'a pas bougé : la fusion de `pilotes-de100-dnp` reste à faire
