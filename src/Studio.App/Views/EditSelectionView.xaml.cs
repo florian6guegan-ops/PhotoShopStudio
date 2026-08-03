@@ -583,7 +583,16 @@ internal partial class EditSelectionView : UserControl
     // — gestes sur les vignettes (C maintenue) —
 
     private static bool CTenue => Keyboard.IsKeyDown(Key.C);
-    private static bool TTenue => Keyboard.IsKeyDown(Key.T);
+
+    /// <summary>
+    /// Le redressement prend-il la molette ?
+    ///
+    /// Deux façons de le dire, et les deux valent : le mode armé par T sur la surface de
+    /// recadrage, ou la touche tenue à l'ancienne. La bande de vignettes suit la surface —
+    /// une fois le mode armé, la molette redresse ici AUSSI, sinon l'opérateur devrait se
+    /// souvenir de quelle moitié de l'écran obéit à quelle règle.
+    /// </summary>
+    private bool TTenue => Surface.RedressementArme || Keyboard.IsKeyDown(Key.T);
 
     /// <summary>
     /// Note dans le journal ce qu'un geste a réellement reçu.
@@ -592,8 +601,9 @@ internal partial class EditSelectionView : UserControl
     /// presse C ni ne clique. Sans cette trace, on en est réduit à supposer pourquoi un
     /// raccourci « ne marche pas » — et on s'est trompé plusieurs fois le 01/08/2026.
     /// </summary>
-    private static void Tracer(string geste, PhotoGridView.PhotoItem? photo = null) =>
+    private void Tracer(string geste, PhotoGridView.PhotoItem? photo = null) =>
         FileLog.Write($"Geste « {geste} » · C={CTenue} T={TTenue} " +
+                      $"(armé={Surface.RedressementArme}) " +
                       $"Ctrl={Keyboard.Modifiers.HasFlag(ModifierKeys.Control)}" +
                       (photo is null ? "" : $" · {photo.Name}"));
 

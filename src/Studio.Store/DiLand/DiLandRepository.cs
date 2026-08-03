@@ -11,7 +11,12 @@ namespace Studio.Store.DiLand;
 /// <param name="CropY">Bord haut du recadrage, en fraction de la hauteur.</param>
 /// <param name="CropWidth">Largeur du recadrage, en fraction de la largeur.</param>
 /// <param name="CropHeight">Hauteur du recadrage, en fraction de la hauteur.</param>
-/// <param name="Angle">Rotation appliquée à la borne, en degrés.</param>
+/// <param name="Angle">Rotation appliquée à la borne, en degrés (0, 90, 180, 270).</param>
+/// <param name="FineRotationDegrees">
+/// Redressement fin appliqué à la borne, en degrés — le « Tilt ». Les bornes le proposent
+/// bel et bien : 113 des 1231 images de la base de la boutique en portent un, de −5° à
+/// +7° (relevé du 03/08/2026). Il était ignoré, et ces photos sortaient de travers.
+/// </param>
 public sealed record DiLandOrderPhoto(
     string FileName,
     string OriginalFileName,
@@ -21,7 +26,8 @@ public sealed record DiLandOrderPhoto(
     double CropY,
     double CropWidth,
     double CropHeight,
-    double Angle)
+    double Angle,
+    double FineRotationDegrees = 0)
 {
     /// <summary>
     /// Nom à montrer à l'opérateur. Le fichier stocké est un identifiant illisible ; le nom
@@ -29,6 +35,57 @@ public sealed record DiLandOrderPhoto(
     /// </summary>
     public string DisplayName =>
         string.IsNullOrWhiteSpace(OriginalFileName) ? FileName : OriginalFileName;
+
+    /// <summary>
+    /// Fabrique une photo à partir des valeurs BRUTES de DiLand, en ramenant le recadrage
+    /// en fractions de l'image.
+    ///
+    /// <b>DiLand exprime les recadrages en PIXELS de l'image source, pas en fractions.</b>
+    /// Le code les a longtemps pris pour des fractions : <c>CropSpec(0, 44, 1536, 1958)</c>
+    /// ne passait alors pas <c>IsValid</c>, on retombait sur l'image entière, et TOUS les
+    /// recadrages faits par les clients aux bornes étaient silencieusement perdus. Relevé
+    /// le 03/08/2026 sur la base de la boutique : 1231 images, 986 recadrées, et pas une
+    /// seule dont <c>CropWidth</c> soit ≤ 1.
+    ///
+    /// La conversion est ici, et non chez l'appelant, parce que DEUX lecteurs la
+    /// réclament — la base (voir <see cref="DiLandRepository"/>) et le fichier
+    /// <c>Order.xml</c> — et que deux conversions finiraient par diverger.
+    /// </summary>
+    /// <param name="sourceWidth">Largeur de l'image en pixels, telle que DiLand l'a notée.</param>
+    /// <param name="sourceHeight">Hauteur de l'image en pixels.</param>
+    public static DiLandOrderPhoto FromRaw(
+        string fileName, string originalFileName, int quantity,
+        bool applyCrop, double cropX, double cropY, double cropWidth, double cropHeight,
+        double angle, double fineRotationDegrees, int sourceWidth, int sourceHeight)
+    {
+        var (x, y, largeur, hauteur) = EnFractions(
+            cropX, cropY, cropWidth, cropHeight, sourceWidth, sourceHeight);
+
+        return new DiLandOrderPhoto(
+            fileName, originalFileName, quantity,
+            applyCrop, x, y, largeur, hauteur,
+            angle, fineRotationDegrees);
+    }
+
+    /// <summary>
+    /// Ramène un recadrage en fractions de l'image.
+    ///
+    /// Les valeurs sont tenues pour des PIXELS dès que la définition de la source est
+    /// connue et que la largeur dépasse 1 : un recadrage d'un pixel de large n'existe pas,
+    /// donc la question ne se pose jamais sur un cas réel. Sans définition, ou sur des
+    /// valeurs déjà fractionnaires, on les rend telles quelles — une version future de
+    /// DiLand pourrait changer d'unité, et ce serait alors le seul endroit à revoir.
+    /// </summary>
+    internal static (double X, double Y, double Width, double Height) EnFractions(
+        double cropX, double cropY, double cropWidth, double cropHeight,
+        int sourceWidth, int sourceHeight)
+    {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return (cropX, cropY, cropWidth, cropHeight);
+        if (cropWidth <= 1 && cropHeight <= 1) return (cropX, cropY, cropWidth, cropHeight);
+
+        return (cropX / sourceWidth, cropY / sourceHeight,
+                cropWidth / sourceWidth, cropHeight / sourceHeight);
+    }
 }
 
 /// <summary>Une ligne de commande : un produit, et les photos tirées dessus.</summary>
@@ -120,6 +177,12 @@ public sealed class DiLandRepository
 
     public string OrdersDirectory => Path.Combine(_root, "Orders");
 
+    /// <summary>
+    /// Où les bornes déposent, avant que DiLand n'intègre. Un paquet complet y porte
+    /// l'extension <c>.COM</c> ; un <c>.TMP</c> est encore en cours de réception.
+    /// </summary>
+    public string IncomingOrdersDirectory => Path.Combine(_root, "IncomingOrders");
+
     private string SnapshotPath => Path.Combine(_workDir, "diland-snapshot.db");
 
     /// <summary>Vrai si le dépôt DiLand est présent et lisible.</summary>
@@ -201,6 +264,61 @@ public sealed class DiLandRepository
         ReadOrdersAfter(afterOid, limit).Where(c => c.IsFromKiosk && c.IsComplete).ToList();
 
     /// <summary>
+    /// Les commandes de bornes lues SUR LE DISQUE, dans leur <c>Order.xml</c> — sans la
+    /// base, et sans que DiLand tourne.
+    ///
+    /// Deux dossiers, et les deux comptent :
+    ///
+    /// - <c>IncomingOrders</c> : arrivées, pas encore intégrées. C'est le cas quand DiLand
+    ///   est fermé, quand il vient de tomber, ou quand sa tâche d'import est bloquée — et
+    ///   il tombe presque tous les jours. Ces commandes-là n'existaient nulle part pour
+    ///   nous ;
+    /// - <c>Orders</c> : intégrées. La base les connaît aussi, mais le disque reste lisible
+    ///   quand elle est verrouillée, abîmée, ou purgée de cette commande.
+    ///
+    /// Les <c>.TMP</c> sont écartés : la borne écrit encore dedans, et DiLand ne les
+    /// renomme en <c>.COM</c> qu'une fois le transfert complet.
+    /// </summary>
+    public IReadOnlyList<DiLandOrderXml.Contenu> ReadKioskOrdersFromDisk(int limit = 200)
+    {
+        var trouvees = new List<DiLandOrderXml.Contenu>();
+
+        foreach (var racine in new[] { IncomingOrdersDirectory, OrdersDirectory })
+        {
+            if (!Directory.Exists(racine)) continue;
+
+            foreach (var dossier in Directory.EnumerateDirectories(racine))
+            {
+                if (!dossier.EndsWith(".COM", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!DiLandOrderXml.Porte(dossier)) continue;
+
+                if (DiLandOrderXml.Lire(dossier) is { } contenu && contenu.Order.IsComplete)
+                    trouvees.Add(contenu);
+            }
+        }
+
+        return trouvees
+            .OrderBy(c => c.Order.Date)
+            .TakeLast(limit)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Le dossier d'une commande, où qu'il soit — intégré ou encore en attente d'intégration.
+    ///
+    /// Les commandes lues sur le disque peuvent vivre dans <c>IncomingOrders</c>, où
+    /// <see cref="OrdersDirectory"/> ne les trouverait pas.
+    /// </summary>
+    private string OrderDirectory(DiLandOrder order)
+    {
+        var integre = Path.Combine(OrdersDirectory, order.DirectoryName);
+        if (Directory.Exists(integre)) return integre;
+
+        var entrant = Path.Combine(IncomingOrdersDirectory, order.DirectoryName);
+        return Directory.Exists(entrant) ? entrant : integre;
+    }
+
+    /// <summary>
     /// Contenu d'une commande : les produits demandés et, pour chacun, les photos avec leur
     /// quantité et leur recadrage. C'est ce qui permet de refaire le tirage à l'identique
     /// plutôt que de repartir d'un tas de fichiers.
@@ -241,10 +359,14 @@ public sealed class DiLandRepository
         var photos = new List<DiLandOrderPhoto>();
 
         using var commande = connexion.CreateCommand();
+
+        // Width et Height sont indispensables, et non décoratifs : le recadrage est en
+        // PIXELS et ne se ramène en fractions que par eux (voir DiLandOrderPhoto.FromRaw).
         commande.CommandText = """
             SELECT FileName, COALESCE(OriginalFileName, ''), COALESCE(Quantity, 1),
                    COALESCE(ApplyCrop, 0), COALESCE(CropX, 0), COALESCE(CropY, 0),
-                   COALESCE(CropWidth, 1), COALESCE(CropHeight, 1), COALESCE(Angle, 0)
+                   COALESCE(CropWidth, 1), COALESCE(CropHeight, 1), COALESCE(Angle, 0),
+                   COALESCE(FineRotationAngle, 0), COALESCE(Width, 0), COALESCE(Height, 0)
             FROM OrderLineImage
             WHERE OrderLine = $ligne AND GCRecord IS NULL
               AND FileName IS NOT NULL AND FileName <> ''
@@ -255,16 +377,19 @@ public sealed class DiLandRepository
         using var lecteur = commande.ExecuteReader();
         while (lecteur.Read())
         {
-            photos.Add(new DiLandOrderPhoto(
-                FileName: lecteur.GetString(0),
-                OriginalFileName: lecteur.GetString(1),
-                Quantity: lecteur.GetInt32(2),
-                ApplyCrop: lecteur.GetInt64(3) != 0,
-                CropX: lecteur.GetDouble(4),
-                CropY: lecteur.GetDouble(5),
-                CropWidth: lecteur.GetDouble(6),
-                CropHeight: lecteur.GetDouble(7),
-                Angle: lecteur.GetDouble(8)));
+            photos.Add(DiLandOrderPhoto.FromRaw(
+                fileName: lecteur.GetString(0),
+                originalFileName: lecteur.GetString(1),
+                quantity: lecteur.GetInt32(2),
+                applyCrop: lecteur.GetInt64(3) != 0,
+                cropX: lecteur.GetDouble(4),
+                cropY: lecteur.GetDouble(5),
+                cropWidth: lecteur.GetDouble(6),
+                cropHeight: lecteur.GetDouble(7),
+                angle: lecteur.GetDouble(8),
+                fineRotationDegrees: lecteur.GetDouble(9),
+                sourceWidth: lecteur.GetInt32(10),
+                sourceHeight: lecteur.GetInt32(11)));
         }
 
         return photos;
@@ -322,7 +447,7 @@ public sealed class DiLandRepository
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(photo);
 
-        var attendu = Path.Combine(OrdersDirectory, order.DirectoryName, "F", photo.FileName);
+        var attendu = Path.Combine(OrderDirectory(order), "F", photo.FileName);
         if (File.Exists(attendu)) return attendu;
 
         var traite = attendu + SuffixeTraite;
@@ -372,7 +497,7 @@ public sealed class DiLandRepository
     {
         ArgumentNullException.ThrowIfNull(order);
 
-        var dossier = Path.Combine(OrdersDirectory, order.DirectoryName, "F");
+        var dossier = Path.Combine(OrderDirectory(order), "F");
         if (!Directory.Exists(dossier)) return [];
 
         return Directory.EnumerateFiles(dossier)
@@ -411,19 +536,33 @@ public sealed class DiLandRepository
     /// La copie est refaite à chaque fois pour un fichier brouillé, sans quoi une copie
     /// abîmée par une version antérieure resterait en place indéfiniment.
     /// </summary>
-    public void CopyPhotoTo(DiLandOrder order, DiLandOrderPhoto photo, string destination)
+    /// <param name="ecraser">
+    /// Refaire la copie même si le fichier est déjà là. Sans cela, un second
+    /// téléchargement demandé par l'opérateur ne rendait que la copie précédente.
+    /// </param>
+    public void CopyPhotoTo(DiLandOrder order, DiLandOrderPhoto photo, string destination,
+        bool ecraser = false)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(photo);
 
-        var source = PhotoPath(order, photo);
+        CopyFileTo(PhotoPath(order, photo), destination, ecraser);
+    }
 
+    /// <summary>
+    /// Recopie un fichier de DiLand en le remettant en clair, quel que soit le chemin par
+    /// lequel on l'a trouvé — par la base, ou en balayant le dossier de la commande.
+    /// </summary>
+    public void CopyFileTo(string source, string destination, bool ecraser = false)
+    {
         if (!IsProcessedName(source))
         {
-            if (!File.Exists(destination)) File.Copy(source, destination);
+            if (ecraser || !File.Exists(destination)) File.Copy(source, destination, overwrite: true);
             return;
         }
 
+        // Un fichier brouillé est TOUJOURS réécrit : une copie abîmée par une version
+        // antérieure resterait sinon en place indéfiniment.
         var octets = File.ReadAllBytes(source);
         var combien = Math.Min(LongueurBrouillee, octets.Length);
         for (var i = 0; i < combien; i++) octets[i] ^= CleBrouillage;

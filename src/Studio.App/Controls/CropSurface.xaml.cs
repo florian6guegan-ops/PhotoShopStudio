@@ -71,13 +71,97 @@ public partial class CropSurface : UserControl
     private Point _dernierPoint;
     private bool _glisse;
 
-    public CropSurface() => InitializeComponent();
+    public CropSurface()
+    {
+        InitializeComponent();
+
+        // La touche est captée sur la FENÊTRE, et non lue au moment du cran de molette ni
+        // guettée sur la seule surface : voir RedressementArme. Un événement clavier
+        // remonte depuis l'élément qui a le focus — accroché ici, il ne remonterait pas
+        // tant qu'on n'aurait pas cliqué dans la photo, et c'est précisément le geste que
+        // l'opérateur ne fait pas.
+        Loaded += (_, _) =>
+        {
+            if (Window.GetWindow(this) is { } fenetre)
+                fenetre.PreviewKeyDown += OnPreviewKeyDown;
+        };
+
+        Unloaded += (_, _) =>
+        {
+            if (Window.GetWindow(this) is { } fenetre)
+                fenetre.PreviewKeyDown -= OnPreviewKeyDown;
+            RedressementArme = false;
+        };
+    }
 
     /// <summary>Le cadrage a bougé : à l'appelant d'en tirer le <c>CropSpec</c>.</summary>
     public event EventHandler? Changed;
 
     /// <summary>T + molette : redresser de ±1, l'angle restant à l'appelant.</summary>
     public event EventHandler<int>? TiltRequested;
+
+    private bool _redressementArme;
+
+    /// <summary>
+    /// Le mode redressement est-il armé ?
+    ///
+    /// <b>Pourquoi une bascule et non une touche maintenue.</b> Le geste demandait de
+    /// tenir T ET de rouler la molette en même temps ; au comptoir, une main tient déjà la
+    /// photo ou le client attend. Surtout, <c>Keyboard.IsKeyDown</c> lit l'état du clavier
+    /// tel que le voit l'élément qui a le FOCUS : dès que l'opérateur a touché la liste des
+    /// papiers ou un bouton, la touche partait ailleurs et la molette se remettait à
+    /// zoomer. C'est ce qui faisait passer le redressement pour cassé.
+    ///
+    /// Armé, la molette règle l'angle ; T de nouveau, ou Échap, en sort. La touche
+    /// maintenue continue de fonctionner (voir <see cref="OnWheel"/>) : personne n'a à
+    /// réapprendre.
+    /// </summary>
+    public bool RedressementArme
+    {
+        get => _redressementArme;
+        private set
+        {
+            if (_redressementArme == value) return;
+            _redressementArme = value;
+            MontrerLeBandeau();
+        }
+    }
+
+    /// <summary>Sort du mode redressement — l'appelant le fait en changeant de photo.</summary>
+    public void DesarmerLeRedressement() => RedressementArme = false;
+
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // Une répétition de touche ne doit pas faire clignoter le mode : garder T enfoncée
+        // basculerait des dizaines de fois par seconde.
+        if (e.IsRepeat) return;
+
+        // Dans un champ de saisie, « t » est une lettre. Le jour où un écran de recadrage
+        // portera un champ (un nom de client, une taille), écrire « portrait » armerait et
+        // désarmerait le mode quatre fois.
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox) return;
+
+        if (e.Key == Key.T)
+        {
+            RedressementArme = !RedressementArme;
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && RedressementArme)
+        {
+            RedressementArme = false;
+            e.Handled = true;
+        }
+    }
+
+    private void MontrerLeBandeau()
+    {
+        BandeauRedressement.Visibility = RedressementArme ? Visibility.Visible : Visibility.Collapsed;
+        BandeauRedressementTexte.Text =
+            $"Redressement {Degres(_redressement)} — molette pour régler · T ou Échap pour sortir";
+    }
+
+    private static string Degres(double angle) =>
+        Math.Abs(angle) < 0.01 ? "0°" : $"{angle:+0.##;-0.##}°";
 
     /// <summary>Clic droit : pivoter le CADRE d'un quart de tour, la photo ne bougeant pas.</summary>
     public event EventHandler? FrameRotationRequested;
@@ -116,6 +200,7 @@ public partial class CropSurface : UserControl
     {
         _redressement = degres;
         if (_cadre is not null) _cadre.RotationDegrees = degres;
+        MontrerLeBandeau();   // l'angle s'affiche dans le bandeau tant qu'il est là
         Redessiner();
     }
 
@@ -460,8 +545,9 @@ public partial class CropSurface : UserControl
     /// masquer la brutalité du pas. Pour cadrer large, on tire un coin ou une encoche :
     /// c'est là le geste rapide, et la molette reste le réglage fin.
     ///
-    /// T maintenue, c'est le redressement qui prend la molette — même partage de touches
-    /// que sur les vignettes, pour qu'un geste appris à un endroit vaille partout.
+    /// Mode redressement armé (T), ou T maintenue, c'est le redressement qui prend la
+    /// molette — même partage de touches que sur les vignettes, pour qu'un geste appris à
+    /// un endroit vaille partout.
     /// </summary>
     private void OnWheel(object sender, MouseWheelEventArgs e)
     {
@@ -472,7 +558,8 @@ public partial class CropSurface : UserControl
         var crans = e.Delta / 120.0;
         if (crans == 0) return;
 
-        if (Keyboard.IsKeyDown(Key.T))
+        // les deux gestes valent : le mode armé, et la touche tenue à l'ancienne
+        if (RedressementArme || Keyboard.IsKeyDown(Key.T))
         {
             var sens = crans > 0 ? 1 : -1;
             Tracer($"redressement {sens:+0;-0}");

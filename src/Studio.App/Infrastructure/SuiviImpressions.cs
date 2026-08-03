@@ -314,6 +314,14 @@ public sealed class SuiviImpressions : ObservableObject
             _note = arret.Message;
             FileLog.Write($"Impression : commande {travail.Numero} arrêtée — {arret.Message}");
         }
+        catch (PrinterNotReadyException attente)
+        {
+            // Pas un échec non plus : la commande est rangée en attente avec le rang de la
+            // dernière page sortie, et la file la reprendra dès que la machine répondra.
+            // Surtout ne pas parler de réimpression — ce serait tirer en double.
+            _note = attente.Message;
+            FileLog.Write($"Impression : commande {travail.Numero} en attente — {attente.Message}");
+        }
         catch (OperationCanceledException)
         {
             _note = $"Commande {travail.Numero} arrêtée.";

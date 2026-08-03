@@ -25,11 +25,20 @@ public partial class ProductTypeView : UserControl
     /// format du tirage et le gabarit du visage, donc tout le cadrage qui suit.
     /// </summary>
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new IdDocumentPickerView(document =>
-            Navigator.Go(new SourcePickerView((root, profond) =>
-                Navigator.Go(new IdPhotoView(root, document, profond),
-                    $"{document.Country} — {document.Document}")),
-                "Photos d'identité — choisir le support")),
+        Navigator.Go(new IdDocumentPickerView(
+                document =>
+                    Navigator.Go(new SourcePickerView((root, profond) =>
+                        Navigator.Go(new IdPhotoView(root, document, profond),
+                            $"{document.Country} — {document.Document}")),
+                        "Photos d'identité — choisir le support"),
+                // L'E-Photo n'est pas une norme mais un tirage : la photo part ENTIÈRE sur
+                // un 10×15, bords blancs compris, sans gabarit ni recadrage d'identité.
+                // C'est donc l'écran des tirages qui la sert, produit déjà choisi.
+                produit =>
+                    Navigator.Go(new SourcePickerView((root, profond) =>
+                        Navigator.Go(new PhotoGridView(root, produit.Code, avecSousDossiers: profond),
+                            produit.Name)),
+                        $"{produit.Name} — choisir le support")),
             "Photos d'identité — choisir le document");
 
     private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Back();

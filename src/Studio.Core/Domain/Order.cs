@@ -14,6 +14,16 @@ public sealed class ImageAdjustments
     public bool Grayscale { get; set; }
 
     /// <summary>
+    /// Remplace le fond par du blanc franc — photos d'identité.
+    ///
+    /// Le fond de studio grisonne toujours un peu et porte l'ombre du sujet, là où les
+    /// normes veulent un fond clair et uni. Voir <c>BackgroundRemoval</c> : seul est
+    /// effacé ce qui ressemble au fond ET communique avec le bord de l'image, de sorte
+    /// qu'une chemise claire ou une mèche ne partent jamais avec.
+    /// </summary>
+    public bool WhiteBackground { get; set; }
+
+    /// <summary>
     /// Trois corrections automatiques, reprises telles quelles de DiLand — où ce sont
     /// aussi des bascules, et non des actions qu'on subit (<c>AutoLevels</c>,
     /// <c>AutoContrast</c>, <c>AutoColor</c>, chacune avec son « annuler »).
@@ -72,7 +82,7 @@ public sealed class ImageAdjustments
     public double Sharpness { get; set; }
 
     public bool IsNeutral =>
-        !Grayscale && !AutoLevels && !AutoContrast && !AutoColor &&
+        !Grayscale && !WhiteBackground && !AutoLevels && !AutoContrast && !AutoColor &&
         Exposure == 0 && Brightness == 0 && Contrast == 0 &&
         Highlights == 0 && Shadows == 0 && Whites == 0 && Blacks == 0 &&
         Temperature == 0 && Tint == 0 && Saturation == 0 && Vibrance == 0 &&

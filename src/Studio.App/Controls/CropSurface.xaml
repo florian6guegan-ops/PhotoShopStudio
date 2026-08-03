@@ -65,6 +65,20 @@
         <TextBlock x:Name="Consigne" Foreground="#B0BEC5" FontSize="16"
                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
                    IsHitTestVisible="False"
-                   Text="Faites glisser la photo · coins et encoches : recadrer · molette : zoom au pixel · clic droit : pivoter le cadre · T + molette : redresser"/>
+                   Text="Faites glisser la photo · coins et encoches : recadrer · molette : zoom au pixel · clic droit : pivoter le cadre · T puis molette : redresser"/>
+
+        <!-- Bandeau du mode redressement.
+
+             En haut, et non au fond avec la consigne : c'est un ÉTAT, pas un rappel. Tant
+             qu'il est là, la molette ne zoome plus — sans lui, l'opérateur croit l'outil
+             cassé. Fond orangé, la couleur des poignées : c'est la surface qui parle. -->
+        <Border x:Name="BandeauRedressement" Visibility="Collapsed"
+                Background="#F0932B" CornerRadius="8" Padding="16,8"
+                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0"
+                IsHitTestVisible="False">
+            <TextBlock x:Name="BandeauRedressementTexte" Foreground="#12181E"
+                       FontSize="17" FontWeight="SemiBold"
+                       Text="Redressement 0° — molette pour régler · T ou Échap pour sortir"/>
+        </Border>
     </Grid>
 </UserControl>

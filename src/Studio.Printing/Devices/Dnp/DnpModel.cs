@@ -172,6 +172,10 @@ public enum DnpMediaSize
 /// <param name="MediaClass">Classe de média (RFID).</param>
 /// <param name="QueuedPrints">Tirages en file dans la mémoire de l'imprimante.</param>
 /// <param name="LifetimePrints">Compteur total de tirages de la machine.</param>
+/// <param name="WindowsQueueName">
+/// File d'impression Windows correspondante, quand la machine n'est connue QUE par elle.
+/// Voir <see cref="EndormieOuInjoignable"/>.
+/// </param>
 public sealed record DnpPrinterInfo(
     int PortNumber,
     string SerialNumber,
@@ -182,9 +186,21 @@ public sealed record DnpPrinterInfo(
     DnpMediaSize MediaSize,
     DnpMediaClass MediaClass,
     int QueuedPrints,
-    int LifetimePrints)
+    int LifetimePrints,
+    string? WindowsQueueName = null)
 {
     /// <summary>Pourcentage de rouleau restant, ou <c>null</c> si la capacité initiale est inconnue.</summary>
     public double? MediaRemainingPercent =>
         MediaInitialCount > 0 ? 100.0 * MediaRemaining / MediaInitialCount : null;
+
+    /// <summary>
+    /// La machine existe pour Windows mais ne répond pas au SDK.
+    ///
+    /// C'est l'état d'une DS620 en veille prolongée : elle ne disparaît pas du bus USB,
+    /// mais <c>CPPCtrl32.dll</c> ne la découvre plus et rend un échec de communication sur
+    /// tous les rangs (constaté le 03/08/2026). Sans ce cas, l'imprimante disparaissait
+    /// simplement du bandeau — l'opérateur ne pouvait pas distinguer « endormie » de
+    /// « débranchée », ni savoir qu'un tirage la réveillerait.
+    /// </summary>
+    public bool EndormieOuInjoignable => WindowsQueueName is not null;
 }

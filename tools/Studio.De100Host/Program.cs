@@ -35,7 +35,13 @@ log(sdkDnp is null
     : $"SDK DNP trouvé : {sdkDnp}");
 
 De100Driver? driver = null;
+
+// Blocage constate hors DiLand : on cesse d interroger la DNP jusqu a ce que DiLand
+// passe par la (voir EtatDesDnp).
 var dnpAbandonne = false;
+
+// DiLand tenait-il le port au dernier passage ? Sert a detecter la bascule, pas l etat.
+var dilandTenaitLePort = DiLandPresence.IsRunning();
 var writeLock = new object();
 StreamWriter? writer = null;
 
@@ -98,15 +104,7 @@ try
             break;
         }
 
-        try
-        {
-            Send(Handle(request));
-        }
-        catch (Exception ex)
-        {
-            log($"Échec de « {request.Name} » : {ex.Message}");
-            Send(De100Protocol.Failure(request, ex.Message));
-        }
+        await RepondreSansJamaisBloquer(request);
     }
 
     log("Application déconnectée, arrêt du relais.");
@@ -120,6 +118,55 @@ catch (Exception ex)
 finally
 {
     driver?.Dispose();
+}
+
+/// <summary>
+/// Traite une commande et repond TOUJOURS, meme si le SDK ne rend jamais la main.
+///
+/// Le relais servait les commandes l une apres l autre, en attendant chaque reponse. Une
+/// seule machine muette suffisait alors a figer tout le reste : le 03/08/2026, une
+/// interrogation DNP restee suspendue a bloque la question posee au minilab pour une
+/// commande de 41 photos, qui est restee douze minutes sans un mot ni une erreur.
+///
+/// Desormais l appel part sur un fil, et passe le delai on repond « muette » sans
+/// l attendre. Le fil orphelin garde le SDK — on n y peut rien, il ne s interrompt pas —
+/// mais le tube reste vivant et l application peut se rabattre proprement.
+/// </summary>
+async Task RepondreSansJamaisBloquer(De100Message request)
+{
+    // Envoyer un tirage prend legitimement du temps ; interroger une machine, non.
+    var budget = request.Name is De100Commands.Submit or De100Commands.Cancel
+        ? TimeSpan.FromMinutes(3)
+        : TimeSpan.FromSeconds(10);
+
+    var travail = Task.Run(() => Handle(request));
+
+    if (await Task.WhenAny(travail, Task.Delay(budget)) == travail)
+    {
+        try
+        {
+            Send(await travail);
+        }
+        catch (Exception ex)
+        {
+            log($"Echec de « {request.Name} » : {ex.Message}");
+            Send(De100Protocol.Failure(request, ex.Message));
+        }
+        return;
+    }
+
+    log($"« {request.Name} » sans reponse en {budget.TotalSeconds:0} s : la machine est " +
+        "probablement en veille. On repond sans attendre pour ne pas bloquer le reste.");
+
+    Send(De100Protocol.Failure(request,
+        $"La machine n'a pas repondu en {budget.TotalSeconds:0} s. Elle est probablement " +
+        "en veille ou eteinte."));
+
+    // le fil continue sa vie ; son resultat, s il arrive, ne concerne plus personne
+    _ = travail.ContinueWith(t => log(t.IsFaulted
+            ? $"« {request.Name} » a fini par echouer : {t.Exception?.GetBaseException().Message}"
+            : $"« {request.Name} » a fini par repondre, trop tard."),
+        TaskScheduler.Default);
 }
 
 De100Message Handle(De100Message request) => request.Name switch
@@ -151,13 +198,34 @@ De100Message Handle(De100Message request) => request.Name switch
 /// Etat des imprimantes DNP branchees.
 ///
 /// PIEGE VERIFIE LE 31/07/2026 : CPPCtrl32.dll se bloque indefiniment quand DiLand tient
-/// le port USB de la DS620 - et DiLand le tient en permanence. Un appel direct figerait
-/// la boucle de lecture du relais, qui ne repondrait plus pour le minilab non plus.
-/// On borne donc l attente, et on renonce definitivement apres un premier blocage :
-/// reessayer toutes les deux minutes ne ferait qu accumuler des fils bloques.
+/// le port USB de la DS620. Un appel direct figerait la boucle de lecture du relais, qui
+/// ne repondrait plus pour le minilab non plus. On borne donc l attente.
+///
+/// Depuis le 03/08/2026 on ne renonce plus pour toute la session : on regarde d abord si
+/// DiLand tourne. S il tourne, on ne tente meme pas l appel (port tenu, la DNP disparait
+/// du bandeau) ; des qu il se ferme, la machine redevient interrogeable sans redemarrer
+/// Studio Photo. Un blocage constate HORS DiLand reste, lui, definitif : c est alors un
+/// vrai probleme materiel, et reessayer toutes les deux minutes accumulerait des fils
+/// bloques.
 /// </summary>
 List<DnpPrinterInfo> EtatDesDnp()
 {
+    var diland = DiLandPresence.IsRunning();
+
+    if (diland != dilandTenaitLePort)
+    {
+        log(diland
+            ? "DiLand vient de s ouvrir : il tient le port USB, la DNP est masquee."
+            : "DiLand vient de se fermer : la DNP redevient interrogeable.");
+
+        // le renoncement constate pendant que DiLand tenait le port ne vaut plus rien
+        // maintenant qu il l a lache
+        if (!diland) dnpAbandonne = false;
+        dilandTenaitLePort = diland;
+    }
+
+    if (diland) return [];
+
     if (dnpAbandonne) return [];
 
     if (!DnpDriver.IsSdkInstalled())
@@ -179,11 +247,19 @@ List<DnpPrinterInfo> EtatDesDnp()
         return etats;
     });
 
+    // Le relais ne rend QUE ce que le SDK a vu. Si la machine dort, il rend une liste
+    // vide et c est l application qui completera d apres le spouleur Windows : cette
+    // enumeration-la a sa place cote application, pas ici.
+    //
+    // Elle etait ici, et c est ce qui a fige une commande de 41 photos le 03/08/2026 :
+    // enumerer les imprimantes peut rester suspendu quand une file ne repond pas, et le
+    // relais servant les commandes une par une, tout le reste attendait derriere.
     if (lecture.Wait(TimeSpan.FromSeconds(6))) return lecture.Result;
 
     dnpAbandonne = true;
-    log("Imprimantes DNP sans reponse en 6 s : port USB probablement tenu par DiLand. " +
-        "On cesse de les interroger pour cette session.");
+    log("Imprimantes DNP sans reponse en 6 s alors que DiLand ne tourne pas : port tenu " +
+        "par un autre programme, ou machine muette. On cesse de les interroger jusqu au " +
+        "prochain passage de DiLand.");
     return [];
 }
 

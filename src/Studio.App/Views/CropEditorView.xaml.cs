@@ -71,7 +71,12 @@ public partial class CropEditorView : UserControl
             .On([Key.Add, Key.OemPlus], () => Zoom(1 / PasBouton))
             .On([Key.Subtract, Key.OemMinus], () => Zoom(PasBouton))
             .On(Key.C, ToggleFit)
-            .On(Key.T, ToggleFrame)
+            // T pivotait le cadre ET armait le redressement : la même touche faisait deux
+            // choses sur le même écran, et l'opérateur voyait son cadre basculer chaque
+            // fois qu'il voulait redresser. T va au REDRESSEMENT (voir CropSurface), qui
+            // est ce qu'on demande vingt fois par jour ; pivoter le cadre passe sur F, et
+            // reste surtout à un clic droit sur la photo.
+            .On(Key.F, ToggleFrame)
             .On(Key.Escape, Navigator.Back)
             .OnCtrl(Key.I, Apply)
             .OnCtrl(Key.P, Navigator.Back)

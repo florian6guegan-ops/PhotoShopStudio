@@ -1,0 +1,272 @@
+using System.Net;
+using System.Net.Mail;
+using ImageMagick;
+using Studio.Core.Domain;
+using Studio.Core.Mail;
+using Studio.Imaging;
+
+namespace Studio.Printing;
+
+/// <summary>Les trois fichiers préparés pour le client.</summary>
+/// <param name="NonRecadree">La photo d'origine, entière — le client peut tout refaire.</param>
+/// <param name="BasseDefinition">Le cadrage retenu, léger : formulaires en ligne, courriel.</param>
+/// <param name="HauteDefinition">Le cadrage retenu, pleine résolution : pour faire tirer ailleurs.</param>
+public sealed record PhotosDuClient(string NonRecadree, string BasseDefinition, string HauteDefinition)
+{
+    public IReadOnlyList<string> Tous => [NonRecadree, BasseDefinition, HauteDefinition];
+}
+
+/// <summary>
+/// Envoie au client ses photos par courriel.
+///
+/// Trois fichiers, parce qu'ils ne servent pas à la même chose : l'original entier pour
+/// qu'il puisse recadrer autrement, une version légère pour les téléversements en ligne
+/// (les sites d'administration refusent presque tous au-delà de quelques centaines de
+/// kilo-octets), et le cadrage en pleine résolution s'il veut faire tirer ailleurs.
+///
+/// Les deux versions recadrées gardent LE RATIO DU CADRAGE, sans être reposées dans un
+/// canevas au format du papier : le client reçoit sa photo, pas une planche.
+/// </summary>
+public static class PhotoMailer
+{
+    /// <summary>Journal optionnel, branché sur FileLog par l'application.</summary>
+    public static Action<string>? Log { get; set; }
+
+    /// <summary>Grand côté de la version légère, en pixels.</summary>
+    private const int GrandCoteBasseDefinition = 1200;
+
+    /// <summary>
+    /// Prépare les trois fichiers dans <paramref name="dossier"/> et rend leurs chemins.
+    /// </summary>
+    /// <param name="sourcePath">Photo d'origine.</param>
+    /// <param name="crop">Cadrage retenu par l'opérateur.</param>
+    /// <param name="rotationQuarterTurns">Quarts de tour appliqués.</param>
+    /// <param name="fineRotationDegrees">Redressement fin, en degrés.</param>
+    /// <param name="adjustments">Corrections d'image, fond blanc compris.</param>
+    /// <param name="dossier">Où déposer les fichiers.</param>
+    /// <param name="nomDeBase">Racine des noms de fichiers, sans extension.</param>
+    public static PhotosDuClient Preparer(
+        string sourcePath,
+        CropSpec crop,
+        int rotationQuarterTurns,
+        double fineRotationDegrees,
+        ImageAdjustments adjustments,
+        string dossier,
+        string nomDeBase)
+    {
+        ArgumentNullException.ThrowIfNull(adjustments);
+        Directory.CreateDirectory(dossier);
+
+        var original = Path.Combine(dossier, $"{nomDeBase}-originale.jpg");
+        var basse = Path.Combine(dossier, $"{nomDeBase}-recadree-web.jpg");
+        var haute = Path.Combine(dossier, $"{nomDeBase}-recadree-hd.jpg");
+
+        // L'original est réécrit plutôt que copié : on applique l'orientation EXIF, sans
+        // quoi la photo arrive couchée chez les clients dont la visionneuse ignore la
+        // balise — c'est le cas de plusieurs webmails.
+        using (var entiere = new MagickImage(sourcePath))
+        {
+            entiere.AutoOrient();
+            MagickInit.Write(entiere, original);
+        }
+
+        // Le cadrage passe par le pipeline de rendu : rotation, redressement, recadrage et
+        // corrections y sont appliqués dans le bon ordre, et le client reçoit donc
+        // exactement ce que l'opérateur a vu à l'écran.
+        RendreLeCadrage(sourcePath, crop, rotationQuarterTurns, fineRotationDegrees,
+            adjustments, haute);
+
+        // la version légère se tire de la haute définition plutôt que d'un second rendu :
+        // deux rendus d'une photo de 24 Mpx coûteraient le double pour un résultat
+        // identique au rééchantillonnage près
+        using (var legere = new MagickImage(haute))
+        {
+            legere.Resize(new MagickGeometry((uint)GrandCoteBasseDefinition, (uint)GrandCoteBasseDefinition));
+            MagickInit.Write(legere, basse);
+        }
+
+        return new PhotosDuClient(original, basse, haute);
+    }
+
+    /// <summary>
+    /// Rend le cadrage à sa taille naturelle, sans le reposer dans un format de papier :
+    /// le client reçoit sa photo, pas une planche.
+    ///
+    /// La cible en pixels est celle du cadrage lui-même, donc le fichier garde LE RATIO DU
+    /// CADRAGE et toute la résolution que la photo d'origine permet.
+    /// </summary>
+    private static void RendreLeCadrage(
+        string sourcePath, CropSpec crop, int rotationQuarterTurns,
+        double fineRotationDegrees, ImageAdjustments adjustments, string sortie)
+    {
+        using var mesure = new MagickImage(sourcePath);
+        mesure.AutoOrient();
+
+        var largeur = Math.Max(1, (int)Math.Round(crop.Width * mesure.Width));
+        var hauteur = Math.Max(1, (int)Math.Round(crop.Height * mesure.Height));
+
+        var demande = new RenderRequest(
+            sourcePath, largeur, hauteur, crop,
+            rotationQuarterTurns, fineRotationDegrees,
+            FitMode.Fill, 0, adjustments);
+
+        ImagePipeline.RenderToFile(demande, sortie, dpi: 300);
+    }
+
+    /// <summary>
+    /// Envoie les fichiers à <paramref name="destinataire"/>.
+    ///
+    /// Ne rattrape rien : un envoi qui échoue doit remonter jusqu'à l'écran, avec sa
+    /// raison. Un client qui repart en croyant avoir reçu ses photos revient le lendemain.
+    /// </summary>
+    public static void Envoyer(
+        MailSettings reglages,
+        string destinataire,
+        PhotosDuClient photos,
+        string? motDuPhotographe = null)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+        ArgumentNullException.ThrowIfNull(photos);
+
+        if (!reglages.EstUtilisable)
+            throw new InvalidOperationException(
+                "L'envoi par courriel n'est pas configuré : " + reglages.CeQuiManque() +
+                ".\n\nOuvrez Paramètres → Envoi par courriel pour le renseigner.");
+
+        if (string.IsNullOrWhiteSpace(destinataire))
+            throw new ArgumentException("Aucune adresse de destination.", nameof(destinataire));
+
+        foreach (var fichier in photos.Tous)
+            if (!File.Exists(fichier))
+                throw new FileNotFoundException($"Fichier à envoyer introuvable : {fichier}", fichier);
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(reglages.Expediteur, reglages.NomExpediteur),
+            Subject = "Vos photos",
+            Body = Corps(motDuPhotographe),
+            IsBodyHtml = false,
+        };
+        message.To.Add(destinataire);
+
+        // les pièces jointes tiennent des flux ouverts jusqu'à l'envoi : on les libère
+        // avec le message
+        foreach (var fichier in photos.Tous)
+            message.Attachments.Add(new Attachment(fichier));
+
+        Expedier(reglages, message, destinataire, photos.Tous.Count);
+    }
+
+    /// <summary>
+    /// La remise au serveur, partagée par l'envoi réel et par l'essai des Paramètres.
+    ///
+    /// Une seule voie, pour que l'essai valide EXACTEMENT ce que fera l'envoi : deux
+    /// clients SMTP configurés séparément finiraient par différer, et l'essai passerait
+    /// pendant que l'envoi échouerait.
+    /// </summary>
+    private static void Expedier(
+        MailSettings reglages, MailMessage message, string destinataire, int fichiers)
+    {
+        using var client = new SmtpClient(reglages.Serveur, reglages.Port)
+        {
+            EnableSsl = true,   // STARTTLS sur le port 587, ce qu'attend Gmail
+            Credentials = new NetworkCredential(reglages.Expediteur, reglages.MotDePasseApplication),
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            Timeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds,
+        };
+
+        try
+        {
+            client.Send(message);
+            Log?.Invoke($"Photos envoyées à {destinataire} ({fichiers} fichiers).");
+        }
+        catch (SmtpException ex)
+        {
+            Log?.Invoke($"Envoi à {destinataire} impossible : {ex.StatusCode} — {ex.Message}");
+            throw new InvalidOperationException(Expliquer(ex), ex);
+        }
+    }
+
+    /// <summary>
+    /// Envoie un message d'essai à l'adresse d'expédition elle-même.
+    ///
+    /// C'est le SEUL contrôle qui vaille : un serveur, un port et un mot de passe bien
+    /// tapés ne disent rien de ce que le serveur acceptera. Une configuration fausse doit
+    /// se découvrir à l'écran des Paramètres, pas devant un client dont on vient
+    /// d'annoncer le prix.
+    ///
+    /// Il passe par le même chemin qu'un vrai envoi — mêmes réglages, même client SMTP,
+    /// même traduction des refus — sinon il validerait autre chose que ce qu'on veut
+    /// vérifier. Seule la pièce jointe change : une image d'un pixel, écrite dans
+    /// <paramref name="dossier"/>, plutôt que les photos d'un client.
+    /// </summary>
+    public static void EnvoyerUnEssai(MailSettings reglages, string dossier)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+
+        if (!reglages.EstUtilisable)
+            throw new InvalidOperationException(
+                "L'envoi par courriel n'est pas configuré : " + reglages.CeQuiManque() + ".");
+
+        Directory.CreateDirectory(dossier);
+        var temoin = Path.Combine(dossier, "essai.jpg");
+
+        using (var pixel = new MagickImage(MagickColors.White, 1, 1))
+            MagickInit.Write(pixel, temoin);
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(reglages.Expediteur, reglages.NomExpediteur),
+            Subject = "Studio Photo — essai d'envoi",
+            Body = "Ce message confirme que l'envoi des photos par courriel fonctionne " +
+                   "depuis ce poste." + Environment.NewLine + Environment.NewLine +
+                   $"Envoyé le {DateTime.Now:dd/MM/yyyy à HH:mm}.",
+            IsBodyHtml = false,
+        };
+        message.To.Add(reglages.Expediteur);
+        message.Attachments.Add(new Attachment(temoin));
+
+        Expedier(reglages, message, reglages.Expediteur, 1);
+    }
+
+    /// <summary>
+    /// Traduit les refus du serveur en quelque chose d'actionnable. « 5.7.0 Authentication
+    /// Required » ne dit rien à un opérateur ; « le mot de passe d'application n'est plus
+    /// valable » lui dit quoi faire.
+    /// </summary>
+    private static string Expliquer(SmtpException ex) => ex.StatusCode switch
+    {
+        SmtpStatusCode.MailboxBusy or SmtpStatusCode.MailboxUnavailable =>
+            "La boîte du destinataire refuse le message. Vérifiez l'adresse.",
+
+        SmtpStatusCode.ClientNotPermitted or SmtpStatusCode.MustIssueStartTlsFirst =>
+            "Gmail a refusé la connexion. Le mot de passe d'application est peut-être révoqué : " +
+            "regénérez-en un sur le compte, puis reportez-le dans Paramètres → Envoi par courriel.",
+
+        _ => "Envoi impossible : " + ex.Message +
+             "\n\nLes fichiers sont préparés et restent disponibles ; vous pouvez réessayer.",
+    };
+
+    private static string Corps(string? motDuPhotographe)
+    {
+        var corps = new List<string>
+        {
+            "Bonjour,",
+            "",
+            "Vous trouverez ci-joint vos photos, en trois versions :",
+            "  • la photo entière, non recadrée ;",
+            "  • le cadrage retenu, en résolution légère — pour les démarches en ligne ;",
+            "  • le cadrage retenu, en pleine résolution — si vous souhaitez la faire tirer.",
+        };
+
+        if (!string.IsNullOrWhiteSpace(motDuPhotographe))
+        {
+            corps.Add("");
+            corps.Add(motDuPhotographe.Trim());
+        }
+
+        corps.Add("");
+        corps.Add("Bonne journée.");
+        return string.Join(Environment.NewLine, corps);
+    }
+}

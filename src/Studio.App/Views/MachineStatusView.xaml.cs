@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Studio.App.Infrastructure;
+using Studio.Printing.Devices.Dnp;
 using Studio.Printing.Devices.Fuji;
 
 namespace Studio.App.Views;
@@ -20,6 +21,12 @@ public partial class MachineStatusView : UserControl
     /// <summary>En dessous de ce niveau, on prévient l'opérateur avant qu'un tirage sorte faux.</summary>
     private const int SeuilAlerte = 25;
 
+    /// <summary>
+    /// En dessous de ce nombre de tirages restants, on prévient pour la DNP : son rouleau
+    /// ne se recharge pas en trente secondes, et une commande de vingt photos passe vite.
+    /// </summary>
+    private const int SeuilTiragesBas = 25;
+
     public MachineStatusView()
     {
         InitializeComponent();
@@ -34,22 +41,49 @@ public partial class MachineStatusView : UserControl
         MachinesList.ItemsSource = null;
         Mouse.OverrideCursor = Cursors.Wait;
 
+        var lignes = new List<MachineRow>();
+        var minilabMuet = (string?)null;
+
         try
         {
-            var etats = await App.Services.Minilab.SnapshotAsync();
-            var lignes = etats.Select(e => new MachineRow(e)).ToList();
-
-            MachinesList.ItemsSource = lignes;
-            MessageText.Text = lignes.Count == 0
-                ? "Aucune machine détectée. Vérifiez que le minilab est allumé."
-                : "";
+            foreach (var etat in await App.Services.Minilab.SnapshotAsync())
+                lignes.Add(new MachineRow(etat));
         }
         catch (Exception ex)
         {
             FileLog.Write("Lecture des consommables impossible", ex);
-            MessageText.Text =
+            minilabMuet =
                 "Impossible d'interroger le minilab :\n\n" + ex.Message +
                 "\n\nLes tirages ne sont pas affectés tant que la machine répond à l'impression.";
+        }
+
+        // La DNP à part, et sans faire échouer l'écran : DiLand tient son port en exclusif
+        // tant qu'il tourne, donc son absence est une situation normale et non une panne.
+        try
+        {
+            foreach (var dnp in await App.Services.Minilab.DnpSnapshotAsync())
+                lignes.Add(new MachineRow(dnp));
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Consommables : imprimante DNP indisponible", ex);
+        }
+
+        try
+        {
+            MachinesList.ItemsSource = lignes;
+
+            MessageText.Text =
+                minilabMuet
+                ?? (lignes.Count > 0 ? ""
+                    : "Aucune machine détectée. Vérifiez que le minilab est allumé.");
+
+            if (minilabMuet is null && !lignes.Any(l => l.EstDnp) && DiLandPresence.IsRunning())
+            {
+                MessageText.Text =
+                    "La DS620 (DNP) n'apparaît pas : DiLand est ouvert et garde son port USB " +
+                    "pour lui. Fermez DiLand — elle réapparaîtra toute seule en quelques secondes.";
+            }
         }
         finally
         {
@@ -119,6 +153,77 @@ public partial class MachineStatusView : UserControl
                 : "";
             AlerteVisibility = basses.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
+
+        /// <summary>
+        /// Une imprimante DNP (DS620).
+        ///
+        /// Elle n'a ni encres séparées ni bac de maintenance : le ruban et le papier
+        /// s'épuisent ensemble, et c'est le nombre de tirages restants qui compte. Les
+        /// jauges restent donc vides, et le rouleau se lit en tirages, pas en mètres.
+        /// </summary>
+        public MachineRow(DnpPrinterInfo info)
+        {
+            EstDnp = true;
+
+            var horsLigne = info.Status.IsCommunicationFailure;
+
+            Titre = info.EndormieOuInjoignable
+                ? info.WindowsQueueName!
+                : "DS620 (DNP)" +
+                  (string.IsNullOrWhiteSpace(info.SerialNumber) ? "" : $" — série {info.SerialNumber}");
+
+            SousTitre = info.EndormieOuInjoignable
+                ? "En veille — elle se réveillera au premier tirage. Ses consommables ne " +
+                  "sont lisibles que machine réveillée."
+                : horsLigne
+                    ? "Hors ligne : aucune information disponible."
+                    : $"{EtatDnp(info.Status)} · micrologiciel {info.FirmwareVersion}";
+
+            DetailVisibility = horsLigne ? Visibility.Collapsed : Visibility.Visible;
+            Consommables = [];
+
+            if (horsLigne)
+            {
+                Formats = [];
+                Papier = Compteur = Alerte = "";
+                AlerteVisibility = Visibility.Collapsed;
+                return;
+            }
+
+            Compteur = $"{info.LifetimePrints:N0} tirages depuis la mise en service";
+
+            var pourcent = info.MediaRemainingPercent is { } pc ? $" ({pc:0} %)" : "";
+            Papier = $"{info.MediaRemaining:N0} tirages restants{pourcent} — " +
+                     $"média {DecrireMedia(info.MediaSize)}, {info.MediaClass}";
+
+            // Le format chargé est le seul possible : la DS620 change de média à la main.
+            Formats = [new FormatRow(DecrireMedia(info.MediaSize), $"{info.MediaRemaining:N0}")];
+
+            Alerte = info.Status.NeedsOperator
+                ? "Intervention nécessaire sur la machine : " + info.Status.Message + "."
+                : info.Status.IsFault
+                    ? "Panne : " + info.Status.Message + ". La machine relève du SAV."
+                    : info.MediaRemaining <= SeuilTiragesBas
+                        ? $"Bientôt à court : {info.MediaRemaining} tirages restants. " +
+                          "Prévoyez un rouleau avant la prochaine grosse commande."
+                        : "";
+            AlerteVisibility = Alerte.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>Nom lisible d'un format DNP : « Size6x4 » ne parle à personne.</summary>
+        private static string DecrireMedia(DnpMediaSize media) =>
+            media.ToString().Replace("Size", "").Replace("p", ",").Replace("x", "×");
+
+        private static string EtatDnp(DnpStatus status) =>
+            status.IsCommunicationFailure ? "Hors ligne"
+            : status.IsFault ? "Erreur — arrêtée"
+            : status.NeedsOperator ? "Intervention nécessaire"
+            : status.IsBusy ? "Impression en cours"
+            : status.IsReady ? "Prête"
+            : status.Message;
+
+        /// <summary>Vrai pour une DNP : l'écran s'en sert pour expliquer une absence.</summary>
+        public bool EstDnp { get; }
 
         public string Titre { get; }
         public string SousTitre { get; }

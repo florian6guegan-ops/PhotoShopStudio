@@ -9,12 +9,15 @@ public class IdPhotoFrTests
     private static readonly NormRect Head = new(0.35, 0.20, 0.30, 0.40);
 
     [Fact]
-    public void ComputeCrop_PutsHeadAt34mm_Crown4mm_Centered()
+    public void ComputeCrop_PoseLaTeteALaHauteurVisee_CraneALaMarge_Centre()
     {
         var crop = IdPhotoFr.ComputeCrop(Head, 4000, 6000);
         var compliance = IdPhotoFr.Check(crop, Head);
 
-        Assert.Equal(IdPhotoFr.TargetHeadMm, compliance.HeadHeightMm, 1);
+        // Check rend des millimètres de la NORME ; la cible de cadrage est exprimée dans
+        // les unités de l'estimateur, qui lit haut (voir SurestimationDeLEstimateur).
+        Assert.Equal(IdPhotoFr.TargetHeadMm / IdPhotoFr.SurestimationDeLEstimateur,
+            compliance.HeadHeightMm, 1);
         Assert.Equal(IdPhotoFr.TargetCrownMarginMm, compliance.CrownMarginMm, 1);
         Assert.Equal(0, compliance.CenterOffsetMm, 1);
         Assert.True(compliance.Compliant);

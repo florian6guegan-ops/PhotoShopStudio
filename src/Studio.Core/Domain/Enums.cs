@@ -51,6 +51,18 @@ public enum ProductOutput
     /// les travaux sans rien imprimer.
     /// </summary>
     FujiMinilab,
+
+    /// <summary>
+    /// Rien n'est imprimé : la prestation est l'envoi des fichiers au client par courriel.
+    ///
+    /// C'est un vrai produit du catalogue, avec son prix, parce que c'est une vraie ligne
+    /// de caisse — 5,00 € par photo, décision de l'exploitant du 03/08/2026. Le facturer
+    /// hors commande le laisserait hors du ticket, hors du total et hors des statistiques.
+    ///
+    /// Ajouté EN FIN d'énumération : les commandes déjà enregistrées portent des valeurs
+    /// numériques qu'il ne faut pas déplacer.
+    /// </summary>
+    Email,
 }
 
 public enum FitMode

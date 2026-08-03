@@ -83,6 +83,13 @@ public partial class HomeView : UserControl
     private void OnMachineStatus(object sender, RoutedEventArgs e) =>
         Navigator.Go(new MachineStatusView(), "État des machines");
 
+    /// <summary>
+    /// Les réglages propres à CE poste — l'envoi par courriel pour l'instant. Séparés du
+    /// Catalogue, qui décrit ce que la boutique vend et vaut pour tous les postes.
+    /// </summary>
+    private void OnSettings(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new SettingsView(), "Paramètres");
+
     private void OnLargeFormatQueue(object sender, RoutedEventArgs e) =>
         Navigator.Go(new LargeFormatQueueView(), "Agrandissements à tirer");
 
@@ -99,11 +106,18 @@ public partial class HomeView : UserControl
         Navigator.Go(new PhoneUploadView(), "Photos depuis un téléphone");
 
     private void OnIdPhoto(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new IdDocumentPickerView(document =>
-            Navigator.Go(new SourcePickerView((root, profond) =>
-                Navigator.Go(new IdPhotoView(root, document, profond),
-                    $"{document.Country} — {document.Document}")),
-                "Photos d'identité — choisir le support")),
+        Navigator.Go(new IdDocumentPickerView(
+                document =>
+                    Navigator.Go(new SourcePickerView((root, profond) =>
+                        Navigator.Go(new IdPhotoView(root, document, profond),
+                            $"{document.Country} — {document.Document}")),
+                        "Photos d'identité — choisir le support"),
+                // voir ProductTypeView.OnIdPhoto : l'E-Photo est un tirage, pas une norme
+                produit =>
+                    Navigator.Go(new SourcePickerView((root, profond) =>
+                        Navigator.Go(new PhotoGridView(root, produit.Code, avecSousDossiers: profond),
+                            produit.Name)),
+                        $"{produit.Name} — choisir le support")),
             "Photos d'identité — choisir le document");
 
     // ----- le récepteur des bornes -----
@@ -245,11 +259,12 @@ public partial class HomeView : UserControl
     private void OuvrirLaBorne(CommandeBorne ligne, CustomSize? taille)
     {
         var importateur = App.Services.DiLandImport;
-        var travail = Path.Combine(App.Services.DataRoot, "diland", "travail");
 
         try
         {
-            var prete = importateur.Stage(ligne.Order, travail);
+            // les photos sont rangées chez NOUS, pour trente jours : l'écran travaille sur
+            // notre copie et non sur les dossiers de DiLand, qu'il purge quand il veut
+            var prete = importateur.Archiver(ligne.Order);
             if (prete.PhotoCount == 0)
             {
                 MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
@@ -299,7 +314,8 @@ public partial class HomeView : UserControl
         try
         {
             Mouse.OverrideCursor = Cursors.Wait;
-            var prete = App.Services.DiLandImport.Stage(ligne.Order, telechargements, nom);
+            var prete = App.Services.DiLandImport.Stage(
+                ligne.Order, telechargements, nom, ecraser: true);
             Mouse.OverrideCursor = null;
 
             if (prete.PhotoCount == 0)
@@ -384,8 +400,7 @@ public partial class HomeView : UserControl
         DiLandImportOutcome resultat;
         try
         {
-            resultat = services.DiLandImport.Import(
-                ligne.Order, Path.Combine(services.DataRoot, "diland", "travail"));
+            resultat = services.DiLandImport.Import(ligne.Order);
         }
         catch (Exception ex)
         {

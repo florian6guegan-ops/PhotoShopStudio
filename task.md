@@ -1,169 +1,154 @@
-# Exécution — 4ᵉ passe
+# Exécution — 5ᵉ passe
 
-Priorité posée par l'exploitant (02/08/2026) : **la DNP d'abord**. Le rouleau ne change
-jamais et on n'imprime que sur du 10×15 — les chantiers « un produit planche par média
-DNP » du plan sont donc écartés, il n'en faut qu'un.
+Décisions de l'exploitant (03/08/2026) :
 
-Facturation des agrandissements à taille libre : **au prix du produit catalogue dans lequel
-la taille tient** (30×40 → prix du 30×40 ; 40×50 → prix du 40×50).
+- **L'envoi par courriel est facturé : 5,00 € de plus PAR PHOTO.**
+- **On ne remplace pas le logiciel des bornes.** Le chantier 6 se fait donc en lecture
+  disque : il rend Studio indépendant de DiLand pour tout ce qui suit l'arrivée de la
+  commande, mais l'arrivée elle-même reste tributaire de DiLand (voir constat A du plan).
+- **Les bugs B et C sont corrigés en premier.**
+- **L'historique garde les photos dans les données de Studio, 30 jours** — jamais dans les
+  dossiers de DiLand, qu'il purge sans prévenir.
 
-## 1. Photos d'identité sur la DS620 — tous les formats de document
+---
 
-Cause : le pilote DP-DS620 ne déclare que **onze formats privés** (RawKind 119 à 129) et
-aucun format standard. Le produit `ID-FR-6` était à 152 × 102 mm ; le `(6x4)` du pilote fait
-**156,2 × 104,9 mm** (615 × 413 centièmes de pouce). L'écart dépassait la tolérance de
-1,5 mm de `FindDriverPaperSize`, qui retombait sur `new PaperSize("Format produit", …)` —
-RawKind 0, soit `DMPAPER_USER`. Le DEVMODE capturé était écrasé, la DS620 recevait une
-forme inconnue et **jetait le travail sans erreur**. Le journal du 01/08 le montre :
-« page obtenue 152×102 mm (**Format produit**) » sur deux commandes, aucun tirage sorti.
+## 0. Bugs B et C — recadrages perdus, redressements ignorés ✅
 
-- [x] 1a `BitmapPrinter.ChoisirFormat` : plus proche format déclaré, **jamais plus petit**
-      que le tirage (−1,5 mm admis), plafonné à +2,5 mm ; les deux orientations, le bon
-      sens l'emportant à écart égal. Isolé en méthode `internal` pure : aucun poste de
-      développement n'a de DS620 branchée
-- [x] 1b `BitmapPrinter.Print` : refus explicite, nommant les formats acceptés, quand
-      l'imprimante ne déclare **que** des formes privées et qu'aucune ne convient
-- [x] 1b′ `BitmapPrinter.EnsurePageSizeAvailable` + appel dans `PrintOrchestrator` **avant**
-      le rendu et avant l'état « Spooled » — sinon l'enveloppe serait proposée à la
-      réimpression au démarrage suivant alors que rien n'est parti
-- [x] 1c `OrderItem.SheetCellWidthMm` / `SheetCellHeightMm` + `SheetCellSize` + `DraftItem`
-      (en DERNIER paramètre : les appelants passent les précédents par position) +
-      `OrderService`
-- [x] 1d `PrintOrchestrator` : la cellule vient de l'article, sinon du produit
-- [x] 1e `IdPhotoView` : la cellule est celle du DOCUMENT choisi (35×45, 26×32, 51×51…),
-      capacité recalculée et affichée dans la liste des papiers, papiers trop petits
-      écartés, planche pleine par défaut, messages sans « 35×45 » figé
-- [x] 1f `products.json` : `ID-FR-6` porté à **156,2 × 104,9 mm** (la forme `(6x4)` du
-      pilote), `Output: "Printer"` explicite, renommé « Photos d'identité — planche 10×15 »
-- [x] 1g `DnpPaperMatchTests` (10) sur les onze formes réelles de la DS620
-- [x] 1h `Studio.PrintProbe papier <imprimante> <Lmm> <Hmm>` : dit si un format sortira,
-      **sans gâcher une feuille**. C'est le contrôle qui manquait avant d'enregistrer un
-      produit au catalogue
+- [x] 0a `DiLandOrderPhoto.EnFractions` + `FromRaw` : le recadrage de DiLand est en
+      **PIXELS**, ramené en fractions à la lecture. La conversion vit à UN seul endroit —
+      la base et `Order.xml` la réclament tous les deux
+- [x] 0b `DiLandRepository.ReadPhotos` lit `Width`, `Height` et `FineRotationAngle`
+- [x] 0c `DiLandOrderPhoto.FineRotationDegrees` + `DiLandImporter.Import` le transmet
+- [x] 0d `DiLandCropUnitsTests` (6), sur les valeurs RÉELLES de la boutique
+- [x] 0e schéma des essais existants complété
 
-## Vérification
+## 1. Envoi par courriel des photos d'identité — 5 € par photo ✅
 
-- [x] `dotnet build` : 0 erreur, 0 avertissement nouveau
-- [x] `dotnet test` : **665 verts** (655 + 10)
-- [x] contrôle sur la VRAIE DP-DS620 (`PrintProbe papier`) :
-      156,2 × 104,9 → accepté · 105 × 156,1 → accepté · **152 × 102 → refusé**, avec la
-      liste des onze formes
-- [ ] planche réellement imprimée sur la DS620, journal relevé
-      (`page obtenue … ((6x4), …)` et non plus « Format produit ») — **à faire par
-      l'exploitant, machine allumée**
+- [x] 1a `ProductOutput.Email`, ajouté EN FIN d'énumération
+- [x] 1b `MailProduct` : produit `envoi-courriel` à 5,00 €, créé au catalogue à la première
+      utilisation. Jamais retarifé ensuite — le prix se règle au Catalogue
+- [x] 1c `PrintOrchestrator` : une enveloppe `Email` est close sur place, sans rendu ni
+      spouleur. La lui faire traverser le rendu la mettrait « en attente d'imprimante »
+      pour une prestation qui n'en demande aucune
+- [x] 1d `AppServices.Mail` / `SaveMail` / `ProduitEnvoiCourriel` + `PhotoMailer.Log`
+      branché sur `FileLog`
+- [x] 1e `MailSendView` : prix annoncé AVANT l'envoi, adresse, mot facultatif. Préparation
+      et envoi hors du fil d'interface
+- [x] 1f `IdPhotoView` : bouton **✉ Envoyer**, avec le cadrage en cours
+- [x] 1g les fichiers restent sous `DataRoot/courriel/<date>/` ; **rien n'est facturé si
+      l'envoi échoue**
+- [x] 1h `ProductEditView` : la sortie « Envoi par courriel » ajoutée à la liste — sans
+      elle, ouvrir la fiche du produit en aurait fait un produit imprimé
+- [x] 1i `MailBillingTests` (6)
 
-## 2. Écritures noires sur fond noir
+## 2. Écran Paramètres ✅
 
-Cause : WPF donne le NOIR à tout `TextBlock` qui n'hérite pas d'autre chose, et `App.xaml`
-ne posait aucun style de texte. Le relevé initial donnait 22 candidats ; **dix étaient de
-fausses alertes** — un `TextBlock` posé dans un `Button` hérite de la couleur du bouton, et
-les styles `BigButton`, `FlatButton`, `LigneListe` et `Secondaire` en fixent une. Restaient
-**douze vraies invisibilités**, toutes posées directement dans un `Grid` ou un `Border`.
+- [x] 2a `SettingsView` : serveur, port, expéditeur, nom affiché, mot de passe
+      d'application (`PasswordBox`), Actif
+- [x] 2b bouton **« Envoyer un message d'essai »** (`PhotoMailer.EnvoyerUnEssai`), qui passe
+      par le MÊME client SMTP qu'un vrai envoi — deux chemins finiraient par différer
+- [x] 2c tuile ⚙ Paramètres sur l'accueil
+- [x] 2d `PhotoMailer` renvoie vers « Paramètres → Envoi par courriel »
 
-- [x] 2a `App.xaml` : styles `Texte` et `Valeur`, avec la RÈGLE écrite en commentaire.
-      **Aucun style implicite** — il repeindrait aussi le contenu des menus déroulants et
-      des listes, qui gardent le fond clair du système : on troquerait du noir sur noir
-      contre du blanc sur blanc
-- [x] 2b `IdPhotoView` (4), `ProductEditView` (6), `PhotoGridView` (2), `KioskHomeView` (2),
-      `KioskGridView` (1)
-- [x] 2c contrôle automatique : toutes les clés `StaticResource` des vues se résolvent
-- Non traités, à dessein : les deux emoji (👋, ✅) — les glyphes couleur de Segoe UI Emoji
-  ignorent la couleur du texte ; et le `Slider` d'`EditSelectionView`, dont le rail et le
-  pouce système restent visibles sur fond sombre
+## 3. Redressement : T ARME le mode, la molette règle ✅
 
-## 3. Format POLA : un vrai cadre Polaroid
+- [x] 3a `IdPhotoView` + `CropSurface` : T bascule un mode armé, capté en `PreviewKeyDown`
+      **sur la fenêtre**. `Keyboard.IsKeyDown` dépendait du focus, et le focus part sur la
+      liste des papiers dès qu'on choisit son tirage — c'est ce qui faisait passer le
+      redressement pour cassé
+- [x] 3b T maintenue continue de fonctionner ; les champs de saisie sont épargnés
+- [x] 3c bandeau orangé visible tant que le mode est armé, Échap pour en sortir
+- [x] 3d **collision trouvée** : `CropEditorView` liait déjà T à « pivoter le cadre ». La
+      même touche faisait donc DEUX choses sur le même écran. T va au redressement ;
+      pivoter le cadre passe sur **F**, et reste à un clic droit
+- [x] 3e la bande de vignettes d'`EditSelectionView` suit le mode armé
+- [x] 3f libellé « Pivoter la photo (T + molette) » corrigé — ce bouton fait un quart de
+      tour, pas un redressement
 
-Cotes officielles Polaroid (film 600 / i-Type) : tirage **88,47 × 107,52 mm**, fenêtre image
-**78,94 × 76,80 mm**. Deux choses font la forme, et l'ancien produit (marge uniforme de
-2 mm, mode « photo entière ») n'en rendait aucune : la fenêtre est **presque carrée**, et la
-bande du bas fait **près du quart de la hauteur** — 25,95 mm contre 4,77 aux trois autres bords.
+## 4. Commandes du jour : tirages / photos d'identité ✅
 
-- [x] 3a `PolaroidFrame` : les cotes, et `Place()` qui pose le plus grand cadre tenant dans
-      le tirage, centré. Sur un 10×15 (0,671 contre 0,823) il occupe toute la largeur et
-      laisse du blanc en haut et en bas — un cadre étiré ne serait plus un Polaroid
-- [x] 3b `FitMode.Polaroid`, ajouté EN FIN d'énumération
-- [x] 3c `ImagePipeline.RenderPolaroid` : composé comme une planche (image blanche +
-      `Composite`), et non par un `Extent` décentré qui se joue à un signe près. Contour de
-      découpe sur le bord du CADRE, profil ICC sur le tirage entier
-- [x] 3d teinte : `InverseLevel(7 %, 95 %)` pour le voile, saturation −12 %, rouge +4 % et
-      bleu −3 %. Ni vignettage ni grain : plusieurs secondes par tirage pour un effet que le
-      cadre donne déjà
-- [x] 3e les écrans de recadrage montrent la FENÊTRE carrée et non la feuille
-      (`CropEditorView`, `PhotoGridView`) ; la bascule Remplir/Entier est grisée sur un
-      Polaroid, et « Réinitialiser » ne fait plus sauter le cadre
-- [x] 3f `ProductEditView` : « Polaroid » comme troisième cadrage
-- [x] 3g `products.json` : `pola` et `10x15pola` en `DefaultFit: "Polaroid"`, marge à 0
-- [x] 3h `PolaroidFrameTests` (7) + **rendu réel contrôlé à l'œil** sur une photo de la boutique
+- [x] 4a trois onglets — Tout, Tirages photo, Photos d'identité
+- [x] 4b une ligne est « identité » si son produit porte un `Sheet`, avec repli sur
+      `OrderItem.SheetCellWidthMm`
+- [x] 4c le tri se fait par ENVELOPPE, parce que c'est l'enveloppe qu'on réimprime : une
+      enveloppe mixte paraît dans les deux onglets, entière. Rien ne disparaît
+- [x] 4d compteur par onglet
+- [x] 4e boutons **⬇ Télécharger** et **✏ Modifier** sur chaque commande, tirages ET
+      planches d'identité — le même geste que sur une commande de borne. Les photos
+      d'origine sont toujours recopiées à la création de la commande, donc elles sont là
+      des jours plus tard même si le client a repris sa clé
+- [x] 4f « Modifier » ne touche PAS la commande d'origine : un tirage depuis cet écran
+      donne une nouvelle commande. Une commande déjà encaissée ne doit changer ni de
+      contenu ni de montant — l'infobulle le dit
 
-## 4. Catalogue : supprimer un tirage
+## 5. Historique des bornes : les photos vivent chez nous ✅
 
-- [x] 4a `Product.Copy()` — la copie complète, déplacée du Catalogue vers le domaine pour
-      être vérifiable. Il manquait **huit champs** : `Output`, `MinilabMachineId`,
-      `MinilabPrintSizeName`, `PriceTiers`, et `GapMm`/`CutMarks`/`CutBorder`/`DateStamp` de
-      la planche. Modifier un tirage du minilab le transformait en produit imprimante et
-      effaçait ses paliers de tarif
-- [x] 4b `ProductCatalog.CountReferences` : les commandes qui citent un produit
-- [x] 4c bouton **🗑 Supprimer** dans `CatalogView`, en rouge et en dernier. Un produit cité
-      par une commande des 30 derniers jours est **désactivé** et non supprimé — tout le
-      circuit appelle `Require(code)`, et une commande en attente de réimpression
-      deviendrait inexploitable
-- [x] 4d `ProductEditView` : liste **« Sortie »** (file Windows / minilab Fuji / fichier
-      repris à la main). C'est le champ dont l'absence causait la perte. L'imprimante n'est
-      plus exigée quand la sortie n'est pas une file Windows
-- [x] 4e `OnSave` conserve les quatre réglages de planche que la fiche ne montre pas —
-      les recréer à neuf effaçait l'horodatage exigé sur les photos d'identité
-- [x] 4f `CatalogEditTests` (7), dont un essai **par réflexion** : il compare la liste des
-      propriétés de `Product` à ce que la copie restitue, et échouera dès qu'une propriété
-      sera ajoutée sans être recopiée
+- [x] 5a `KioskOrderEntry.ArchiveDirectory` + `KioskOrderJournal.SetArchive`
+- [x] 5b `DiLandImporter.Archiver` : les photos sont recopiées dans
+      `DataRoot\diland\archive\<oid>` à la prise en charge, tant que les fichiers de DiLand
+      sont sûrement là. Attendre la clôture serait trop tard
+- [x] 5c **`Purge` efface l'archive AVEC l'entrée**, à 30 jours : sans cela le disque
+      grossirait d'un mois de photos de clients
+- [x] 5d boutons ⬇ Télécharger et ✏ Modifier dans l'historique, servis depuis NOTRE copie
+- [x] 5e `CopyFileTo(..., ecraser:)` : la recopie sautait les fichiers déjà présents, donc
+      un second téléchargement rouvrait un dossier périmé sans rien dire
+- [x] 5f `ArchiverDepuisDiLand` : rattrapage pour les entrées d'AVANT l'archivage. Seul cas
+      où l'historique redescend chez DiLand ; disparaîtra de lui-même en un mois
+- [x] 5g le dossier de travail `diland\travail` disparaît : une seule copie interne
+- [x] 5h `KioskArchiveTests` (6), dont « DiLand a tout effacé et l'historique sert quand
+      même »
 
-## 5. Agrandissements : format personnalisé (A2, A3…)
+## 6. Lire les commandes des bornes sans DiLand ✅
 
-Facturation retenue : **au prix du format du catalogue dans lequel la taille tient**.
-Départages : le moins cher d'abord — c'est le prix qu'on annonce — puis le plus petit.
-
-- [x] 5a `EnlargementSizes` : formats normalisés A4 → A0, choix du papier tarifant, code de
-      produit déterministe (`agr-297x420`), fabrication du produit
-- [x] 5b `CustomEnlargementView` : tuiles normalisées, saisie libre en cm, **prix annoncé
-      avant le choix des photos**, mémoire des tailles récentes
-- [x] 5c la tuile « Personnalisé » apparaît dans les agrandissements, avec son propre libellé
-      et son propre geste — celle de l'impression rapide compose des planches minilab, ce
-      qui n'a rien à voir
-- [x] 5d le format demandé devient un **vrai produit du catalogue**, ce qui fait fonctionner
-      la grille, « Modifier », le rendu, la boîte grand format et surtout `Require` à la
-      réimpression. Conséquence voulue : le deuxième A2 est déjà dans la liste
-- [x] 5e `CustomEnlargementTests` (13), dont les trois cas de l'exploitant
-- [x] 5f entrée **« Agrandissement personnalisé… (A2, A3…) »** dans le MENU de format, dans
-      la grille ET dans « Modifier ». Elle est DISTINCTE de « Personnalisé… » : celle-là
-      compose des planches minilab, celle-ci sort un tirage unique sur l'Epson — les
-      confondre enverrait un A2 au minilab, qui le refuserait
+- [x] 6a `DiLandOrderXml` : `Order.xml` → commande, lignes, photos. Produit dans
+      `Sys_Product_Alias` ; **date prise sur le NOM DU DOSSIER**, l'attribut `Date` étant
+      écrit à l'américaine (`08/03/2026` = 3 août)
+- [x] 6b `ReadKioskOrdersFromDisk` balaie `IncomingOrders\*.COM` et `Orders\*.COM` ; les
+      `.TMP` sont écartés (réception en cours)
+- [x] 6c `Pending()` fusionne base et disque, dédoublonné sur `DirectoryName`, la base
+      l'emportant — elle porte le vrai Oid
+- [x] 6d clé de journal déterministe (FNV-1a) : `string.GetHashCode()` est randomisé par
+      processus, et une clé changeante ferait resurgir toutes les commandes traitées
+- [x] 6e `FenetreDuDisque` = 30 j : `Orders` garde des mois, tout y verser noierait la liste
+- [x] 6f `KioskOrdersView` avertit quand DiLand est fermé — les bornes ne peuvent alors
+      **plus déposer**, et l'opérateur doit le savoir
+- [x] 6g `Studio.DiLandProbe xml` : compare disque et base sur les vraies commandes
+- [x] 6h `DiLandOrderXmlTests` (8) + `KioskDiskFallbackTests` (6)
 
 ## Vérification d'ensemble
 
-- [x] `dotnet build` : 0 erreur, 0 avertissement nouveau
-- [x] `dotnet test` : **692 verts** (655 au départ, 37 nouveaux)
+- [x] `dotnet build` : 0 erreur, 0 avertissement
+- [x] `dotnet test` : **759 verts** (692 au départ, 67 nouveaux)
 - [x] toutes les clés `StaticResource` des vues se résolvent
-- [x] **application lancée** avec le catalogue modifié : elle démarre, la fenêtre s'ouvre,
-      le relais DE100 se connecte, aucune exception au journal
+- [x] **application lancée** : fenêtre ouverte, relais DE100 connecté, serveur d'envoi sur
+      8123, aucune exception au journal
+- [x] **`DiLandProbe xml` sur les VRAIES commandes** : aucun écart entre disque et base
 
-### Piège à connaître : le relais DE100 survit à l'application
+⚠ `Studio.App` et `Studio.De100Host` verrouillent les DLL : les fermer avant de bâtir.
+Fermés deux fois le 03/08/2026 avec l'accord de l'exploitant.
 
-Tuer `Studio.App` sans le laisser se fermer laisse `Studio.De100Host.exe` en vie, et il
-garde le canal nommé. Les trois essais d'intégration `De100BridgeIntegrationTests` échouent
-alors sur « Toutes les instances des canaux de communication sont occupées » — ce n'est PAS
-une régression du code. `Get-Process Studio.De100Host | Stop-Process` et tout repasse au vert.
+## Ce que le contrôle sur la vraie boutique a trouvé
 
-## Reste ouvert
+**Deux commandes de bornes absentes de la base de DiLand** — pas même supprimées :
 
-- [ ] **Planche identité réellement imprimée sur la DS620** (voir chantier 1)
-- [ ] Écrans à parcourir une fois sur place : identité, fiche produit, catalogue, borne.
-      Seul l'accueil a été vu à l'écran ; le reste n'a été vérifié que par le compilateur et
-      par le contrôle des ressources
-- [ ] Un tirage POLA réel, pour juger la teinte sur papier — elle est volontairement
-      discrète, elle peut être poussée (`AppliquerTeintePolaroid`)
-- [ ] Remplir `D:\PhotoStudioData\config\wifi.json` (SSID + mot de passe) — sans lui, le
-      second code QR ne s'affiche pas
-- [x] Commité et poussé sur `origin/pilotes-de100-dnp` (le commit emporte aussi la fin de la
-      3ᵉ passe, restée non commitée — les fichiers portaient les deux, impossible à séparer)
-- [x] Catalogue de la boutique sauvegardé dans `catalog/boutique/`, avec
-      `tools\Sauver-Catalogue.cmd` pour le rafraîchir. **Le lancer après chaque changement du
-      catalogue**, sinon la copie vieillit en silence
-- [x] Fusionné dans `main` et poussé — `main` porte maintenant la version courante
+| | |
+|---|---|
+| #12360 (18-001) | 18/06 10:14 · 18 photos en 10x15 · 10,80 € · 18 recadrées |
+| #6830 (25-006) | 25/06 17:08 · 1 photo en 30x40 · 19,90 € · recadrée |
+
+DiLand ne les a jamais intégrées. Elles sont trop anciennes pour remonter dans la liste
+(fenêtre de 30 jours) ; `Studio.DiLandProbe xml` les montre. **À regarder par
+l'exploitant** : ont-elles été servies ?
+
+## Reste à faire par l'exploitant
+
+- [ ] **Contrôler à l'œil un tirage de borne recadré** : le bug B durait depuis le début, et
+      personne n'a jamais vu ce que le cadrage du client donnait réellement
+- [ ] Renseigner `Paramètres → Envoi par courriel` (mot de passe d'application Gmail), puis
+      **envoyer un message d'essai**
+- [ ] Vérifier le prix du produit « Envoi des photos par courriel » au Catalogue (5,00 €)
+- [ ] Parcourir les écrans : identité (T + molette), commandes du jour (trois onglets),
+      historique des bornes (Télécharger / Modifier)
+- [ ] Les deux commandes ci-dessus
+- [ ] Reste ouvert des passes précédentes : planche identité réellement imprimée sur la
+      DS620, tirage POLA réel, `config\wifi.json`

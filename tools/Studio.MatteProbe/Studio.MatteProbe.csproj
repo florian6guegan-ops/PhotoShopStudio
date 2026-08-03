@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>MatteProbe</AssemblyName>
+    <!-- sans cible de plateforme, les binaires natifs d'ONNX Runtime et de DirectML ne
+         sont pas copies dans la sortie, et le reseau ne peut pas demarrer -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Studio.Imaging\Studio.Imaging.csproj" />
+  </ItemGroup>
+</Project>

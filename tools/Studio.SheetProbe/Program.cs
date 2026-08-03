@@ -52,7 +52,7 @@ var cellW = MmPx.ToPixels(planche.CellWidthMm, produit.Dpi);
 var cellH = MmPx.ToPixels(planche.CellHeightMm, produit.Dpi);
 
 ImagePipeline.RenderIdSheetToFile(
-    new RenderRequest(source, cellW, cellH, CropSpec.Full, 0, FitMode.Fill, 0,
+    new RenderRequest(source, cellW, cellH, CropSpec.Full, 0, 0, FitMode.Fill, 0,
         new ImageAdjustments(), icc),
     planche.Copies, planche.GapMm, planche.CutMarks,
     sheetW, sheetH, sortie, produit.Dpi,

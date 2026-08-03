@@ -216,6 +216,16 @@
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding StateLabel}" FontSize="15" VerticalAlignment="Center"
                                                Foreground="{Binding StateBrush}"/>
+                                    <!-- Une commande close garde ses photos : c'est le
+                                         lendemain qu'un client redemande un tirage, ou son
+                                         fichier. Sans ces deux boutons, l'historique ne
+                                         servait qu'à constater. -->
+                                    <Button Content="⬇ Télécharger" Style="{StaticResource ActionLigne}"
+                                            Click="OnHistoryDownload" Tag="{Binding}"
+                                            ToolTip="Recopie les photos dans les téléchargements, même si elles l'ont déjà été."/>
+                                    <Button Content="✏ Modifier" Style="{StaticResource ActionLigne}"
+                                            Click="OnHistoryModify" Tag="{Binding}"
+                                            ToolTip="Rouvre les photos pour les recadrer et les corriger. La commande reste dans l'historique."/>
                                     <Button Content="Remettre dans la liste" Style="{StaticResource ActionLigne}"
                                             Click="OnReopen" Tag="{Binding}"
                                             ToolTip="Repasse la commande dans l'onglet Ordres, si elle a été close par erreur."/>

@@ -74,7 +74,8 @@ public class DiLandImporterTests : IDisposable
                     Oid INTEGER PRIMARY KEY, OrderLine INTEGER, FileName TEXT,
                     OriginalFileName TEXT, Quantity INTEGER, ApplyCrop INTEGER,
                     CropX REAL, CropY REAL, CropWidth REAL, CropHeight REAL,
-                    Angle REAL, GCRecord INTEGER);
+                    Angle REAL, FineRotationAngle REAL, Width INTEGER, Height INTEGER,
+                    GCRecord INTEGER);
 
                 INSERT INTO Product (Oid, Name) VALUES (1, '10x15'), (2, 'Agenda spirale');
 

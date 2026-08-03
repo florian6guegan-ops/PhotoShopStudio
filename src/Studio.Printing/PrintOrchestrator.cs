@@ -25,7 +25,32 @@ public sealed record SpoolState(string Status, DateTimeOffset At)
     /// rappelé quand la machine le permettait ; le reste n'a jamais été envoyé.
     /// </summary>
     public const string Canceled = "Canceled";
+
+    /// <summary>
+    /// L'imprimante n'était pas en état de tirer — capot ouvert, rouleau à changer,
+    /// bourrage. L'enveloppe attend son tour ; <see cref="PendingPrintQueue"/> la
+    /// reprendra dès que la machine répondra, à la page où elle s'était arrêtée.
+    /// </summary>
+    public const string Waiting = "Waiting";
 }
+
+/// <summary>
+/// Où en était une enveloppe quand elle s'est interrompue.
+/// </summary>
+/// <param name="PagesRemises">
+/// Pages physiques déjà confiées à Windows. La reprise saute celles-là : sans ce compte,
+/// un bourrage à la vingtième photo d'une planche de trente en refaisait trente.
+/// </param>
+/// <param name="Raison">Ce qui a arrêté le tirage, pour l'écran de reprise.</param>
+public sealed record PrintResumePoint(int PagesRemises, string Raison, DateTimeOffset At);
+
+/// <summary>
+/// L'imprimante n'était pas en état de tirer. L'enveloppe est mise en attente, pas perdue.
+///
+/// Distincte des autres échecs : l'appelant doit dire « en attente » et non « échec »,
+/// et surtout ne rien proposer de réimprimer — la reprise est automatique.
+/// </summary>
+public sealed class PrinterNotReadyException(string message) : Exception(message);
 
 /// <summary>
 /// Où en est l'impression d'une enveloppe, à destination du bandeau des machines.
@@ -119,6 +144,12 @@ public sealed class PrintOrchestrator
                 $"L'enveloppe {order.DisplayNumber}/{envelope.Number} a déjà été envoyée à l'impression " +
                 "— confirmation opérateur requise pour réimprimer.");
 
+        // Une enveloppe EN ATTENTE se reprend sans confirmation : elle n'a rien imprimé de
+        // trop, elle a été interrompue. C'est tout l'intérêt de la file d'attente.
+        var reprise = state?.Status == SpoolState.Waiting
+            ? ReadResumePoint(order, envelope)
+            : null;
+
         var products = envelope.Lines.Select(l => _catalog.Require(l.ProductCode)).ToList();
 
         // une enveloppe emprunte un seul circuit : spouleur, fichiers, ou minilab
@@ -128,6 +159,20 @@ public sealed class PrintOrchestrator
                 $"L'enveloppe {order.DisplayNumber}/{envelope.Number} mélange plusieurs circuits " +
                 $"d'impression ({string.Join(", ", circuits)}). Ils doivent être séparés : donnez à ces " +
                 "produits des canaux d'impression distincts dans le catalogue.");
+
+        // L'envoi par courriel ne passe par aucune machine. L'enveloppe existe pour porter
+        // la ligne et son prix — ticket, total, statistiques — et rien d'autre : elle est
+        // close ici même. La lui faire traverser le rendu la mettrait « en attente
+        // d'imprimante » pour une prestation qui n'en demande aucune, et la commande ne
+        // passerait jamais « Prête ».
+        if (circuits[0] == ProductOutput.Email)
+        {
+            WriteSpoolState(order, envelope, SpoolState.Printed);
+            envelope.Status = EnvelopeStatus.Printed;
+            Log?.Invoke($"Enveloppe {order.DisplayNumber}/{envelope.Number} : envoi par courriel, " +
+                        "rien à imprimer.");
+            return;
+        }
 
         var manualPrinting = circuits[0] == ProductOutput.ManualFile;
         var minilabPrinting = circuits[0] == ProductOutput.FujiMinilab;
@@ -162,6 +207,21 @@ public sealed class PrintOrchestrator
             // approximatif mais AUCUN tirage, et sans erreur. Voir BitmapPrinter.
             foreach (var produit in products.DistinctBy(p => p.Code))
                 BitmapPrinter.EnsurePageSizeAvailable(produit.PrinterName, produit.WidthMm, produit.HeightMm);
+
+            // Machine pas en état de tirer : on met l'enveloppe en attente au lieu
+            // d'échouer. Le rouleau qu'on change ou le capot resté ouvert durent deux
+            // minutes ; le travail doit patienter, pas se perdre.
+            foreach (var nom in products.Select(p => p.PrinterName).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var etat = PrinterReadiness.Check(nom);
+                if (etat.CanPrint) continue;
+
+                MettreEnAttente(order, envelope, reprise?.PagesRemises ?? 0, etat.Reason);
+                throw new PrinterNotReadyException(
+                    $"Commande {order.DisplayNumber} mise en attente — {etat.Reason}.\n\n" +
+                    "Elle partira toute seule dès que l'imprimante sera prête. " +
+                    "Rien n'est perdu, et rien ne sera imprimé en double.");
+            }
         }
 
         WriteSpoolState(order, envelope, SpoolState.Rendering);
@@ -211,10 +271,17 @@ public sealed class PrintOrchestrator
         _store.AppendEvent(order, "spool-start",
             $"env={envelope.Number}, pages={pages.Sum(p => p.Copies)}, destinations=[{destinations}]");
 
+        var deja = reprise?.PagesRemises ?? 0;
+        if (deja > 0)
+            _store.AppendEvent(order, "spool-resume",
+                $"env={envelope.Number}, reprise à la page {deja + 1}");
+
         try
         {
             PrintPages(pages, pdfOverridePath, $"Studio {order.DisplayNumber}-{envelope.Number}",
-                progression, ct);
+                progression, ct,
+                depart: deja,
+                noterAvancement: faites => WriteResumePoint(order, envelope, faites, "impression en cours"));
         }
         catch (OperationCanceledException)
         {
@@ -226,11 +293,57 @@ public sealed class PrintOrchestrator
                 $"Commande {order.DisplayNumber} arrêtée. Les pages déjà remises au spouleur " +
                 "Windows peuvent encore sortir : videz la file de l'imprimante pour les retenir.");
         }
+        catch (Exception ex)
+        {
+            // Le spouleur a refusé en cours de route — bourrage, machine éteinte, câble.
+            // Le point de reprise dit où on en était : l'enveloppe repartira de là plutôt
+            // que de refaire les pages déjà sorties.
+            var faites = ReadResumePoint(order, envelope)?.PagesRemises ?? deja;
+            MettreEnAttente(order, envelope, faites, ex.Message);
 
+            throw new PrinterNotReadyException(
+                $"Commande {order.DisplayNumber} interrompue après {faites} page(s) — {ex.Message}.\n\n" +
+                "Elle reprendra à la page suivante dès que l'imprimante sera prête : " +
+                "les pages déjà sorties ne seront pas refaites.");
+        }
+
+        ClearResumePoint(order, envelope);
         WriteSpoolState(order, envelope, SpoolState.Printed);
         envelope.Status = EnvelopeStatus.Printed;
         _store.Save(order);
         _store.AppendEvent(order, "printed", $"env={envelope.Number}");
+    }
+
+    /// <summary>
+    /// Range l'enveloppe en attente, avec le rang de la dernière page sortie.
+    ///
+    /// L'enveloppe reste <see cref="EnvelopeStatus.Pending"/> et NON « Spooled » : c'est
+    /// ce qui la rend reprenable sans confirmation de l'opérateur, et ce qui empêche
+    /// l'écran de démarrage de la proposer à la réimpression comme un travail douteux.
+    /// </summary>
+    private void MettreEnAttente(Order order, Envelope envelope, int pagesRemises, string raison)
+    {
+        WriteResumePoint(order, envelope, pagesRemises, raison);
+        WriteSpoolState(order, envelope, SpoolState.Waiting);
+        envelope.Status = EnvelopeStatus.Pending;
+        _store.Save(order);
+        _store.AppendEvent(order, "print-waiting",
+            $"env={envelope.Number}, pages sorties={pagesRemises}, raison={raison}");
+        Log?.Invoke($"Commande {order.DisplayNumber}/{envelope.Number} en attente d'imprimante : {raison}");
+    }
+
+    /// <summary>
+    /// Enveloppes qui attendent une imprimante. <see cref="PendingPrintQueue"/> les reprend
+    /// dès que la machine répond.
+    /// </summary>
+    public List<(Order Order, Envelope Envelope)> FindWaitingEnvelopes(IEnumerable<Order> orders)
+    {
+        var attente = new List<(Order, Envelope)>();
+        foreach (var order in orders)
+            foreach (var envelope in order.Envelopes)
+                if (ReadSpoolState(order, envelope)?.Status == SpoolState.Waiting)
+                    attente.Add((order, envelope));
+        return attente;
     }
 
     /// <summary>
@@ -260,7 +373,29 @@ public sealed class PrintOrchestrator
         IProgress<PrintProgress>? progression, CancellationToken ct)
     {
         var machine = ChooseMinilabMachine(pages);
-        var paperWidthMm = _minilab!.LoadedPaperWidthMm(machine);
+
+        // Interroger le rouleau chargé est la PREMIÈRE chose qui touche la machine, donc
+        // la première qui peut rester suspendue quand elle dort. Une commande de 41 photos
+        // est restée douze minutes ici sans un mot le 03/08/2026 : le rendu était fait, et
+        // rien ne disait à l'opérateur ce qu'on attendait.
+        //
+        // Elle part maintenant EN ATTENTE, comme pour une imprimante pas prête : la file
+        // la reprendra dès que le minilab répondra, et l'opérateur sait pourquoi.
+        int paperWidthMm;
+        try
+        {
+            paperWidthMm = _minilab!.LoadedPaperWidthMm(machine);
+        }
+        catch (Exception ex)
+        {
+            MettreEnAttente(order, envelope, 0,
+                $"le minilab {machine} ne répond pas ({ex.Message})");
+
+            throw new PrinterNotReadyException(
+                $"Commande {order.DisplayNumber} mise en attente : le minilab {machine} ne " +
+                "répond pas — il est probablement en veille.\n\n" +
+                "Réveillez-le : la commande partira toute seule, sans rien réimprimer.");
+        }
 
         // vérifié AVANT le moindre envoi : demander un format que le rouleau chargé ne
         // permet pas ne donne pas un tirage plus petit, mais un tirage faux — la machine
@@ -861,14 +996,15 @@ public sealed class PrintOrchestrator
         var celluleHmm = line.CustomCellHeightMm!.Value;
 
         var papier = new PaperOption(product.Code, product.Name, product.WidthMm, product.HeightMm, product.Dpi);
-        var (parPlanche, pivotee) = CustomSheetLayout.CapacityOf(papier, celluleWmm, celluleHmm);
+        var (parPlanche, pivotee, plancheTournee) =
+            CustomSheetLayout.CapacityDetaillee(papier, celluleWmm, celluleHmm);
 
         if (parPlanche < 1)
             throw new InvalidOperationException(
                 $"Une photo de {celluleWmm:0.#} × {celluleHmm:0.#} mm ne tient pas sur un " +
                 $"{product.Name}. Rien n'a été imprimé.");
 
-        var plan = new CustomSheetPlan(papier, 0, parPlanche, pivotee);
+        var plan = new CustomSheetPlan(papier, 0, parPlanche, pivotee, plancheTournee);
         var (celluleW, celluleH) = CustomSheetLayout.CellPixels(plan, celluleWmm, celluleHmm);
 
         var planches = CustomSheetLayout.Distribute(
@@ -902,16 +1038,19 @@ public sealed class PrintOrchestrator
                     })
                     .ToList();
 
+                // La planche est rendue DANS LE SENS RETENU par le plan : c'est souvent
+                // lui qui évite de coucher les cellules, donc de trahir le cadrage posé à
+                // l'écran. Le pilote oriente ensuite la page, il sait le faire.
                 ImagePipeline.RenderCustomSheetToFile(
                     cellules, SheetSpec.DefaultGapMm, cutMarks: true,
-                    MmPx.ToPixels(product.WidthMm, product.Dpi),
-                    MmPx.ToPixels(product.HeightMm, product.Dpi),
+                    MmPx.ToPixels(plan.SheetWidthMm, product.Dpi),
+                    MmPx.ToPixels(plan.SheetHeightMm, product.Dpi),
                     output, product.Dpi,
                     // le contour est le seul repère utile : on coupe une planche aux ciseaux
                     cutBorder: true);
             }
 
-            yield return new RenderedPage(output, 1, product.WidthMm, product.HeightMm,
+            yield return new RenderedPage(output, 1, plan.SheetWidthMm, plan.SheetHeightMm,
                 product, line.Items[0].Finish);
 
             progression?.Report(new PrintProgress(
@@ -930,8 +1069,18 @@ public sealed class PrintOrchestrator
         return fichier is not null ? Path.Combine(_catalogDir, "icc", fichier) : null;
     }
 
+    /// <param name="depart">
+    /// Pages physiques déjà sorties lors d'une tentative précédente : on les saute. Zéro
+    /// pour un premier envoi. Voir <see cref="PrintResumePoint"/>.
+    /// </param>
+    /// <param name="noterAvancement">
+    /// Appelé après chaque page remise à Windows, avec le nombre total de pages remises
+    /// depuis le début de l'enveloppe. C'est ce que la reprise relira après un bourrage :
+    /// il doit être écrit AU FUR ET À MESURE, pas à la fin.
+    /// </param>
     private void PrintPages(List<RenderedPage> pages, string? pdfPath, string documentName,
-        IProgress<PrintProgress>? progression = null, CancellationToken ct = default)
+        IProgress<PrintProgress>? progression = null, CancellationToken ct = default,
+        int depart = 0, Action<int>? noterAvancement = null)
     {
         var devModes = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
 
@@ -941,8 +1090,11 @@ public sealed class PrintOrchestrator
         const string tuileDnp = "D";
 
         var total = pages.Sum(p => p.Copies);
-        var faites = 0;
-        progression?.Report(new PrintProgress(PrintProgress.Impression, 0, total, tuileDnp));
+        var faites = depart;
+        progression?.Report(new PrintProgress(PrintProgress.Impression, faites, total, tuileDnp));
+
+        // rang de la page physique dans l'enveloppe, celui que compte le point de reprise
+        var rang = 0;
 
         // aplatit (page, copies) en séquence de pages physiques
         foreach (var page in pages)
@@ -962,25 +1114,74 @@ public sealed class PrintOrchestrator
                 devModes[key] = devMode;
             }
 
-            using var bitmap = new Bitmap(page.Path);
-            for (var copy = 0; copy < page.Copies; copy++)
+            // le bitmap n'est ouvert que si au moins une de ses copies reste à tirer
+            Bitmap? bitmap = null;
+            try
             {
-                // entre deux pages : celles déjà remises à Windows lui appartiennent,
-                // mais on cesse d'en donner
-                ct.ThrowIfCancellationRequested();
+                for (var copy = 0; copy < page.Copies; copy++)
+                {
+                    if (rang++ < depart) continue;   // déjà sortie avant l'interruption
 
-                BitmapPrinter.Print(
-                    product.PrinterName, bitmap, page.WidthMm, page.HeightMm,
-                    devMode, pdfPath, documentName);
+                    // entre deux pages : celles déjà remises à Windows lui appartiennent,
+                    // mais on cesse d'en donner
+                    ct.ThrowIfCancellationRequested();
 
-                progression?.Report(new PrintProgress(
-                    PrintProgress.Impression, ++faites, total, tuileDnp));
+                    bitmap ??= new Bitmap(page.Path);
+
+                    BitmapPrinter.Print(
+                        product.PrinterName, bitmap, page.WidthMm, page.HeightMm,
+                        devMode, pdfPath, documentName);
+
+                    faites++;
+                    noterAvancement?.Invoke(faites);
+                    progression?.Report(new PrintProgress(
+                        PrintProgress.Impression, faites, total, tuileDnp));
+                }
+            }
+            finally
+            {
+                bitmap?.Dispose();
             }
         }
     }
 
     private string SpoolStatePath(Order order, Envelope envelope) =>
         Path.Combine(_store.GetSpoolFolder(order), $"env{envelope.Number:00}.state");
+
+    private string ResumePointPath(Order order, Envelope envelope) =>
+        Path.Combine(_store.GetSpoolFolder(order), $"env{envelope.Number:00}.reprise");
+
+    /// <summary>Où reprendre cette enveloppe, ou null si elle n'a jamais été interrompue.</summary>
+    public PrintResumePoint? ReadResumePoint(Order order, Envelope envelope)
+    {
+        var json = AtomicFile.ReadAllTextOrNull(ResumePointPath(order, envelope));
+        if (json is null) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<PrintResumePoint>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private void WriteResumePoint(Order order, Envelope envelope, int pagesRemises, string raison)
+    {
+        Directory.CreateDirectory(_store.GetSpoolFolder(order));
+        AtomicFile.WriteAllText(ResumePointPath(order, envelope),
+            JsonSerializer.Serialize(new PrintResumePoint(pagesRemises, raison, DateTimeOffset.Now)));
+    }
+
+    /// <summary>
+    /// Efface le point de reprise. À appeler dès que l'enveloppe est sortie en entier :
+    /// un point resté sur le disque ferait sauter des pages à la réimpression suivante.
+    /// </summary>
+    private void ClearResumePoint(Order order, Envelope envelope)
+    {
+        try { File.Delete(ResumePointPath(order, envelope)); }
+        catch (IOException) { /* rien à effacer, ou fichier tenu : sans conséquence */ }
+    }
 
     private SpoolState? ReadSpoolState(Order order, Envelope envelope)
     {

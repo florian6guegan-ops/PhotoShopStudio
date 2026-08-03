@@ -6,7 +6,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Imaging;
 using Studio.Imaging.Geometry;
+using Studio.Printing;
 using Studio.Sources;
 using Studio.Store;
 
@@ -32,6 +34,24 @@ public partial class IdPhotoView : UserControl
 
     private StripItem? _current;
     private BitmapSource? _displayBitmap;
+
+    /// <summary>Aperçu détouré, quand « fond blanc » est coché. Null sinon.</summary>
+    private BitmapSource? _detoure;
+
+    /// <summary>
+    /// Redressement, en degrés — le « Tilt » de DiLand.
+    ///
+    /// Une photo d'identité prise à main levée penche presque toujours d'un demi-degré ou
+    /// deux, et le guichet le voit. Le geste est celui des autres écrans qui recadrent
+    /// (T maintenue + molette), pour ne pas faire réapprendre l'outil.
+    /// </summary>
+    private double _redressement;
+
+    /// <summary>Pas de redressement, en degrés, par cran de molette.</summary>
+    private const double PasDeRedressement = 0.25;
+
+    /// <summary>Redressement maximal admis, en degrés, de part et d'autre.</summary>
+    private const double RedressementMax = 15;
     private CropSpec _crop = CropSpec.Full;
     private NormRect? _head;
 
@@ -50,6 +70,17 @@ public partial class IdPhotoView : UserControl
     private NormPoint? _crown;
     private NormPoint? _chin;
     private string? _markerDrag;   // "Crown", "Chin", ou null
+
+    /// <summary>
+    /// Axe vertical commun aux deux anneaux, en fraction de la largeur de l'image.
+    ///
+    /// Les anneaux ne mesurent qu'une HAUTEUR — du sommet du crâne au bas du menton — et
+    /// c'est elle seule qui fixe le cadre. Les laisser glisser latéralement ne changeait
+    /// donc rien à la mesure, mais faisait pencher l'axe du visage et donnait un cadrage
+    /// qui partait de travers pendant qu'on ajustait la hauteur. Ils restent alignés sur
+    /// cet axe ; c'est le cadre qu'on déplace pour recentrer le visage.
+    /// </summary>
+    private double _axeVisage = 0.5;
 
     /// <param name="rootPath">Dossier des photos.</param>
     /// <param name="document">
@@ -91,6 +122,21 @@ public partial class IdPhotoView : UserControl
 
         Loaded += async (_, _) => await LoadStripAsync();
         Unloaded += (_, _) => _loadCts?.Cancel();
+
+        // Le mode redressement se capte sur la FENÊTRE : voir _redressementArme. Sur cet
+        // écran-ci, le focus part sur la liste des papiers dès que l'opérateur choisit son
+        // tirage — la touche ne serait jamais revenue jusqu'ici.
+        Loaded += (_, _) =>
+        {
+            if (Window.GetWindow(this) is { } fenetre)
+                fenetre.PreviewKeyDown += OnFenetreKeyDown;
+        };
+
+        Unloaded += (_, _) =>
+        {
+            if (Window.GetWindow(this) is { } fenetre)
+                fenetre.PreviewKeyDown -= OnFenetreKeyDown;
+        };
     }
 
     /// <param name="Capacite">Cases du document visé qui tiennent sur ce papier.</param>
@@ -174,6 +220,13 @@ public partial class IdPhotoView : UserControl
 
         foreach (var p in _photos) p.Selected = p == item;
         _current = item;
+
+        // détourage et redressement appartiennent à la photo précédente : les garder
+        // afficherait le fond blanc et l'inclinaison d'un autre client
+        _detoure = null;
+        WhiteBackgroundCheck.IsChecked = false;
+        Redresser(0);
+
         EmptyText.Visibility = Visibility.Collapsed;
         Mouse.OverrideCursor = Cursors.Wait;
 
@@ -200,7 +253,37 @@ public partial class IdPhotoView : UserControl
             Mouse.OverrideCursor = null;
         }
         PrintButton.IsEnabled = _current is not null;
+        MailButton.IsEnabled = _current is not null;
         Redraw();
+    }
+
+    /// <summary>
+    /// Envoie au client la photo qu'il a sous les yeux — cadrage, redressement et
+    /// corrections compris.
+    ///
+    /// C'est une prestation à part, facturée à la photo : elle n'imprime rien, et
+    /// imprimer n'envoie rien. Un client peut vouloir les deux, ou l'un des deux, et le
+    /// prix n'est pas le même.
+    /// </summary>
+    private void OnSendByMail(object sender, RoutedEventArgs e)
+    {
+        if (_current is null)
+        {
+            MessageBox.Show("Choisissez d'abord une photo dans la bande du bas.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var corrections = new ImageAdjustments
+        {
+            Grayscale = GrayscaleCheck.IsChecked == true,
+            WhiteBackground = WhiteBackgroundCheck.IsChecked == true,
+        };
+
+        Navigator.Go(
+            new MailSendView([new MailSendView.PhotoAEnvoyer(
+                _current.Path, _crop, 0, _redressement, corrections)]),
+            "Envoyer les photos par courriel");
     }
 
     /// <summary>
@@ -213,13 +296,15 @@ public partial class IdPhotoView : UserControl
     {
         if (detecte is { } tete)
         {
-            _crown = new NormPoint(tete.CenterX, tete.Y);
-            _chin = new NormPoint(tete.CenterX, tete.Bottom);
+            _axeVisage = Math.Clamp(tete.CenterX, 0, 1);
+            _crown = new NormPoint(_axeVisage, tete.Y);
+            _chin = new NormPoint(_axeVisage, tete.Bottom);
         }
         else
         {
-            _crown = new NormPoint(0.5, 0.22);
-            _chin = new NormPoint(0.5, 0.62);
+            _axeVisage = 0.5;
+            _crown = new NormPoint(_axeVisage, 0.22);
+            _chin = new NormPoint(_axeVisage, 0.62);
         }
     }
 
@@ -278,9 +363,10 @@ public partial class IdPhotoView : UserControl
         var display = DisplayRect();
         if (display.IsEmpty || display.Width <= 0 || display.Height <= 0) return true;
 
-        var point = new NormPoint(
-            Math.Clamp((positionStage.X - display.X) / display.Width, 0, 1),
-            Math.Clamp((positionStage.Y - display.Y) / display.Height, 0, 1));
+        // seule la hauteur suit la souris : les deux anneaux restent sur l'axe du visage
+        // (voir _axeVisage) et c'est le cadre, pas eux, qui se déplace latéralement
+        var y = Math.Clamp((positionStage.Y - display.Y) / display.Height, 0, 1);
+        var point = new NormPoint(_axeVisage, y);
 
         if (_markerDrag == "Crown") _crown = point;
         else _chin = point;
@@ -323,18 +409,79 @@ public partial class IdPhotoView : UserControl
 
     private void OnGrayscaleChanged(object sender, RoutedEventArgs e) => ApplyGrayscalePreview();
 
+    /// <summary>
+    /// Aperçu du fond blanc.
+    ///
+    /// Le calcul se fait sur l'aperçu (1600 px) et non sur la photo d'origine : il prend
+    /// quatre secondes sur un 24 Mpx, ce qui figerait l'écran à chaque clic. Le tirage,
+    /// lui, refait la découpe en pleine résolution — c'est le pipeline de rendu qui s'en
+    /// charge, par <see cref="ImageAdjustments.WhiteBackground"/>.
+    /// </summary>
+    private async void OnWhiteBackgroundChanged(object sender, RoutedEventArgs e)
+    {
+        if (_current is null || _displayBitmap is null) return;
+
+        if (WhiteBackgroundCheck.IsChecked != true)
+        {
+            _detoure = null;
+            ApplyGrayscalePreview();
+            return;
+        }
+
+        Mouse.OverrideCursor = Cursors.Wait;
+        try
+        {
+            var chemin = _current.Path;
+            var octets = await Task.Run(() =>
+            {
+                var jpeg = App.Services.Thumbnails.GetJpeg(chemin, 1600);
+                using var image = new ImageMagick.MagickImage(jpeg);
+                return BackgroundRemoval.PoserUnFondBlanc(image)
+                    ? image.ToByteArray(ImageMagick.MagickFormat.Png)
+                    : null;
+            });
+
+            if (octets is null)
+            {
+                WhiteBackgroundCheck.IsChecked = false;
+                MessageBox.Show(
+                    "Le fond de cette photo n'est pas assez uni pour être remplacé sans risque " +
+                    "d'entamer le sujet.\n\nLa photo est laissée telle quelle.",
+                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            _detoure = ToBitmap(octets);
+        }
+        catch (Exception ex)
+        {
+            WhiteBackgroundCheck.IsChecked = false;
+            _detoure = null;
+            FileLog.Write("Fond blanc impossible", ex);
+            MessageBox.Show($"Fond blanc impossible : {ex.Message}",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            Mouse.OverrideCursor = null;
+            ApplyGrayscalePreview();
+        }
+    }
+
     private void ApplyGrayscalePreview()
     {
-        if (_displayBitmap is null) return;
+        var source = _detoure ?? _displayBitmap;
+        if (source is null) return;
+
         if (GrayscaleCheck.IsChecked == true)
         {
-            var gray = new FormatConvertedBitmap(_displayBitmap, PixelFormats.Gray8, null, 0);
+            var gray = new FormatConvertedBitmap(source, PixelFormats.Gray8, null, 0);
             gray.Freeze();
             Photo.Source = gray;
         }
         else
         {
-            Photo.Source = _displayBitmap;
+            Photo.Source = source;
         }
     }
 
@@ -487,7 +634,9 @@ public partial class IdPhotoView : UserControl
                 ? $"tête trop grande ({c.HeadHeightMm:0.0} mm) : reculez le zoom"
                 : $"tête trop petite ({c.HeadHeightMm:0.0} mm) : zoomez");
         if (!c.CrownOk)
-            issues.Add(c.CrownMarginMm < IdPhotoFr.CrownMarginMinMm
+            // bornes du DOCUMENT visé : le conseil doit désigner le bon sens, et sur un
+            // 50 × 50 les millimètres français indiquaient l'inverse de ce qu'il fallait
+            issues.Add(c.CrownMarginMm < _document.CrownMarginMinMm
                 ? "crâne trop près du bord haut : descendez le cadre"
                 : "trop d'espace au-dessus du crâne : montez le cadre");
         if (!c.CenteredOk)
@@ -504,6 +653,95 @@ public partial class IdPhotoView : UserControl
     }
 
     private void OnStageSizeChanged(object sender, SizeChangedEventArgs e) => Redraw();
+
+    // ----- redressement -----
+
+    private bool _redressementArme;
+
+    /// <summary>
+    /// Le mode redressement est-il armé ?
+    ///
+    /// <b>Pourquoi une bascule et non une touche maintenue.</b> Il fallait tenir T ET
+    /// rouler la molette ensemble ; au comptoir, une main est déjà prise. Et surtout,
+    /// <c>Keyboard.IsKeyDown</c> lit le clavier tel que le voit l'élément qui a le FOCUS :
+    /// sur cet écran, le focus tombe sur la liste des papiers dès qu'on a choisi son
+    /// tirage, et la molette se remettait alors à zoomer sans prévenir. C'est ce qui
+    /// faisait passer le redressement pour cassé.
+    ///
+    /// T bascule, Échap sort, et T maintenue continue de marcher : personne ne réapprend.
+    /// </summary>
+    private bool RedressementArme
+    {
+        get => _redressementArme;
+        set
+        {
+            if (_redressementArme == value) return;
+            _redressementArme = value;
+            MontrerLeBandeauRedressement();
+        }
+    }
+
+    private void OnFenetreKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.IsRepeat) return;
+
+        // dans un champ de saisie, « t » est une lettre
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox) return;
+
+        if (e.Key == Key.T)
+        {
+            RedressementArme = !RedressementArme;
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && RedressementArme)
+        {
+            RedressementArme = false;
+            e.Handled = true;
+        }
+    }
+
+    private void MontrerLeBandeauRedressement()
+    {
+        BandeauRedressement.Visibility = RedressementArme ? Visibility.Visible : Visibility.Collapsed;
+        BandeauRedressementTexte.Text =
+            $"Redressement {RedressementText.Text} — molette pour régler · T ou Échap pour sortir";
+    }
+
+    private void OnRedresserGauche(object sender, RoutedEventArgs e) =>
+        Redresser(_redressement - PasDeRedressement);
+
+    private void OnRedresserDroite(object sender, RoutedEventArgs e) =>
+        Redresser(_redressement + PasDeRedressement);
+
+    private void OnRedressementRemiseAZero(object sender, RoutedEventArgs e) => Redresser(0);
+
+    /// <summary>
+    /// Pose l'angle de redressement et le montre.
+    ///
+    /// L'aperçu pivote à l'écran plutôt que de refabriquer l'image : sur une photo de
+    /// 24 Mpx, refaire le bitmap à chaque cran rendrait le geste inutilisable. Le tirage,
+    /// lui, applique la rotation pour de bon (RenderRequest.FineRotationDegrees), et c'est
+    /// le rendu qui remplit de blanc les coins libérés.
+    /// </summary>
+    private void Redresser(double degres)
+    {
+        _redressement = Math.Clamp(degres, -RedressementMax, RedressementMax);
+
+        RedressementText.Text = Math.Abs(_redressement) < 0.01
+            ? "0°"
+            : $"{_redressement:+0.##;-0.##}°";
+
+        MontrerLeBandeauRedressement();   // l'angle s'affiche dans le bandeau tant qu'il est là
+        AppliquerLeRedressementALAffichage();
+    }
+
+    private void AppliquerLeRedressementALAffichage()
+    {
+        Photo.RenderTransformOrigin = new Point(0.5, 0.5);
+        Photo.RenderTransform = Math.Abs(_redressement) < 0.01
+            ? Transform.Identity
+            : new RotateTransform(_redressement);
+    }
 
     // ----- interactions (mêmes gestes que l'éditeur de recadrage) -----
 
@@ -569,6 +807,15 @@ public partial class IdPhotoView : UserControl
     {
         var crans = e.Delta / 120.0;
         if (crans == 0) return;
+
+        // Mode armé (T), ou T maintenue : c'est le redressement qui prend la molette,
+        // comme sur les autres écrans de recadrage (voir CropSurface)
+        if (RedressementArme || Keyboard.IsKeyDown(Key.T))
+        {
+            Redresser(_redressement + crans * PasDeRedressement);
+            e.Handled = true;
+            return;
+        }
 
         var display = DisplayRect();
         if (display.IsEmpty) return;
@@ -678,10 +925,14 @@ public partial class IdPhotoView : UserControl
         }
 
         var services = App.Services;
-        var adjustments = new ImageAdjustments { Grayscale = GrayscaleCheck.IsChecked == true };
+        var adjustments = new ImageAdjustments
+        {
+            Grayscale = GrayscaleCheck.IsChecked == true,
+            WhiteBackground = WhiteBackgroundCheck.IsChecked == true,
+        };
         var items = new List<DraftItem>
         {
-            new(_current.Path, choice.Product, _quantity, _crop, 0, 0, null, adjustments, _copies,
+            new(_current.Path, choice.Product, _quantity, _crop, 0, _redressement, null, adjustments, _copies,
                 FinishCombo.SelectedItem as string,
                 // la case suit le document, jamais celle inscrite au produit
                 SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm)),
@@ -704,6 +955,15 @@ public partial class IdPhotoView : UserControl
                 $"Commande {order.DisplayNumber} envoyée à l'impression.\n" +
                 $"{_quantity} planche(s) de {_copies} photo(s) — total {order.Total:0.00} €",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            Navigator.Home(new HomeView(), "Studio Photo");
+        }
+        catch (PrinterNotReadyException ex)
+        {
+            // Pas un échec : la commande est rangée en attente et repartira seule. Le dire
+            // comme une erreur pousserait l'opérateur à recliquer, donc à tirer en double.
+            Mouse.OverrideCursor = null;
+            FileLog.Write("Planche identité mise en attente d'imprimante", ex);
+            MessageBox.Show(ex.Message, "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
             Navigator.Home(new HomeView(), "Studio Photo");
         }
         catch (Exception ex)

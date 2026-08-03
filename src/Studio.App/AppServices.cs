@@ -1,6 +1,8 @@
 using System.IO;
 using System.Text.Json;
 using Studio.Core.Catalog;
+using Studio.Core.Domain;
+using Studio.Core.Mail;
 using Studio.Imaging;
 using Studio.Imaging.Faces;
 using Studio.App.Infrastructure;
@@ -37,6 +39,17 @@ public sealed class AppServices
     public required OrderService Orders { get; init; }
     public required PrintOrchestrator Printer { get; set; }
 
+    private PendingPrintQueue? _attente;
+
+    /// <summary>
+    /// Commandes en attente d'imprimante, reprises toutes seules dès que la machine répond.
+    ///
+    /// Reconstruite quand l'orchestrateur l'est (rechargement du catalogue) : elle tient
+    /// une référence dessus, et une file branchée sur l'ancien n'imprimerait plus rien.
+    /// </summary>
+    public PendingPrintQueue Attente => _attente ??=
+        new PendingPrintQueue(Printer, () => Orders.Recent(30)) { Log = m => FileLog.Write(m) };
+
     /// <summary>Accès au minilab Fuji, partagé avec l'orchestrateur d'impression.</summary>
     public required De100BridgePrinter Minilab { get; init; }
     public required ThumbnailService Thumbnails { get; init; }
@@ -68,6 +81,40 @@ public sealed class AppServices
     public required ModeConfig Mode { get; init; }
     public required TicketConfig Ticket { get; init; }
     public required BackupConfig Backup { get; init; }
+
+    /// <summary>Dossier des fichiers de configuration, propre à ce poste.</summary>
+    public string ConfigDir => Path.Combine(DataRoot, "config");
+
+    private MailSettings? _mail;
+
+    /// <summary>
+    /// Réglages d'envoi des photos par courriel.
+    ///
+    /// Ils vivent dans les DONNÉES du poste (<c>config\mail.json</c>) et non dans le
+    /// dépôt, qui est public : ils portent un mot de passe d'application. C'est aussi ce
+    /// qui permet à chaque poste opérateur d'avoir les siens — un nouveau poste se
+    /// configure depuis l'écran Paramètres, sans toucher au code ni au catalogue.
+    /// </summary>
+    public MailSettings Mail => _mail ??= MailSettings.Load(ConfigDir);
+
+    /// <summary>Enregistre les réglages de courriel et les reprend aussitôt.</summary>
+    public void SaveMail(MailSettings reglages)
+    {
+        MailSettings.Save(ConfigDir, reglages);
+        _mail = reglages;
+    }
+
+    /// <summary>
+    /// Le produit « envoi par courriel », créé au catalogue à la première utilisation.
+    ///
+    /// Passe par le catalogue comme n'importe quel tarif : c'est une ligne de caisse, elle
+    /// doit figurer au ticket, au total et aux statistiques (voir <see cref="MailProduct"/>).
+    /// </summary>
+    public Product ProduitEnvoiCourriel() => MailProduct.Obtenir(Catalog, produit =>
+    {
+        ProductCatalog.Save(ProductsJson, Catalog.All.Append(produit));
+        ReloadCatalog();
+    });
 
     /// <summary>
     /// Le WiFi du magasin, pour le code QR de connexion de l'écran « téléphone ».
@@ -179,6 +226,10 @@ public sealed class AppServices
         // faute d'abonné. C'est la seule trace du temps passé à réduire, convertir et spouler.
         Studio.Printing.LargeFormat.LargeFormatPrinter.Log = message => FileLog.Write(message);
 
+        // Un envoi refusé par le serveur ne laissait aucune trace : le client repartait en
+        // croyant avoir ses photos, et on n'avait rien à relire le lendemain.
+        PhotoMailer.Log = message => FileLog.Write(message);
+
         var services = new AppServices
         {
             DataRoot = dataRoot,
@@ -221,5 +272,9 @@ public sealed class AppServices
     {
         Catalog = ProductCatalog.Load(ProductsJson);
         Printer = new PrintOrchestrator(Catalog, Store, CatalogDir) { Log = message => FileLog.Write(message) };
+
+        // la file tient l'ancien orchestrateur : la laisser en place ferait imprimer sur
+        // un catalogue périmé
+        _attente = null;
     }
 }

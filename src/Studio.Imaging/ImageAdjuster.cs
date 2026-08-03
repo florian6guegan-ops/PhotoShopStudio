@@ -34,7 +34,13 @@ public static class ImageAdjuster
 
         if (a.IsNeutral) return;
 
-        // le noir et blanc d'abord : les réglages de couleur qui suivent n'auraient
+        // Le fond blanc AVANT tout le reste : il raisonne sur les couleurs d'origine.
+        // Après une désaturation ou un coup de contraste, le fond ne ressemblerait plus à
+        // ce que le pourtour a mesuré, et la découpe partirait de travers.
+        if (a.WhiteBackground && image is MagickImage photo)
+            BackgroundRemoval.PoserUnFondBlanc(photo);
+
+        // le noir et blanc ensuite : les réglages de couleur qui suivent n'auraient
         // plus de sens une fois l'image désaturée.
         //
         // Rec709Luma et non Rec709Luminance : la seconde travaille en lumière linéaire et

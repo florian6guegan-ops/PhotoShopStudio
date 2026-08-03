@@ -33,10 +33,15 @@ public sealed record IdCompliance(
     public bool HeadHeightOk =>
         !CanBeChecked || (HeadHeightMm >= Document.HeadMinMm && HeadHeightMm <= Document.HeadMaxMm);
 
-    public bool CrownOk => CrownMarginMm >= IdPhotoFr.CrownMarginMinMm
-                           && CrownMarginMm <= IdPhotoFr.CrownMarginMaxMm;
+    /// <summary>
+    /// Marge au-dessus du crâne acceptable POUR CE DOCUMENT — les bornes suivent son
+    /// format, elles ne sont plus les millimètres français appliqués à tous.
+    /// Voir <see cref="IdDocumentSpec.CrownMarginMinMm"/>.
+    /// </summary>
+    public bool CrownOk => CrownMarginMm >= Document.CrownMarginMinMm
+                           && CrownMarginMm <= Document.CrownMarginMaxMm;
 
-    public bool CenteredOk => Math.Abs(CenterOffsetMm) <= IdPhotoFr.CenterToleranceMm;
+    public bool CenteredOk => Math.Abs(CenterOffsetMm) <= Document.CenterToleranceMm;
 
     public bool Compliant => HeadHeightOk && CrownOk && CenteredOk;
 }
@@ -51,10 +56,55 @@ public static class IdPhotoFr
     public const double PhotoHeightMm = 45;
     public const double HeadMinMm = 32;
     public const double HeadMaxMm = 36;
-    public const double TargetHeadMm = 34;
+    /// <summary>
+    /// Hauteur de tête visée pour le CADRAGE — calée sur DiLand le 03/08/2026.
+    ///
+    /// Mesuré sur la MÊME photo source avec LE MÊME détecteur, DiLand rend une tête qui
+    /// occupe 0,83 du cadre. Le rapport obtenu vaut exactement <c>TargetHeadMm / 45</c>
+    /// (vérifié, sans bornage), d'où 0,83 × 45 ≈ 37,35.
+    ///
+    /// Cette cote est exprimée dans les unités de NOTRE ESTIMATEUR, qui lit haut : il
+    /// déduit le sommet du crâne en gonflant de 28 % la boîte du visage
+    /// (<see cref="EstimateHead"/>), et déborde donc sur les cheveux. Elle n'est pas
+    /// comparable telle quelle aux 32–36 mm de la norme — c'est le rôle de
+    /// <see cref="SurestimationDeLEstimateur"/> de faire le pont.
+    /// </summary>
+    public const double TargetHeadMm = 37.35;
+
+    /// <summary>
+    /// De combien <see cref="EstimateHead"/> surestime la tête réelle (menton → sommet du
+    /// crâne) au sens de la norme.
+    ///
+    /// Il faut ce facteur pour que les deux mondes se parlent : le cadrage vise
+    /// <see cref="TargetHeadMm"/> = 37,35 dans les unités de l'estimateur, alors que la
+    /// conformité se juge sur les 32–36 mm de la norme. Sans correction, tout tirage calé
+    /// sur DiLand serait annoncé « tête trop grande », et l'opérateur défairait un cadrage
+    /// juste.
+    ///
+    /// La valeur est CALIBRÉE, pas mesurée sur des vrais crânes : DiLand sort ainsi depuis
+    /// des années sans refus au guichet, on cale donc son rendu au milieu haut de la norme
+    /// (37,35 → 35,0 mm), ce qui laisse du battement des deux côtés.
+    /// </summary>
+    public const double SurestimationDeLEstimateur = 37.35 / 35.0;
     public const double CrownMarginMinMm = 2;
     public const double CrownMarginMaxMm = 7;
-    public const double TargetCrownMarginMm = 4;
+
+    /// <summary>
+    /// Marge visée au-dessus du crâne — CALÉE SUR DILAND, à la demande de Florian le
+    /// 03/08/2026.
+    ///
+    /// Elle valait 4 mm. Comparaison faite entre un tirage DiLand et un tirage Studio du
+    /// même jour, en passant le MÊME détecteur sur les deux : la hauteur de tête est
+    /// identique (0,83 du cadre de part et d'autre), mais DiLand pose le sommet du crâne
+    /// au ras du bord haut là où nous le laissions 2,25 mm plus bas. C'est ce décalage,
+    /// et lui seul, qui faisait paraître nos photos « plus petites ».
+    ///
+    /// D'où 4 − 2,25 ≈ 1,75. La valeur est un CALAGE MESURÉ, pas une cote de la norme :
+    /// l'écart entre le crâne estimé par la détection et le crâne réel absorbe la
+    /// différence. Les bornes de conformité suivent automatiquement
+    /// (<see cref="IdDocumentSpec.CrownMarginMinMm"/>), donc rien ne passe à l'orange.
+    /// </summary>
+    public const double TargetCrownMarginMm = 1.75;
     public const double CenterToleranceMm = 2;
 
     /// <summary>
@@ -145,7 +195,14 @@ public static class IdPhotoFr
         if (crop.Height <= 0 || crop.Width <= 0)
             throw new ArgumentOutOfRangeException(nameof(crop));
 
-        var headHeightMm = head.Height / crop.Height * spec.HeightMm;
+        // La hauteur est ramenée aux unités de la NORME avant d'être jugée : l'estimateur
+        // lit haut (voir SurestimationDeLEstimateur), et la comparer telle quelle aux
+        // 32–36 mm déclarerait « tête trop grande » un cadrage pourtant calé sur DiLand.
+        var headHeightMm = head.Height / crop.Height * spec.HeightMm / SurestimationDeLEstimateur;
+
+        // La marge de crâne, elle, n'est PAS corrigée : elle se mesure entre deux traits
+        // du même repère (le haut du cadre et le sommet estimé), pas contre une cote
+        // anatomique. La corriger la fausserait.
         var crownMarginMm = (head.Y - crop.Y) / crop.Height * spec.HeightMm;
         var centerOffsetMm = (head.CenterX - (crop.X + crop.Width / 2)) / crop.Width * spec.WidthMm;
         return new IdCompliance(headHeightMm, crownMarginMm, centerOffsetMm, spec);

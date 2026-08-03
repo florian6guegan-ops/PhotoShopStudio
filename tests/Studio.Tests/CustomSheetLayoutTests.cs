@@ -171,32 +171,37 @@ public class CustomSheetLayoutTests
 
     /// <summary>
     /// Deux photos, pas quatre : deux colonnes de 55 mm demanderaient 112 mm avec l'écart,
-    /// et le 10×15 n'en fait que 102. Elles ne tiennent donc qu'en travers, l'une au-dessus
-    /// de l'autre. C'est le genre de compte qu'on croit évident et qu'on rate de dix
-    /// millimètres.
+    /// et le 10×15 n'en fait que 102. C'est le genre de compte qu'on croit évident et qu'on
+    /// rate de dix millimètres.
+    ///
+    /// Elles tiennent en tournant LA PLANCHE, pas la case : le cadrage saisi est conservé.
+    /// Ces tests vérifiaient l'inverse jusqu'au 03/08/2026, quand la boutique a signalé des
+    /// photos « coupées dans le mauvais sens ».
     /// </summary>
     [Fact]
     public void Un_dix_quinze_ne_porte_que_deux_cases_de_cette_taille()
     {
-        var (parPlanche, pivotee) = CustomSheetLayout.CapacityOf(Dix15, CelluleW, CelluleH);
+        var (parPlanche, cellulePivotee, plancheTournee) =
+            CustomSheetLayout.CapacityDetaillee(Dix15, CelluleW, CelluleH);
 
         Assert.Equal(2, parPlanche);
-        Assert.True(pivotee);
+        Assert.False(cellulePivotee);
+        Assert.True(plancheTournee);
     }
 
     /// <summary>
-    /// Deux colonnes de 55 mm tiennent dans 102 mm (112 seraient nécessaires si l'on
-    /// n'essayait pas l'autre sens) : c'est la rotation de la case qui fait la différence.
+    /// Une case de 40 × 90 : trois places sur un 10×15, obtenues en tournant la planche
+    /// plutôt que la case.
     /// </summary>
     [Fact]
     public void La_case_est_essayee_dans_les_deux_sens()
     {
-        // une case de 40 × 90 : debout, une seule colonne tient sur 102 mm de large et
-        // une seule rangée sur 152 de haut. Couchée (90 × 40), une colonne et trois rangées.
-        var (parPlanche, pivotee) = CustomSheetLayout.CapacityOf(Dix15, 40, 90);
+        var (parPlanche, cellulePivotee, plancheTournee) =
+            CustomSheetLayout.CapacityDetaillee(Dix15, 40, 90);
 
         Assert.Equal(3, parPlanche);
-        Assert.True(pivotee);
+        Assert.False(cellulePivotee);
+        Assert.True(plancheTournee);
     }
 
     [Fact]

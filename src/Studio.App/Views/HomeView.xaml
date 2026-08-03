@@ -126,6 +126,9 @@
                     AutomationProperties.Name="Agrandissements">
                 <TextBlock x:Name="LargeFormatTitle" Text="Agrandissements"/>
             </Button>
+            <Button Style="{StaticResource Secondaire}" Click="OnSettings"
+                    AutomationProperties.Name="Paramètres"
+                    ToolTip="Réglages propres à ce poste : envoi des photos par courriel.">⚙ Paramètres</Button>
         </StackPanel>
 
         <!-- 2. les trois gestes du métier -->

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Studio.App.Infrastructure;
 using Studio.Store.DiLand;
@@ -105,6 +107,15 @@ public partial class KioskOrdersView : UserControl
             ? "Rien à tirer. Les commandes du comptoir ne sont pas reprises : elles sont déjà saisies ici."
             : $"{commandes.Count} commande(s) à traiter, dont {enAttente} pas encore ouverte(s). " +
               "Une commande reste ici tant que le tirage n'est pas sorti.";
+
+        // DiLand fermé, les bornes ne peuvent plus déposer : c'est LUI qui écoute le
+        // réseau. Studio continue de servir ce qui est déjà sur le disque, mais l'opérateur
+        // doit savoir que rien de neuf n'arrivera — sinon il attendra une commande qui ne
+        // viendra jamais.
+        if (!Studio.Printing.Devices.Dnp.DiLandPresence.IsRunning())
+            StatusText.Text +=
+                "\n\n⚠ DiLand est fermé. Les commandes déjà déposées restent lisibles, mais " +
+                "les bornes ne peuvent PLUS en envoyer : c'est DiLand qui écoute le réseau.";
     }
 
     private void RefreshHistory()
@@ -162,11 +173,12 @@ public partial class KioskOrdersView : UserControl
     private void Ouvrir(Row ligne, CustomSize? taille)
     {
         var importateur = App.Services.DiLandImport;
-        var travail = Path.Combine(App.Services.DataRoot, "diland", "travail");
 
         try
         {
-            var prete = importateur.Stage(ligne.Order, travail);
+            // les photos sont rangées chez NOUS, pour trente jours : l'écran travaille sur
+            // notre copie et non sur les dossiers de DiLand, qu'il purge quand il veut
+            var prete = importateur.Archiver(ligne.Order);
 
             if (prete.PhotoCount == 0)
             {
@@ -246,6 +258,117 @@ public partial class KioskOrdersView : UserControl
         Refresh();
     }
 
+    // ----- retourner aux photos d'une commande close -----
+
+    /// <summary>
+    /// Le dossier où Studio garde les photos de cette commande close, ou null en le disant.
+    ///
+    /// <b>On ne redescend pas chez DiLand.</b> Studio archive les photos à la prise en
+    /// charge et les garde trente jours, le temps que l'historique les montre. C'est ce qui
+    /// permet de reservir un client trois semaines plus tard, DiLand fermé, purgé, ou
+    /// réinstallé.
+    ///
+    /// Le rattrapage par DiLand ne concerne que les entrées d'AVANT l'archivage ; il
+    /// disparaîtra de lui-même quand elles auront un mois.
+    /// </summary>
+    private static string? DossierDesPhotos(HistoryRow ligne)
+    {
+        var importateur = App.Services.DiLandImport;
+
+        if (importateur.ArchiveDe(ligne.Entry) is { } archive) return archive;
+        if (importateur.ArchiverDepuisDiLand(ligne.Entry) is { } rattrapee) return rattrapee;
+
+        MessageBox.Show(
+            $"Les photos de la commande #{ligne.Entry.Number} ne sont plus disponibles.\n\n" +
+            "Studio garde les photos des commandes de bornes pendant " +
+            $"{KioskOrderJournal.Retention.TotalDays:0} jours ; cette commande est plus " +
+            "ancienne, ou date d'avant la mise en place de cette conservation.\n\n" +
+            "L'historique en garde le contenu et le prix.",
+            "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return null;
+    }
+
+    /// <summary>
+    /// Recopie les photos dans les téléchargements, <b>même si elles l'ont déjà été</b> :
+    /// c'est tout l'objet du bouton. Le dossier est refait plutôt que réutilisé, sans quoi
+    /// on rouvrirait une copie périmée sans rien dire.
+    /// </summary>
+    private void OnHistoryDownload(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not HistoryRow ligne) return;
+        if (DossierDesPhotos(ligne) is not { } source) return;
+
+        var telechargements = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+        if (!Directory.Exists(telechargements))
+            telechargements = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        var quand = ligne.Entry.OrderedAt == default ? DateTime.Now : ligne.Entry.OrderedAt;
+        var destination = Path.Combine(
+            telechargements, $"Borne-{ligne.Entry.Number}-{quand:yyyy-MM-dd-HHmm}");
+
+        try
+        {
+            Mouse.OverrideCursor = Cursors.Wait;
+
+            Directory.CreateDirectory(destination);
+            var combien = 0;
+            foreach (var fichier in Directory.EnumerateFiles(source))
+            {
+                File.Copy(fichier, Path.Combine(destination, Path.GetFileName(fichier)),
+                    overwrite: true);
+                combien++;
+            }
+
+            Mouse.OverrideCursor = null;
+
+            if (combien == 0)
+            {
+                MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
+                    "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // on ouvre le dossier : sans cela l'opérateur doit aller le chercher, et rien
+            // à l'écran ne lui dit où il est
+            Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Mouse.OverrideCursor = null;
+            FileLog.Write("Historique des bornes : téléchargement impossible", ex);
+            MessageBox.Show($"Téléchargement impossible : {ex.Message}",
+                "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// Rouvre les photos d'une commande close pour les retoucher et les retirer.
+    ///
+    /// La commande NE REVIENT PAS dans la liste du jour : elle a été servie, et la revoir
+    /// le lendemain matin ferait croire à un tirage en retard. <c>MarkInProgress</c> refuse
+    /// déjà de rouvrir une entrée close — on s'appuie dessus plutôt que d'ajouter une
+    /// seconde règle qui pourrait la contredire.
+    /// </summary>
+    private void OnHistoryModify(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not HistoryRow ligne) return;
+        if (DossierDesPhotos(ligne) is not { } source) return;
+
+        var combien = Directory.EnumerateFiles(source).Count();
+        if (combien == 0)
+        {
+            MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
+                "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        Navigator.Go(
+            new PhotoGridView(source, produitParDefaut: null, ligne.Entry.Oid),
+            $"Borne #{ligne.Entry.Number} (historique) — {combien} photo(s)");
+    }
+
     private void Import(IReadOnlyList<DiLandOrder> commandes)
     {
         if (commandes.Count == 0) return;
@@ -255,8 +378,7 @@ public partial class KioskOrdersView : UserControl
 
         foreach (var commande in commandes)
         {
-            var resultat = App.Services.DiLandImport.Import(
-                commande, Path.Combine(App.Services.DataRoot, "diland", "travail"));
+            var resultat = App.Services.DiLandImport.Import(commande);
             if (resultat.Succeeded) reprises++;
 
             foreach (var avertissement in resultat.Warnings)

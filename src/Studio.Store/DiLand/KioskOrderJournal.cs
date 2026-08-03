@@ -38,6 +38,28 @@ public sealed class KioskOrderEntry
 
     public string CustomerName { get; set; } = "";
 
+    /// <summary>
+    /// Dossier des photos chez DiLand, ex. <c>20260803-1648-ommcdsbz.COM</c>.
+    ///
+    /// Gardé pour retrouver la commande d'origine si besoin, mais ce n'est PAS de là que
+    /// l'historique lit les photos : voir <see cref="ArchiveDirectory"/>.
+    /// </summary>
+    public string DirectoryName { get; set; } = "";
+
+    /// <summary>
+    /// Où Studio garde SA copie des photos de cette commande.
+    ///
+    /// <b>L'historique ne dépend pas de DiLand.</b> Ses dossiers sont purgés quand il le
+    /// décide, et rien ne prévient : une commande close pouvait donc survivre à ses
+    /// propres photos, et « Télécharger » n'aurait rendu qu'un dossier vide. La copie est
+    /// faite une fois, à la prise en charge, et c'est elle que l'historique sert ensuite —
+    /// retéléchargement comme réouverture.
+    ///
+    /// Elle est effacée avec l'entrée, au bout d'<see cref="Retention"/> : sans cela le
+    /// disque grossirait indéfiniment d'un mois de photos de clients.
+    /// </summary>
+    public string ArchiveDirectory { get; set; } = "";
+
     /// <summary>Le contenu en clair, ex. « 10x15 × 12 · 13x18 × 2 ».</summary>
     public string Summary { get; set; } = "";
 
@@ -116,7 +138,7 @@ public sealed class KioskOrderJournal
     /// la dernière version connue.
     /// </summary>
     public void Describe(long oid, int number, string dailyNumber, DateTime orderedAt,
-        string customerName, string summary, decimal total)
+        string customerName, string summary, decimal total, string directoryName = "")
     {
         var entry = GetOrCreate(oid);
         entry.Number = number;
@@ -125,6 +147,11 @@ public sealed class KioskOrderJournal
         entry.CustomerName = customerName;
         entry.Summary = summary;
         entry.Total = total;
+
+        // un dossier connu ne se laisse pas écraser par un appel qui l'ignore : c'est le
+        // seul chemin de retour vers les photos une fois la commande close
+        if (!string.IsNullOrWhiteSpace(directoryName)) entry.DirectoryName = directoryName;
+
         Save();
     }
 
@@ -143,6 +170,21 @@ public sealed class KioskOrderJournal
         entry.Stage = KioskOrderStage.InProgress;
         entry.StartedAt ??= DateTimeOffset.Now;
         if (studioOrderId is not null) entry.StudioOrderId = studioOrderId;
+        Save();
+    }
+
+    /// <summary>
+    /// Note où Studio a rangé sa copie des photos de cette commande.
+    ///
+    /// C'est ce chemin, et lui seul, que l'historique servira ensuite : voir
+    /// <see cref="KioskOrderEntry.ArchiveDirectory"/>.
+    /// </summary>
+    public void SetArchive(long oid, string directory)
+    {
+        var entry = GetOrCreate(oid);
+        if (entry.ArchiveDirectory == directory) return;
+
+        entry.ArchiveDirectory = directory;
         Save();
     }
 
@@ -243,7 +285,16 @@ public sealed class KioskOrderJournal
         }
     }
 
-    /// <summary>Oublie les commandes closes depuis plus d'un mois. Vrai si quelque chose a été retiré.</summary>
+    /// <summary>
+    /// Oublie les commandes closes depuis plus d'un mois, <b>et efface leurs photos</b>.
+    /// Vrai si quelque chose a été retiré.
+    ///
+    /// L'effacement des fichiers va de pair avec l'oubli de l'entrée : ce sont des photos
+    /// de clients, et une copie qu'on ne sait plus rattacher à personne n'a aucune raison
+    /// de rester. Un dossier qu'on n'arrive pas à supprimer (ouvert dans l'explorateur…)
+    /// est laissé là et retenté au prochain démarrage — l'entrée, elle, part quand même :
+    /// bloquer la purge pour un dossier verrouillé arrêterait tout l'historique.
+    /// </summary>
     private bool Purge()
     {
         if (_entries is null) return false;
@@ -251,10 +302,20 @@ public sealed class KioskOrderJournal
         var cutoff = DateTimeOffset.Now - Retention;
         var perimes = _entries.Values
             .Where(e => !e.IsOpen && (e.ClosedAt ?? DateTimeOffset.Now) < cutoff)
-            .Select(e => e.Oid)
             .ToList();
 
-        foreach (var oid in perimes) _entries.Remove(oid);
+        foreach (var entree in perimes)
+        {
+            if (!string.IsNullOrWhiteSpace(entree.ArchiveDirectory) &&
+                Directory.Exists(entree.ArchiveDirectory))
+            {
+                try { Directory.Delete(entree.ArchiveDirectory, recursive: true); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+
+            _entries.Remove(entree.Oid);
+        }
+
         return perimes.Count > 0;
     }
 

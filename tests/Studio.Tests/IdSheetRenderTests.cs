@@ -112,18 +112,30 @@ public class IdSheetRenderTests : IDisposable
         Assert.True(attendu > 0, "l'écart doit être réel");
     }
 
-    /// <summary>Le contour de découpe doit être noir et se trouver sur le bord de la photo.</summary>
+    /// <summary>
+    /// Le contour de découpe est noir et se trouve JUSTE À L'EXTÉRIEUR de la photo.
+    ///
+    /// Il était tracé à cheval sur le bord et mangeait une demi-épaisseur de photo : sur
+    /// une case de 35 mm à 300 ppp il ne restait que 411 px au lieu de 413, soit 34,8 mm.
+    /// Une photo d'identité sous-cotée se fait refuser au guichet (03/08/2026). Le premier
+    /// pixel de la case doit donc être de la PHOTO, et le trait se trouver avant.
+    /// </summary>
     [Fact]
-    public void Un_contour_noir_entoure_chaque_photo()
+    public void Un_contour_noir_entoure_chaque_photo_sans_la_mordre()
     {
         using var planche = new MagickImage(Rendre(cutBorder: true));
         using var pixels = planche.GetPixels();
         var cellule = Disposition().Cells[0];
+        var y = cellule.Y + cellule.Height / 2;
 
-        var surLeBord = Niveau(pixels, cellule.X, cellule.Y + cellule.Height / 2);
-        var dansLaPhoto = Niveau(pixels, cellule.X + cellule.Width / 2, cellule.Y + cellule.Height / 2);
+        var justeAvant = Niveau(pixels, cellule.X - 1, y);
+        var premierPixelDeLaPhoto = Niveau(pixels, cellule.X, y);
+        var dansLaPhoto = Niveau(pixels, cellule.X + cellule.Width / 2, y);
 
-        Assert.True(surLeBord < 60, $"le contour doit être noir (obtenu {surLeBord})");
+        Assert.True(justeAvant < 60,
+            $"le contour doit être noir juste avant la photo (obtenu {justeAvant})");
+        Assert.True(premierPixelDeLaPhoto > 100,
+            $"le premier pixel de la case doit être de la photo, pas du trait (obtenu {premierPixelDeLaPhoto})");
         Assert.True(dansLaPhoto > 100, $"la photo ne doit pas être noircie (obtenu {dansLaPhoto})");
     }
 

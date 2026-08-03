@@ -65,6 +65,11 @@ public partial class ProductEditView : UserControl
         (ProductOutput.Printer, "File d'impression Windows (DS620…)"),
         (ProductOutput.FujiMinilab, "Minilab Fuji DE100 (SDK, pas le spouleur)"),
         (ProductOutput.ManualFile, "Fichier repris à la main (Epson, Photoshop)"),
+        // Toute valeur de ProductOutput DOIT figurer ici. La sortie d'un produit absent de
+        // la liste retombe sur la première — la file Windows — et l'enregistrement la lui
+        // impose sans rien dire : ouvrir la fiche de l'envoi par courriel en aurait fait
+        // un produit imprimé. C'est le même piège que Product.Copy(), qui oubliait Output.
+        (ProductOutput.Email, "Envoi par courriel (rien n'est imprimé)"),
     ];
 
     /// <summary>

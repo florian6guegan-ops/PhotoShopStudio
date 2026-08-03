@@ -174,25 +174,52 @@ public static class ImagePipeline
     }
 
     /// <summary>
-    /// Contour noir autour de chaque photo, tracé à cheval sur son bord.
+    /// Contour noir AUTOUR de chaque photo, posé juste à l'extérieur de sa case.
     ///
-    /// Le trait est fin — deux dixièmes de millimètre — pour que le coup de ciseaux le
-    /// fasse disparaître : un contour large laisserait un liseré noir sur la photo coupée.
+    /// Le trait était tracé à cheval sur le bord, et il mangeait donc la moitié de son
+    /// épaisseur sur la photo : sur une case de 35 mm à 300 ppp, il restait 411 px de
+    /// photo au lieu de 413, soit 34,8 mm. Assez pour qu'une photo d'identité sorte « un
+    /// chouille trop petite » (signalé le 03/08/2026) — et une photo sous-cotée se fait
+    /// refuser au guichet.
+    ///
+    /// Il est maintenant posé entièrement dans l'écart qui sépare deux cases, lequel vaut
+    /// exactement une épaisseur de trait : la photo garde ses 35 × 45 mm pleins, et deux
+    /// photos voisines restent séparées par un seul trait, sur lequel passent les ciseaux.
     /// </summary>
     private static void DrawCutBorders(MagickImage sheet, SheetLayoutResult layout, int dpi)
     {
-        var epaisseur = Math.Max(1, MmPx.ToPixels(0.2, dpi));
+        var epaisseur = TraitDeDecoupePx(dpi);
 
+        // Le trait est centré sur le chemin. Le décaler d'une demi-épaisseur ne suffit
+        // pas : le chemin tombe alors sur le bord même du premier pixel de photo, que le
+        // trait recouvre encore à moitié. Le demi-pixel supplémentaire place le chemin
+        // ENTRE deux pixels, si bien que le trait s'arrête pile avant la photo.
+        var decalage = epaisseur / 2.0 + 0.5;
+
+        // Trait NON lissé. Le lissage étalait le noir sur le pixel voisin : le premier
+        // pixel de la photo tombait à 189 quand le fond alentour était à 202, treize
+        // niveaux plus sombre. Sur le papier, cette hairline tranche avec le fond uni tout
+        // le long du cadre — c'est le « liseré qui dénote du fond » signalé le 03/08/2026.
+        // Un trait de découpe n'a rien à gagner à être lissé : il est droit et il est fin.
         var drawables = new Drawables()
+            .DisableStrokeAntialias()
             .StrokeColor(MagickColors.Black)
             .StrokeWidth(epaisseur)
             .FillColor(MagickColors.Transparent);
 
         foreach (var cell in layout.Cells)
-            drawables.Rectangle(cell.X, cell.Y, cell.Right - 1, cell.Bottom - 1);
+            drawables.Rectangle(
+                cell.X - decalage, cell.Y - decalage,
+                cell.Right - 1 + decalage, cell.Bottom - 1 + decalage);
 
         sheet.Draw(drawables);
     }
+
+    /// <summary>
+    /// Épaisseur du trait de découpe, en pixels. Sert aussi d'écart entre les cases :
+    /// le trait tient tout entier dans cet écart, sans mordre sur les photos.
+    /// </summary>
+    public static int TraitDeDecoupePx(int dpi) => Math.Max(1, MmPx.ToPixels(TraitDeDecoupeMm, dpi));
 
     /// <summary>Épaisseur du trait de découpe, en millimètres. Voir <see cref="DrawCutBorders"/>.</summary>
     private const double TraitDeDecoupeMm = 0.2;

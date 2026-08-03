@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Studio.App.Infrastructure;
+using Studio.Printing.Devices.Dnp;
 using Studio.Printing.Devices.Fuji;
 
 namespace Studio.App.Views;
@@ -19,9 +20,33 @@ namespace Studio.App.Views;
 public partial class MachineBarView : UserControl
 {
     private static readonly TimeSpan Periode = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Cadence de surveillance de DiLand. Bien plus courte que <see cref="Periode"/> parce
+    /// qu'elle ne coûte qu'une énumération de processus — aucun accès machine — et que
+    /// l'opérateur qui ferme DiLand pour récupérer la DNP ne doit pas attendre deux minutes
+    /// devant un bandeau qui ne la montre pas encore.
+    /// </summary>
+    private static readonly TimeSpan PeriodeDiLand = TimeSpan.FromSeconds(5);
+
     private const int SeuilAlerte = 25;
 
     private readonly DispatcherTimer _minuteur;
+    private readonly DispatcherTimer _guetteurDiLand;
+
+    /// <summary>DiLand tournait-il au dernier coup d'œil ? Sert à détecter la bascule.</summary>
+    private bool _dilandTournait;
+
+    /// <summary>
+    /// Cadence des reprises de commandes en attente.
+    ///
+    /// Assez court pour que l'opérateur qui referme le capot voie repartir son tirage sans
+    /// se demander s'il doit recliquer, assez long pour ne pas harceler une machine en
+    /// panne — la file ne relance de toute façon que si l'imprimante se déclare prête.
+    /// </summary>
+    private static readonly TimeSpan PeriodeAttente = TimeSpan.FromSeconds(20);
+
+    private readonly DispatcherTimer _minuteurAttente;
 
     /// <summary>Dernier état lu des machines : on le rejoue quand seul l'avancement change.</summary>
     private List<MachineTile> _tuiles = [];
@@ -33,17 +58,82 @@ public partial class MachineBarView : UserControl
         _minuteur = new DispatcherTimer { Interval = Periode };
         _minuteur.Tick += async (_, _) => await RefreshAsync();
 
+        _guetteurDiLand = new DispatcherTimer { Interval = PeriodeDiLand };
+        _guetteurDiLand.Tick += async (_, _) => await SurveillerDiLand();
+
+        _minuteurAttente = new DispatcherTimer { Interval = PeriodeAttente };
+        _minuteurAttente.Tick += async (_, _) => await ReprendreLesAttentes();
+
         Loaded += async (_, _) =>
         {
+            _dilandTournait = DiLandPresence.IsRunning();
             _minuteur.Start();
+            _guetteurDiLand.Start();
+            _minuteurAttente.Start();
             BrancherSuivi();
             await RefreshAsync();
+            await ReprendreLesAttentes();   // une commande peut attendre depuis hier soir
         };
         Unloaded += (_, _) =>
         {
             _minuteur.Stop();
+            _guetteurDiLand.Stop();
+            _minuteurAttente.Stop();
             DebrancherSuivi();
         };
+    }
+
+    /// <summary>
+    /// Relance les commandes que l'imprimante avait fait attendre.
+    ///
+    /// Le message reste affiché : une commande repartie toute seule pendant que
+    /// l'opérateur avait le dos tourné doit se voir, sinon il la croit perdue et la
+    /// relance à la main — donc en double.
+    /// </summary>
+    private async Task ReprendreLesAttentes()
+    {
+        try
+        {
+            var reprises = await App.Services.Attente.TryResumeAsync();
+            if (reprises.Count > 0)
+            {
+                MessageText.Text = string.Join("  ·  ", reprises.Select(r => r.Message));
+                await RefreshAsync();
+                return;
+            }
+
+            // rien n'est reparti : on annonce ce qui patiente encore
+            var enAttente = App.Services.Attente.Count;
+            if (enAttente > 0 && !App.Services.Impressions.Actif)
+                MessageText.Text = enAttente == 1
+                    ? "1 commande attend que l'imprimante soit prête — elle partira toute seule."
+                    : $"{enAttente} commandes attendent que l'imprimante soit prête — elles partiront toutes seules.";
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Reprise des commandes en attente impossible", ex);
+        }
+    }
+
+    /// <summary>
+    /// Ouvre ou ferme la tuile DNP en suivant DiLand.
+    ///
+    /// DiLand tient le port USB de la DS620 en exclusif : tant qu'il tourne, la machine
+    /// est injoignable et n'a rien à faire dans le bandeau ; dès qu'il se ferme, elle
+    /// redevient interrogeable. On ne relit les machines qu'au moment où l'état CHANGE —
+    /// relire à chaque tic coûterait un aller-retour par le relais toutes les cinq secondes.
+    /// </summary>
+    private async Task SurveillerDiLand()
+    {
+        var tourne = DiLandPresence.IsRunning();
+        if (tourne == _dilandTournait) return;
+
+        _dilandTournait = tourne;
+        FileLog.Write(tourne
+            ? "DiLand ouvert : la DNP passe hors de portée, retrait du bandeau."
+            : "DiLand fermé : la DNP redevient interrogeable.");
+
+        await RefreshAsync();
     }
 
     // ----- avancement des impressions -----
@@ -118,7 +208,16 @@ public partial class MachineBarView : UserControl
 
         try
         {
-            foreach (var dnp in await App.Services.Minilab.DnpSnapshotAsync())
+            var dnps = await App.Services.Minilab.DnpSnapshotAsync();
+
+            // Le SDK n'en découvre aucune : la machine dort peut-être. On complète d'après
+            // le spouleur Windows pour l'afficher « en veille » plutôt que de la faire
+            // disparaître. Cette lecture-là se fait ICI et jamais dans le relais — voir
+            // DiLandPresence.VuesParWindows.
+            if (dnps.Count == 0)
+                dnps = [.. DiLandPresence.VuesParWindows()];
+
+            foreach (var dnp in dnps)
                 lignes.Add(new MachineTile(dnp));
 
             _tuiles = lignes;
@@ -228,13 +327,27 @@ public partial class MachineBarView : UserControl
         public MachineTile(Studio.Printing.Devices.Dnp.DnpPrinterInfo info)
         {
             Lettre = "D";
+            Encres = [];
+
+            // Machine connue de Windows mais muette au SDK : c'est une DS620 en veille
+            // prolongée. Elle ne disparaît plus du bandeau — l'opérateur doit pouvoir
+            // distinguer « endormie » de « débranchée », et savoir qu'un tirage la
+            // réveillera sans qu'il ait à toucher la machine.
+            if (info.EndormieOuInjoignable)
+            {
+                Nom = info.WindowsQueueName!;
+                Etat = "En veille";
+                Papier = "consommables inconnus tant qu'elle dort";
+                Restant = "elle se réveille au premier tirage";
+                Fond = Pinceau(0x37, 0x47, 0x4F);
+                return;
+            }
+
             Nom = string.IsNullOrWhiteSpace(info.SerialNumber) ? "DNP" : $"DNP {info.SerialNumber}";
             Papier = $"{DecrireMedia(info.MediaSize)} · {info.MediaClass}";
 
             var pourcent = info.MediaRemainingPercent is { } pc ? $" ({pc:0} %)" : "";
             Restant = $"{info.MediaRemaining} tirages restants{pourcent}";
-
-            Encres = [];
 
             Etat = info.Status.IsCommunicationFailure ? "Hors ligne"
                 : info.Status.IsFault ? "Erreur"

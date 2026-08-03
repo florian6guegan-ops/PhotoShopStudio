@@ -17,7 +17,7 @@
                        VerticalAlignment="Center"/>
             <TextBlock x:Name="HintText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
                        HorizontalAlignment="Right" VerticalAlignment="Center" TextWrapping="Wrap"
-                       Text="Ctrl+clic sur une vignette : la viser pour les réglages · C maintenue : recadrer à la souris sur la vignette · clic droit : pivoter le cadre · T maintenue + molette : redresser"/>
+                       Text="Ctrl+clic sur une vignette : la viser pour les réglages · C maintenue : recadrer à la souris sur la vignette · clic droit : pivoter le cadre · T puis molette : redresser"/>
         </DockPanel>
 
         <Grid Grid.Row="1">
@@ -110,9 +110,13 @@
                             <Button Style="{StaticResource FlatButton}" MinHeight="44" FontSize="15"
                                     Margin="0,0,0,8" Click="OnRotateFrame"
                                     Content="Pivoter le cadre   (clic droit)"/>
+                            <!-- Ce bouton fait un QUART DE TOUR ; il annonçait « T + molette »,
+                                 qui est le redressement fin — deux gestes différents sous
+                                 un seul libellé. -->
                             <Button Style="{StaticResource FlatButton}" MinHeight="44" FontSize="15"
                                     Margin="0,0,0,8" Click="OnRotatePhoto"
-                                    Content="Pivoter la photo   (T + molette)"/>
+                                    Content="Pivoter la photo   (quart de tour)"
+                                    ToolTip="Pour redresser de quelques degrés : touche T, puis la molette."/>
                             <!-- Le libellé est posé par Refresh() : une liaison sur une
                                  propriété sans notification ne se relisait qu'au
                                  chargement, et le bouton mentait dès le premier clic. -->

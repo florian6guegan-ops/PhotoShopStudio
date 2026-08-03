@@ -62,7 +62,10 @@ public class IdDocumentCatalogTests
         Assert.True(spec.HasHeadBounds);
         Assert.Equal(32, spec.HeadMinMm, 2);
         Assert.Equal(36, spec.HeadMaxMm, 2);
-        Assert.Equal(34, spec.TargetHeadMm, 2);
+
+        // TargetHeadMm est exprimée dans les unités de l'estimateur : ramenée à la norme,
+        // elle vaut bien le milieu des bornes.
+        Assert.Equal(34, spec.TargetHeadMm / IdPhotoFr.SurestimationDeLEstimateur, 2);
     }
 
     /// <summary>

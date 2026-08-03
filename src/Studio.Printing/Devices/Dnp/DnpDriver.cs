@@ -18,7 +18,12 @@ namespace Studio.Printing.Devices.Dnp;
 public sealed class DnpDriver
 {
     private const int ValueCapacity = 256;
-    private const int MaxPrinters = 16;
+
+    /// <summary>Imprimantes que la découverte peut rendre — la douzaine que prévoit DiLand.</summary>
+    private const int MaxPrinters = 12;
+
+    /// <summary>Type et identifiant d'unité : deux octets par machine dans le tampon.</summary>
+    private const int OctetsParImprimante = 2;
 
     /// <summary>
     /// La bibliothèque du SDK DNP. Voir <see cref="CspStatInterop"/> : le poste porte
@@ -49,18 +54,34 @@ public sealed class DnpDriver
 
     /// <summary>
     /// Numéros de port des imprimantes DNP branchées.
+    ///
+    /// Le « numéro de port » attendu par toutes les autres fonctions est en réalité le
+    /// RANG de la machine dans la découverte (0, 1, 2…), et non une valeur lue dans le
+    /// tampon : celui-ci ne contient que le type et l'identifiant d'unité, deux octets par
+    /// imprimante. C'est ainsi que DiLand procède (<c>DnpHelper.GetPrinters</c>).
+    ///
+    /// Corrigé le 03/08/2026 : on passait un <c>int[]</c> et une taille en éléments, et on
+    /// prenait le CONTENU du tampon pour des numéros de port. La fonction rendait 0 — la
+    /// DS620 restait invisible même DiLand fermé, ce qu'on mettait sur le compte du port
+    /// USB tenu.
     /// </summary>
-    /// <param name="filter">Restreint la recherche à un type de machine.</param>
-    public IReadOnlyList<int> ListPorts(DnpPrinterType filter = DnpPrinterType.All)
+    public IReadOnlyList<int> ListPorts()
     {
-        CspStatInterop.SetPrinterFilter((int)filter);
+        // DiLand n'appelle PAS SetPrinterFilter avant la découverte : on s'en tient à son
+        // enchaînement, seul éprouvé sur cette machine.
+        var taille = MaxPrinters * OctetsParImprimante;
+        var tampon = Marshal.AllocHGlobal(taille);
+        try
+        {
+            var trouvees = CspStatInterop.GetPrinterPortNum(tampon, taille);
+            if (trouvees <= 0) return [];
 
-        // tableau managé, marshalé tel quel : c'est ainsi que DiLand appelle la fonction,
-        // et c'est le seul usage éprouvé sur cette machine
-        var ports = new int[MaxPrinters];
-        var found = CspStatInterop.GetPrinterPortNum(ports, MaxPrinters);
-
-        return found <= 0 ? [] : ports.Take(Math.Min(found, MaxPrinters)).ToList();
+            return Enumerable.Range(0, Math.Min(trouvees, MaxPrinters)).ToList();
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(tampon);
+        }
     }
 
     /// <summary>État courant d'une imprimante.</summary>

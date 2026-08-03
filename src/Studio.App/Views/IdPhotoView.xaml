@@ -68,16 +68,18 @@
                         <Line x:Name="FaceAxis" Stroke="#E9527A" StrokeThickness="1.5" StrokeDashArray="5 4"/>
                     </Canvas>
                     <!-- Anneaux de placement : sommet du crâne et bas du menton.
-                         Sans fond, seul le trait est cliquable, la photo reste visible dessous. -->
+                         Sans fond, seul le trait est cliquable, la photo reste visible dessous.
+                         Curseur haut-bas : ils ne mesurent qu'une hauteur et restent sur
+                         l'axe du visage (voir _axeVisage dans le code-behind). -->
                     <Canvas x:Name="Markers">
                         <Ellipse x:Name="CrownMarker" Width="52" Height="52" StrokeThickness="4"
-                                 Stroke="#FFD24A" Fill="#22FFD24A" Cursor="SizeAll"
+                                 Stroke="#FFD24A" Fill="#22FFD24A" Cursor="SizeNS"
                                  Visibility="Collapsed"
                                  MouseLeftButtonDown="OnMarkerDown" Tag="Crown"/>
                         <TextBlock x:Name="CrownLabel" Text="crâne" FontSize="14" FontWeight="Bold"
                                    Foreground="#FFD24A" Visibility="Collapsed"/>
                         <Ellipse x:Name="ChinMarker" Width="52" Height="52" StrokeThickness="4"
-                                 Stroke="#4ADEFF" Fill="#224ADEFF" Cursor="SizeAll"
+                                 Stroke="#4ADEFF" Fill="#224ADEFF" Cursor="SizeNS"
                                  Visibility="Collapsed"
                                  MouseLeftButtonDown="OnMarkerDown" Tag="Chin"/>
                         <TextBlock x:Name="ChinLabel" Text="menton" FontSize="14" FontWeight="Bold"
@@ -89,21 +91,55 @@
                     <TextBlock x:Name="EmptyText" Foreground="White" FontSize="24" FontWeight="SemiBold"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Text="Choisissez une photo à gauche"/>
+
+                    <!-- Bandeau du mode redressement : un ÉTAT, pas un rappel. Tant qu'il
+                         est là, la molette ne zoome plus — sans lui, l'opérateur croit
+                         l'outil cassé. -->
+                    <Border x:Name="BandeauRedressement" Visibility="Collapsed"
+                            Background="#F0932B" CornerRadius="8" Padding="16,8"
+                            HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0"
+                            IsHitTestVisible="False">
+                        <TextBlock x:Name="BandeauRedressementTexte" Foreground="#12181E"
+                                   FontSize="17" FontWeight="SemiBold"
+                                   Text="Redressement 0° — molette pour régler · T ou Échap pour sortir"/>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>
 
-        <!-- Barre d'action -->
+        <!-- Barre d'action.
+
+             Grille et non DockPanel : un DockPanel donne à chaque enfant docké toute la
+             largeur qu'il demande, sans jamais la lui reprendre. Les réglages de gauche
+             sont nombreux (papier, finition, deux compteurs, noir et blanc) et passaient
+             donc PAR-DESSUS le bouton Imprimer dès que la fenêtre rétrécissait. Ici les
+             réglages occupent la place restante et se replient en plusieurs lignes ; les
+             boutons d'action gardent la leur en toutes circonstances. -->
         <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Le verdict de conformité sur toute la largeur : c'est une phrase, pas
+                     une étiquette, et la coincer entre deux blocs de boutons la tronquait. -->
+                <TextBlock x:Name="ComplianceText" Grid.Row="0" Grid.ColumnSpan="2"
+                           Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                           Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+                <WrapPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <ComboBox x:Name="ProductCombo" MinWidth="300" FontSize="20" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center"
+                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,4,0,4"
                               SelectionChanged="OnProductChanged"/>
                     <TextBlock x:Name="FinishLabel" Text="Finition :" Style="{StaticResource Hint}"
                                VerticalAlignment="Center" Margin="20,0,8,0" Visibility="Collapsed"/>
                     <ComboBox x:Name="FinishCombo" MinWidth="150" FontSize="20" Padding="10,8"
-                              VerticalAlignment="Center" Visibility="Collapsed"/>
+                              VerticalAlignment="Center" Margin="0,4,0,4" Visibility="Collapsed"/>
 
                     <TextBlock Text="Photos :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="20,0,8,0"
                                ToolTip="Nombre de photos sur une planche"/>
@@ -120,21 +156,46 @@
                     <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}" MinWidth="44"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnQuantityPlus">+</Button>
+                    <!-- Redressement : une photo prise à main levée penche presque toujours,
+                         et le guichet le voit. Même geste qu'ailleurs : T puis molette. -->
+                    <TextBlock Text="Redresser :" Style="{StaticResource Hint}" VerticalAlignment="Center"
+                               Margin="20,0,8,0"
+                               ToolTip="Incline la photo pour rattraper un cadrage de travers. Raccourci : touche T, puis la molette. T ou Échap pour sortir."/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="20" Click="OnRedresserGauche"
+                            ToolTip="Pencher vers la gauche">↺</Button>
+                    <TextBlock x:Name="RedressementText" Text="0°" Style="{StaticResource Valeur}" MinWidth="64"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="20" Click="OnRedresserDroite"
+                            ToolTip="Pencher vers la droite">↻</Button>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="16" Margin="4,0,0,0" Click="OnRedressementRemiseAZero"
+                            ToolTip="Remettre d'aplomb">0</Button>
+
                     <CheckBox x:Name="GrayscaleCheck" VerticalAlignment="Center" Margin="24,0,0,0"
                               Checked="OnGrayscaleChanged" Unchecked="OnGrayscaleChanged">
                         <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="18"/>
                     </CheckBox>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <CheckBox x:Name="WhiteBackgroundCheck" VerticalAlignment="Center" Margin="24,0,0,0"
+                              ToolTip="Remplace le fond de studio par du blanc franc. Le sujet n'est jamais entamé : seul est effacé ce qui ressemble au fond et touche le bord de la photo."
+                              Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
+                        <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="18"/>
+                    </CheckBox>
+                </WrapPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
                     <Button Style="{StaticResource FlatButton}" MinWidth="130" Click="OnRedetect"
                             ToolTip="Refaire le cadrage automatique">↻ Auto</Button>
+                    <!-- L'envoi est une prestation à part, facturée à la photo : il
+                         n'imprime rien et l'impression ne l'envoie pas. -->
+                    <Button x:Name="MailButton" Style="{StaticResource FlatButton}" MinWidth="180"
+                            Margin="12,0,0,0" Click="OnSendByMail" IsEnabled="False"
+                            ToolTip="Envoie au client la photo entière, le cadrage en version légère et le cadrage en pleine résolution. Prestation facturée.">✉  Envoyer</Button>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}" Margin="12,0,0,0"
                             Click="OnPrint" IsEnabled="False">🖨  Imprimer la planche</Button>
                 </StackPanel>
-                <TextBlock x:Name="ComplianceText" Style="{StaticResource Texte}"
-                           FontSize="19" FontWeight="SemiBold"
-                           VerticalAlignment="Center" Margin="24,0" TextWrapping="Wrap"/>
-            </DockPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

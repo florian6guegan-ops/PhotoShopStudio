@@ -1,342 +1,212 @@
-# Plan d'implémentation — 4ᵉ passe
+# Plan d'implémentation — 5ᵉ passe
 
-Cinq chantiers indépendants. Chacun peut être validé ou écarté séparément.
-Le plan de la 3ᵉ passe est archivé dans `task.md` et `system_architecture.md`.
+Six chantiers. Chacun peut être validé ou écarté séparément.
+Le plan de la 4ᵉ passe est archivé dans `task.md` et `system_architecture.md`.
+
+Le dépôt porte déjà **du travail non commité** (33 fichiers modifiés, 15 nouveaux) :
+`PhotoMailer`, `MailSettings`, `BackgroundRemoval`, `IdShortcuts`, `PendingPrintQueue`,
+`DiLandPresence`. `dotnet build` : 0 erreur, 0 avertissement. C'est le point de départ.
 
 ---
 
-## 1. Photos d'identité sur la DNP DS620 : « ça n'a rien imprimé »
+## Ce que l'enquête a trouvé, et qu'il faut lire avant de valider
 
-### Ce que le code fait aujourd'hui
+### A. « Sans que DiLand ne soit allumé » : réalisable à moitié, et il faut le dire
 
-`IdPhotoView.OnPrint` → `Orders.CreateOrder` → `PrintOrchestrator.PrintEnvelope` →
-`RenderIdSheetToFile` (le PNG de la planche est bien écrit) → `PrintPages` →
-`BitmapPrinter.Print(printerName: "DP-DS620", widthMm: 152, heightMm: 102, devMode)`.
+Les bornes ne déposent pas de fichier sur ce PC. Elles ouvrent une connexion
+**.NET Remoting** sur `tcp://192.168.1.102:19200`, et ce port est tenu par le processus
+**`FitEng.DiLand.Studio` lui-même** (PID 5824 au moment du relevé, avec les deux bornes
+connectées : 192.168.1.38 et 192.168.1.20). Il n'y a **aucun service Windows** derrière :
+DiLand fermé, le port est fermé, et la commande de la borne n'arrive nulle part — ni
+fichier, ni ligne en base.
 
-`BitmapPrinter.Print` (`src/Studio.Printing/BitmapPrinter.cs`) :
+Reprendre cette écoute demanderait de réimplémenter .NET Remoting et la sérialisation
+binaire des objets DevExpress XPO. **.NET 8 ne sait pas faire du Remoting** : ce n'est pas
+une question d'effort, la brique n'existe plus.
 
-```csharp
-if (devModeBytes is not null) DevMode.Apply(...);          // ligne 38-39
-...
-doc.DefaultPageSettings.PaperSize =
-    FindDriverPaperSize(doc.PrinterSettings, w100, h100)
-    ?? new PaperSize("Format produit", w100, h100);        // ligne 53-55
-```
+Ce qui EST faisable, et qui couvre la panne réelle de la boutique (DiLand tombe en OOM
+presque tous les jours, cf. `project_diland_oom_pattern`) : **tout ce qui vient APRÈS
+l'arrivée devient indépendant de DiLand.** Voir le chantier 6.
 
-### Diagnostic — cause trouvée, deux défauts qui se cumulent
+Si l'objectif est vraiment « les bornes n'ont plus besoin de DiLand du tout », le seul
+chemin honnête est de **remplacer le logiciel de la borne** par un client qui parle à
+notre serveur (`UploadServer`, port 8123, l'API bornes existe déjà). C'est un chantier
+à part entière, pas une variante de celui-ci.
 
-**a) Le produit ID-FR-6 est à une taille que le pilote DS620 ne connaît pas.**
+### B. Les recadrages des bornes sont perdus depuis toujours — bug confirmé
 
-Relevé sur ce poste (`PrinterSettings.PaperSizes` de DP-DS620) : le pilote ne déclare que
-onze formats, tous `Kind=Custom`, et **aucun** ne vaut 152 × 102 mm :
+`DiLandRepository.ReadPhotos` et `DiLandImporter.CropOf` lisent `CropX/CropY/CropWidth/
+CropHeight` comme des **fractions** de l'image. Sur la vraie base de la boutique, ce sont
+des **pixels**.
 
-| Format pilote | centièmes de pouce | mm |
+Relevé sur `Database.db` du 03/08/2026 : **1231 images, 986 recadrées, ZÉRO** dont
+`CropWidth` soit ≤ 1. Exemple vérifié — `7ce78654-5372-4e9d-88d1-8f6c478ed02c.jpg`,
+image 1536 × 2048, crop `X=0 Y=44 W=1536 H=1958`, soit un rapport 0,784 ≈ le 8x10
+commandé.
+
+`CropSpec(0, 44, 1536, 1958)` ne passe pas `IsValid` → on retombe sur `CropSpec.Full`.
+**Chaque « Tirer tel quel » recadre donc autrement que ce que le client a validé à la
+borne.** Correction : diviser par `Width`/`Height`, présents en base comme dans le XML.
+
+### C. Les bornes redressent, contrairement au commentaire du code
+
+`DiLandImporter.Import` passe `FineRotationDegrees: 0` avec le commentaire
+« les bornes ne redressent pas ». La colonne `FineRotationAngle` existe, et **113 des
+1231 images** de la base en portent une non nulle. À reprendre.
+
+---
+
+## 1. Envoi par courriel des photos d'identité — terminer le raccordement
+
+### Ce qui existe déjà
+
+- `src/Studio.Core/Mail/MailSettings.cs` — réglages SMTP, `Load`/`Save` dans `config/`,
+  `EstUtilisable`, `CeQuiManque()`. Complet.
+- `src/Studio.Printing/PhotoMailer.cs` — `Preparer()` (trois fichiers : originale,
+  recadrée web 1200 px, recadrée HD) et `Envoyer()` avec traduction des refus SMTP.
+  Complet.
+
+### Ce qui manque
+
+**Personne n'appelle ni l'un ni l'autre.** Aucun `using Studio.Core.Mail` hors de ces deux
+fichiers. Le code est écrit et mort.
+
+| | Fichier | Changement |
 |---|---|---|
-| (6x4) | 615 × 413 | **156,2 × 104,9** |
-| PR (4x6) | 413 × 615 | 104,9 × 156,2 |
-| (5x7), (6x8), (6x9), (6x4.5)… | | |
+| 1a | `[MODIFY]` `src/Studio.App/AppServices.cs` | propriété `Mail` (chargée de `config/mail.json`), `SaveMail(MailSettings)`, et branchement de `PhotoMailer.Log` sur `FileLog` dans `Load` — comme `LargeFormatPrinter.Log`, sans quoi le journal des envois part dans le vide |
+| 1b | `[NEW]` `src/Studio.App/Views/MailSendView.xaml(.cs)` | écran d'envoi : adresse du client, mot facultatif du photographe, rappel de ce qui part (trois fichiers), bouton Envoyer. Préparation ET envoi **hors du fil d'interface** — un SMTP qui ne répond pas gèlerait la caisse deux minutes |
+| 1c | `[MODIFY]` `src/Studio.App/Views/IdPhotoView.xaml(.cs)` | bouton **✉ Envoyer par courriel** dans la barre d'action, à côté d'« Imprimer la planche ». Il passe le cadrage EN COURS (`_crop`, `_redressement`, `ImageAdjustments`) — c'est ce que l'opérateur a sous les yeux |
+| 1d | `[MODIFY]` `PhotoMailer` | les fichiers sont déposés sous `DataRoot/courriel/<aaaa-MM-jj>/<nom>` et **conservés** : si l'envoi échoue, l'opérateur réessaie sans tout refaire (le message le dit déjà, mais rien ne le garantissait) |
 
-`ID-FR-6` est enregistré à **152 × 102 mm** = 598 × 402 centièmes.
-Écart au (6x4) : 17 et 11 centièmes, pour une tolérance de **6** (`BitmapPrinter.cs:110`).
-`FindDriverPaperSize` ne trouve donc rien et retombe sur `new PaperSize("Format produit", …)`.
+**Envoyer n'imprime pas et n'enregistre pas de commande.** Un client peut vouloir les deux,
+ou seulement le fichier ; ce sont deux gestes distincts et le prix n'est pas le même.
+Question posée plus bas.
 
-Le `10x15-dnp` du catalogue, lui, est à **105 × 156,1 mm** — il tombe pile sur `PR (4x6)`,
-et c'est pour cela que celui-là sort.
+## 2. Écran « Paramètres » — configurer le courriel poste par poste
 
-**b) La taille personnalisée écrase le DEVMODE.**
+Demandé pour que **les futurs postes opérateur** se configurent sans toucher au code.
+`MailSettings` vit déjà dans `D:\PhotoStudioData\config\mail.json`, donc hors du dépôt
+public — c'est la bonne place pour un mot de passe d'application.
 
-`DevMode.Apply` est appelé **avant** `DefaultPageSettings.PaperSize`. Le DEVMODE capturé
-(`devmode-ID-FR-6.bin`) porte le bon média ; la ligne 53 le remplace par un format que le
-pilote DS620 ne sait pas honorer. Le travail part au spouleur et **rien ne sort** — pas
-d'exception, donc pas de message d'erreur : l'écran annonce « envoyée à l'impression ».
-
-**c) Un seul format d'identité existe, et il ignore le document choisi.**
-
-- Le catalogue ne contient qu'un produit planche : `ID-FR-6`, cellule **fixée à 35 × 45 mm**.
-- `IdDocumentPickerView` laisse pourtant choisir parmi 274 documents (Espagne 26 × 32, USA
-  51 × 51…). Le gabarit à l'écran suit la norme, mais **la planche imprimée reste en
-  35 × 45** : `PrintOrchestrator` lit `product.Sheet.CellWidthMm`, jamais le document.
-  Une planche espagnole sort donc au mauvais format.
-
-### Corrections proposées
-
-- **[MODIFY]** `src/Studio.Printing/BitmapPrinter.cs`
-  - `FindDriverPaperSize` : tolérance portée de 6 à **20 centièmes (~5 mm)**, en choisissant
-    le format déclaré **le plus proche** plutôt que le premier qui passe, et **jamais plus
-    petit** que le tirage demandé (sinon on rogne). Un `(6x4)` de 156,2 × 104,9 accueille
-    alors un 152 × 102 sans rien perdre.
-  - Quand aucun format déclaré ne convient : **ne plus inventer un `PaperSize` custom en
-    silence**. Sur une imprimante qui ne déclare que des formats `Custom` (cas DNP), lever
-    une `InvalidOperationException` nommant les formats disponibles. Mieux vaut un message
-    que douze planches fantômes.
-  - Ne poser `DefaultPageSettings.PaperSize` **que si** le DEVMODE n'en a pas déjà fixé un
-    compatible — le DEVMODE fait autorité, il vient du dialogue du pilote.
-  - Journaliser (`Log`) le format retenu **avant** l'envoi, pas seulement dans `PrintPage`.
-
-- **[MODIFY]** `D:\PhotoStudioData\catalog\products.json`
-  - `ID-FR-6` : dimensions portées à **156,2 × 104,9 mm** (le (6x4) réel du pilote),
-    `Output: "Printer"` écrit explicitement.
-  - **[NEW]** quatre produits planche supplémentaires, un par média DS620 utile — pour que
-    « tous les formats fonctionnent » :
-    `ID-DNP-6x4` (156,2 × 104,9), `ID-DNP-5x7` (131,1 × 181,1),
-    `ID-DNP-6x8` (156,2 × 206,2), `ID-DNP-6x9` (156,2 × 231,9).
-    Chacun avec son `DevmodeFile` à capturer (bouton « Capturer réglages » du Catalogue) et
-    son nombre de cases par défaut recalculé par `IdSheetLayout.MaxCopies`.
-
-- **[MODIFY]** `src/Studio.Core/Domain/Order.cs`
-  - `OrderItem` : ajout de `SheetCellWidthMm` / `SheetCellHeightMm` (`double?`).
-    Null = la cellule du produit s'applique (commandes déjà enregistrées inchangées).
-
-- **[MODIFY]** `src/Studio.Printing/PrintOrchestrator.cs`
-  - Branche `product.Sheet is { } sheet` : la cellule vient de
-    `item.SheetCellWidthMm ?? sheet.CellWidthMm` (idem hauteur).
-
-- **[MODIFY]** `src/Studio.App/Views/IdPhotoView.xaml.cs`
-  - `DraftItem` porte désormais la cellule du **document choisi** (`_document.WidthMm/HeightMm`).
-  - `MaxCopiesForSelectedProduct` calcule sur la cellule du document, pas sur celle du produit.
-  - La liste `ProductCombo` affiche « N photos par planche » recalculé pour ce document, et
-    le choix par défaut est le plus petit papier qui porte le nombre de photos demandé.
-  - Avant l'envoi : contrôle que la cellule tient sur le papier, message explicite sinon.
-
-- **[MODIFY]** `src/Studio.Core/Domain/Order.cs` + `Studio.Store` (DraftItem)
-  - `DraftItem` : deux paramètres de plus, propagés vers `OrderItem`.
-
-- **[NEW]** `tests/Studio.Tests/DnpPaperMatchTests.cs`
-  - le (6x4) est retenu pour un 152 × 102 ; aucun format n'est inventé quand rien ne convient ;
-  - un format déclaré plus PETIT que le tirage n'est jamais retenu ;
-  - la cellule du document l'emporte sur celle du produit.
-
----
-
-## 2. Écritures noires sur fond noir
-
-### Ce que le code fait aujourd'hui
-
-`App.xaml` pose une palette sombre (`PageBrush #12181E`, `CardBrush #1E2731`) mais **aucun
-style implicite** pour `TextBlock`, `CheckBox`, `Slider`. Or le défaut WPF de ces contrôles
-est le **noir** (`SystemColors.ControlTextBrush`). Chaque élément qui ne fixe pas son
-`Foreground` est donc invisible.
-
-### Relevé exhaustif (fait, 22 occurrences)
-
-| Fichier | Éléments concernés |
-|---|---|
-| `IdPhotoView.xaml` | `CopiesText`, `QuantityText`, `ComplianceText`, « Noir et blanc », `GrayscaleCheck` |
-| `ProductEditView.xaml` | 6 `TextBlock` (« × », « mm », « copies de », « planche de copies », « produit proposé dans les listes »), `SheetCheck`, `EnabledCheck` |
-| `PhotoGridView.xaml` | `QuantityText`, `TotalText` |
-| `KioskHomeView.xaml` | « 👋 », « Code de sortie », `PinDots` |
-| `FolderBrowserView.xaml` | `{Binding Display}`, icône « 📁 » |
-| `HomeView.xaml` | `LargeFormatTitle` |
-| `KioskGridView.xaml` | `{Binding QuantityLabel}` |
-| `KioskDoneView.xaml` | « ✅ » |
-| `SourcePickerView.xaml` | `{Binding Label}` |
-| `EditSelectionView.xaml` | `Slider` (pouce et rail au gris système) |
-
-### Correction proposée
-
-- **[MODIFY]** `src/Studio.App/App.xaml`
-  - **Un seul point de vérité** : `<Style TargetType="TextBlock">` implicite posant
-    `Foreground="{StaticResource TextBrush}"`, plus les mêmes pour `CheckBox`, `RadioButton`,
-    `Label` et `TextBlock` dans `ContentPresenter`.
-  - Les styles nommés existants (`PageTitle`, `Hint`) reçoivent `BasedOn` pour ne rien perdre.
-  - **Exception à traiter** : les `ComboBoxItem` / `ListBoxItem` ont un fond CLAIR par défaut ;
-    un style implicite TextBlock les rendrait blanc sur blanc. On ajoute donc un
-    `<Style TargetType="ComboBoxItem">` et `<Style TargetType="ListBoxItem">` sombres, pour
-    que le fond suive le texte au lieu de l'inverse. C'est le point à vérifier à l'écran.
-  - `Slider` : style implicite avec pouce et rail sur `AccentBrush` / `PanelBrush`.
-
-- **[MODIFY]** les 10 fichiers XAML ci-dessus : rien à faire si le style implicite suffit ;
-  ceux qui demandent une couleur particulière (`ComplianceText`, déjà repeint en code)
-  gardent leur affectation explicite, qui l'emporte.
-
-**Vérification** : lancement de l'application et parcours des dix écrans concernés, capture
-d'écran à l'appui. Un style implicite touche TOUT l'arbre visuel — c'est le chantier qui
-demande le plus de contrôle visuel et le moins de code.
-
----
-
-## 3. Format « POLA » : que la photo ressemble à un Polaroid
-
-### Ce que le code fait aujourd'hui
-
-Deux produits : `pola` (102 × 152 mm, `Fit`, `BorderMm: 2`) et `10x15pola` (`Fill`, marge 0).
-Le mode `Fit` de `ImagePipeline.RenderInto` pose une marge blanche **uniforme** de 2 mm
-autour d'une photo au rapport de la source. Ça ne ressemble à rien d'un Polaroid.
-
-### Cotes réelles (film Polaroid 600 / i-Type, source officielle Polaroid)
-
-| | pouces | mm |
+| | Fichier | Changement |
 |---|---|---|
-| Tirage complet | 3,483 × 4,233 | **88,47 × 107,52** |
-| Fenêtre image | 3,108 × 3,024 | **78,94 × 76,80** |
+| 2a | `[NEW]` `src/Studio.App/Views/SettingsView.xaml(.cs)` | écran **Paramètres**, section « Envoi par courriel » : serveur, port, adresse d'expédition, nom affiché, mot de passe d'application (`PasswordBox`), interrupteur Actif |
+| 2b | `[MODIFY]` `SettingsView` | bouton **« Envoyer un message d'essai »** : s'envoie à l'adresse d'expédition elle-même et rapporte le refus en clair. Sans lui, une configuration fausse se découvre devant un client |
+| 2c | `[MODIFY]` `src/Studio.App/Views/HomeView.xaml(.cs)` | tuile **⚙ Paramètres** sur l'accueil |
+| 2d | `[MODIFY]` `PhotoMailer.Envoyer` | le message d'erreur dit « Catalogue → Envoi par courriel », qui n'existe pas. À corriger en « Paramètres → Envoi par courriel » |
 
-D'où les proportions, en fraction du tirage :
+Aide en clair sur l'écran : Gmail exige un **mot de passe d'application** (validation en
+deux étapes activée), le mot de passe du compte est refusé depuis 2022. C'est la question
+qui reviendra sur chaque nouveau poste.
 
-- marge latérale : 4,77 mm → **5,39 % de la largeur**
-- marge haute : 4,77 mm → **4,44 % de la hauteur**
-- image : 89,2 % × 71,4 %
-- **bande basse : 25,95 mm → 24,1 % de la hauteur** — c'est elle qui fait le Polaroid
-
-### Correction proposée
-
-- **[NEW]** `src/Studio.Imaging/Geometry/PolaroidFrame.cs`
-  - les cotes ci-dessus en constantes nommées, et `Layout(largeurPx, hauteurPx)` rendant le
-    `PixelRect` de la fenêtre image. Le cadre est calculé **au rapport réel du film** puis
-    centré dans le tirage : sur un 10×15 (rapport 1:1,49 contre 1:1,215), le Polaroid occupe
-    toute la largeur et le blanc restant se répartit haut et bas. Un contour de découpe
-    marque le vrai bord du Polaroid, à suivre aux ciseaux.
-
-- **[MODIFY]** `src/Studio.Core/Domain/Enums.cs`
-  - `FitMode` : troisième valeur **`Polaroid`**, ajoutée EN FIN d'énumération (les commandes
-    enregistrées portent des valeurs numériques qu'il ne faut pas déplacer).
-
-- **[MODIFY]** `src/Studio.Imaging/ImagePipeline.cs`
-  - `RenderInto` : branche `FitMode.Polaroid` — fenêtre image remplie en `Fill` (la photo est
-    donc **carrée**, comme sur un vrai Polaroid), fond blanc, contour de découpe posé sur le
-    bord du cadre et non sur celui de la photo.
-  - **[NEW]** rendu « à la Polaroid » optionnel dans `ApplyAdjustments` : léger voile
-    (contraste −8, noirs relevés +6), dominante chaude (+6 en température), vignettage doux.
-    Réglé par un booléen du produit, désactivable — c'est un parti pris esthétique, il ne
-    doit pas s'imposer.
-
-- **[MODIFY]** `src/Studio.Core/Domain/Product.cs`
-  - `bool PolaroidLook { get; set; }` — le traitement couleur, distinct du cadre.
-
-- **[MODIFY]** `src/Studio.App/Views/ProductEditView.xaml{,.cs}`
-  - « Polaroid (cadre carré, bande basse) » comme troisième entrée de `FitCombo`,
-    et une case « rendu vieilli ».
-
-- **[MODIFY]** `D:\PhotoStudioData\catalog\products.json`
-  - `pola` : `DefaultFit: "Polaroid"`, `BorderMm: 0`, `PolaroidLook: true`.
-  - `10x15pola` : idem — les deux portent le même nom au comptoir.
-
-- **[MODIFY]** `src/Studio.App/Views/PhotoGridView.xaml.cs`, `EditSelectionView`
-  - l'aperçu et le cadre de recadrage doivent montrer la **fenêtre carrée**, pas le 10×15 :
-    sinon l'opérateur cadre sur un rectangle et la photo sort recoupée.
-
-- **[NEW]** `tests/Studio.Tests/PolaroidFrameTests.cs` — proportions, centrage, cas paysage.
-
----
-
-## 4. Catalogue : supprimer un tirage
+## 3. Redressement : T ARME le mode, la molette règle
 
 ### Ce que le code fait aujourd'hui
 
-`CatalogView.xaml` propose Modifier / Dupliquer / Activer-Désactiver / Capturer / Finitions.
-**Aucune suppression.** Un produit dupliqué par erreur reste au catalogue pour toujours.
+Deux endroits, même geste : `Keyboard.IsKeyDown(Key.T)` **pendant** le cran de molette.
 
-### Défaut trouvé en chemin (à corriger dans le même passage)
+- `src/Studio.App/Views/IdPhotoView.xaml.cs:716` — `OnStageWheel`
+- `src/Studio.App/Controls/CropSurface.xaml.cs:475` — `OnWheel`
 
-`CatalogView.Clone` (ligne 90) et `ProductEditView.OnSave` (ligne 111) **perdent des champs** :
-`Output`, `MinilabMachineId`, `MinilabPrintSizeName`, `PriceTiers`, `Sheet.GapMm`,
-`Sheet.CutMarks`, `Sheet.CutBorder`, `Sheet.DateStamp`.
+Trois défauts :
 
-Conséquence : **modifier ou dupliquer un tirage du minilab le transforme en produit
-imprimante** (`Output` retombe sur son défaut `Printer`) et **efface ses paliers de tarif**.
-C'est très probablement ainsi que `ID-FR-6` s'est retrouvé sans `Output`.
+1. **Il faut tenir T et rouler en même temps** — à une main, au comptoir, c'est raté.
+2. **`Keyboard.IsKeyDown` dépend du focus.** Le focus posé sur une liste ou un bouton
+   (le cas dès qu'on a choisi un papier), la touche part ailleurs et la molette zoome
+   au lieu de redresser. C'est très probablement le « mal implémenté » signalé.
+3. **Rien à l'écran ne dit que le mode est armé.** Le seul retour est le chiffre en
+   degrés, dans un coin de la barre.
 
-### Corrections proposées
+### Ce qu'on fait
 
-- **[MODIFY]** `src/Studio.App/Views/CatalogView.xaml`
-  - bouton **« 🗑 Supprimer »** sur chaque ligne, en `DangerBrush`, à droite.
+| | Fichier | Changement |
+|---|---|---|
+| 3a | `[MODIFY]` `IdPhotoView`, `CropSurface` | **T bascule** un mode `RedressementArme`. Armé, la molette règle l'angle ; Échap ou un second T en sort. La touche est captée en `PreviewKeyDown` **sur la vue**, donc le focus n'a plus d'importance |
+| 3b | `[MODIFY]` idem | **T maintenue continue de marcher** : les deux gestes coexistent, personne ne réapprend |
+| 3c | `[MODIFY]` `IdPhotoView.xaml`, `CropSurface.xaml` | bandeau visible tant que le mode est armé : « Redressement — molette pour régler · T ou Échap pour sortir », et le champ des degrés mis en évidence |
+| 3d | `[MODIFY]` `CropEditorView`, `EditSelectionView` | vérifier les **trois** écrans qui recadrent (cf. `project_crop_gestures`) : la surface est partagée, mais l'armement et le bandeau se posent par écran |
+| 3e | `[MODIFY]` `DiLandImporter.Import` | lire `FineRotationAngle` au lieu de forcer 0 (constat C) |
 
-- **[MODIFY]** `src/Studio.App/Views/CatalogView.xaml.cs`
-  - `OnDeleteProduct` : confirmation nommant le produit, puis retrait et sauvegarde.
-  - **Garde-fou** : un produit cité par une commande du jour n'est pas supprimé mais
-    **désactivé**, avec explication — `PrintOrchestrator._catalog.Require(code)` lève sinon,
-    et une commande en attente de réimpression deviendrait inexploitable.
-  - `Clone` complété avec les huit champs manquants.
+Le pas reste 0,25° par cran et la borne ±15° : ils n'ont pas été mis en cause.
 
-- **[MODIFY]** `src/Studio.App/Views/ProductEditView.xaml{,.cs}`
-  - liste **« Sortie »** (file Windows / fichier pour Photoshop / minilab Fuji) : c'est le
-    champ dont l'absence causait la perte.
-  - `OnSave` : `Output`, `MinilabMachineId`, `PriceTiers` conservés.
-  - `PrinterCombo` n'est plus obligatoire quand la sortie n'est pas une file Windows.
+## 4. Commandes du jour : séparer tirages photo et photos d'identité
 
-- **[NEW]** `tests/Studio.Tests/CatalogEditTests.cs` — aller-retour Clone/Save sans perte,
-  refus de supprimer un produit référencé.
+`OrdersView` liste tout en un seul flot, commande par commande. Une planche d'identité y
+est indiscernable d'un paquet de 10×15 — or ce n'est ni le même client, ni le même délai,
+ni le même geste de rattrapage.
 
----
+| | Fichier | Changement |
+|---|---|---|
+| 4a | `[MODIFY]` `src/Studio.App/Views/OrdersView.xaml(.cs)` | deux onglets — **Tirages photo** / **Photos d'identité** — sur le modèle de la bascule Ordres/Historique de `KioskOrdersView`, que les opérateurs connaissent déjà. Plus un onglet **Tout** |
+| 4b | `[MODIFY]` `OrdersView.xaml.cs` | classement d'une ligne : identité si le produit du catalogue porte un `Sheet`, avec repli sur `OrderItem.SheetCellWidthMm` — les commandes déjà enregistrées n'ont pas toutes le champ |
+| 4c | `[MODIFY]` `OrdersView.xaml.cs` | **une commande mixte apparaît dans les deux onglets**, n'y montrant que ses lignes concernées. La masquer d'un côté ferait disparaître un tirage à réimprimer |
+| 4d | `[MODIFY]` `OrdersView.xaml` | compteur par onglet (« Tirages photo (7) ») : c'est ce qu'on lit en arrivant le matin |
 
-## 5. Agrandissements : format personnalisé (A2, A3…)
+## 5. Historique des bornes : retélécharger et remodifier
 
-### Ce que le code fait aujourd'hui
+L'historique (`KioskOrdersView`, onglet Historique) ne propose que **« Remettre dans la
+liste »**. Une commande close ne peut être ni retéléchargée ni rouverte — c'est justement
+ce qu'on demande le lendemain, quand le client revient.
 
-`PrintFormatView` (ligne 31) :
+Obstacle technique : l'historique tient des `KioskOrderEntry` (journal), pas des
+`DiLandOrder`. **Le journal ne mémorise pas `DirectoryName`**, donc on ne sait pas où sont
+les photos.
 
-```csharp
-if (_famille == PrintFamily.Quick) lignes.Add(FormatRow.Personnalise());
-```
+| | Fichier | Changement |
+|---|---|---|
+| 5a | `[MODIFY]` `src/Studio.Store/DiLand/KioskOrderJournal.cs` | champ `DirectoryName` sur `KioskOrderEntry`, renseigné par `Describe`. Les entrées anciennes ne l'ont pas : repli par recherche de l'Oid dans l'instantané, et message clair si DiLand a purgé |
+| 5b | `[MODIFY]` `src/Studio.App/Views/KioskOrdersView.xaml(.cs)` | boutons **⬇ Télécharger** et **✏ Modifier** sur chaque ligne d'historique |
+| 5c | `[MODIFY]` `src/Studio.Store/DiLand/DiLandImporter.cs` | `Stage(..., ecraser: true)` : aujourd'hui `CopyPhotoTo` **saute les fichiers déjà présents**. Un second téléchargement rouvrait donc un dossier périmé sans rien dire — c'est le « malgré le fait que les photos ont été téléchargées » de la demande |
+| 5d | `[MODIFY]` `KioskOrdersView` | rouvrir depuis l'historique **ne remet pas la commande dans la liste du jour** : `MarkInProgress` refuse déjà une entrée close, on s'appuie dessus |
+| 5e | `[MODIFY]` `HomeView` | rappel de `system_architecture.md` : toute action de ligne ajoutée à un écran doit l'être à l'autre. L'historique n'existe que dans `KioskOrdersView` — rien à faire ici, mais le correctif 5c profite aux deux |
 
-La tuile « Personnalisé » n'existe **que** pour l'impression rapide, et elle mène à
-`CustomSizeView`, qui compose des **planches sur papier minilab** (`CustomSheetLayout`) —
-sans rapport avec un agrandissement, qui est un tirage unique sorti en fichier pour l'Epson.
+## 6. Lire les commandes des bornes sans DiLand — ce qui est atteignable
 
-Le catalogue s'arrête au 70 × 100 (désactivé) ; **ni A3 (297 × 420) ni A2 (420 × 594)**
-ne sont proposés.
+Lire le constat A avant de valider ce chantier : **l'arrivée** restera tributaire de
+DiLand. C'est **tout le reste** qu'on lui prend.
 
-### Correction proposée
+Un dossier de commande est **auto-suffisant** : `Order.xml` + `Files.txt` + `F/`. Vérifié
+sur `20260803-1648-ommcdsbz.COM` — 41 photos, 22,55 €, `Sys_Product_Alias="8x10"`, et
+chaque image avec `FileName`, `OriginalFileName`, `Quantity`, `Angle`,
+`FineRotationAngle`, `CropX/Y/Width/Height`, `Width`, `Height`. **Tout ce que la base
+donne, le XML le donne** — sans base, sans instantané, sans DiLand.
 
-- **[MODIFY]** `src/Studio.App/Views/PrintFormatView.xaml.cs`
-  - la tuile « Personnalisé » apparaît aussi pour `PrintFamily.Enlargement`, avec un libellé
-    et une destination propres (« taille au choix · Epson »).
+| | Fichier | Changement |
+|---|---|---|
+| 6a | `[NEW]` `src/Studio.Store/DiLand/DiLandOrderXml.cs` | lecture d'`Order.xml` → `DiLandOrder` + `DiLandOrderLine` + `DiLandOrderPhoto`. Le nom du produit vient de `OrderLine/@Sys_Product_Alias` |
+| 6b | `[MODIFY]` `src/Studio.Store/DiLand/DiLandRepository.cs` | balayage de **`IncomingOrders\*.COM`** (arrivées, pas encore intégrées : DiLand fermé, tombé, ou tâche d'import bloquée) **et** de `Orders\*.COM`. Le disque devient une source à part entière |
+| 6c | `[MODIFY]` `src/Studio.Store/DiLand/DiLandImporter.cs` | `Pending()` fusionne base et disque, **dédoublonné sur `DirectoryName`**. Une commande vue des deux côtés n'apparaît qu'une fois |
+| 6d | `[MODIFY]` `KioskOrderJournal` | clé du journal : les commandes venues du XML n'ont pas d'Oid numérique, seulement des GUID. Clé longue **déterministe** dérivée de `Sys_GlobalUniqueId`, pour qu'une commande intégrée plus tard par DiLand ne réapparaisse pas en double |
+| 6e | `[MODIFY]` `DiLandRepository.ReadPhotos` + `DiLandImporter.CropOf` | **correction du bug B** : les recadrages sont en pixels, à diviser par `Width`/`Height`. Vaut pour les deux sources |
+| 6f | `[MODIFY]` `KioskOrdersView`, `HomeView` | dire d'où vient chaque commande quand DiLand est absent : « lue sur le disque — DiLand est fermé ». `DiLandPresence.IsRunning()` existe déjà |
+| 6g | `[NEW]` `tools/Studio.DiLandProbe` (mode `xml`) | vérifier sur les vraies commandes de la boutique que le XML rend la même chose que la base — c'est le seul contrôle possible sans fermer DiLand en pleine journée |
 
-- **[NEW]** `src/Studio.App/Views/CustomEnlargementView.xaml{,.cs}`
-  - saisie largeur × hauteur en cm, **plus des tuiles normalisées** : A4, A3, A3+, A2, A1,
-    30×45, 40×60, 50×75 — c'est ce que l'exploitant demande vraiment (« pour pouvoir par
-    exemple faire des tirages en A2, A3 »).
-  - contrôle contre la largeur de rouleau / feuille de la SC-P800 (max 431,8 mm = 17 pouces) :
-    au-delà, on le dit avant que l'opérateur n'annonce un prix.
-  - **prix : celui du produit catalogue dans lequel la taille TIENT** (décision de
-    l'exploitant, 02/08/2026). Si le tirage demandé rentre dans un 30×40, il est facturé au
-    prix du 30×40 ; s'il faut un 40×50, c'est le prix du 40×50. Règle : le **moins cher**
-    des produits `ManualFile` actifs dont les deux cotes sont ≥ à celles demandées, dans
-    l'une ou l'autre orientation. Aucun tarif au dm² à saisir, aucun prix à taper à la main.
-    Au-delà du plus grand produit du catalogue, l'écran le dit et refuse.
-  - l'écran annonce le produit retenu et son prix AVANT le choix des photos — comme le fait
-    déjà `CustomSizeView` pour les planches.
-  - mémoire des tailles récentes, sur le modèle de `CustomSizeView`.
+### Essais
 
-- **[MODIFY]** `src/Studio.App/Views/PhotoGridView.xaml.cs`
-  - accepte une taille d'agrandissement libre comme il accepte déjà `taillePerso` :
-    fabrication d'un `Product` fantôme (`Output = ManualFile`, code « agrandi-perso »),
-    remplacé à la commande par un **vrai produit** créé à la volée dans le catalogue
-    (code `agr-420x594`), pour que `_catalog.Require` le retrouve à la réimpression.
-  - **[MODIFY]** entrée « Personnalisé… » du menu de format (`ProductMenu.Ouvrir`) : sur un
-    produit ManualFile, elle ouvre la saisie d'agrandissement et non celle des planches.
-
-- **[NEW]** `tests/Studio.Tests/CustomEnlargementTests.cs` — formats normalisés, refus
-  au-delà de 431,8 mm, code de produit engendré stable.
+`tests/Studio.Tests/` : lecture d'un `Order.xml` réel anonymisé (recadrage en pixels →
+fractions, redressement, produit, quantités), dédoublonnage base/disque, clé
+déterministe, et non-régression du classement de `OrdersView`.
 
 ---
 
-## Ce qu'il restera à faire À LA MAIN après le chantier 1
+## Vérification, pour chaque chantier
 
-La DS620 ne peut sortir que les formats du **rouleau réellement chargé** : un rouleau 6"
-donne le (6x4), le (6x6), le (6x8) et le (6x9) ; un rouleau 5" donne le (5x3.5), le (5x5)
-et le (5x7). Les produits planche des deux familles seront au catalogue, mais seuls ceux
-du rouleau en place sortiront — c'est une contrainte machine, pas du logiciel. Le contrôle
-ajouté au chantier 1 le dira avant l'envoi au lieu de laisser partir un travail muet.
+- `dotnet build` : 0 erreur, 0 avertissement nouveau
+- `dotnet test` : les 692 verts actuels + les nouveaux
+- toutes les clés `StaticResource` des vues se résolvent
+- application lancée, écrans parcourus
 
-Chaque nouveau produit planche a besoin de son **DEVMODE capturé** (Catalogue → « Capturer
-réglages », imprimante allumée) : c'est le dialogue du pilote qui fixe le média et le
-surlaminage, et il n'est pas reproductible depuis le code.
+⚠ Fermer `Studio.De100Host.exe` avant les essais, sinon les trois essais d'intégration
+DE100 échouent sur le canal occupé (ce n'est pas une régression, cf. `task.md`).
 
 ---
 
-## Ordre d'exécution proposé
+## Trois questions avant de commencer
 
-1. **Chantier 2** (lisibilité) — indépendant, visible tout de suite, aucun risque métier.
-2. **Chantier 4** (suppression + perte de champs) — corrige un défaut qui abîme le catalogue
-   à chaque modification ; à faire avant de toucher aux produits.
-3. **Chantier 1** (identité DNP) — dépend du 4 pour éditer `Output` proprement.
-4. **Chantier 3** (Polaroid).
-5. **Chantier 5** (agrandissement personnalisé).
-
-## Vérification, à chaque chantier
-
-- `dotnet build` : 0 erreur, 0 avertissement nouveau ;
-- `dotnet test` : les 655 existants + les nouveaux ;
-- application lancée, écran concerné parcouru ;
-- pour le chantier 1 : **une planche réellement imprimée sur la DS620**, journal relevé
-  (`Impression « … » sur DP-DS620 : demandé …, page obtenue …`).
+1. **Envoi par courriel** — le bouton ✉ doit-il aussi enregistrer une commande (donc
+   facturer l'envoi), ou reste-t-il un geste gratuit à côté de l'impression ?
+2. **Chantier 6** — vu le constat A, va-t-on jusqu'à la lecture disque (qui règle les
+   plantages de DiLand mais pas DiLand fermé), ou faut-il d'abord chiffrer le
+   remplacement du logiciel des bornes ?
+3. **Bugs B et C** (recadrages en pixels, redressement des bornes ignoré) — ils sont
+   indépendants du reste et corrigeables tout de suite. À faire en premier ?

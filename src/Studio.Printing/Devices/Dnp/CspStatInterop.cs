@@ -30,10 +30,20 @@ internal static class CspStatInterop
 
     // — découverte —
 
-    /// <param name="portArray">Tableau recevant les numéros de port, alloué par l'appelant.</param>
+    /// <summary>
+    /// Découverte des imprimantes branchées.
+    ///
+    /// ATTENTION au contrat, relevé dans la décompilation de DiLand
+    /// (<c>DnpHelper.GetPrinters</c>) le 03/08/2026 : le tampon est un tableau d'OCTETS —
+    /// deux par imprimante, (type, identifiant d'unité) — et <paramref name="arraySize"/>
+    /// est sa taille EN OCTETS, pas un nombre d'éléments. Un <c>int[]</c> ne convient pas :
+    /// la fonction rendait 0 et aucune imprimante n'était vue.
+    /// </summary>
+    /// <param name="portArray">Tampon d'octets alloué par l'appelant.</param>
+    /// <param name="arraySize">Taille du tampon, en octets.</param>
     /// <returns>Nombre d'imprimantes trouvées.</returns>
     [DllImport(Dll)]
-    internal static extern int GetPrinterPortNum(int[] portArray, int arraySize);
+    internal static extern int GetPrinterPortNum(IntPtr portArray, int arraySize);
 
     /// <summary>Restreint la découverte à un type d'imprimante (voir <see cref="DnpPrinterType"/>).</summary>
     [DllImport(Dll)]

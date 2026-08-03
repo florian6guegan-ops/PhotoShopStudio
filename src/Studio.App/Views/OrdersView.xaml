@@ -1,15 +1,59 @@
 <UserControl x:Class="Studio.App.Views.OrdersView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+
+        <!-- Le même onglet que « Commandes des bornes » : l'actif est plein, les autres
+             restent sombres. Deux écrans qui listent des commandes doivent se feuilleter
+             du même geste. -->
+        <Style x:Key="Onglet" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="fond" Background="{StaticResource PanelBrush}"
+                                CornerRadius="10,10,0,0" Padding="28,12" Margin="0,0,4,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="fond" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}" Text="Commandes récentes"/>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <!-- Tirages et planches d'identité ne se servent ni au même client, ni au même
+             délai, ni avec la même machine. Mêlés dans une seule liste, on cherchait la
+             planche à rattraper au milieu des paquets de 10×15. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,14">
+            <RadioButton x:Name="OngletTout" Style="{StaticResource Onglet}" Content="Tout"
+                         IsChecked="True" Checked="OnTabChanged"/>
+            <RadioButton x:Name="OngletTirages" Style="{StaticResource Onglet}"
+                         Checked="OnTabChanged"
+                         ToolTip="Les tirages photo : minilab, DNP, agrandissements."/>
+            <RadioButton x:Name="OngletIdentite" Style="{StaticResource Onglet}"
+                         Checked="OnTabChanged"
+                         ToolTip="Les planches de photos d'identité."/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <TextBlock x:Name="EmptyText" Style="{StaticResource Hint}"
                            Text="Aucune commande ces derniers jours." Visibility="Collapsed"/>
@@ -23,6 +67,17 @@
                                         <TextBlock DockPanel.Dock="Left" FontSize="24" FontWeight="Bold"
                                                    Foreground="{StaticResource TextBrush}" Text="{Binding Header}"/>
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <!-- Les photos d'une commande restent dans son dossier :
+                                                 on peut donc les ressortir et les retravailler, qu'il
+                                                 s'agisse de tirages ou d'une planche d'identité. -->
+                                            <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="150"
+                                                    FontSize="17" Padding="12,4" Margin="0,0,10,0"
+                                                    ToolTip="Recopie les photos de la commande dans les téléchargements, même si elles l'ont déjà été."
+                                                    Click="OnDownload" Tag="{Binding}">⬇ Télécharger</Button>
+                                            <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="130"
+                                                    FontSize="17" Padding="12,4" Margin="0,0,10,0"
+                                                    ToolTip="Rouvre les photos pour les recadrer et les corriger. La commande d'origine n'est pas touchée : un nouveau tirage donnera une nouvelle commande."
+                                                    Click="OnModify" Tag="{Binding}">✏ Modifier</Button>
                                             <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="120"
                                                     FontSize="17" Padding="12,4" Margin="0,0,16,0"
                                                     ToolTip="Imprimer le ticket de caisse"

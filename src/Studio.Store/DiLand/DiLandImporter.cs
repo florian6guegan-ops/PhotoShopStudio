@@ -51,10 +51,41 @@ public sealed class DiLandImporter
         _commandes = commandes;
         _catalogue = catalogue;
         Journal = new KioskOrderJournal(registrePath);
+
+        // à côté du journal, dans les données de Studio : les deux vivent et meurent
+        // ensemble (voir KioskOrderJournal.Purge)
+        ArchiveRoot = Path.Combine(
+            Path.GetDirectoryName(registrePath) ?? ".", "archive");
     }
 
     /// <summary>Le suivi des commandes de bornes : ce qui reste à faire, et ce qui a été fait.</summary>
     public KioskOrderJournal Journal { get; }
+
+    /// <summary>
+    /// Où Studio garde SA copie des photos des commandes de bornes.
+    ///
+    /// <b>L'historique ne lit plus rien chez DiLand.</b> Ses dossiers sont purgés quand il
+    /// le décide, sans prévenir : une commande close pouvait survivre à ses propres
+    /// photos, et l'opérateur qui redemandait les fichiers le lendemain tombait sur du
+    /// vide. La copie se fait une fois, à la prise en charge, et c'est elle qu'on sert
+    /// ensuite. Elle disparaît avec l'entrée du journal, au bout d'un mois.
+    /// </summary>
+    public string ArchiveRoot { get; }
+
+    /// <summary>
+    /// Range les photos d'une commande de borne chez nous, et note où.
+    ///
+    /// Le dossier porte l'identifiant DiLand et non le numéro de commande : le numéro
+    /// repart de zéro chaque année, l'identifiant jamais.
+    /// </summary>
+    public StagedOrder Archiver(DiLandOrder order, bool refaire = false)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        var prete = Stage(order, ArchiveRoot, folderName: order.Oid.ToString(), ecraser: refaire);
+        Journal.SetArchive(order.Oid, prete.PhotosDirectory);
+        return prete;
+    }
 
     /// <summary>
     /// Commandes de bornes à traiter — celles que personne n'a prises, et celles qui sont
@@ -68,15 +99,83 @@ public sealed class DiLandImporter
     /// </summary>
     public IReadOnlyList<DiLandOrder> Pending(int limit = 50)
     {
-        if (!_depot.RefreshSnapshot()) return [];
+        var base_ = _depot.RefreshSnapshot()
+            ? _depot.ReadKioskOrdersAfter(0, 4000)
+            : [];
+
+        // Le disque est lu DANS TOUS LES CAS, base disponible ou non : c'est la seule
+        // source qui voie les commandes qu'une borne a déposées pendant que DiLand était
+        // fermé ou tombé — et il tombe presque tous les jours. Elles n'existaient nulle
+        // part pour nous jusqu'ici.
+        LireLeDisque();
 
         Reconcile();
 
-        return _depot.ReadKioskOrdersAfter(0, 4000)
+        // Une commande vue des deux côtés ne paraît qu'une fois, et c'est la version de la
+        // BASE qui l'emporte : elle porte le vrai Oid, celui auquel le journal et les
+        // commandes Studio déjà créées se réfèrent. Le dédoublonnage se fait sur le
+        // dossier, seul repère commun aux deux lectures.
+        var dossiersConnus = base_
+            .Select(c => c.DirectoryName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var plancher = DateTime.Now - FenetreDuDisque;
+
+        return base_
+            .Concat(_surLeDisque.Values
+                .Where(c => !dossiersConnus.Contains(c.DirectoryName))
+                .Where(c => c.Date >= plancher))
             .Where(c => !Journal.IsClosed(c.Oid))
+            .OrderBy(c => c.Date)
             .TakeLast(limit)
             .ToList();
     }
+
+    /// <summary>
+    /// Au-delà de quel âge une commande trouvée SUR LE DISQUE n'est plus proposée.
+    ///
+    /// Le dossier <c>Orders</c> de DiLand garde des mois d'historique. Y verser tout ce
+    /// qui n'est pas en base noierait la liste du jour sous des commandes vieilles de
+    /// plusieurs semaines, déjà servies d'une façon ou d'une autre — et une liste qu'on ne
+    /// croit plus ne se lit plus.
+    ///
+    /// La fenêtre est celle de l'historique, pour qu'il n'y ait qu'un seul nombre à
+    /// retenir. Elle couvre largement le cas qui motive cette lecture : DiLand tombe, on
+    /// s'en aperçoit dans l'heure.
+    ///
+    /// <b>Deux commandes plus anciennes ont été trouvées le 03/08/2026</b> (#12360 du
+    /// 18/06 et #6830 du 25/06), absentes de la base — pas même supprimées. Elles ne
+    /// remontent donc pas ici ; <c>Studio.DiLandProbe xml</c> les montre.
+    /// </summary>
+    public static readonly TimeSpan FenetreDuDisque = KioskOrderJournal.Retention;
+
+    /// <summary>
+    /// Les commandes lues sur le disque, avec leur contenu, indexées par leur clé de
+    /// journal.
+    ///
+    /// Gardées en mémoire parce que leurs LIGNES ne sont nulle part ailleurs : la base ne
+    /// les connaît pas, et <see cref="LinesOf"/> doit pouvoir les rendre.
+    /// </summary>
+    private readonly Dictionary<long, DiLandOrder> _surLeDisque = [];
+    private readonly Dictionary<long, IReadOnlyList<DiLandOrderLine>> _lignesDuDisque = [];
+
+    private void LireLeDisque()
+    {
+        foreach (var contenu in _depot.ReadKioskOrdersFromDisk(4000))
+        {
+            _surLeDisque[contenu.Order.Oid] = contenu.Order;
+            _lignesDuDisque[contenu.Order.Oid] = contenu.Lines;
+        }
+    }
+
+    /// <summary>
+    /// Le contenu d'une commande, qu'elle vienne de la base ou du disque.
+    ///
+    /// Le disque est interrogé en premier pour les commandes qu'on en a tirées : la base
+    /// ne les connaît pas, et lui poser la question rendrait une commande vide.
+    /// </summary>
+    private IReadOnlyList<DiLandOrderLine> LignesDe(DiLandOrder order) =>
+        _lignesDuDisque.TryGetValue(order.Oid, out var duDisque) ? duDisque : _depot.LinesOf(order);
 
     /// <summary>Le contenu d'une commande et son total, en une seule lecture de la base.</summary>
     /// <param name="Lines">Un libellé par produit, avec le nombre de tirages.</param>
@@ -110,7 +209,7 @@ public sealed class DiLandImporter
         // lignes n'est comptée qu'une fois
         var distinctes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var ligne in _depot.LinesOf(order))
+        foreach (var ligne in LignesDe(order))
         {
             foreach (var photo in ligne.Photos) distinctes.Add(photo.FileName);
             tiragesTotal += Math.Max(1, ligne.PrintCount);
@@ -196,7 +295,8 @@ public sealed class DiLandImporter
             order.Oid, order.Number, order.DailyNumber, order.Date,
             order.EndUserName ?? "",
             string.Join("   ·   ", resume.Lines),
-            resume.Total);
+            resume.Total,
+            order.DirectoryName);
     }
 
     /// <summary>
@@ -212,18 +312,18 @@ public sealed class DiLandImporter
     ///
     /// Une commande déjà reprise n'est pas reprise deux fois.
     /// </summary>
-    /// <param name="workDirectory">
-    /// Dossier où recopier les photos avant de les reprendre.
+    /// <remarks>
+    /// Les photos sont recopiées dans NOTRE archive (<see cref="ArchiveRoot"/>), et c'est
+    /// elle que la commande Studio référencera. Deux raisons, et non une :
     ///
-    /// Il ne sert pas qu'à mettre les fichiers à l'abri : c'est aussi lui qui leur REND
-    /// LEUR NOM. DiLand marque les fichiers des commandes qu'il a traitées d'un « _p »
-    /// final, si bien que <c>photo.jpg</c> devient <c>photo.jpg_p</c> — un nom dont
-    /// l'extension n'est plus celle d'une image. La recopie repart du nom de la base.
-    ///
-    /// Null pour lire les fichiers là où ils sont, ce qui reste correct pour une commande
-    /// que DiLand n'a pas encore touchée.
-    /// </param>
-    public DiLandImportOutcome Import(DiLandOrder order, string? workDirectory = null)
+    /// - la copie REND LEUR NOM aux fichiers. DiLand marque ceux des commandes qu'il a
+    ///   traitées d'un « _p » final — <c>photo.jpg</c> devient <c>photo.jpg_p</c>, dont
+    ///   l'extension n'est plus celle d'une image — et en brouille le début ;
+    /// - elle affranchit la commande de DiLand pour de bon. Une commande reprise doit
+    ///   pouvoir être réimprimée des semaines plus tard, quand DiLand aura purgé la
+    ///   sienne.
+    /// </remarks>
+    public DiLandImportOutcome Import(DiLandOrder order)
     {
         ArgumentNullException.ThrowIfNull(order);
 
@@ -237,9 +337,9 @@ public sealed class DiLandImporter
         var photos = new List<DraftItem>();
 
         // les fichiers sont recopiés une fois pour toutes, sous leur nom de base
-        var prete = workDirectory is null ? null : Stage(order, workDirectory);
+        var prete = Archiver(order);
 
-        foreach (var ligne in _depot.LinesOf(order))
+        foreach (var ligne in LignesDe(order))
         {
             var produit = MatchProduct(ligne.ProductName);
             if (produit is null)
@@ -250,9 +350,7 @@ public sealed class DiLandImporter
 
             foreach (var photo in ligne.Photos)
             {
-                var chemin = prete is null
-                    ? _depot.PhotoPath(order, photo)
-                    : Path.Combine(prete.PhotosDirectory, photo.FileName);
+                var chemin = Path.Combine(prete.PhotosDirectory, photo.FileName);
 
                 if (!File.Exists(chemin))
                 {
@@ -266,7 +364,10 @@ public sealed class DiLandImporter
                     Quantity: Math.Max(1, photo.Quantity),
                     Crop: CropOf(photo),
                     RotationQuarterTurns: QuarterTurns(photo.Angle),
-                    FineRotationDegrees: 0, // les bornes ne redressent pas
+                    // Les bornes redressent : le contraire était écrit ici, et 113 photos
+                    // de la base de la boutique portent un redressement qui partait à la
+                    // poubelle. Le tirage sortait de travers sans que rien ne le dise.
+                    FineRotationDegrees: photo.FineRotationDegrees,
                     FitOverride: null,
                     Adjustments: new ImageAdjustments()));
             }
@@ -314,14 +415,23 @@ public sealed class DiLandImporter
     /// téléchargements s'en sert pour donner au dossier le nom de la commande, qui parle
     /// à l'opérateur là où « 000123.COM » ne dit rien.
     /// </param>
-    public StagedOrder Stage(DiLandOrder order, string workDirectory, string? folderName = null)
+    /// <param name="ecraser">
+    /// Refaire la copie même si le fichier est déjà là.
+    ///
+    /// Par défaut on ne recopie pas ce qui existe : ouvrir deux fois la même commande dans
+    /// la journée ne doit pas relire cinquante fichiers. Mais un SECOND téléchargement
+    /// demandé par l'opérateur rouvrait alors un dossier périmé sans rien dire — c'est
+    /// exactement ce qu'on lui reproche quand il redemande les photos.
+    /// </param>
+    public StagedOrder Stage(DiLandOrder order, string workDirectory, string? folderName = null,
+        bool ecraser = false)
     {
         ArgumentNullException.ThrowIfNull(order);
 
         var destination = Path.Combine(workDirectory, folderName ?? order.DirectoryName);
         Directory.CreateDirectory(destination);
 
-        var lignes = _depot.LinesOf(order);
+        var lignes = LignesDe(order);
 
         // une même photo peut figurer sur deux lignes — commandée en 10x15 et en 13x18 par
         // exemple. On ne la met à disposition qu'une fois, et on la compte une fois
@@ -333,9 +443,21 @@ public sealed class DiLandImporter
 
             // la recopie remet la photo en clair : DiLand brouille le début des fichiers
             // des commandes qu'il a traitées
-            _depot.CopyPhotoTo(order, photo, Path.Combine(destination, photo.FileName));
+            _depot.CopyPhotoTo(order, photo, Path.Combine(destination, photo.FileName), ecraser);
             deposees.Add(photo.FileName);
         }
+
+        // Rien en base, mais des fichiers sur le disque : c'est une commande que DiLand a
+        // purgée de sa base alors que son dossier est toujours là. On prend ce qu'on
+        // trouve — mieux vaut les photos sans les quantités que l'écran vide qui s'affichait
+        // jusqu'ici quand un client revenait trois semaines plus tard.
+        if (deposees.Count == 0)
+            foreach (var chemin in _depot.PhotosOf(order))
+            {
+                var nom = DiLandRepository.CleanFileName(Path.GetFileName(chemin));
+                _depot.CopyFileTo(chemin, Path.Combine(destination, nom), ecraser);
+                deposees.Add(nom);
+            }
 
         // le produit majoritaire : sur une commande de soixante 10x15 et d'un 13x18,
         // présélectionner le 10x15 évite soixante corrections à la main
@@ -351,6 +473,75 @@ public sealed class DiLandImporter
     }
 
     /// <summary>
+    /// Les photos d'une commande close, telles que Studio les a gardées.
+    ///
+    /// <b>On ne retourne PAS chez DiLand.</b> C'est notre archive qu'on sert, et elle
+    /// suffit : c'est justement pour cela qu'elle existe. DiLand peut avoir purgé la
+    /// commande, être fermé, ou avoir été réinstallé — l'historique s'en moque.
+    ///
+    /// Rend null quand nous n'avons rien gardé : les entrées antérieures à l'archivage,
+    /// et celles dont le dossier a été effacé à la main. À l'appelant de le dire, plutôt
+    /// que d'ouvrir un dossier vide.
+    /// </summary>
+    public string? ArchiveDe(KioskOrderEntry entree)
+    {
+        ArgumentNullException.ThrowIfNull(entree);
+
+        var dossier = string.IsNullOrWhiteSpace(entree.ArchiveDirectory)
+            ? Path.Combine(ArchiveRoot, entree.Oid.ToString())
+            : entree.ArchiveDirectory;
+
+        if (!Directory.Exists(dossier)) return null;
+
+        // un dossier vide ne vaut pas mieux qu'un dossier absent : la copie a pu échouer
+        return Directory.EnumerateFiles(dossier).Any() ? dossier : null;
+    }
+
+    /// <summary>
+    /// Rattrape une commande close dont nous n'avons pas d'archive : les entrées d'avant,
+    /// et celles archivées puis effacées à la main.
+    ///
+    /// C'est le SEUL cas où l'historique redescend chez DiLand, et il est temporaire par
+    /// nature — au bout d'un mois, plus aucune entrée n'aura connu l'avant. Rend null si
+    /// DiLand ne connaît plus la commande non plus.
+    /// </summary>
+    public string? ArchiverDepuisDiLand(KioskOrderEntry entree)
+    {
+        ArgumentNullException.ThrowIfNull(entree);
+
+        var commande = RetrouverChezDiLand(entree);
+        if (commande is null) return null;
+
+        var prete = Archiver(commande, refaire: true);
+        return prete.PhotoCount > 0 ? prete.PhotosDirectory : null;
+    }
+
+    /// <summary>La commande telle que DiLand la connaît encore, ou telle que le journal l'a notée.</summary>
+    private DiLandOrder? RetrouverChezDiLand(KioskOrderEntry entree)
+    {
+        if (_depot.RefreshSnapshot())
+        {
+            var connue = _depot.ReadOrdersAfter(entree.Oid - 1, 1)
+                .FirstOrDefault(c => c.Oid == entree.Oid);
+            if (connue is not null) return connue;
+        }
+
+        // les entrées écrites avant que le journal retienne le dossier n'ont rien à offrir
+        if (string.IsNullOrWhiteSpace(entree.DirectoryName)) return null;
+
+        var reconstituee = new DiLandOrder(
+            Oid: entree.Oid,
+            Number: entree.Number,
+            DailyNumber: entree.DailyNumber,
+            Date: entree.OrderedAt,
+            DirectoryName: entree.DirectoryName,
+            EndUserName: entree.CustomerName,
+            PhotoCount: 0);
+
+        return _depot.PhotosOf(reconstituee).Count > 0 ? reconstituee : null;
+    }
+
+    /// <summary>
     /// Marque une commande comme prise en charge sans rien créer : elle a été ouverte pour
     /// être retouchée, la commande Studio naîtra à l'impression.
     ///
@@ -362,6 +553,13 @@ public sealed class DiLandImporter
     {
         ArgumentNullException.ThrowIfNull(order);
         Note(order);
+
+        // C'est ICI que l'archive se constitue : au moment où l'on prend la commande en
+        // charge, donc tant que les fichiers de DiLand sont sûrement là. Attendre la
+        // clôture serait trop tard — DiLand purge quand il veut.
+        try { Archiver(order); }
+        catch (Exception) { /* l'archive est un confort, pas une condition pour servir */ }
+
         Journal.MarkInProgress(order.Oid);
     }
 
@@ -407,9 +605,11 @@ public sealed class DiLandImporter
         nom.Replace(" ", "").Replace(",", ".").Trim().ToLowerInvariant();
 
     /// <summary>
-    /// Le recadrage fait à la borne, ou l'image entière. DiLand l'exprime déjà en
-    /// fractions de l'image, comme nous ; un rectangle incohérent est ignoré plutôt que
-    /// de produire un tirage faux.
+    /// Le recadrage fait à la borne, ou l'image entière.
+    ///
+    /// DiLand l'exprime en PIXELS ; il est ramené en fractions dès la lecture, par
+    /// <see cref="DiLandOrderPhoto.FromRaw"/>. Un rectangle incohérent est ignoré plutôt
+    /// que de produire un tirage faux.
     /// </summary>
     private static CropSpec CropOf(DiLandOrderPhoto photo)
     {

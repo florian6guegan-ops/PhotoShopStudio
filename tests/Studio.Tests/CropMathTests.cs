@@ -75,6 +75,42 @@ public class CropMathTests
         Assert.True(clamped.IsValid);
     }
 
+    /// <summary>
+    /// Un cadre plus grand que l'image garde SA FORME en rentrant dans les bornes.
+    ///
+    /// Rogner la seule hauteur rendait un cadre au rapport quelconque : sur l'écran
+    /// d'identité, le cadre affiché ne correspondait plus au format choisi.
+    /// </summary>
+    [Fact]
+    public void ClampToBounds_TooTall_KeepsAspect()
+    {
+        // cadre 35×45 (rapport 0,778) demandé plus haut que l'image
+        var demande = new Studio.Core.Domain.CropSpec(0.1, -0.2, 0.7 * 1.4, 1.4);
+        var clamped = CropMath.ClampToBounds(demande);
+
+        Assert.True(clamped.Height <= 1);
+        Assert.True(clamped.Width <= 1);
+        Assert.Equal(demande.Width / demande.Height, clamped.Width / clamped.Height, 10);
+        Assert.True(clamped.IsValid);
+    }
+
+    /// <summary>
+    /// Le cadre calculé pour une photo d'identité respecte le rapport du document même
+    /// quand la tête est petite et que le cadre idéal déborde de l'image.
+    /// </summary>
+    [Fact]
+    public void ComputeCrop_HeadTooSmall_KeepsDocumentAspect()
+    {
+        const int largeur = 3000, hauteur = 2000;   // photo paysage, tête petite
+        var tete = new NormRect(0.45, 0.30, 0.06, 0.14);
+
+        var crop = IdPhotoFr.ComputeCrop(tete, largeur, hauteur, IdDocumentSpec.France);
+
+        // rapport attendu, en PIXELS : 35/45
+        var rect = CropMath.ToPixelRect(crop, largeur, hauteur);
+        Assert.Equal(35.0 / 45.0, (double)rect.Width / rect.Height, 2);
+    }
+
     [Fact]
     public void Pan_KeepsSizeAndStaysInBounds()
     {

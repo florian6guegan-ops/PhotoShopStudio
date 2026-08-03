@@ -12,19 +12,69 @@
         <TextBlock Grid.Row="0" Text="Sélectionnez un document" Style="{StaticResource PageTitle}"
                    HorizontalAlignment="Center"/>
 
-        <!-- 274 documents : on tape deux lettres plutôt que de faire défiler -->
-        <DockPanel Grid.Row="1" Margin="0,0,0,14">
-            <TextBlock DockPanel.Dock="Left" Text="Rechercher :" Style="{StaticResource Hint}"
-                       VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
-                       VerticalAlignment="Center" Margin="16,0,0,0"/>
-            <TextBox x:Name="SearchBox" FontSize="20" Padding="10,8" MaxWidth="520"
-                     HorizontalAlignment="Left" MinWidth="360"
-                     AutomationProperties.Name="Rechercher un document"
-                     TextChanged="OnSearchChanged"/>
-        </DockPanel>
+        <StackPanel Grid.Row="1">
+            <!-- Les formats du quotidien devant. Le référentiel en compte 274 ; la boutique
+                 en tire deux. Ils se règlent au Catalogue, pas dans ce fichier. -->
+            <ItemsControl x:Name="RaccourcisList" HorizontalAlignment="Center" Margin="0,0,0,8">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Width="330" Height="170" Margin="10" Cursor="Hand"
+                                Background="{StaticResource AccentBrush}" BorderThickness="0"
+                                AutomationProperties.Name="{Binding Libelle}"
+                                Click="OnRaccourciChoisi" Tag="{Binding}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="fond" Background="{TemplateBinding Background}"
+                                            CornerRadius="14">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="fond" Property="Background"
+                                                    Value="{StaticResource AccentDarkBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="14,0">
+                                <TextBlock Text="{Binding Libelle}" FontSize="30" FontWeight="Bold"
+                                           Foreground="White" HorizontalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Detail}" FontSize="16" Foreground="#DDFFFFFF"
+                                           HorizontalAlignment="Center" Margin="0,8,0,0"
+                                           TextAlignment="Center" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button x:Name="AutresButton" Style="{StaticResource FlatButton}" MinWidth="320"
+                    HorizontalAlignment="Center" Margin="0,4,0,14"
+                    AutomationProperties.Name="Autres formats"
+                    Click="OnAutresFormats">Autres formats…</Button>
+
+            <!-- 274 documents : on tape deux lettres plutôt que de faire défiler -->
+            <DockPanel x:Name="RecherchePanel" Margin="0,0,0,14" Visibility="Collapsed">
+                <TextBlock DockPanel.Dock="Left" Text="Rechercher :" Style="{StaticResource Hint}"
+                           VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
+                           VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <TextBox x:Name="SearchBox" FontSize="20" Padding="10,8" MaxWidth="520"
+                         HorizontalAlignment="Left" MinWidth="360"
+                         AutomationProperties.Name="Rechercher un document"
+                         TextChanged="OnSearchChanged"/>
+            </DockPanel>
+        </StackPanel>
+
+        <ScrollViewer x:Name="DocumentsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                      Visibility="Collapsed">
             <ItemsControl x:Name="DocumentsList">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>

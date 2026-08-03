@@ -7,6 +7,15 @@ using Studio.Store.DiLand;
 // n'est jamais ouverte, on lit une copie.
 //
 // Usage : DiLandProbe [nombre de commandes à montrer]
+//         DiLandProbe xml [nombre]   — lecture SUR LE DISQUE, sans la base ni DiLand
+//
+// Le mode « xml » sert à vérifier que la lecture disque rend la même chose que la base :
+// c'est le seul contrôle possible sans fermer DiLand en pleine journée. Il compare, pour
+// chaque commande présente des deux côtés, le produit, le nombre de photos et les
+// recadrages.
+
+if (args.Length > 0 && args[0].Equals("xml", StringComparison.OrdinalIgnoreCase))
+    return ComparerDisqueEtBase(args.Length > 1 && int.TryParse(args[1], out var c) ? c : 5);
 
 var combien = args.Length > 0 && int.TryParse(args[0], out var n) ? n : 5;
 
@@ -118,4 +127,112 @@ static string Empreinte(string chemin)
 {
     var f = new FileInfo(chemin);
     return $"{f.Length}/{f.LastWriteTimeUtc:O}";
+}
+
+/// <summary>
+/// Compare la lecture SUR LE DISQUE à celle de la base, sur les vraies commandes de la
+/// boutique.
+///
+/// C'est le seul contrôle possible sans fermer DiLand en pleine journée : si les deux
+/// lectures s'accordent pendant qu'il tourne, celle du disque tiendra quand il sera
+/// tombé — c'est-à-dire au moment où l'on en a besoin.
+/// </summary>
+static int ComparerDisqueEtBase(int combien)
+{
+    var travail = Path.Combine(Path.GetTempPath(), "studio-diland-probe");
+    var depot = new DiLandRepository(DiLandRepository.DefaultRoot, travail);
+
+    Console.WriteLine($"Dépôt DiLand : {DiLandRepository.DefaultRoot}");
+    Console.WriteLine($"  intégrées : {depot.OrdersDirectory}");
+    Console.WriteLine($"  en attente : {depot.IncomingOrdersDirectory}");
+    Console.WriteLine();
+
+    var surLeDisque = depot.ReadKioskOrdersFromDisk(4000);
+    Console.WriteLine($"{surLeDisque.Count} commande(s) lisible(s) SANS la base.");
+
+    // la base, pour comparer — indisponible n'est pas une erreur ici, c'est même le cas
+    // qu'on cherche à couvrir
+    var parDossier = depot.RefreshSnapshot()
+        ? depot.ReadKioskOrdersAfter(0, 4000)
+            .ToDictionary(c => c.DirectoryName, StringComparer.OrdinalIgnoreCase)
+        : [];
+
+    Console.WriteLine(parDossier.Count == 0
+        ? "Base indisponible ou vide : rien à comparer, la lecture disque est seule."
+        : $"{parDossier.Count} commande(s) dans la base.");
+    Console.WriteLine();
+
+    var seulesSurLeDisque = 0;
+    var ecarts = 0;
+
+    foreach (var contenu in surLeDisque.TakeLast(combien))
+    {
+        var commande = contenu.Order;
+        Console.WriteLine($"  {commande}");
+        Console.WriteLine($"    dossier : {commande.DirectoryName}");
+
+        foreach (var ligne in contenu.Lines)
+        {
+            var recadrees = ligne.Photos.Count(p => p.ApplyCrop);
+            var redressees = ligne.Photos.Count(p => Math.Abs(p.FineRotationDegrees) > 0.001);
+            Console.WriteLine($"    produit : {ligne} — {ligne.Price:0.00} €");
+            Console.WriteLine($"      photos : {ligne.Photos.Count} "
+                + $"({recadrees} recadrée(s), {redressees} redressée(s))");
+
+            foreach (var photo in ligne.Photos.Take(2))
+                Console.WriteLine($"        {photo.DisplayName} ×{photo.Quantity} "
+                    + $"crop {photo.CropX:0.###},{photo.CropY:0.###} "
+                    + $"{photo.CropWidth:0.###}×{photo.CropHeight:0.###}");
+        }
+
+        if (!parDossier.TryGetValue(commande.DirectoryName, out var deLaBase))
+        {
+            seulesSurLeDisque++;
+            Console.WriteLine("    → ABSENTE DE LA BASE : DiLand ne l'a pas encore intégrée.");
+            Console.WriteLine();
+            continue;
+        }
+
+        // le contrôle : mêmes photos, mêmes recadrages des deux côtés
+        var duDisque = contenu.Lines.SelectMany(l => l.Photos)
+            .OrderBy(p => p.FileName, StringComparer.Ordinal).ToList();
+        var deLaBasePhotos = depot.LinesOf(deLaBase).SelectMany(l => l.Photos)
+            .OrderBy(p => p.FileName, StringComparer.Ordinal).ToList();
+
+        if (duDisque.Count != deLaBasePhotos.Count)
+        {
+            ecarts++;
+            Console.WriteLine($"    → ÉCART : {duDisque.Count} photo(s) au disque, "
+                + $"{deLaBasePhotos.Count} en base.");
+        }
+        else
+        {
+            var differentes = duDisque.Where((p, i) =>
+                p.FileName != deLaBasePhotos[i].FileName
+                || Math.Abs(p.CropWidth - deLaBasePhotos[i].CropWidth) > 0.001
+                || Math.Abs(p.CropHeight - deLaBasePhotos[i].CropHeight) > 0.001
+                || Math.Abs(p.FineRotationDegrees - deLaBasePhotos[i].FineRotationDegrees) > 0.001)
+                .ToList();
+
+            if (differentes.Count > 0)
+            {
+                ecarts++;
+                Console.WriteLine($"    → ÉCART sur {differentes.Count} photo(s).");
+            }
+            else
+            {
+                Console.WriteLine("    → identique à la base.");
+            }
+        }
+
+        Console.WriteLine();
+    }
+
+    Console.WriteLine($"{seulesSurLeDisque} commande(s) visible(s) SEULEMENT par le disque "
+        + "— invisibles sans cette lecture.");
+    Console.WriteLine(ecarts == 0
+        ? "Aucun écart entre le disque et la base."
+        : $"ATTENTION : {ecarts} commande(s) diffèrent entre le disque et la base.");
+
+    return ecarts == 0 ? 0 : 1;
 }

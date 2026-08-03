@@ -1,0 +1,72 @@
+<UserControl x:Class="Studio.App.Views.MailSendView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}" Text="Envoyer les photos par courriel"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+            <StackPanel MaxWidth="880" HorizontalAlignment="Left">
+
+                <!-- Le prix D'ABORD : c'est ce qu'on annonce au client avant qu'il dise oui,
+                     et non ce qu'on découvre au ticket. -->
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock x:Name="PrixText" Style="{StaticResource Valeur}"
+                                   FontSize="30" HorizontalAlignment="Left"/>
+                        <TextBlock x:Name="PrixDetailText" Style="{StaticResource Hint}"
+                                   Margin="0,6,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- L'avertissement de configuration : visible seulement si l'envoi n'est
+                     pas utilisable, et il dit alors quoi faire. -->
+                <Border x:Name="AvertissementConfig" Visibility="Collapsed"
+                        Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock x:Name="AvertissementText" Style="{StaticResource Texte}"
+                                   FontSize="18" TextWrapping="Wrap"
+                                   Foreground="{StaticResource DangerBrush}"/>
+                        <Button Style="{StaticResource FlatButton}" MinHeight="48" MinWidth="260"
+                                HorizontalAlignment="Left" Margin="0,12,0,0"
+                                Click="OnOuvrirParametres">⚙  Ouvrir les Paramètres</Button>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Adresse du client" Style="{StaticResource Hint}"/>
+                        <TextBox x:Name="AdresseBox" FontSize="22" Padding="12,10" Margin="0,6,0,0"
+                                 TextChanged="OnAdresseChanged"/>
+
+                        <TextBlock Text="Mot pour le client (facultatif)" Style="{StaticResource Hint}"
+                                   Margin="0,20,0,0"/>
+                        <TextBox x:Name="MotBox" FontSize="18" Padding="12,10" Margin="0,6,0,0"
+                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90"
+                                 VerticalScrollBarVisibility="Auto"/>
+
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,20,0,0" TextWrapping="Wrap"
+                                   Text="Le client reçoit TROIS fichiers : la photo entière non recadrée, le cadrage retenu en version légère (pour les démarches en ligne, qui refusent les gros fichiers), et le cadrage retenu en pleine résolution."/>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock x:Name="EtatText" Style="{StaticResource Texte}" FontSize="18"
+                           Margin="0,16,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="RetourButton" Style="{StaticResource FlatButton}" MinWidth="140"
+                    Click="OnRetour">Retour</Button>
+            <Button x:Name="EnvoyerButton" Style="{StaticResource BigButton}" Margin="12,0,0,0"
+                    Click="OnEnvoyer" IsEnabled="False">✉  Envoyer</Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

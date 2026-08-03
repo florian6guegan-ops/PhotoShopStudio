@@ -6,9 +6,24 @@
 
   <ItemGroup>
     <PackageReference Include="Magick.NET-Q8-x64" Version="14.16.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.20.1" />
     <!-- analyseur du paquet exclu : il exige un compilateur plus récent que le SDK 8.0.422 -->
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" ExcludeAssets="analyzers" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+  </ItemGroup>
+
+  <!--
+    DirectML.dll accompagne ONNX Runtime mais son paquet ne la range pas dans la
+    disposition « runtimes/ » que le SDK sait copier tout seul : sans cette recopie, le
+    reseau de detourage ne demarre pas et l'application retombe silencieusement sur la
+    methode par couleur (constate le 03/08/2026).
+
+    Rien pour le relais DE100, qui tourne en 32 bits : la bibliotheque est x64 et il ne
+    detoure pas.
+  -->
+  <ItemGroup Condition="'$(PlatformTarget)' != 'x86'">
+    <None Include="$(NuGetPackageRoot)microsoft.ai.directml\**\bin\x64-win\DirectML.dll"
+          CopyToOutputDirectory="PreserveNewest" Link="DirectML.dll" Visible="false" />
   </ItemGroup>
 
 </Project>

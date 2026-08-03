@@ -143,12 +143,26 @@ public static class CropMath
 
     /// <summary>
     /// Ramène un recadrage (déplacé/zoomé par l'utilisateur) dans les bornes 0..1
-    /// en préservant sa taille quand c'est possible.
+    /// en préservant sa taille quand c'est possible, et TOUJOURS ses proportions.
+    ///
+    /// Les proportions comptent autant que les bornes : un cadre trop grand pour l'image
+    /// dont on ne rabotait que la hauteur changeait de forme au passage. Sur une photo
+    /// d'identité où la tête est petite dans le cadre, <see cref="IdPhotoFr.ComputeCrop"/>
+    /// demande un cadre plus haut que l'image ; l'ancienne version bornait hauteur et
+    /// largeur séparément et rendait un cadre au rapport quelconque — celui affiché à
+    /// l'écran ne correspondait alors plus au format choisi (signalé le 03/08/2026).
+    /// On réduit donc les deux côtés du même facteur.
     /// </summary>
     public static CropSpec ClampToBounds(CropSpec crop)
     {
-        var w = Math.Clamp(crop.Width, 0.01, 1);
-        var h = Math.Clamp(crop.Height, 0.01, 1);
+        var w = Math.Max(crop.Width, 0.01);
+        var h = Math.Max(crop.Height, 0.01);
+
+        // trop grand pour l'image : on rétrécit les DEUX côtés d'autant, la forme est gardée
+        var reduction = Math.Min(1, Math.Min(1 / w, 1 / h));
+        w *= reduction;
+        h *= reduction;
+
         var x = Math.Clamp(crop.X, 0, 1 - w);
         var y = Math.Clamp(crop.Y, 0, 1 - h);
         return new CropSpec(x, y, w, h);

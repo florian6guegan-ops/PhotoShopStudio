@@ -26,8 +26,20 @@ public sealed record PaperOption(
 /// La cellule est posée en travers : une photo de 5,5×8 devient une case de 8×5,5 sur la
 /// planche. C'est souvent ce qui fait tenir une rangée de plus.
 /// </param>
-public sealed record CustomSheetPlan(PaperOption Paper, int Sheets, int PerSheet, bool CellRotated)
+/// <param name="SheetRotated">
+/// La planche est tirée dans l'autre sens (un 10×15 sorti en 15×10). L'opérateur ne le voit
+/// pas — le pilote oriente la page au tirage — mais ça évite souvent de coucher les
+/// cellules, donc de trahir son cadrage.
+/// </param>
+public sealed record CustomSheetPlan(
+    PaperOption Paper, int Sheets, int PerSheet, bool CellRotated, bool SheetRotated = false)
 {
+    /// <summary>Largeur de la planche, dans le sens retenu.</summary>
+    public double SheetWidthMm => SheetRotated ? Paper.HeightMm : Paper.WidthMm;
+
+    /// <summary>Hauteur de la planche, dans le sens retenu.</summary>
+    public double SheetHeightMm => SheetRotated ? Paper.WidthMm : Paper.HeightMm;
+
     /// <summary>Places perdues sur la dernière planche.</summary>
     public int WastedCells(int totalCells) => Sheets * PerSheet - totalCells;
 }
@@ -57,15 +69,46 @@ public static class CustomSheetLayout
     /// </summary>
     /// <param name="rotated">Vrai si le meilleur résultat s'obtient cellule couchée.</param>
     public static int Capacity(int sheetWidth, int sheetHeight, int cellWidth, int cellHeight,
-        int gap, out bool rotated)
-    {
-        var debout = IdSheetLayout.MaxCopies(sheetWidth, sheetHeight, cellWidth, cellHeight, gap);
-        var couchee = IdSheetLayout.MaxCopies(sheetWidth, sheetHeight, cellHeight, cellWidth, gap);
+        int gap, out bool rotated) =>
+        Capacity(sheetWidth, sheetHeight, cellWidth, cellHeight, gap, out rotated, out _);
 
-        // à égalité on garde le sens demandé : l'opérateur a saisi « 5,5 × 8 », la planche
-        // doit lui ressembler
-        rotated = couchee > debout;
-        return Math.Max(debout, couchee);
+    /// <summary>
+    /// Nombre de photos par planche, LA CELLULE ET LA PLANCHE essayées chacune dans les
+    /// deux sens.
+    ///
+    /// Essayer aussi de tourner la PLANCHE change tout pour l'opérateur. Du 7 × 10 sur un
+    /// 10 × 15 : planche debout, il faut coucher les cellules pour en mettre deux — et le
+    /// cadrage portrait posé à l'écran est alors repris en paysage, donc coupé dans le
+    /// mauvais sens. Planche couchée, deux cellules portrait tiennent côte à côte : même
+    /// rendement, cadrage respecté. Constaté en boutique le 03/08/2026 sur une commande de
+    /// 41 photos.
+    ///
+    /// D'où l'ordre des départages : le rendement d'abord, puis LE SENS DEMANDÉ par
+    /// l'opérateur, et seulement ensuite celui de la planche — qu'il ne voit pas, puisque
+    /// c'est le pilote qui l'oriente au tirage.
+    /// </summary>
+    /// <param name="cellRotated">Vrai si la cellule est posée en travers.</param>
+    /// <param name="sheetRotated">Vrai si la planche est tirée dans l'autre sens.</param>
+    public static int Capacity(int sheetWidth, int sheetHeight, int cellWidth, int cellHeight,
+        int gap, out bool cellRotated, out bool sheetRotated)
+    {
+        (bool Cellule, bool Planche, int Places)[] combinaisons =
+        [
+            (false, false, IdSheetLayout.MaxCopies(sheetWidth, sheetHeight, cellWidth, cellHeight, gap)),
+            (false, true, IdSheetLayout.MaxCopies(sheetHeight, sheetWidth, cellWidth, cellHeight, gap)),
+            (true, false, IdSheetLayout.MaxCopies(sheetWidth, sheetHeight, cellHeight, cellWidth, gap)),
+            (true, true, IdSheetLayout.MaxCopies(sheetHeight, sheetWidth, cellHeight, cellWidth, gap)),
+        ];
+
+        var meilleure = combinaisons
+            .OrderByDescending(c => c.Places)
+            .ThenBy(c => c.Cellule)   // faux avant vrai : le sens saisi l'emporte
+            .ThenBy(c => c.Planche)
+            .First();
+
+        cellRotated = meilleure.Cellule;
+        sheetRotated = meilleure.Planche;
+        return meilleure.Places;
     }
 
     /// <summary>
@@ -112,11 +155,12 @@ public static class CustomSheetLayout
 
         foreach (var papier in candidats)
         {
-            var (parPlanche, pivotee) = CapacityOf(papier, cellWidthMm, cellHeightMm, gapMm);
+            var (parPlanche, cellule, planche) =
+                CapacityDetaillee(papier, cellWidthMm, cellHeightMm, gapMm);
             if (parPlanche < 1) continue; // la photo ne tient pas sur ce papier
 
             var planches = (int)Math.Ceiling((double)totalCells / parPlanche);
-            possibles.Add(new CustomSheetPlan(papier, planches, parPlanche, pivotee));
+            possibles.Add(new CustomSheetPlan(papier, planches, parPlanche, cellule, planche));
         }
 
         if (possibles.Count == 0) return null;
@@ -142,6 +186,17 @@ public static class CustomSheetLayout
     public static (int PerSheet, bool Rotated) CapacityOf(PaperOption paper,
         double cellWidthMm, double cellHeightMm, double gapMm = DefaultGapMm)
     {
+        var (places, cellule, _) = CapacityDetaillee(paper, cellWidthMm, cellHeightMm, gapMm);
+        return (places, cellule);
+    }
+
+    /// <summary>
+    /// Capacité d'un papier, en disant AUSSI dans quel sens la planche est tirée.
+    /// Voir <see cref="Capacity(int,int,int,int,int,out bool,out bool)"/>.
+    /// </summary>
+    public static (int PerSheet, bool CellRotated, bool SheetRotated) CapacityDetaillee(
+        PaperOption paper, double cellWidthMm, double cellHeightMm, double gapMm = DefaultGapMm)
+    {
         ArgumentNullException.ThrowIfNull(paper);
 
         var parPlanche = Capacity(
@@ -150,9 +205,9 @@ public static class CustomSheetLayout
             MmPx.ToPixels(cellWidthMm, paper.Dpi),
             MmPx.ToPixels(cellHeightMm, paper.Dpi),
             MmPx.ToPixels(gapMm, paper.Dpi),
-            out var pivotee);
+            out var cellule, out var planche);
 
-        return (parPlanche, pivotee);
+        return (parPlanche, cellule, planche);
     }
 
     /// <summary>

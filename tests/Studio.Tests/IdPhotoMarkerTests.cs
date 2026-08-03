@@ -67,7 +67,9 @@ public class IdPhotoMarkerTests
         var cadre = IdPhotoFr.CropFromMarkers(crane, menton, Largeur, Hauteur);
         var mesure = IdPhotoFr.Check(cadre, tete);
 
-        Assert.Equal(IdPhotoFr.TargetHeadMm, mesure.HeadHeightMm, 1);
+        // Check rend des millimètres de la NORME ; la cible est en unités d'estimateur.
+        Assert.Equal(IdPhotoFr.TargetHeadMm / IdPhotoFr.SurestimationDeLEstimateur,
+            mesure.HeadHeightMm, 1);
         Assert.Equal(IdPhotoFr.TargetCrownMarginMm, mesure.CrownMarginMm, 1);
         Assert.True(mesure.Compliant, "le cadrage déduit des repères doit être conforme");
     }

@@ -86,7 +86,12 @@ public class IdPhotoParityTests
     [Fact]
     public void La_hauteur_visee_tombe_entre_les_deux_bornes()
     {
-        Assert.InRange(IdPhotoFr.TargetHeadMm, IdPhotoFr.HeadMinMm, IdPhotoFr.HeadMaxMm);
+        // La cible de cadrage est exprimée dans les unités de l'estimateur, qui lit haut :
+        // on la ramène à la norme avant de la comparer à ses bornes, comme le fait
+        // IdPhotoFr.Check. Sans cette conversion on comparerait des pommes et des poires.
+        var viseeSelonLaNorme = IdPhotoFr.TargetHeadMm / IdPhotoFr.SurestimationDeLEstimateur;
+
+        Assert.InRange(viseeSelonLaNorme, IdPhotoFr.HeadMinMm, IdPhotoFr.HeadMaxMm);
     }
 
     /// <summary>Les cotes du référentiel sont en millimètres, pas en unités internes.</summary>
