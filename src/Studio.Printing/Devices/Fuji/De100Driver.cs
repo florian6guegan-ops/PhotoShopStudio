@@ -160,6 +160,75 @@ public sealed class De100Driver : IDisposable
             media, supplies, formats);
     }
 
+    /// <summary>
+    /// La machine sait-elle produire ce format ? Réponse SANS rien imprimer.
+    ///
+    /// <c>PIF_DevGetPixelCount</c> demande à la machine la définition attendue pour un
+    /// format donné. Un format qu'elle ne sait pas produire ne rend pas de pixels : c'est
+    /// donc un contrôle, et le seul qui interroge la MACHINE plutôt que notre table.
+    ///
+    /// Elle existe pour le 21×29,7 des commandes 04-015 à 04-029 du 04/08/2026 : accepté à
+    /// l'envoi, refusé dix secondes plus tard, sans message ni événement machine — le
+    /// profil exact d'un format que la configuration du minilab ne connaît pas.
+    /// </summary>
+    /// <param name="machineId">Machine visée.</param>
+    /// <param name="largeurMm">Largeur du tirage, en millimètres.</param>
+    /// <param name="hauteurMm">Hauteur du tirage, en millimètres.</param>
+    /// <param name="ppp">Résolution demandée.</param>
+    /// <returns>Le verdict du SDK et, s'il accepte, la définition attendue.</returns>
+    public (PifResult Result, uint Width, uint Height) FormatAccepte(
+        char machineId, double largeurMm, double hauteurMm, uint ppp = 300)
+    {
+        var taille = new ST_PRINT_SIZE
+        {
+            mmPaperWidth = largeurMm,
+            mmPaperHeight = hauteurMm,
+            resolution = ppp,
+        };
+
+        uint w = 0, h = 0;
+        var resultat = (PifResult)De100Interop.PIF_DevGetPixelCount(machineId, ref taille, ref w, ref h);
+        return (resultat, w, h);
+    }
+
+    /// <summary>
+    /// Lit des propriétés de la machine par leur nom, y compris indexées.
+    ///
+    /// Outil de DIAGNOSTIC : le SDK n'expose aucune liste des propriétés disponibles, et
+    /// celles que le pilote de DiLand utilise ne sont sûrement pas les seules. On tâtonne
+    /// donc par noms, ce qui ne coûte rien — une propriété inconnue rend une chaîne vide.
+    /// </summary>
+    /// <param name="machineId">Machine visée.</param>
+    /// <param name="noms">Noms de propriétés à tenter.</param>
+    /// <param name="indices">Indices à essayer pour chacune ; 0 = lecture directe.</param>
+    /// <returns>Les seules propriétés qui ont rendu quelque chose.</returns>
+    public IReadOnlyList<(string Nom, uint Indice, string Valeur)> LireProprietes(
+        char machineId, IEnumerable<string> noms, IEnumerable<uint> indices)
+    {
+        ArgumentNullException.ThrowIfNull(noms);
+        ArgumentNullException.ThrowIfNull(indices);
+
+        var handle = IntPtr.Zero;
+        Check(De100Interop.PIF_DevGetPrinterInfo(machineId, ref handle), nameof(De100Interop.PIF_DevGetPrinterInfo));
+
+        var trouvees = new List<(string, uint, string)>();
+        try
+        {
+            foreach (var nom in noms)
+                foreach (var indice in indices)
+                {
+                    var valeur = indice == 0 ? ReadValue(handle, nom) : ReadIndexedValue(handle, nom, indice);
+                    if (!string.IsNullOrWhiteSpace(valeur)) trouvees.Add((nom, indice, valeur));
+                }
+        }
+        finally
+        {
+            De100Interop.PHIF_ReleaseHandle(handle);
+        }
+
+        return trouvees;
+    }
+
     private static (string Model, string IpAddress) ReadSetupInfo(char machineId)
     {
         var handle = IntPtr.Zero;
@@ -305,30 +374,100 @@ public sealed class De100Driver : IDisposable
         return (next % 65535) + 1;
     }
 
+    /// <summary>
+    /// Tirages qu'on relit au plus dans une commande en échec. Une enveloppe de la boutique
+    /// en compte quelques dizaines ; la borne est là pour qu'une valeur aberrante rendue
+    /// par le SDK ne fasse pas tourner la boucle indéfiniment.
+    /// </summary>
+    private const int MaxTiragesRelus = 200;
+
+    /// <summary>
+    /// <b>Tout ce callback est protégé.</b> Il est appelé par le natif : une exception qui
+    /// remonte jusqu'à lui ne se rattrape nulle part et emporte le processus — donc le
+    /// relais, donc le suivi de TOUS les tirages en cours.
+    /// </summary>
     private void OnOrderCallback(IntPtr orderInfoPtr)
     {
         if (orderInfoPtr == IntPtr.Zero) return;
 
-        var order = Marshal.PtrToStructure<ST_ORDER_INFO>(orderInfoPtr);
+        try
+        {
+            var order = Marshal.PtrToStructure<ST_ORDER_INFO>(orderInfoPtr);
+            var statut = (De100OrderStatus)order.status;
 
-        // un callback vaut pour toute la commande, donc pour chacune de ses photos
-        foreach (var result in _tracker.Report(order.ohnd, (De100OrderStatus)order.status, DateTimeOffset.Now))
-            JobFinished?.Invoke(this, result);
+            // Le MOTIF du refus, lu à la source. Sans lui, un tirage refusé ne disait que
+            // « erreur signalée par le minilab » — et le 21×29,7 des commandes 04-015,
+            // 04-020 et 04-027 du 04/08/2026 est resté inexplicable trois fois de suite.
+            var motif = statut == De100OrderStatus.Error ? LireLesMotifs(order) : "";
+
+            // un callback vaut pour toute la commande, donc pour chacune de ses photos
+            foreach (var result in _tracker.Report(order.ohnd, statut, DateTimeOffset.Now, motif))
+                JobFinished?.Invoke(this, result);
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"DE100 : callback de commande en défaut — {ex.Message}");
+        }
     }
 
+    /// <summary>
+    /// Ce que la machine dit d'une commande en échec, tirage par tirage.
+    ///
+    /// <c>ST_PRINT_INFO.errmsg</c> porte 512 caractères de message, et <c>PIF_GetPrintInfo</c>
+    /// les relit par indice. La fonction était déclarée depuis le début et n'était appelée
+    /// nulle part : le motif existait, personne n'allait le chercher.
+    ///
+    /// Les doublons sont écartés : sur une enveloppe de trente tirages refusés pour la même
+    /// raison, la répéter trente fois ne dit rien de plus.
+    /// </summary>
+    private string LireLesMotifs(ST_ORDER_INFO order)
+    {
+        // Les cotes de ST_ORDER_INFO sont en DIXIÈMES de millimètre : 2100 × 2970 pour un
+        // 210 × 297. Les afficher brutes laissait croire à un format de deux mètres.
+        Log?.Invoke($"DE100 : commande {order.orderNo} en erreur sur la machine {order.machineID} " +
+                    $"— format « {order.printSizeName} », " +
+                    $"{order.mmPaperWidth / 10:0.#}×{order.mmPaperHeight / 10:0.#} mm, " +
+                    $"{order.printedNum}/{order.orderNum} tirage(s) sortis.");
+
+        // ⚠ On n'appelle PLUS le SDK depuis ce callback.
+        //
+        // `PIF_GetPrintInfo` y était lu pour récupérer `errmsg`. Deux constats du
+        // 04/08/2026 : l'indice 0 rend `BadParam` — le SDK compte à partir de 1, comme
+        // pour toutes ses propriétés indexées — et surtout le RELAIS MOURAIT quelques
+        // secondes après l'appel, « Pipe is broken », commande 04-041. Rentrer dans le SDK
+        // depuis une callback qu'il vient d'émettre ne lui convient pas.
+        //
+        // Ce qu'on perd : le message de la machine, qui était vide dans tous les cas
+        // observés. Ce qu'on garde : le format, les cotes et le compte des sorties, qui
+        // ont suffi à trouver la cause — l'image en niveaux de gris.
+        return $"la machine n'a pas donné de motif (format demandé : « {order.printSizeName} », " +
+               $"{order.printedNum}/{order.orderNum} sortis)";
+    }
+
+    /// <summary>Journal optionnel du pilote.</summary>
+    public Action<string>? Log { get; set; }
+
+    /// <inheritdoc cref="OnOrderCallback"/>
     private void OnEventCallback(IntPtr eventInfoPtr, uint onOff)
     {
         if (eventInfoPtr == IntPtr.Zero) return;
 
-        var evt = Marshal.PtrToStructure<ST_EVENT_INFO>(eventInfoPtr);
+        try
+        {
+            var evt = Marshal.PtrToStructure<ST_EVENT_INFO>(eventInfoPtr);
 
-        MachineEvent?.Invoke(this, new De100MachineEvent(
-            evt.machineID,
-            (De100ErrorLevel)evt.errorLevel,
-            evt.errorNo,
-            string.Join(' ', new[] { evt.errorString1, evt.errorString2, evt.errorString3 }
-                .Where(s => !string.IsNullOrWhiteSpace(s))),
-            IsActive: onOff != 0));
+            MachineEvent?.Invoke(this, new De100MachineEvent(
+                evt.machineID,
+                (De100ErrorLevel)evt.errorLevel,
+                evt.errorNo,
+                string.Join(' ', new[] { evt.errorString1, evt.errorString2, evt.errorString3 }
+                    .Where(s => !string.IsNullOrWhiteSpace(s))),
+                IsActive: onOff != 0));
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"DE100 : callback d'événement en défaut — {ex.Message}");
+        }
     }
 
     private static string ReadValue(IntPtr handle, string name)

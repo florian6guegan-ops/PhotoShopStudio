@@ -261,6 +261,82 @@ public static class DnpSpouleur
         _ => 0,
     };
 
+    /// <summary>
+    /// Supprime tout ce qui attend dans la file Windows d'une imprimante.
+    ///
+    /// <b>Le geste de dernier recours</b>, et le seul qui débloque certaines situations :
+    /// le 04/08/2026, trois travaux sont restés deux heures dans la file de la DS620 sans
+    /// jamais imprimer une page — deux d'entre eux venus de DiLand. La machine se déclarait
+    /// prête, aucune erreur n'était signalée, et rien ne sortait. Il fallait passer par les
+    /// fenêtres d'impression de Windows pour s'en sortir.
+    ///
+    /// <b>Ce qui est supprimé ne revient pas.</b> L'appelant DOIT donc demander
+    /// confirmation, et dire ce qu'il efface. Les tirages perdus se refont depuis
+    /// « Commandes du jour ».
+    /// </summary>
+    /// <param name="nomDeFile">Nom de la file Windows.</param>
+    /// <returns>Le nombre de travaux supprimés, ou -1 si la file n'a pas répondu.</returns>
+    public static int Vider(string nomDeFile)
+    {
+        if (string.IsNullOrWhiteSpace(nomDeFile)) return -1;
+
+        // ce qu'il y avait AVANT : après la purge, la file est vide et on ne pourrait plus
+        // le dire à l'opérateur
+        var (restantes, travaux, _) = LireLaFile(nomDeFile);
+
+        // Chaque travail est supprimé PAR SON CHEMIN, un par un.
+        //
+        // `Win32_Printer.CancelAllJobs` semblait plus direct, mais il échoue avec
+        // « Operation is not valid due to the current state of the object » dès que
+        // l'instance vient d'une requête à propriétés restreintes : sans son chemin
+        // complet, WMI refuse d'invoquer une méthode dessus. Constaté le 04/08/2026.
+        //
+        // La suppression travail par travail a de toute façon deux avantages : elle
+        // fonctionne aussi quand un seul travail est fautif, et elle dit combien elle en a
+        // réellement retiré.
+        var supprimes = 0;
+        var echecs = 0;
+
+        try
+        {
+            using var recherche = new ManagementObjectSearcher(
+                new SelectQuery("Win32_PrintJob"));
+
+            foreach (var travail in recherche.Get().Cast<ManagementObject>())
+            {
+                using (travail)
+                {
+                    if (travail["Name"] is not string nom) continue;
+                    if (!nom.StartsWith(nomDeFile + ",", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    try
+                    {
+                        travail.Delete();
+                        supprimes++;
+                    }
+                    catch (Exception ex)
+                    {
+                        // un travail que Windows tient encore : on continue, les autres
+                        // partiront quand même
+                        echecs++;
+                        Log?.Invoke($"Spouleur : « {nom} » n'a pas pu être supprimé — {ex.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Spouleur : impossible de lire la file « {nomDeFile} » — {ex.Message}");
+            return -1;
+        }
+
+        Log?.Invoke($"Spouleur : file « {nomDeFile} » — {supprimes} travail/travaux supprimé(s) " +
+                    $"sur {travaux}, {restantes} page(s) qui ne sortiront pas" +
+                    (echecs > 0 ? $", {echecs} refus" : "") + ".");
+
+        return supprimes;
+    }
+
     /// <summary>Le libellé montré à l'opérateur, avec ce qui reste à sortir.</summary>
     public static string Decrire(EtatSpouleurDnp etat)
     {

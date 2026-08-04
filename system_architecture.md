@@ -27,6 +27,32 @@ largement assez pour une planche où le client coche un numéro.
 espérant l'obtenir exactement — il recevra le palier au-dessus. S'il lui faut une taille précise,
 qu'il redimensionne lui-même après coup.
 
+**L'indication de taille au décodeur JPEG vaut la taille DEMANDÉE, pas son double.** Le
+décodeur ne sait réduire que par 1/2, 1/4, 1/8, et choisit le premier facteur qui reste au
+moins aussi grand que l'indication : lui demander 1024 pour une vignette de 512 lui faisait
+décoder deux fois trop de pixels. Mesuré le 04/08/2026 sur vingt photos de 6 Mo
+(commande 08-012) :
+
+| | indication doublée | indication juste |
+| --- | --- | --- |
+| vignettes de la grille (512) | 3 557 ms | **2 378 ms** |
+| aperçu « Modifier » / « Recadrer » (2048) | 10 037 ms | **4 425 ms** |
+
+La vignette produite est à un kilo-octet près la même — sur un 7686 × 5124, l'indication
+juste fait décoder du 961 × 641, encore près du double de la vignette finale. C'est
+l'aperçu qui gagne le plus : à 4096, le décodeur ne pouvait plus réduire du tout et
+dépliait les 39 Mpx.
+
+**La définition de l'original voyage AVEC la vignette.** `Lire()` rend la vignette et les
+cotes de l'original, mises en cache dans un fichier compagnon `.dim`. La grille les
+demandait à `ImagePipeline.GetOrientedSize`, soit un SECOND parcours du fichier, payé même
+quand la vignette était déjà en cache : rouvrir un dossier déjà vu touchait les
+trente-trois originaux pour rien. Sur une carte SD, ce qui coûte est d'ouvrir le fichier,
+pas de le décoder.
+
+Un compagnon absent — les vignettes mises en cache avant lui — fait retomber sur la lecture
+de l'original, une fois, puis le dépose. Rien à purger.
+
 Vérifié par `tests/Studio.Tests/ThumbnailCacheTests.cs`.
 
 ---
@@ -66,6 +92,74 @@ Côté `PhotoGridView`, les rapports viennent de `PhotoItem.SourceAspect`, mais 
 carrées imaginaires.
 
 Mesuré sur 29 photos de 6 Mpx, cache chaud : **~550 ms**, contre plusieurs secondes avant.
+
+---
+
+## Le spouleur est alimenté AU RYTHME DE LA MACHINE
+
+`CadenceSpouleur`, appelée par `PrintOrchestrator.PrintPages` avant chaque page.
+
+**Ce qu'on faisait avant** : remettre les pages au spouleur aussi vite qu'il les acceptait —
+onze tirages en cinq secondes sur la commande 04-024 du 04/08/2026. Trois conséquences,
+toutes vues en boutique :
+
+1. **on ne pouvait plus reprendre au bon endroit.** Sur six cents photos, une panne d'encre
+   à la troisième laissait quand même partir les cinq cent quatre-vingt-dix-sept autres :
+   le point de reprise disait « 600 remises », la machine n'en avait sorti que deux ;
+2. **la machine se bloquait** : une DS620 qui reçoit onze travaux à la file, dont certains
+   changent de forme de papier, s'arrête au premier ;
+3. **l'opérateur ne pouvait plus rien arrêter** : ce que Windows a pris lui appartient.
+
+**Ce qu'on fait maintenant**, avant chaque page :
+
+| Situation | Décision |
+| --- | --- |
+| machine en panne, en pause, hors ligne | on s'arrête, l'enveloppe part en attente |
+| plus de `PlafondEnFile` (3) pages en file | on patiente, on relit |
+| file sous le plafond | la page part |
+| file illisible (pilote avare, Print to PDF) | on imprime d'un trait, comme avant |
+
+Et **on attend que la file se vide** avant de déclarer l'enveloppe imprimée : sans cette
+attente, une commande de six cents photos passait « imprimée » cinq secondes après le
+premier tirage.
+
+Quatre points à ne pas défaire :
+
+1. **le point de reprise compte ce qui est SORTI**, pas ce qui a été remis
+   (`PagesSorties` = remises − file). Le nom du champ `PrintResumePoint.PagesRemises` est
+   resté pour les fichiers déjà sur les disques ;
+2. **une file illisible rend `PagesEnFile = -1`**, et `PagesSorties` s'en tient alors aux
+   pages remises. Soustraire un nombre négatif annoncerait plus de sorties qu'il n'en est
+   parti, et la reprise **sauterait une photo** — défaut attrapé par un essai ;
+3. **c'est le temps SANS PROGRÈS qui déclenche l'abandon**, jamais la durée totale : une
+   commande de six cents photos passe légitimement une heure dans cette boucle ;
+4. **la reprise REFAIT la dernière photo sortie** (`CadenceSpouleur.ReprendreA`). Quand une
+   machine s'arrête faute d'encre ou de ruban, celle qui était en cours sort pâle ou à
+   moitié, et rien ne permet de le savoir depuis le logiciel. Une feuille refaite coûte
+   quelques centimes ; une photo ratée au milieu d'un paquet de six cents coûte le paquet.
+
+Vérifié par `CadenceSpouleurTests`, sans imprimante.
+
+---
+
+## Deux produits ne doivent jamais être indiscernables
+
+Le catalogue de la boutique porte **deux produits nommés « 10x15 »** : `10x15`
+(102 × 152, minilab) et `10x15-dnp` (105 × 156, DS620). Triés par surface, leurs deux
+tuiles se suivent dans la grille des formats, et seule une ligne de texte gris les
+distinguait. La commande 04-024 du 04/08/2026 est partie sur la DNP alors qu'elle visait le
+minilab : onze tirages, une seule photo sortie, et la machine bloquée derrière.
+
+Deux garde-fous, aux deux moments où l'on peut encore se reprendre :
+
+- **la tuile de format** porte la machine en PASTILLE colorée, plus en petit texte —
+  minilab en bleu, sublimation en violet, Epson en vert ;
+- **la grille des photos** affiche « Sortie : … » de la même couleur, à côté du produit, et
+  **masque le choix de machine du minilab** quand le produit n'y va pas — il ne commandait
+  rien et laissait croire le contraire.
+
+La vraie correction serait de renommer l'un des deux produits au catalogue. Elle appartient
+à l'exploitant, pas au code : le nom d'un produit est ce qu'il annonce au client.
 
 ---
 
@@ -386,6 +480,52 @@ fait en 5,5 × 8 remettrait tous les cadres au centre, au mauvais rapport.
 file des tirages que l'IMPRIMANTE fait attendre (`PendingPrintQueue`). Ici, c'est
 l'opérateur qui met de côté, et rien n'est encore commandé.
 
+### Le bouton « Accueil » : une sortie qui ne perd rien
+
+Dans l'en-tête, à côté de « Retour », donc visible depuis TOUS les écrans. Il met de côté
+ce qui est en préparation, puis revient à l'accueil.
+
+- **Le travail est cherché dans toute la PILE de navigation**, pas sur le seul écran
+  affiché (`Reprises.Trouver`, `Navigator.Ecrans`) : depuis le recadrage d'une photo, c'est
+  la grille qui porte la commande, deux écrans plus bas.
+- **Les écrans qui savent se mettre de côté implémentent `ITravailReprenable`** :
+  `PhotoGridView` et `IdPhotoView`. Ailleurs, le bouton revient simplement à l'accueil — il
+  n'y a rien à garder.
+- **Il ramène TOUJOURS à l'accueil**, même si l'enregistrement échoue : c'est sa promesse,
+  et un opérateur coincé sur un écran parce qu'un fichier ne s'écrit pas serait le pire des
+  deux maux. L'échec va au journal.
+- **Rien n'est annoncé à l'écran** : l'accueil montre déjà le bandeau « En attente » avec la
+  commande et son heure, sous les yeux de celui qui vient d'appuyer. Une boîte de dialogue à
+  chaque retour serait un clic de plus, cinquante fois par jour.
+- **Une grille vide n'est pas mise de côté** : ouvrir un dossier sans rien y faire ne doit
+  pas déposer une ligne « 0 photo » à chaque passage.
+- **Le mode borne n'a ni « Retour » ni « Accueil »** : le parcours client est verrouillé.
+
+### Une planche d'identité se met de côté aussi
+
+`TravailEnAttente.Identite` (`IdentiteEnAttente`) : la norme visée, les chemins imposés par
+l'écran de sélection, la photo affichée, et le travail de chaque photo
+(`PhotoIdentiteEnAttente` — cadrage, repères de crâne et de menton, visage détecté, axe,
+redressement, corrections, noir et blanc, fond blanc, photos par planche, planches).
+
+- **La norme est enregistrée À PLAT**, pas par son nom : le référentiel compte 274
+  documents et peut être rechargé entre-temps, alors que les cotes ne bougent pas. C'est
+  aussi ce qui permet de reprendre une planche dont la norme aurait disparu.
+- **`PhotoIdentiteEnAttente` est une classe à part de `PhotoEnAttente`** : une photo
+  d'identité n'a ni produit, ni finition, ni découpe, et porte en revanche des repères de
+  visage qui n'ont aucun sens sur un tirage. Les mêler ferait un objet dont la moitié des
+  champs serait toujours vide.
+- **Une planche se reprend dans l'écran d'IDENTITÉ** (`HomeView.OnAttenteReprendre`
+  branche sur `travail.Identite`). La rouvrir dans la grille des tirages donnerait un cadre
+  libre — pas de gabarit, pas de repères — c'est-à-dire précisément ce qui ne permet pas de
+  faire une photo d'identité.
+- **`StripItem.Prete` est reposé avec le reste**, avant toute ouverture de photo : c'est lui
+  qui empêche la détection de visage de se relancer et d'écraser les repères qu'on vient de
+  reprendre.
+- **L'entrée est soldée à l'impression**, par `IdSheetRecapView` (paramètre `attenteId`) :
+  la laisser ferait proposer « Reprendre » sur une planche déjà tirée, et on la tirerait
+  deux fois.
+
 ---
 
 ## Détourage du fond blanc : deux méthodes, et un réglage par poste
@@ -496,8 +636,26 @@ Autres pièges de cet écran :
 
 **Sur le poste de l'atelier, cette lecture ne rendra jamais rien** : la Precision 3620 n'a
 aucune carte sans fil (`netsh wlan show interfaces` → « Il n'existe aucune interface sans fil
-sur le système »). C'est `config/wifi.json`, rempli à la main, qui fait vivre le code — et il
-l'emporte toujours sur la lecture automatique. Celle-ci ne sert que sur un portable.
+sur le système »). C'est `config/wifi.json` qui fait vivre le code — et il l'emporte toujours
+sur la lecture automatique. Celle-ci ne sert que sur un portable.
+
+**Il se remplit dans Paramètres**, et non plus à la main : nom du réseau, clé, sécurité,
+nom masqué, avec l'aperçu du code à côté. Un fichier JSON qu'il faut connaître pour le
+trouver n'existe pas, du point de vue de celui qui installe un second poste opérateur — et
+c'est bien ce qui s'est passé.
+
+Deux points du formulaire :
+
+- **la clé est en clair**, et c'est voulu : c'est une clé qu'on donne aux clients, affichée
+  au mur dans la plupart des boutiques. La masquer obligerait à la ressaisir en aveugle
+  pour corriger une faute de frappe ;
+- **l'aperçu se fabrique sur ce qui est À L'ÉCRAN**, avant enregistrement : on scanne avec
+  son propre téléphone et l'on sait tout de suite si le code marche, plutôt que de le
+  découvrir devant un client. Même raison que le message d'essai du courriel.
+
+`AppServices.SaveWifi` remplace l'objet en mémoire et pas seulement le fichier :
+`PhoneUploadView` lit `Services.Wifi` à chaque affichage, et sans cela le code aurait gardé
+l'ancien réseau jusqu'au prochain lancement.
 
 Sans réseau connu, la colonne WiFi de `PhoneUploadView` **disparaît** et le code d'envoi
 reprend toute la place. C'est voulu : un poste en Ethernet est un cas normal, et
@@ -628,6 +786,24 @@ vides revient à les vendre.
 
 ---
 
+## Un message d'erreur ne se coupe jamais
+
+`PrintBannerText` portait `TextTrimming="CharacterEllipsis"` et `MaxWidth="620"` ; les deux
+textes du bandeau des machines aussi. Or c'est la FIN qui compte : un motif de panne du
+minilab tient en une phrase dont on perdait la moitié.
+
+Les trois passent en `TextWrapping="Wrap"`. La largeur maximale reste — le bandeau ne doit
+pas manger le titre de l'écran — mais c'est la HAUTEUR qui s'adapte désormais.
+
+**Règle : aucun texte qui porte un diagnostic ne doit être tronqué.** Une étiquette, un nom
+de fichier, un libellé de produit, oui. Un message d'erreur, jamais.
+
+Le bandeau passe aussi en ALERTE dès qu'un tirage est refusé, sans attendre la fin de la
+commande : le fond vert « tout va bien » sur une machine qui refuse est exactement ce qui
+fait rater un incident.
+
+---
+
 ## Le noir sur noir : WPF ne connaît pas notre palette
 
 L'application est sombre (`PageBrush #12181E`, `CardBrush #1E2731`), mais **WPF donne le
@@ -646,10 +822,38 @@ Deux choses à savoir avant de « simplifier » :
    sur 22 candidats trouvés par expression régulière, dix étaient de fausses alertes.
 
 2. **Aucun style IMPLICITE `TargetType="TextBlock"` n'est posé, et c'est délibéré.** Il
-   repeindrait aussi le contenu des `ComboBoxItem` et `ListBoxItem`, qui gardent le fond
-   CLAIR du système : on troquerait du noir sur noir contre du blanc sur blanc. Le jour où
-   on voudra vraiment un style implicite, il faudra habiller les listes et les menus
-   déroulants d'abord.
+   repeindrait aussi le contenu des `ListBoxItem`, qui gardent le fond CLAIR du système :
+   on troquerait du noir sur noir contre du blanc sur blanc. Le jour où on voudra vraiment
+   un style implicite, il faudra habiller les listes d'abord — les menus déroulants, eux,
+   le sont désormais (ci-dessous).
+
+---
+
+## Les menus déroulants sont habillés, et le style est IMPLICITE
+
+`App.xaml` porte un `Style TargetType="ComboBox"` et un `Style TargetType="ComboBoxItem"`
+sans clé : les vingt-neuf listes de l'application en héritent sans qu'on ait à les toucher
+une à une. Fond `FieldBrush #232D38`, liseré qui passe à l'accent au survol et à
+l'ouverture, chevron accentué, liste déroulante sur `CardBrush` bordée d'accent, survol et
+sélection en accent.
+
+**Piège à connaître : un style NOMMÉ ne reprend pas le style implicite.** Les dix-sept
+listes de `LargeFormatPrintView` passent par un style local `Cbo` ; sans
+`BasedOn="{StaticResource {x:Type ComboBox}}"`, elles seraient restées grises au milieu
+d'un écran sombre. Tout nouveau style de `ComboBox` doit porter ce `BasedOn`.
+
+Trois détails du gabarit qui ont une raison, et que seul l'écran a révélés :
+
+- **le popup DOIT s'appeler `PART_Popup`.** `ComboBox` le cherche par ce nom, et c'est ce
+  qui déclenche le calcul de `SelectionBoxItemTemplate`. Sous un autre nom, la ligne fermée
+  retombe sur le `ToString()` de l'objet : la liste des papiers de l'écran identité
+  affichait « ProductChoice { Product = Studio.Core.Domain.Product, Capacite = 8, … } » au
+  lieu du libellé de `DisplayMemberPath` ;
+- **le libellé vit dans un `Border` qui réserve la place du chevron** (30 px). Poser
+  simplement la flèche à droite dans la grille ne suffit pas : le texte passe dessous, et
+  « WPA / WPA2 / WPA3 (le cas courant) » recouvrait purement et simplement le chevron ;
+- la liste déroulante est un `Popup` à fenêtre transparente : son fond est porté par le
+  `Border` intérieur, faute de quoi les coins arrondis laisseraient voir l'écran.
 
 ---
 
@@ -933,3 +1137,492 @@ courante. Trois règles :
 calage sur DiLand du 03/08 — trop serré sur les tirages réels. La TAILLE de la tête ne
 bouge pas : seul le cadre remonte de 1,25 mm sur 45. Les bornes de conformité se calculent
 depuis la cible et suivent toutes seules.
+
+---
+
+## Le parcours identité : TROIS écrans, et l'état vit dans la photo
+
+`IdPhotoPickerView` (choisir) → `IdPhotoView` (cadrer) → `IdSheetRecapView` (récapituler,
+puis imprimer). Refonte du 04/08/2026, sur le modèle de DiLand que les opérateurs
+connaissent.
+
+**Ce que l'écran unique coûtait.** Il recevait le dossier entier — 455 photos sur la carte
+de l'atelier — dans une bande de 240 pixels, et n'en traitait qu'UNE : changer de photo
+remettait à neutre repères, cadrage, corrections et redressement. Deux personnes d'une
+même famille donnaient donc deux commandes, deux tickets et deux passages en caisse.
+
+Quatre règles à ne pas défaire :
+
+1. **Le travail vit dans `StripItem`, pas dans les champs de l'écran.** L'écran DÉPOSE
+   (`SauverDansLaPhoto`) avant de changer de photo et REPREND (`ReprendreDeLaPhoto`)
+   ensuite. Sans le dépôt préalable, on perd ce qu'on vient de régler sur celle qu'on
+   quitte — c'était exactement le défaut d'avant.
+
+2. **`StripItem.Prete` empêche la re-détection.** Rouvrir une photo relancerait la
+   détection de visage et écraserait le placement manuel que l'opérateur venait de
+   corriger. Les repères ne se posent qu'à la PREMIÈRE ouverture.
+
+3. **`_enReprise` fait taire les gestionnaires des deux cases.** Reposer « fond blanc »
+   pendant une reprise relancerait un détourage de quatre secondes, alors qu'on l'ordonne
+   nous-même juste après.
+
+4. **L'aperçu du récapitulatif part de la VIGNETTE, jamais de l'original.** Une planche
+   pleine résolution prend une quinzaine de secondes sur 24 Mpx (journal du 04/08/2026), et
+   il en faudrait autant par photo du lot. Le cadrage est en coordonnées relatives : il
+   tombe au même endroit quelle que soit la définition. Le TIRAGE, lui, repart toujours de
+   l'original. La résolution d'aperçu (150 ppp) est **revérifiée par
+   `IdSheetRecapView.PppDApercu`** : elle se compte en pixels entiers, et montrer sept
+   cases là où huit sortiront serait pire que pas d'aperçu — c'est le compte qu'on vient
+   vérifier.
+
+**Le parcours part de DEUX tuiles** — l'accueil et « type de produit » — et sa suite
+d'écrans était recopiée mot pour mot aux deux endroits. Ajouter l'écran de sélection n'en a
+donc d'abord corrigé qu'une moitié : par l'accueil, celui qu'on utilise réellement en
+boutique, on tombait toujours sur le cadrage avec les 455 photos. Il vit désormais dans
+`ParcoursIdentite.Ouvrir()`. **Les BOUTONS se doublent ; ce qu'ils font, non.**
+
+**Un `WrapPanel` replie ses enfants DIRECTS, un par un.** Les trois boutons d'un compteur
+posés à plat s'y coupaient en deux lignes, et le « + » des Planches s'affichait seul sous
+la liste des papiers. Chaque réglage de la barre est donc un `StackPanel` : un groupe se
+replie entier ou pas du tout.
+
+---
+
+## Correction d'exposition par produit : l'écart de la MACHINE
+
+`Product.PrintExposure`, en diaphragmes, ajoutée au rendu par
+`PrintOrchestrator.AvecLaCorrectionDuProduit`.
+
+⚠ **Aucun produit ne l'utilise.** Elle avait été posée à +0,25 sur `ID-FR-6` et
+`e-photo-dnp` le 04/08/2026, la DS620 sortant plus sombre que le minilab sur le même
+fichier ; l'exploitant l'a fait annuler le jour même, sur tirages. Les deux produits sont
+donc revenus à **0**, dans le catalogue de la boutique comme dans celui du dépôt.
+
+Le mécanisme reste en place et réglable à la fiche produit : l'écart de machine est réel,
+et il se remesurera sur des tirages plutôt que dans le code. Ce qui suit vaut pour le jour
+où on le remettra.
+
+Trois points :
+
+1. **C'est un réglage de PRODUIT, pas une constante.** L'écart dépend de la machine et du
+   papier, et se corrige au dixième de diaphragme après avoir regardé un tirage réel.
+   Champ « Exposition à l'impression » de la fiche produit, borné à ±2 IL.
+2. **Elle ne touche pas l'aperçu de cadrage.** L'opérateur cadre sur ce qu'il voit ; une
+   photo éclaircie à l'écran l'amènerait à la rassombrir à la main. Le récapitulatif des
+   planches, lui, l'applique — c'est le dernier regard avant le papier.
+3. **Une COPIE des réglages, jamais l'objet de l'article.** Celui-ci appartient à la
+   commande enregistrée : l'y ajouter ferait s'empiler la correction à chaque
+   réimpression, et la troisième sortirait délavée. Vérifié par `PrintExposureTests`.
+
+---
+
+## Minilab : la machine se choisit sur le ROULEAU, pas sur son rang
+
+`ChoisirSelonLeRouleau` examine les machines prêtes, la machine par défaut d'abord, et
+retient la PREMIÈRE dont le rouleau porte le format.
+
+Le DE100 de la boutique compte deux machines, et elles n'ont jamais le même rouleau — c'est
+tout l'intérêt d'en avoir deux (relevé du 04/08/2026 : **A = 152 mm Glossy, B = 210 mm
+Lustre**). Prendre la première prête revenait à ignorer la seconde : un 21×29,7 était refusé
+« le rouleau chargé dans la machine A fait 152 mm » alors que le rouleau de 210 était monté
+à côté. Commandes 04-010 et 04-014, deux feuilles et deux clients.
+
+Quatre règles :
+
+1. **La machine par défaut est examinée en premier** — à format égal, rien ne change, et un
+   10×15 ne se met pas à sortir de l'autre machine parce qu'elle porte un rouleau plus large.
+2. **Un choix IMPOSÉ ne se discute pas** (barre de la grille, ou `MinilabMachineId` du
+   produit) : l'opérateur seul sait quel rouleau il vient de monter. Le refus nomme alors la
+   machine voisine qui porterait le format, s'il y en a une
+   (`MachineQuiPorteLeFormat`) — sans quoi il envoie changer un rouleau qui tourne déjà à
+   deux mètres.
+3. **Une machine qui ne répond pas est sautée** ; son silence n'est retenu que si AUCUNE ne
+   répond — sinon une machine endormie mettrait la commande en attente à côté d'une machine
+   prête.
+4. **Si aucun rouleau ne convient, on rend le premier qui a répondu**, pour
+   qu'`EnsurePaperFits` nomme la machine et le rouleau à charger. Rendre « rien » ferait
+   perdre la seule explication utile.
+
+Vérifié par `MinilabRoutingTests`, sans minilab.
+
+⚠ **La règle ne vaut que si personne n'a imposé de machine — et c'est là qu'était le
+défaut.** La barre de la grille (`PhotoGridView.LoadMachinesAsync`) posait
+`SelectedIndex = 0` à chaque ouverture, ce qui IMPOSAIT la machine A sans que personne ne
+l'ait demandé : la règle 2 court-circuitait alors tout le reste, et le 21×29,7 restait
+refusé même après la correction du choix par rouleau (commandes 04-010, 04-014 et 04-019
+du 04/08/2026). La liste porte donc une première ligne **« Automatique — selon le
+rouleau »**, retenue par défaut, qui remet `PreferredMinilabMachine` à `null`.
+
+**Règle à tenir :** `PreferredMinilabMachine` ne doit être renseignée que sur un geste
+EXPLICITE de l'opérateur. Toute pose automatique de cette propriété rouvre le défaut.
+
+---
+
+## Combien de temps ça va encore prendre
+
+`EstimationDuree`, affichée dans le bandeau : « Commande 04-045 — 12 / 24 photos sorties ·
+environ 5 minutes ».
+
+Le bandeau ne disait que le compte. L'opérateur qui a un client devant lui pose une autre
+question — ai-je le temps d'en servir un autre ? — et elle n'a qu'une réponse : une durée.
+
+Trois choses à ne pas défaire :
+
+1. **La commande en cours se chronomètre ELLE-MÊME dès trois photos sorties.** La cadence
+   du moment vaut mieux que n'importe quelle moyenne : la machine peut être froide,
+   occupée, ou en pleine maintenance. En deçà de trois, on prend le débit appris sur ce
+   format, et à défaut la valeur par défaut de sa longueur.
+2. **Les maintenances sont DEDANS**, et on ne les modélise pas séparément. Le DE100
+   s'interrompt pour nettoyer sa tête et avancer son papier ; ces pauses font partie de
+   l'attente. Le débit étant mesuré de bout en bout, elles y sont comprises — les exclure
+   donnerait une estimation toujours trop courte, c'est-à-dire la pire des deux.
+3. **La précision affichée doit correspondre à la précision réelle.** Personne n'annonce
+   « 4 minutes 37 » : on dit « environ 5 minutes ». Au-delà de dix minutes on arrondit à
+   cinq, au-delà d'une heure au quart d'heure. « environ » disparaît quand le débit a été
+   mesuré sur assez de tirages.
+
+Le débit s'apprend commande par commande (`config/debits.json`), en moyenne **pondérée par
+le nombre de tirages** — une commande de soixante photos pèse plus qu'une commande d'une
+seule, qui est presque entièrement faite du réveil de la machine. Les valeurs aberrantes
+sont rejetées, et le compte retenu est borné pour que la moyenne reste GLISSANTE : une
+machine qui ralentit doit continuer d'être suivie.
+
+⚠ **Le bandeau a besoin d'un battement de 5 s** : `DureeRestante` se calcule à la lecture
+et rien ne la notifie d'elle-même. Sans lui, l'affichage resterait figé entre deux photos —
+vingt secondes sur un A4.
+
+Vérifié par `EstimationDureeTests`.
+
+---
+
+## Ce qui reste à tirer : TROIS comptes, on retient le plus petit
+
+`EstimationConsommables` — papier, encre, bac de maintenance — pour le format qu'on
+s'apprête à tirer.
+
+Le bandeau annonçait « ~576 × 10x15 » d'après le seul papier. Sur les machines de la
+boutique, ce chiffre était un mensonge : le bac de maintenance de la A est à 95 %, le
+magenta de la B à 15 %. Un opérateur qui lance trois cents tirages sur cette annonce se
+retrouve à mi-parcours avec une machine à l'arrêt et un client devant lui.
+
+Trois règles :
+
+1. **le résultat dit toujours ce qui LIMITE** — c'est la seule chose qui dise quoi
+   préparer. « ~120 × A5 · magenta à 15 % » ;
+2. **une encre basse se dit même quand elle ne limite pas encore** (seuil 20 %) : c'est le
+   moment de commander la cartouche, pas celui de la changer ;
+3. **le bac de maintenance se REMPLIT** : ce qui reste, c'est ce qui manque pour arriver à
+   100.
+
+**L'estimation porte sur le format VISÉ** — `PrintOrchestrator.DernierFormatMinilab`, celui
+de la dernière enveloppe partie. Annoncer des 10×15 à quelqu'un qui lance des A4 ne lui
+apprend rien.
+
+### La calibration s'apprend, elle n'est pas écrite dans le code
+
+Convertir un pourcentage d'encre en tirages dépend de la machine, du format et de ce qu'on
+imprime : un fond noir vide une cartouche bien plus vite qu'un portrait sur fond blanc.
+Aucune constante ne serait juste.
+
+`Apprendre` compare deux relevés (compteur + niveaux, pris à chaque rafraîchissement du
+bandeau, sans coût supplémentaire) et en déduit la consommation réelle, rangée dans
+`config/consommables.json`. Trois garde-fous :
+
+- **au moins 50 tirages d'écart** : le pourcentage est un entier, et sur dix tirages son
+  arrondi fausserait le calcul d'un facteur deux ;
+- **le niveau doit avoir BAISSÉ** : une cartouche qu'on vient de changer remonte, et
+  l'écart n'a alors aucun sens ;
+- tant que rien n'a été observé, l'estimation est marquée APPROXIMATIVE et s'affiche avec
+  un tilde. Les valeurs par défaut sont volontairement PRUDENTES : faire changer une
+  cartouche un peu tôt coûte quelques euros, laisser une commande de trois cents tirages
+  s'arrêter au milieu coûte un client.
+
+Vérifié par `EstimationConsommablesTests`.
+
+---
+
+## Prévenir le client : un message qui ne livre RIEN
+
+`PhotoMailer.PrevenirCommandePrete` — aucune pièce jointe, et c'est tout le sujet. Joindre
+les photos reviendrait à les donner sans les vendre : l'envoi des fichiers est une
+prestation à part, facturée, qui passe par `Envoyer`.
+
+Même voie SMTP que le reste (`Expedier`) : un serveur qui accepte l'un accepte l'autre, et
+les refus se traduisent au même endroit.
+
+**L'aperçu et l'envoi partagent la même méthode** (`ApercuCommandePrete` délègue à
+`CorpsCommandePrete`). Deux textes entretenus séparément finiraient par différer, et
+l'opérateur relirait autre chose que ce qui part chez le client.
+
+Le contrôle d'adresse est volontairement grossier — une arobase, un point après elle :
+valider une adresse pour de bon est impossible sans lui écrire, et un contrôle tatillon
+refuserait des adresses valides.
+
+### Le message peut partir TOUT SEUL
+
+Bouton « 🔔 Prévenir à la fin » de l'écran des tirages : l'adresse se prend AVANT
+d'imprimer, pendant que le client est encore au comptoir, et le message part quand la
+machine a fini. L'opérateur n'a rien à surveiller — c'est tout l'intérêt.
+
+Quatre règles :
+
+1. **À la fin du TIRAGE, pas de l'envoi.** Sur le minilab, envoyer trente tirages prend
+   quelques secondes et les sortir prend plusieurs minutes. Annoncer « c'est prêt » à
+   l'envoi ferait venir le client devant une machine qui travaille encore. Sur les circuits
+   sans accusé de sortie — spouleur, DNP — on prévient à la remise, c'est le mieux qu'on
+   puisse promettre de ce côté ;
+2. **jamais si un tirage a échoué** : on ne fait pas venir quelqu'un pour une commande
+   incomplète ;
+3. **une seule fois** (`Order.CustomerNotified`) : une réimpression n'enverra pas un second
+   message — deux courriels pour la même commande font douter le client de ce qu'il doit
+   venir chercher ;
+4. **l'adresse voyage avec la COMMANDE** (`Order.CustomerEmail`), pas avec l'écran : le
+   message part bien après que celui-ci a été quitté, et une commande enregistrée survit à
+   un redémarrage.
+
+Un courriel qui ne part pas ne ressemble jamais à un échec d'impression : le tirage est
+sorti, c'est ce qui compte, et le message se rattrape depuis « Commandes du jour ».
+
+---
+
+## Le relais : sa sortie d'erreur DOIT être drainée
+
+`De100BridgeClient` redirige `StandardError` du relais. **Il faut alors la lire en
+continu**, sans quoi le relais se bloque : il écrit son journal ligne par ligne sur
+`Console.Error`, et le tampon d'un tube anonyme fait quelques kilo-octets. Une fois plein,
+`WriteLine` suspend le processus enfant.
+
+Vingt-sept redémarrages le 04/08/2026, et ce seul défaut expliquait quatre pannes
+apparemment sans rapport : une commande sans verdict, le bandeau des machines qui se vide,
+l'actualisation qui traîne, et les compteurs de tirages qui ne montent plus alors que les
+photos sortent.
+
+**Règle : rediriger un flux sans le drainer est un interblocage différé.** Si l'on ajoute un
+jour `RedirectStandardOutput`, il faudra le drainer aussi.
+
+Effet de bord recherché : le journal du relais arrive dans `app-*.log`, préfixé
+« relais · ». C'est le seul endroit d'où l'on voit ce qui se passe côté SDK. Les deux côtés
+sont en UTF-8 — `Console.OutputEncoding` chez le relais, `StandardErrorEncoding` chez le
+client — sinon les accents arrivent en « trouvâ€š ».
+
+---
+
+## Une lecture ratée ne fait jamais disparaître une machine
+
+`MachineBarView.RefreshAsync` relit chaque famille de son côté et garde son DERNIER ÉTAT
+CONNU. La barre est recomposée des deux à la fin.
+
+Avant, une seule liste était remplie par les deux lectures successives : quand le minilab
+échouait, sa part restait vide et la DNP écrasait l'ensemble. **Les deux DE100
+disparaissaient du bandeau** dès que le relais toussait.
+
+Une machine qu'on ne joint pas pendant dix secondes n'a pas disparu de la boutique.
+L'opérateur a besoin de la voir — ne serait-ce que pour savoir qu'elle existe.
+
+---
+
+## Vider une file d'impression Windows
+
+`DnpSpouleur.Vider` supprime les travaux **un par un, par leur chemin**.
+
+`Win32_Printer.CancelAllJobs` semble plus direct mais échoue avec « Operation is not valid
+due to the current state of the object » dès que l'instance vient d'une requête à
+propriétés restreintes (`new SelectQuery("Win32_Printer", null, ["Name"])`) : sans son
+chemin complet, WMI refuse d'invoquer une méthode dessus.
+
+La suppression travail par travail a deux avantages : elle marche quand un seul travail est
+fautif, et elle dit combien elle en a réellement retiré.
+
+⚠ **Le bouton du bandeau retrouve sa tuile par son `DataContext`**, jamais par sa lettre
+dans `_tuiles` : la barre peut avoir été recomposée entre l'affichage et le clic, et la
+recherche échouait alors en silence.
+
+---
+
+## Chaque état de machine a une CONDUITE
+
+`ConduiteMachine` : pour chaque état des deux familles, ce que Studio fait et ce que
+l'opérateur doit faire. Les états étaient traduits en français à trois endroits —
+`DnpStatus.Message`, `DnpSpouleur.Decrire`, `De100JobTracker.Describe` — et **aucun ne
+disait quoi faire**. « Intervention nécessaire » n'a jamais dit à personne quoi toucher.
+
+Cinq conduites : `Continuer`, `Patienter`, `MettreEnAttente`, `ViderLaFile`, `Arreter`.
+
+Deux règles :
+
+1. **Tout état tombe dans l'une des cinq.** Un état inconnu vaut `MettreEnAttente` : on
+   préfère faire patienter une commande à tort que la déclarer perdue ;
+2. **quand la machine DIT quelque chose, on le répète mot pour mot.** Le SDK Fuji donne ses
+   messages en anglais et ils sont explicites — « Cartridge cover (left) open. Close the
+   cartridge cover (left). » C'est aussi ce que l'opérateur lit sur l'écran de la machine.
+
+⚠ **Le cas « file figée »** (`ViderLaFile`) est le seul où la machine MENT : elle se
+déclare prête, ne signale aucune erreur, et rien ne sort. Il l'emporte donc sur tout ce
+qu'elle raconte. Seuil : `MinutesAvantDeViderLaFile` = 10.
+
+Vérifié par `ConduiteMachineTests`.
+
+---
+
+## Minilab : le MOTIF d'un refus, lu à la source
+
+`PIF_GetPrintInfo(handle, indice, …)` remplit une `ST_PRINT_INFO` dont le champ `errmsg`
+porte **512 caractères de message**. La fonction était déclarée depuis le premier jour et
+n'était **appelée nulle part** : le motif existait, personne n'allait le chercher.
+
+Conséquence : un tirage refusé ne disait que « erreur signalée par le minilab ». Le 21×29,7
+des commandes 04-015, 04-020 et 04-027 du 04/08/2026 a échoué **trois fois** sans laisser
+la moindre piste — y compris après le changement de la cartouche de cyan, ce qui a écarté
+l'hypothèse des consommables sans rien apporter à sa place.
+
+`De100Driver.OnOrderCallback` relit donc les tirages d'une commande en `Error` et joint
+leur motif au verdict (`De100JobTracker.Raison`). Deux règles :
+
+1. **le motif COMPLÈTE le statut, il ne le remplace pas** : le statut situe le moment,
+   le motif dit la cause ;
+2. **les doublons sont écartés** — sur trente tirages refusés pour la même raison, la
+   répéter trente fois ne dit rien de plus.
+
+⚠ **Les deux callbacks natifs sont entièrement protégés** (`try`/`catch`). Ils sont appelés
+par le SDK : une exception qui remonte jusqu'à lui ne se rattrape nulle part et emporte le
+processus — donc le relais, donc le suivi de TOUS les tirages en cours. Ne jamais retirer
+ces gardes, et n'y appeler que du code qui ne lève pas.
+
+### L'image envoyée doit avoir TROIS CANAUX
+
+**C'est la cause du 21×29,7, cherchée une journée entière.** Le DE100 refuse les images en
+niveaux de gris, et il le fait comme tout le reste : sans un mot, dix secondes après avoir
+accepté la commande.
+
+Un scan noir et blanc — ou une photo passée en noir et blanc — traverse tout le rendu en
+gardant son unique canal. Le paramètre `ColorSpace` que Studio envoie au SDK vaut pourtant
+« 1 » (RGB) depuis toujours : l'image doit lui correspondre.
+
+Prouvé en renvoyant **le fichier même que Studio avait produit**, converti en sRGB et rien
+d'autre : sorti du premier coup. Ce qui a mis sur la voie, c'est la comparaison des deux
+PNG — même définition, même densité, mais `Gray / 2 canaux` d'un côté et
+`sRGB / 4 canaux` de l'autre.
+
+`PrintOrchestrator.EnTroisCanaux` est appelée sur toute image partant au minilab, et
+`FitPageToRoll` réécrit désormais le fichier **même quand sa taille est déjà juste** si
+elle est en gris.
+
+⚠ **Le define PNG est indispensable** : poser `ColorSpace` et `ColorType` ne suffit pas. Le
+format PNG réécrit en niveaux de gris dès que tous les pixels le sont — son optimisation
+automatique — et il faut `color-type 2` pour l'interdire. Deux tentatives de correction ont
+échoué là-dessus. `MinilabImageTests` verrouille le point, y compris le test qui échouerait
+si l'on retirait le define en « simplifiant ».
+
+⚠ **On n'appelle plus le SDK depuis une callback du SDK.** `PIF_GetPrintInfo` y était lu
+pour récupérer `errmsg` : l'indice 0 rend `BadParam` — le SDK compte à partir de 1 — et
+surtout **le relais mourait quelques secondes après l'appel** (« Pipe is broken »,
+commande 04-041). Le callback se contente désormais de ce que `ST_ORDER_INFO` porte déjà :
+format, cotes et compte des sorties. Ses cotes sont en **dixièmes de millimètre**.
+
+### La DÉFINITION de l'image : c'est la MACHINE qui la dicte
+
+**C'est la cause du 21×29,7 refusé, trouvée par essais sur la machine le 04/08/2026.**
+
+`PIF_DevGetPixelCount` dit ce que le DE100 attend pour un format donné, et ce n'est PAS ce
+qu'on calcule :
+
+| Format | Notre calcul | Ce que la machine réclame | Écart |
+| --- | --- | --- | --- |
+| 210 × 297 mm à 300 ppp | 2480 × 3508 px | **2515 × 3543 px** | +35 px, soit +3 mm |
+
+Elle ajoute son **débord** : 2515 px = 212,9 mm, 3543 px = 299,9 mm. Elle veut l'image AVEC
+les 3 mm qu'elle rognera.
+
+`PrintOrchestrator.DefinitionAttendue` la lui demande donc, et `FitPageToRoll` cale l'image
+dessus. Repli sur notre calcul si elle n'en dit rien — machine muette, relais coupé, format
+inconnu : **on ne perd jamais un tirage parce qu'une lecture a échoué.**
+
+⚠ **Pourquoi le 18×24 sortait, lui, avec exactement le même écart** : il passe par un canal
+VARIABLE (`21xL`), qui tolère l'à-peu-près. Le 210 × 297 tombe sur le canal FIXE `A4`, qui
+exige la définition au pixel près — et refuse **sans donner le moindre motif**.
+
+Neuf essais de NOMS de format (« 210x297 », « A4 », « 21xL », cotes inversées, sans nom…)
+ont tous échoué avant qu'on regarde de ce côté. **Le nom n'y était pour rien** ; le
+`MinilabPrintSizeName` des produits 210 × 297 est donc revenu à vide. Ce qui a mis sur la
+voie : le TÉMOIN de la série d'essais — le format du 18×24, envoyé avec une image au
+mauvais rapport — a échoué lui aussi, alors qu'il sort tous les jours.
+
+Deux outils écrits pour cette enquête, à garder :
+
+- `DeviceProbe de100 essais <machine> <image>` — fait varier un paramètre d'envoi à la fois
+  et s'arrête au premier qui sort. **Un refus ne coûte pas de papier** : le compteur de la
+  machine et le métrage restant ne bougent pas, c'est vérifiable ;
+- `DeviceProbe de100 definitions <machine> <image>` — fait varier la DÉFINITION, en
+  redimensionnant l'image à ce que `PIF_DevGetPixelCount` réclame. C'est lui qui a tranché,
+  au premier essai.
+
+### Les canaux du DE100 : variables ou FIXES
+
+C'est la clé du refus du 21×29,7, et elle vient de la base de DiLand
+(`OutputProfileChannel`, cotes en unités 96 ppp). Pour un rouleau de 210 mm :
+
+| Canal | Longueur admise | Rouleau | Variable |
+| --- | --- | --- | --- |
+| `21xS` | 50 → 210 mm | 210 | oui |
+| `21xL` | 210 → 1000 mm | 210 | oui |
+| **`A4`** | **297 mm exactement** | 210 | **NON** |
+| `A5` | 210 mm | 148 | non |
+
+Studio fabrique le `PrintSizeName` d'après le rouleau : « 210x240 » pour un 18×24,
+« 210x297 » pour un 21×29,7. Le premier sort, le second est refusé — **même machine, même
+rouleau, même code, six fois de suite**. La différence : 240 ne correspond à aucun canal
+fixe et tombe dans le variable `21xL` ; 297 correspond exactement au canal FIXE `A4`, que
+la machine exige alors par SON NOM.
+
+D'où `MinilabPrintSizeName = "A4"` sur les trois produits 210 × 297 du catalogue.
+
+⚠ **Les autres rouleaux ont les mêmes canaux fixes**, et donc le même piège en attente :
+
+| Rouleau | Canaux FIXES (longueur) |
+| --- | --- |
+| 102 | 10x10 (102), 10x13 (127), 10x15 (152), 10x20 (203) |
+| 127 | 13x9 (89), 13x13 (127), 13x15 (152), 13x17 (170), 13x18 (180), 13x19 (190), 13x20 (203), 13x26 (254) |
+| 152 | 15x15 (152), 15x20 (203), 15x23 (228), 15x30 (304), 15x40 (400) |
+| 203 | 20x20 (203), 20x25 (256), 20x27 (273), 20x30 (307), 20x40 (400) |
+| 210 | **A4 (297)** |
+
+**Rien n'a été changé pour eux**, et c'est délibéré : on ne corrige que ce qui est cassé, et
+tout ce que la boutique tire aujourd'hui sort. Mais si un format se met à être refusé sans
+motif, **c'est la première chose à regarder** — le remède est le champ « Nom du format au
+minilab » de la fiche produit, à remplir avec le nom du canal ci-dessus.
+
+### Quand la machine ne dit RIEN
+
+C'est le cas du 21×29,7 : `errmsg` vide, aucun événement machine, refus dix secondes après
+une acceptation. On journalise alors ce que la COMMANDE porte — format demandé, cotes,
+`printedNum`/`orderNum` — et le verdict de `PIF_GetPrintInfo` lui-même, qui est déjà une
+information.
+
+`DeviceProbe de100 formats` interroge la machine en lecture seule et a permis d'écarter les
+consommables, la longueur maximale de tirage (1000 mm), la file, la résolution et le calcul
+de pixels du SDK. **Il reste le `PrintSizeName`** — le seul paramètre qui dépende de la
+configuration de la machine.
+
+⚠ **`PIF_DevGetPixelCount` n'est PAS un validateur de format.** Il accepte 297 × 210 sur un
+rouleau de 152 : il calcule des pixels, il ne juge rien. Il apprend en revanche que la
+machine attend l'image AVEC son débord — 2515 × 3543 px pour un 210 × 297, soit 213 × 300 mm
+— là où Studio envoie 2480 × 3508. L'écart de 3 mm existe aussi sur les 10×15 qui sortent
+tous les jours : **ce n'est pas la cause du refus**, et il ne faut pas partir dessus.
+
+Le nom du format se règle à la fiche produit (`Product.MinilabPrintSizeName`, champ « Nom
+du format au minilab »). Vide = déduit du rouleau, ce qui convient à tout ce que la boutique
+tire aujourd'hui.
+
+---
+
+## Minilab : ce que la machine dit d'elle-même
+
+`De100BridgePrinter.MachineEvent` — bourrage, fin de rouleau, encre épuisée. Le relais
+transmettait ces événements depuis toujours **sans un seul abonné** : un tirage refusé se
+lisait « Minilab : tirage 04-020-1-001 — ÉCHEC · erreur signalée par le minilab », point
+final, alors que la machine venait d'en donner le motif. C'est ce qui a rendu l'échec des
+commandes 04-015 et 04-020 du 04/08/2026 inexplicable après coup.
+
+`AppServices` s'y abonne : tout va au journal, et seul ce qui ARRIVE (`IsActive`) et qui
+est grave (`SystemError`, `Error`) monte au bandeau. Un événement qui se TERMINE est une
+panne réparée — l'annoncer ferait clignoter une alerte pour une bonne nouvelle.

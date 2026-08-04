@@ -23,23 +23,12 @@ public partial class ProductTypeView : UserControl
     /// <summary>
     /// Le document est choisi AVANT les photos, comme dans DiLand : c'est lui qui fixe le
     /// format du tirage et le gabarit du visage, donc tout le cadrage qui suit.
+    ///
+    /// La suite vit dans <see cref="ParcoursIdentite"/>, partagée avec la tuile de
+    /// l'accueil : les deux boutons mènent au même endroit, et cet endroit n'existe qu'une
+    /// fois.
     /// </summary>
-    private void OnIdPhoto(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new IdDocumentPickerView(
-                document =>
-                    Navigator.Go(new SourcePickerView((root, profond) =>
-                        Navigator.Go(new IdPhotoView(root, document, profond),
-                            $"{document.Country} — {document.Document}")),
-                        "Photos d'identité — choisir le support"),
-                // L'E-Photo n'est pas une norme mais un tirage : la photo part ENTIÈRE sur
-                // un 10×15, bords blancs compris, sans gabarit ni recadrage d'identité.
-                // C'est donc l'écran des tirages qui la sert, produit déjà choisi.
-                produit =>
-                    Navigator.Go(new SourcePickerView((root, profond) =>
-                        Navigator.Go(new PhotoGridView(root, produit.Code, avecSousDossiers: profond),
-                            produit.Name)),
-                        $"{produit.Name} — choisir le support")),
-            "Photos d'identité — choisir le document");
+    private void OnIdPhoto(object sender, RoutedEventArgs e) => ParcoursIdentite.Ouvrir();
 
     private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Back();
 }

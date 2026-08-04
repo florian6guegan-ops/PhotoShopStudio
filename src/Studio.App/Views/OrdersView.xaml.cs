@@ -6,6 +6,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Imaging.Geometry;
+using Studio.Store.DiLand;
 
 namespace Studio.App.Views;
 
@@ -15,9 +17,32 @@ public partial class OrdersView : UserControl
     private enum Genre
     {
         Tout,
+
+        /// <summary>Tous les tirages, quelle qu'en soit l'origine.</summary>
         Tirages,
+
+        /// <summary>Les tirages préparés au comptoir.</summary>
+        TiragesOperateur,
+
+        /// <summary>Les tirages venus d'une borne.</summary>
+        TiragesBorne,
+
         Identite,
     }
+
+    /// <summary>
+    /// Une commande vient-elle du comptoir ?
+    ///
+    /// La règle est prise à l'ENVERS — tout ce qui n'est pas l'opérateur vient d'une borne
+    /// — parce que le champ <c>Source</c> est une chaîne libre et que les bornes s'y
+    /// nomment de plusieurs façons : « borne » pour une reprise DiLand, « Borne1 » ou le
+    /// nom donné à la borne dans sa configuration pour une commande Studio. Il n'y a en
+    /// revanche qu'une seule façon d'être l'opérateur, et c'est ce code qui l'écrit.
+    /// </summary>
+    private const string SourceOperateur = "Operateur";
+
+    private static bool DuComptoir(Order commande) =>
+        string.Equals(commande.Source, SourceOperateur, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Les commandes lues au dernier passage. Gardées pour que changer d'onglet ne
@@ -41,16 +66,20 @@ public partial class OrdersView : UserControl
         // pèse dans les deux onglets, et annoncer « 3 » de part et d'autre pour trois
         // commandes dont une seule est une planche serait faux
         OngletTirages.Content = $"Tirages photo ({Compter(Genre.Tirages)})";
+        OngletTiragesOperateur.Content = $"↳ opérateur ({Compter(Genre.TiragesOperateur)})";
+        OngletTiragesBorne.Content = $"↳ borne ({Compter(Genre.TiragesBorne)})";
         OngletIdentite.Content = $"Photos d'identité ({Compter(Genre.Identite)})";
 
         Afficher();
     }
 
     private int Compter(Genre genre) =>
-        _commandes.Sum(o => o.Envelopes.Count(e => Retenue(e, genre)));
+        _commandes.Sum(o => o.Envelopes.Count(e => Retenue(o, e, genre)));
 
     private Genre OngletRetenu =>
         OngletTirages.IsChecked == true ? Genre.Tirages
+        : OngletTiragesOperateur.IsChecked == true ? Genre.TiragesOperateur
+        : OngletTiragesBorne.IsChecked == true ? Genre.TiragesBorne
         : OngletIdentite.IsChecked == true ? Genre.Identite
         : Genre.Tout;
 
@@ -67,7 +96,7 @@ public partial class OrdersView : UserControl
         // une commande ne paraît que si elle a quelque chose à montrer dans cet onglet,
         // et n'y montre alors que les enveloppes concernées
         var lignes = _commandes
-            .Select(o => new OrderRow(o, o.Envelopes.Where(e => Retenue(e, genre)).ToList()))
+            .Select(o => new OrderRow(o, o.Envelopes.Where(e => Retenue(o, e, genre)).ToList()))
             .Where(r => r.Envelopes.Count > 0)
             .ToList();
 
@@ -76,6 +105,8 @@ public partial class OrdersView : UserControl
         EmptyText.Text = genre switch
         {
             Genre.Tirages => "Aucun tirage photo ces derniers jours.",
+            Genre.TiragesOperateur => "Aucun tirage préparé au comptoir ces derniers jours.",
+            Genre.TiragesBorne => "Aucun tirage venu d'une borne ces derniers jours.",
             Genre.Identite => "Aucune planche de photos d'identité ces derniers jours.",
             _ => "Aucune commande ces derniers jours.",
         };
@@ -91,12 +122,21 @@ public partial class OrdersView : UserControl
     /// sortent sur la même machine — paraît donc dans les DEUX onglets, entière. Rien ne
     /// disparaît, et le bouton dit la vérité sur ce qu'il va sortir.
     /// </summary>
-    private static bool Retenue(Envelope enveloppe, Genre genre) => genre switch
+    /// <remarks>
+    /// L'origine, elle, se lit sur la COMMANDE et non sur l'enveloppe : c'est la commande
+    /// entière qui vient du comptoir ou d'une borne.
+    /// </remarks>
+    private static bool Retenue(Order commande, Envelope enveloppe, Genre genre) => genre switch
     {
-        Genre.Tirages => enveloppe.Lines.Any(l => !EstIdentite(l)),
+        Genre.Tirages => EstDesTirages(enveloppe),
+        Genre.TiragesOperateur => EstDesTirages(enveloppe) && DuComptoir(commande),
+        Genre.TiragesBorne => EstDesTirages(enveloppe) && !DuComptoir(commande),
         Genre.Identite => enveloppe.Lines.Any(EstIdentite),
         _ => true,
     };
+
+    private static bool EstDesTirages(Envelope enveloppe) =>
+        enveloppe.Lines.Any(l => !EstIdentite(l));
 
     /// <summary>
     /// Une ligne de planche d'identité.
@@ -196,9 +236,76 @@ public partial class OrdersView : UserControl
 
         var combien = Directory.EnumerateFiles(source).Count();
 
+        // Une planche d'identité se reprend dans l'écran d'IDENTITÉ, pas dans celui des
+        // tirages.
+        //
+        // « Modifier » ouvrait la grille pour tout le monde. Sur une planche, l'opérateur
+        // y trouvait le recadrage des tirages — cadre libre, pas de gabarit, pas de repères
+        // de crâne et de menton — c'est-à-dire précisément ce qui ne permet PAS de refaire
+        // une photo d'identité. Or c'est le seul motif de rouvrir une planche : le guichet
+        // a refusé le cadrage. Signalé par l'exploitant le 04/08/2026.
+        if (DocumentDeLaPlanche(ligne) is { } document)
+        {
+            Navigator.Go(
+                new IdPhotoView(source, document, avecSousDossiers: false),
+                $"Commande {ligne.Order.DisplayNumber} — {document.Country}, " +
+                $"{document.WidthMm:0.#}×{document.HeightMm:0.#} mm");
+            return;
+        }
+
         Navigator.Go(
             new PhotoGridView(source, ProduitMajoritaire(ligne.Order), avecSousDossiers: false),
             $"Commande {ligne.Order.DisplayNumber} — {combien} photo(s)");
+    }
+
+    /// <summary>
+    /// La norme visée par la planche d'identité de cette commande, ou null si ce n'est pas
+    /// une planche.
+    ///
+    /// Elle se déduit de la TAILLE DE CASE enregistrée sur l'article
+    /// (<c>OrderItem.SheetCellWidthMm</c>) : c'est tout ce que la commande garde du
+    /// document, et c'est suffisant — la géométrie du cadrage ne dépend que des cotes et
+    /// des bornes de visage.
+    ///
+    /// Deux replis, dans cet ordre :
+    ///
+    /// 1. les commandes enregistrées avant que ce champ existe ne portent pas de case ; on
+    ///    prend alors celle du PRODUIT, qui n'en connaît qu'une, mais qui est la bonne dans
+    ///    l'immense majorité des cas — la boutique tire du 35 × 45 ;
+    /// 2. une cote absente du référentiel donne quand même un document utilisable, sans
+    ///    bornes de visage : mieux vaut un gabarit à la bonne taille sans contrôle de
+    ///    conformité que l'écran des tirages.
+    /// </summary>
+    private static IdDocumentSpec? DocumentDeLaPlanche(OrderRow ligne)
+    {
+        var articles = ligne.Retenues
+            .SelectMany(e => e.Lines)
+            .Where(EstIdentite)
+            .ToList();
+
+        if (articles.Count == 0) return null;
+
+        var largeur = articles
+            .SelectMany(l => l.Items)
+            .Select(i => i.SheetCellWidthMm ?? 0)
+            .FirstOrDefault(v => v > 0);
+
+        var hauteur = articles
+            .SelectMany(l => l.Items)
+            .Select(i => i.SheetCellHeightMm ?? 0)
+            .FirstOrDefault(v => v > 0);
+
+        if (largeur <= 0 || hauteur <= 0)
+        {
+            var sheet = App.Services.Catalog.Find(articles[0].ProductCode)?.Sheet;
+            largeur = sheet?.CellWidthMm ?? 0;
+            hauteur = sheet?.CellHeightMm ?? 0;
+        }
+
+        if (largeur <= 0 || hauteur <= 0) return IdDocumentSpec.France;
+
+        return ReferentielIdentite.ParLesCotes(largeur, hauteur)
+               ?? new IdDocumentSpec("Reprise", "planche enregistrée", largeur, hauteur, 0, 0);
     }
 
     /// <summary>
@@ -218,6 +325,89 @@ public partial class OrdersView : UserControl
             .FirstOrDefault();
 
         return code is not null && App.Services.Catalog.Find(code) is not null ? code : null;
+    }
+
+    /// <summary>
+    /// Envoie par courriel les photos d'identité d'une commande déjà passée, avec le
+    /// cadrage et les corrections telles qu'elles ont été tirées.
+    ///
+    /// <b>Le même module que l'écran identité</b> — <see cref="MailSendView"/> — et non une
+    /// seconde version : le prix, les messages prédéfinis, le contrôle de configuration et
+    /// les trois fichiers envoyés (photo entière, cadrage léger, cadrage pleine résolution)
+    /// doivent rester les mêmes des deux côtés.
+    ///
+    /// Ce sont les ORIGINAUX de la commande qui repartent, jamais les rendus : la commande
+    /// garde ses photos dans son dossier (voir <see cref="DossierDesPhotos"/>), et c'est
+    /// d'elles que le client a besoin.
+    /// </summary>
+    private void OnSendByMail(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not OrderRow ligne) return;
+        if (DossierDesPhotos(ligne) is not { } dossier) return;
+
+        var photos = ligne.Retenues
+            .SelectMany(env => env.Lines)
+            .Where(EstIdentite)
+            .SelectMany(l => l.Items)
+            .Select(item => (Item: item, Chemin: Path.Combine(dossier, item.FileName)))
+            .Where(x => File.Exists(x.Chemin))
+            .Select(x => new MailSendView.PhotoAEnvoyer(
+                x.Chemin,
+                x.Item.Crop,
+                x.Item.RotationQuarterTurns,
+                x.Item.FineRotationDegrees,
+                x.Item.Adjustments))
+            .ToList();
+
+        if (photos.Count == 0)
+        {
+            MessageBox.Show(
+                "Les fichiers de cette commande ne sont plus sur le disque.\n\n" +
+                "Les commandes de plus de trente jours sont déplacées dans le dossier " +
+                "d'archive : il faut les en ressortir pour pouvoir les envoyer.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        Navigator.Go(
+            new MailSendView(photos, ligne.Order.CustomerName),
+            $"Commande {ligne.Order.DisplayNumber} — envoyer par courriel");
+    }
+
+    /// <summary>
+    /// Prévient le client que sa commande l'attend en magasin.
+    ///
+    /// Sans les photos : ce message annonce, il ne livre pas. L'envoi des fichiers est une
+    /// prestation à part, facturée — c'est le bouton « ✉ Envoyer ».
+    /// </summary>
+    private void OnPrevenirClient(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not OrderRow ligne) return;
+
+        Navigator.Go(
+            new PrevenirClientView(ligne.Order, DecrireLeContenu(ligne)),
+            $"Commande {ligne.Order.DisplayNumber} — prévenir le client");
+    }
+
+    /// <summary>
+    /// Ce que la commande contient, en une phrase que le client comprendra.
+    ///
+    /// En PRODUITS et en nombre de tirages : « 24 tirages 10x15 et 1 planche identité ».
+    /// Le client ne connaît ni les enveloppes, ni les codes du catalogue.
+    /// </summary>
+    private static string DecrireLeContenu(OrderRow ligne)
+    {
+        var morceaux = ligne.Retenues
+            .SelectMany(e => e.Lines)
+            .GroupBy(l => App.Services.Catalog.Find(l.ProductCode)?.Name ?? l.ProductCode)
+            .Select(g =>
+            {
+                var tirages = g.Sum(l => l.TotalPrints);
+                return $"{tirages} × {g.Key}";
+            })
+            .ToList();
+
+        return morceaux.Count == 0 ? "votre commande" : string.Join(", ", morceaux);
     }
 
     private async void OnPrintTicket(object sender, RoutedEventArgs e)
@@ -243,7 +433,23 @@ public partial class OrdersView : UserControl
         }
     }
 
-    private async void OnReprint(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Réimprime une enveloppe, <b>par le suivi des impressions</b> comme tout le reste.
+    ///
+    /// Elle appelait <c>PrintEnvelope</c> dans un <c>Task.Run</c> à elle, hors du suivi.
+    /// Deux conséquences, vues sur la commande 04-032 du 04/08/2026 :
+    ///
+    /// 1. <b>le verdict de la machine se perdait</b> — <c>SuiviImpressions.TirageTermine</c>
+    ///    cherche le travail par son numéro de commande, n'en trouvait aucun, et le motif
+    ///    du refus n'arrivait jamais à l'écran. Le minilab avait pourtant répondu ;
+    /// 2. <b>« Enveloppe réimprimée » s'affichait dès l'ENVOI</b>, avant le moindre tirage.
+    ///    Sur le minilab, le verdict arrive dix secondes plus tard : le message annonçait
+    ///    donc une réussite qu'il ne pouvait pas connaître.
+    ///
+    /// Plus de boîte de dialogue à la fin : l'avancement et l'issue se lisent dans le
+    /// bandeau, comme pour une commande neuve.
+    /// </summary>
+    private void OnReprint(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is not EnvelopeRow row) return;
 
@@ -253,22 +459,11 @@ public partial class OrdersView : UserControl
             "Réimpression", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes) return;
 
-        Mouse.OverrideCursor = Cursors.Wait;
-        try
-        {
-            await Task.Run(() =>
-                App.Services.Printer.PrintEnvelope(row.Order, row.Envelope, operatorConfirmed: true));
-            Mouse.OverrideCursor = null;
-            MessageBox.Show($"Enveloppe {row.Envelope.Number} réimprimée.", "Studio Photo",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-        catch (Exception ex)
-        {
-            Mouse.OverrideCursor = null;
-            MessageBox.Show($"Échec de la réimpression : {ex.Message}", "Studio Photo",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        Refresh();
+        App.Services.Impressions.Lancer(row.Order,
+            imprimer: (avancement, arret) =>
+                App.Services.Printer.PrintEnvelope(row.Order, row.Envelope,
+                    operatorConfirmed: true, progression: avancement, ct: arret),
+            apresSucces: Refresh);
     }
 
     /// <summary>
@@ -290,7 +485,27 @@ public partial class OrdersView : UserControl
     private sealed record OrderRow(Order Order, IReadOnlyList<Envelope> Retenues)
     {
         public string Header =>
-            $"N° {Order.DisplayNumber} — {Order.CreatedAt:ddd dd/MM HH:mm} — {Order.Source} — {Order.Total:0.00} €";
+            $"N° {Order.DisplayNumber} — {Order.CreatedAt:ddd dd/MM HH:mm} — {Order.Total:0.00} €";
+
+        /// <summary>
+        /// L'origine, en un mot. Le nom brut de la borne est gardé quand il en dit plus
+        /// que « Borne » — une boutique à deux bornes veut savoir laquelle.
+        /// </summary>
+        public string OrigineTexte => DuComptoir(Order)
+            ? "Comptoir"
+            : Order.Source switch
+            {
+                null or "" => "Borne",
+                // « borne » tout court est la reprise d'une commande DiLand ; les bornes
+                // Studio, elles, donnent leur nom
+                var s when string.Equals(s, DiLandImporter.SourceName, StringComparison.OrdinalIgnoreCase)
+                    => "Borne",
+                var s => s,
+            };
+
+        public Brush OrigineBrush => DuComptoir(Order)
+            ? (Brush)Application.Current.Resources["AccentDarkBrush"]
+            : new SolidColorBrush(Color.FromRgb(0x6A, 0x4C, 0x93));
 
         public string StatusText => Order.Status switch
         {
@@ -313,6 +528,19 @@ public partial class OrdersView : UserControl
 
         public List<EnvelopeRow> Envelopes =>
             Retenues.Select(env => new EnvelopeRow(Order, env)).ToList();
+
+        /// <summary>
+        /// L'envoi par courriel ne s'affiche que sur les planches d'IDENTITÉ.
+        ///
+        /// Ce n'est pas une restriction technique — le module enverrait n'importe quelle
+        /// photo — mais l'usage : c'est la photo d'identité qu'un client redemande par
+        /// courriel, pour une démarche en ligne. Sur un paquet de soixante 10×15, le bouton
+        /// n'aurait aucun sens et se cliquerait par erreur.
+        /// </summary>
+        public Visibility MailVisibility =>
+            Retenues.SelectMany(e => e.Lines).Any(EstIdentite)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
     }
 
     private sealed record EnvelopeRow(Order Order, Envelope Envelope)

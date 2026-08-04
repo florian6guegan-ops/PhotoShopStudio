@@ -1,0 +1,44 @@
+using Studio.App.Views;
+
+namespace Studio.App.Infrastructure;
+
+/// <summary>
+/// Le parcours « photo d'identité », d'un seul tenant : document → support → choix des
+/// photos → cadrage → récapitulatif.
+///
+/// Il partait de DEUX endroits — la tuile de l'accueil et celle de l'écran « type de
+/// produit » — avec la même suite d'écrans recopiée mot pour mot. Ajouter l'écran de
+/// sélection n'a donc corrigé qu'une moitié du logiciel : par l'accueil, celui qu'on
+/// utilise réellement en boutique, on tombait toujours directement sur le cadrage, avec
+/// les 455 photos de la carte dans la bande latérale.
+///
+/// C'est la règle déjà écrite pour les commandes de bornes : <b>les BOUTONS se doublent,
+/// ce qu'ils font, non.</b>
+/// </summary>
+public static class ParcoursIdentite
+{
+    /// <summary>Ouvre le parcours, à partir du choix du document.</summary>
+    public static void Ouvrir() =>
+        Navigator.Go(new IdDocumentPickerView(
+                // Une NORME : on choisit le support, puis les photos, puis on cadre.
+                document =>
+                    Navigator.Go(new SourcePickerView((racine, profond) =>
+                            Navigator.Go(new IdPhotoPickerView(racine, document, profond),
+                                $"{document.Country} — choisir les photos")),
+                        "Photos d'identité — choisir le support"),
+
+                // Un PRODUIT tiré tel quel — l'E-Photo. Ce n'est pas une norme : la photo
+                // part entière sur un 10×15, sans gabarit ni recadrage d'identité, et c'est
+                // donc l'écran des tirages qui la sert, produit déjà choisi.
+                //
+                // Sa photo n'arrive presque jamais sur une carte mémoire : le client
+                // l'envoie par courriel ou depuis son téléphone, et elle atterrit dans
+                // Téléchargements. D'où le raccourci, ici et pas ailleurs.
+                produit =>
+                    Navigator.Go(new SourcePickerView((racine, profond) =>
+                            Navigator.Go(new PhotoGridView(racine, produit.Code, avecSousDossiers: profond),
+                                produit.Name),
+                            SourcePickerView.RaccourciTelechargements()),
+                        $"{produit.Name} — choisir le support")),
+            "Photos d'identité — choisir le document");
+}

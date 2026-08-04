@@ -3,19 +3,22 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Imaging;
 using Studio.Core.Mail;
 using Studio.Imaging;
 using Studio.Printing;
+using Studio.Web;
 
 namespace Studio.App.Views;
 
 /// <summary>
-/// Les réglages propres à CE poste : l'envoi des photos par courriel, et le détourage du
-/// fond blanc.
+/// Les réglages propres à CE poste : l'envoi des photos par courriel, le détourage du
+/// fond blanc, et le WiFi du magasin.
 ///
-/// Ils vivent dans les données du poste (<c>config\mail.json</c>, <c>config\detourage.json</c>)
+/// Ils vivent dans les données du poste (<c>config\mail.json</c>, <c>config\detourage.json</c>,
+/// <c>config\wifi.json</c>)
 /// et non dans le dépôt, qui est public : le mot de passe d'application n'a rien à y faire,
 /// et un secret poussé par mégarde ne se rattrape pas.
 ///
@@ -35,6 +38,7 @@ public partial class SettingsView : UserControl
         {
             Montrer(App.Services.Mail);
             MontrerLeDetourage(App.Services.Detourage);
+            MontrerLeWifi(App.Services.Wifi);
         };
     }
 
@@ -87,6 +91,24 @@ public partial class SettingsView : UserControl
 
     private void OnRetour(object sender, RoutedEventArgs e) => Navigator.Back();
 
+    /// <summary>
+    /// Formats mis en avant dans le module photo d'identité.
+    ///
+    /// Ils étaient au Catalogue, où l'on règle les PRODUITS — prix, imprimante, papier.
+    /// Un raccourci n'en est pas un : il dit ce que l'écran identité présente en premier,
+    /// et c'est un réglage du poste. Déplacé ici le 04/08/2026, à la demande de
+    /// l'exploitant, qui les cherchait dans Paramètres.
+    /// </summary>
+    /// <summary>
+    /// Les mots prêts à joindre aux photos. Ils vivent dans leur propre fichier — voir
+    /// <c>MailMessages</c> — parce que cet écran-ci réécrit <c>mail.json</c> en entier.
+    /// </summary>
+    private void OnMessagesPredefinis(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new MailMessagesView(), "Messages prédéfinis");
+
+    private void OnIdShortcuts(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new IdShortcutsView(), "Raccourcis photo d'identité");
+
     private void OnEnregistrer(object sender, RoutedEventArgs e)
     {
         var reglages = Saisie();
@@ -96,6 +118,8 @@ public partial class SettingsView : UserControl
         // le détourage s'applique SANS redémarrage : SaveDetourage réinitialise la session
         // ONNX, sans quoi le nouveau modèle n'aurait cours qu'au prochain lancement
         App.Services.SaveDetourage(SaisieDetourage());
+
+        App.Services.SaveWifi(SaisieWifi());
 
         MessageBox.Show("Réglages enregistrés.", "Paramètres",
             MessageBoxButton.OK, MessageBoxImage.Information);
@@ -256,6 +280,139 @@ public partial class SettingsView : UserControl
             (retenu is not null
                 ? $"« {Path.GetFileName(retenu)} » sera utilisé à sa place."
                 : "aucun modèle n'est installé, le détourage se fera par la méthode couleur.");
+    }
+
+    // ----- WiFi du magasin -----
+
+    /// <summary>
+    /// Vrai le temps de poser les champs à l'ouverture : les gestionnaires de saisie
+    /// doivent alors se taire, sinon l'aperçu se redessine trois fois pour rien.
+    /// </summary>
+    private bool _chargementDuWifi;
+
+    private void MontrerLeWifi(WifiConfig reglages)
+    {
+        _chargementDuWifi = true;
+        try
+        {
+            WifiSsidBox.Text = reglages.Ssid;
+            WifiCleBox.Text = reglages.Password;
+            WifiMasqueCheck.IsChecked = reglages.Hidden;
+            WifiSecuriteCombo.SelectedIndex = IndexDeLaSecurite(reglages.Security);
+        }
+        finally
+        {
+            _chargementDuWifi = false;
+        }
+
+        RafraichirLApercuWifi();
+    }
+
+    /// <summary>
+    /// Les trois lignes de la liste, dans l'ordre du XAML. Tout ce qui n'est ni WEP ni
+    /// « ouvert » vaut WPA — c'est aussi la règle de <see cref="WifiConfig"/>, qui négocie
+    /// WPA2 et WPA3 sous le même nom.
+    /// </summary>
+    private static int IndexDeLaSecurite(string? securite) => securite switch
+    {
+        var s when string.Equals(s, "WEP", StringComparison.OrdinalIgnoreCase) => 1,
+        var s when string.Equals(s, "nopass", StringComparison.OrdinalIgnoreCase) => 2,
+        _ => 0,
+    };
+
+    private static string SecuriteDeLIndex(int index) => index switch
+    {
+        1 => "WEP",
+        2 => "nopass",
+        _ => "WPA",
+    };
+
+    /// <summary>Le réseau tel qu'il est saisi à l'écran, sans l'enregistrer.</summary>
+    private WifiConfig SaisieWifi() => new()
+    {
+        Ssid = WifiSsidBox.Text.Trim(),
+        Password = WifiCleBox.Text,
+        Security = SecuriteDeLIndex(WifiSecuriteCombo.SelectedIndex),
+        Hidden = WifiMasqueCheck.IsChecked == true,
+    };
+
+    private void OnWifiChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _chargementDuWifi) return;
+        RafraichirLApercuWifi();
+    }
+
+    /// <summary>
+    /// Redessine le code et dit ce qu'il vaut.
+    ///
+    /// Le code est fabriqué à partir de ce qui est À L'ÉCRAN, avant tout enregistrement :
+    /// on le scanne avec son propre téléphone et l'on sait tout de suite s'il marche,
+    /// plutôt que de le découvrir devant un client.
+    /// </summary>
+    private void RafraichirLApercuWifi()
+    {
+        var saisie = SaisieWifi();
+
+        if (saisie.Network() is not { } reseau)
+        {
+            WifiQrImage.Source = null;
+            WifiEtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
+            WifiEtatText.Text = ReseauDeWindows() is { } automatique
+                ? $"Aucun réseau saisi : Studio lit celui de Windows ({automatique.Ssid})."
+                : "Aucun réseau saisi, et Windows n'en connaît aucun sur ce poste — " +
+                  "le code de connexion ne s'affichera pas sur l'écran « téléphone ».";
+            return;
+        }
+
+        try
+        {
+            WifiQrImage.Source = EnImage(WifiQr.Png(reseau));
+
+            WifiEtatText.Foreground = (Brush)Application.Current.Resources["OkBrush"];
+            WifiEtatText.Text = reseau.Security == "nopass"
+                ? $"Réseau « {reseau.Ssid} », sans clé."
+                : $"Réseau « {reseau.Ssid} », clé de {reseau.Password.Length} caractère(s).";
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Aperçu du code WiFi impossible", ex);
+            WifiQrImage.Source = null;
+            WifiEtatText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+            WifiEtatText.Text = $"Code impossible à produire : {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Ce que Windows connaît, lu UNE FOIS pour la vie de l'écran.
+    ///
+    /// La lecture lance <c>netsh</c> et exporte un profil : une seconde, sur le fil de
+    /// l'interface. La refaire à chaque frappe ferait ramer la saisie — et la réponse ne
+    /// change pas pendant qu'on remplit un formulaire.
+    /// </summary>
+    private WifiNetwork? ReseauDeWindows()
+    {
+        if (!_reseauDeWindowsLu)
+        {
+            _reseauDeWindows = WifiQr.Current();
+            _reseauDeWindowsLu = true;
+        }
+
+        return _reseauDeWindows;
+    }
+
+    private WifiNetwork? _reseauDeWindows;
+    private bool _reseauDeWindowsLu;
+
+    private static BitmapImage EnImage(byte[] png)
+    {
+        using var flux = new MemoryStream(png);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = flux;
+        image.EndInit();
+        image.Freeze();
+        return image;
     }
 
     /// <summary>

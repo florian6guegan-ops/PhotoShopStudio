@@ -111,6 +111,97 @@ public class TravailEnAttenteTests : IDisposable
     }
 
     /// <summary>
+    /// Une planche d'identité se met de côté avec TOUT ce que l'opérateur y a posé : la
+    /// norme visée, les repères de crâne et de menton, le cadrage, le redressement, les
+    /// deux cases, et la photo qu'il regardait.
+    ///
+    /// C'est le seul travail dont la reprise ne se rattrape pas à la main : refaire les
+    /// repères, c'est refaire la photo d'identité.
+    /// </summary>
+    [Fact]
+    public void Une_planche_d_identite_se_relit_avec_ses_reperes()
+    {
+        var attente = Attente();
+        var travail = new TravailEnAttente
+        {
+            PhotosDirectory = @"E:\DCIM\100CANON",
+            Titre = "Identité 35×45",
+            Identite = new IdentiteEnAttente
+            {
+                Country = "France",
+                Document = "Passeport",
+                WidthMm = 35,
+                HeightMm = 45,
+                HeadMinMm = 32,
+                HeadMaxMm = 36,
+                CrownMarginMm = 3,
+                PhotoCourante = "visage2.jpg",
+                Chemins = [@"E:\DCIM\100CANON\visage1.jpg", @"E:\DCIM\100CANON\visage2.jpg"],
+                Photos =
+                [
+                    new PhotoIdentiteEnAttente
+                    {
+                        FileName = "visage2.jpg",
+                        Selected = true,
+                        Quantity = 2,
+                        Copies = 8,
+                        Prete = true,
+                        CropX = 0.12, CropY = 0.05, CropWidth = 0.55, CropHeight = 0.70,
+                        CrownX = 0.50, CrownY = 0.11,
+                        ChinX = 0.50, ChinY = 0.62,
+                        HeadX = 0.34, HeadY = 0.09, HeadWidth = 0.32, HeadHeight = 0.55,
+                        AxeVisage = 0.48,
+                        Redressement = -1.5,
+                        NoirEtBlanc = true,
+                        FondBlanc = true,
+                        Corrections = new ImageAdjustments { Exposure = 0.3 },
+                    },
+                ],
+            },
+        };
+
+        attente.Enregistrer(travail);
+        var relu = attente.Lire(travail.Id);
+
+        var identite = relu!.Identite;
+        Assert.NotNull(identite);
+        Assert.Equal("France", identite!.Country);
+        Assert.Equal(45, identite.HeightMm, 3);
+        Assert.Equal(3, identite.CrownMarginMm);
+        Assert.Equal("visage2.jpg", identite.PhotoCourante);
+        Assert.Equal(2, identite.Chemins.Count);
+
+        var photo = identite.Photos.Single();
+        Assert.True(photo.Prete);
+        Assert.Equal(8, photo.Copies);
+        Assert.Equal(0.11, photo.CrownY!.Value, 6);
+        Assert.Equal(0.62, photo.ChinY!.Value, 6);
+        Assert.Equal(0.32, photo.HeadWidth!.Value, 6);
+        Assert.Equal(0.48, photo.AxeVisage, 6);
+        Assert.Equal(-1.5, photo.Redressement, 6);
+        Assert.True(photo.NoirEtBlanc);
+        Assert.True(photo.FondBlanc);
+        Assert.Equal(0.3, photo.Corrections.Exposure, 6);
+    }
+
+    /// <summary>
+    /// Une commande de TIRAGES n'a pas de section identité : c'est ce qui décide dans quel
+    /// écran l'accueil la rouvre. Une planche rouverte dans la grille des tirages y
+    /// trouverait un cadre libre, sans gabarit ni repères — précisément ce qui ne permet
+    /// pas de faire une photo d'identité.
+    /// </summary>
+    [Fact]
+    public void Une_commande_de_tirages_n_a_pas_de_section_identite()
+    {
+        var attente = Attente();
+        var travail = Travail();
+
+        attente.Enregistrer(travail);
+
+        Assert.Null(attente.Lire(travail.Id)!.Identite);
+    }
+
+    /// <summary>
     /// Une commande venue d'une clé USB se met de côté comme les autres.
     ///
     /// C'est le point de la refonte : la première version ne savait mettre de côté qu'une

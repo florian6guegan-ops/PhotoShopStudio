@@ -183,13 +183,104 @@ public sealed class AppServices
     /// donc aucun profil à lire. Laissé vide, on retombe sur la lecture automatique, qui
     /// vaudra pour un poste portable.
     /// </summary>
-    public required WifiConfig Wifi { get; init; }
+    public required WifiConfig Wifi { get; set; }
+
+    /// <summary>
+    /// Enregistre le réseau du magasin et l'applique sans redémarrer.
+    ///
+    /// L'objet est REMPLACÉ et pas seulement écrit sur le disque : l'écran « téléphone »
+    /// lit <see cref="Wifi"/> à chaque affichage, et sans cette ligne le code QR aurait
+    /// gardé l'ancien réseau jusqu'au prochain lancement — c'est-à-dire tout l'après-midi.
+    /// </summary>
+    public void SaveWifi(WifiConfig reglages)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+
+        Directory.CreateDirectory(ConfigDir);
+        File.WriteAllText(
+            Path.Combine(ConfigDir, "wifi.json"),
+            JsonSerializer.Serialize(reglages, ProductCatalog.JsonOptions));
+
+        Wifi = reglages;
+    }
 
     /// <summary>
     /// Les impressions en cours. Partagé par toute l'application : c'est lui qui permet
     /// de rendre la main à l'opérateur pendant qu'une commande s'imprime.
     /// </summary>
     public SuiviImpressions Impressions { get; } = new();
+
+    /// <summary>
+    /// Ce qu'on a observé de la consommation de chaque machine, pour estimer ce qui reste.
+    ///
+    /// Convertir un pourcentage d'encre en tirages dépend de la machine et de ce qu'on
+    /// imprime : aucune valeur écrite dans le code ne serait juste. On observe donc, et
+    /// l'estimation s'affine — voir <see cref="EstimationConsommables"/>.
+    /// </summary>
+    public Dictionary<string, ObservationMachine> Consommables { get; private set; } = [];
+
+    private string CheminDesConsommables => Path.Combine(ConfigDir, "consommables.json");
+
+    /// <summary>
+    /// Le débit mesuré de chaque format : combien de secondes une photo prend, maintenances
+    /// comprises. C'est lui qui permet d'annoncer une durée d'attente.
+    /// </summary>
+    public Dictionary<string, DebitMesure> Debits { get; private set; } = [];
+
+    private string CheminDesDebits => Path.Combine(ConfigDir, "debits.json");
+
+    /// <summary>
+    /// Range ce qu'une commande vient d'apprendre sur la cadence d'un format.
+    ///
+    /// Appelé une fois la commande SORTIE en entier : une commande interrompue a passé du
+    /// temps à attendre l'opérateur, pas à imprimer.
+    /// </summary>
+    public void NoterLeDebit(string format, int tirages, TimeSpan duree)
+    {
+        if (string.IsNullOrWhiteSpace(format)) return;
+
+        Debits.TryGetValue(format, out var precedent);
+        var appris = EstimationDuree.Apprendre(precedent, tirages, duree);
+
+        if (appris is null || appris == precedent) return;
+
+        Debits[format] = appris;
+        EstimationDuree.Enregistrer(CheminDesDebits, Debits);
+
+        FileLog.Write($"Cadence mesurée : {format} — {appris.SecondesParTirage:0.0} s par photo " +
+                      $"(sur {appris.TiragesMesures} tirages).");
+    }
+
+    /// <summary>
+    /// Range ce qu'on vient de lire d'une machine, et en tire sa consommation réelle.
+    ///
+    /// Appelé à chaque rafraîchissement du bandeau : c'est là que passent les relevés, et
+    /// ils ne coûtent rien de plus puisqu'on a déjà l'instantané sous la main.
+    /// </summary>
+    public void NoterLesConsommables(IEnumerable<De100PrinterInfo> machines)
+    {
+        ArgumentNullException.ThrowIfNull(machines);
+
+        var change = false;
+
+        foreach (var machine in machines)
+        {
+            if (machine.Supplies is null) continue;
+
+            var cle = machine.MachineId.ToString();
+            Consommables.TryGetValue(cle, out var precedent);
+
+            var appris = EstimationConsommables.Apprendre(
+                precedent, machine.TotalPrintCount, machine.Supplies, DateTimeOffset.Now);
+
+            if (precedent is not null && appris == precedent) continue;
+
+            Consommables[cle] = appris;
+            change = true;
+        }
+
+        if (change) EstimationConsommables.Enregistrer(CheminDesConsommables, Consommables);
+    }
 
     private bool _uploadStarted;
 
@@ -333,6 +424,11 @@ public sealed class AppServices
 
         AppliquerLeDetourage(services.Detourage);
 
+        services.Consommables = EstimationConsommables.Charger(
+            Path.Combine(dataRoot, "config", "consommables.json"));
+        services.Debits = EstimationDuree.Charger(
+            Path.Combine(dataRoot, "config", "debits.json"));
+
         // Ce que la MACHINE a réellement sorti, par opposition à ce qu'on lui a envoyé.
         // L'événement arrive du relais, donc d'un fil de fond : le suivi, lui, est lu par
         // l'interface — on repasse par le répartiteur avant d'y toucher.
@@ -351,10 +447,46 @@ public sealed class AppServices
 
             var repartiteur = System.Windows.Application.Current?.Dispatcher;
 
+            // Le motif voyage jusqu'à l'écran, et pas seulement jusqu'au journal :
+            // l'opérateur doit lire pourquoi la machine a refusé sans aller ouvrir un
+            // fichier — c'est ce qui a manqué trois fois sur le 21×29,7 du 04/08/2026.
+            var motif = reussi ? "" : resultat.Reason;
+
             if (repartiteur is null)
-                services.Impressions.TirageTermine(resultat.JobId, reussi);
+                services.Impressions.TirageTermine(resultat.JobId, reussi, motif);
             else
-                repartiteur.BeginInvoke(() => services.Impressions.TirageTermine(resultat.JobId, reussi));
+                repartiteur.BeginInvoke(() =>
+                    services.Impressions.TirageTermine(resultat.JobId, reussi, motif));
+        };
+
+        // Ce que la machine DIT d'elle-même : bourrage, fin de rouleau, encre épuisée.
+        //
+        // Le relais transmettait ces événements depuis toujours, sans un seul abonné. Un
+        // tirage refusé se lisait donc « erreur signalée par le minilab », point final,
+        // alors que la machine venait d'en donner le motif — c'est ce qui a rendu l'échec
+        // des commandes 04-015 et 04-020 du 04/08/2026 inexplicable après coup.
+        //
+        // Tout va au journal ; seul ce qui ARRIVE et qui est grave monte au bandeau. Un
+        // événement qui se termine (IsActive faux) est une panne qui vient d'être réparée :
+        // l'annoncer ferait clignoter une alerte pour une bonne nouvelle.
+        minilab.MachineEvent += (_, evt) =>
+        {
+            var etat = evt.IsActive ? "" : " (terminé)";
+            FileLog.Write(
+                $"Minilab {evt.MachineId} : {evt.Level} {evt.ErrorNumber} — {evt.Message}{etat}");
+
+            if (!evt.IsActive) return;
+            if (evt.Level is not (De100ErrorLevel.SystemError or De100ErrorLevel.Error)) return;
+
+            var texte = string.IsNullOrWhiteSpace(evt.Message)
+                ? $"Minilab {evt.MachineId} : erreur {evt.ErrorNumber}."
+                : $"Minilab {evt.MachineId} : {evt.Message}";
+
+            var repartiteur = System.Windows.Application.Current?.Dispatcher;
+            if (repartiteur is null)
+                services.Impressions.Informer(texte);
+            else
+                repartiteur.BeginInvoke(() => services.Impressions.Informer(texte));
         };
 
         return services;

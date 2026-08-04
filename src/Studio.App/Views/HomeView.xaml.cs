@@ -107,20 +107,13 @@ public partial class HomeView : UserControl
     private void OnPhoneUpload(object sender, RoutedEventArgs e) =>
         Navigator.Go(new PhoneUploadView(), "Photos depuis un téléphone");
 
-    private void OnIdPhoto(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new IdDocumentPickerView(
-                document =>
-                    Navigator.Go(new SourcePickerView((root, profond) =>
-                        Navigator.Go(new IdPhotoView(root, document, profond),
-                            $"{document.Country} — {document.Document}")),
-                        "Photos d'identité — choisir le support"),
-                // voir ProductTypeView.OnIdPhoto : l'E-Photo est un tirage, pas une norme
-                produit =>
-                    Navigator.Go(new SourcePickerView((root, profond) =>
-                        Navigator.Go(new PhotoGridView(root, produit.Code, avecSousDossiers: profond),
-                            produit.Name)),
-                        $"{produit.Name} — choisir le support")),
-            "Photos d'identité — choisir le document");
+    /// <summary>
+    /// Le parcours identité vit dans <see cref="ParcoursIdentite"/>, et non ici : la même
+    /// suite d'écrans partait aussi de <c>ProductTypeView</c>, recopiée mot pour mot. La
+    /// corriger d'un seul côté laissait l'autre en arrière — et c'est CETTE tuile-ci qu'on
+    /// utilise en boutique.
+    /// </summary>
+    private void OnIdPhoto(object sender, RoutedEventArgs e) => ParcoursIdentite.Ouvrir();
 
     // ----- les commandes mises de côté -----
 
@@ -163,6 +156,16 @@ public partial class HomeView : UserControl
                 $"Elles étaient dans « {travail.PhotosDirectory} » — le support a pu être " +
                 "retiré, ou le dossier effacé.",
                 "En attente", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Une planche d'identité se reprend dans l'écran d'IDENTITÉ. La rouvrir dans la
+        // grille des tirages donnerait un cadre libre — pas de gabarit, pas de repères de
+        // crâne et de menton — c'est-à-dire précisément ce qui ne permet pas de faire une
+        // photo d'identité.
+        if (travail.Identite is not null)
+        {
+            Navigator.Go(new IdPhotoView(travail), $"{travail.Titre} — reprise");
             return;
         }
 

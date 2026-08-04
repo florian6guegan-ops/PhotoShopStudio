@@ -466,6 +466,40 @@ public sealed class DiLandRepository
             ? fileName[..^SuffixeTraite.Length]
             : fileName;
 
+    /// <summary>
+    /// Exécute une requête de LECTURE sur la copie de la base, et rend les lignes telles
+    /// quelles.
+    ///
+    /// Ouverte au diagnostic : la base de DiLand porte des informations qu'aucune API ne
+    /// donne — notamment ce qu'il envoie réellement au minilab pour un format donné. Elle
+    /// travaille sur la COPIE, comme tout le reste de cette classe : la base de DiLand
+    /// n'est jamais ouverte.
+    /// </summary>
+    /// <param name="sql">Requête de lecture. L'appelant est responsable de son innocuité.</param>
+    /// <param name="maxLignes">Garde-fou : une table de commandes compte des dizaines de milliers de lignes.</param>
+    public IReadOnlyList<IReadOnlyList<string>> Interroger(string sql, int maxLignes = 200)
+    {
+        if (!File.Exists(SnapshotPath)) return [];
+
+        using var connexion = OpenSnapshot();
+        connexion.Open();
+
+        using var commande = connexion.CreateCommand();
+        commande.CommandText = sql;
+
+        var lignes = new List<IReadOnlyList<string>>();
+        using var lecteur = commande.ExecuteReader();
+
+        // l'en-tête d'abord : sans les noms de colonnes, une sonde ne dit rien
+        lignes.Add([.. Enumerable.Range(0, lecteur.FieldCount).Select(lecteur.GetName)]);
+
+        while (lecteur.Read() && lignes.Count <= maxLignes)
+            lignes.Add([.. Enumerable.Range(0, lecteur.FieldCount)
+                .Select(i => lecteur.IsDBNull(i) ? "" : lecteur.GetValue(i).ToString() ?? "")]);
+
+        return lignes;
+    }
+
     private SqliteConnection OpenSnapshot()
     {
         var connexion = new SqliteConnection(

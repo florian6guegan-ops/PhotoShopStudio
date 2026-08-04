@@ -17,6 +17,12 @@ using Studio.Store.DiLand;
 if (args.Length > 0 && args[0].Equals("xml", StringComparison.OrdinalIgnoreCase))
     return ComparerDisqueEtBase(args.Length > 1 && int.TryParse(args[1], out var c) ? c : 5);
 
+// « sql <requête> » : lecture libre de la COPIE de la base. Sert au diagnostic — DiLand
+// connaît des choses qu'aucune API n'expose, à commencer par ce qu'il envoie réellement au
+// minilab pour un format donné.
+if (args.Length > 1 && args[0].Equals("sql", StringComparison.OrdinalIgnoreCase))
+    return Interroger(string.Join(' ', args.Skip(1)));
+
 var combien = args.Length > 0 && int.TryParse(args[0], out var n) ? n : 5;
 
 var travail = Path.Combine(Path.GetTempPath(), "studio-diland-probe");
@@ -235,4 +241,36 @@ static int ComparerDisqueEtBase(int combien)
         : $"ATTENTION : {ecarts} commande(s) diffèrent entre le disque et la base.");
 
     return ecarts == 0 ? 0 : 1;
+}
+
+/// Lecture libre de la copie de la base DiLand, pour le diagnostic.
+int Interroger(string sql)
+{
+    var dossier = Path.Combine(Path.GetTempPath(), "studio-diland-probe");
+    var repo = new DiLandRepository(DiLandRepository.DefaultRoot, dossier);
+
+    if (!repo.IsAvailable)
+    {
+        Console.WriteLine("Dépôt DiLand introuvable.");
+        return 1;
+    }
+
+    if (!repo.RefreshSnapshot())
+    {
+        Console.WriteLine("Copie impossible pour l'instant — DiLand écrivait sans doute. Réessayer.");
+        return 1;
+    }
+
+    try
+    {
+        var lignes = repo.Interroger(sql);
+        foreach (var ligne in lignes) Console.WriteLine(string.Join(" | ", ligne));
+        Console.WriteLine($"\n({lignes.Count - 1} ligne(s))");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Requête refusée : {ex.Message}");
+        return 1;
+    }
 }

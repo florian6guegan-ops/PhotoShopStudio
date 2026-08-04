@@ -103,40 +103,7 @@ public partial class IdDocumentPickerView : UserControl
     private sealed record RaccourciTuile(string Libelle, string Detail,
         IdDocumentSpec? Spec, Product? Produit);
 
-    private void Charger()
-    {
-        try
-        {
-            var chemin = Path.Combine(App.Services.CatalogDir, "diland-id-documents.json");
-            if (!File.Exists(chemin))
-            {
-                // le référentiel vit dans le dépôt tant qu'il n'a pas été installé
-                var depot = TrouverDansLeDepot();
-                if (depot is not null) chemin = depot;
-            }
-
-            _documents = File.Exists(chemin)
-                ? IdDocumentCatalog.Load(chemin)
-                : [IdDocumentSpec.France];
-        }
-        catch (Exception ex)
-        {
-            FileLog.Write("Référentiel des documents d'identité illisible", ex);
-            _documents = [IdDocumentSpec.France];
-        }
-    }
-
-    private static string? TrouverDansLeDepot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidat = Path.Combine(dir.FullName, "catalog", "diland-id-documents.json");
-            if (File.Exists(candidat)) return candidat;
-            dir = dir.Parent;
-        }
-        return null;
-    }
+    private void Charger() => _documents = ReferentielIdentite.Charger();
 
     private void Afficher()
     {

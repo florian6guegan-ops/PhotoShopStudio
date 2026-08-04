@@ -42,6 +42,8 @@ public partial class ProductEditView : UserControl
         FitCombo.SelectedIndex = Math.Max(0, Array.FindIndex(Cadrages, c => c.Valeur == product.DefaultFit));
         BorderBox.Text = product.BorderMm.ToString(CultureInfo.CurrentCulture);
         DpiBox.Text = product.Dpi.ToString(CultureInfo.CurrentCulture);
+        PrintExposureBox.Text = product.PrintExposure.ToString("0.##", CultureInfo.CurrentCulture);
+        MinilabSizeNameBox.Text = product.MinilabPrintSizeName ?? "";
         EnabledCheck.IsChecked = product.Enabled;
 
         RefreshIccList(product.IccProfile);
@@ -162,6 +164,11 @@ public partial class ProductEditView : UserControl
         _product.DefaultFit = Cadrages[FitCombo.SelectedIndex].Valeur;
         _product.BorderMm = parsed.Border;
         _product.Dpi = parsed.Dpi;
+        _product.PrintExposure = parsed.PrintExposure;
+        // vide = Studio le déduit du rouleau ; null et non "" pour que le JSON reste lisible
+        _product.MinilabPrintSizeName = MinilabSizeNameBox.Text.Trim() is { Length: > 0 } nomFormat
+            ? nomFormat
+            : null;
         _product.IccProfile = IccCombo.SelectedItem as string is { } icc && icc != NoIcc ? icc : null;
         _product.Enabled = EnabledCheck.IsChecked == true;
         // la fiche ne montre que trois des sept réglages de planche : les quatre autres
@@ -190,11 +197,11 @@ public partial class ProductEditView : UserControl
     }
 
     private sealed record Parsed(decimal Price, double Width, double Height, double Border,
-        int Dpi, int SheetCopies, double SheetW, double SheetH);
+        int Dpi, double PrintExposure, int SheetCopies, double SheetW, double SheetH);
 
     private string? Validate(out Parsed parsed)
     {
-        parsed = new Parsed(0, 0, 0, 0, 300, 6, 35, 45);
+        parsed = new Parsed(0, 0, 0, 0, 300, 0, 6, 35, 45);
 
         if (string.IsNullOrWhiteSpace(NameBox.Text)) return "Le nom est obligatoire.";
         if (string.IsNullOrWhiteSpace(CodeBox.Text)) return "Le code est obligatoire.";
@@ -206,6 +213,13 @@ public partial class ProductEditView : UserControl
             return "Choisissez une imprimante — c'est une sortie « file d'impression Windows ».";
         if (!TryParseDouble(BorderBox.Text, out var border) || border < 0) return "Marge invalide.";
         if (!int.TryParse(DpiBox.Text, out var dpi) || dpi is < 72 or > 1200) return "Résolution invalide (72 à 1200 dpi).";
+
+        // ±2 IL : au-delà, ce n'est plus une correction de machine mais une erreur de
+        // saisie — un facteur quatre sur la lumière ne se rattrape pas sur du papier
+        var exposition = 0.0;
+        if (PrintExposureBox.Text.Trim().Length > 0
+            && (!TryParseDouble(PrintExposureBox.Text, out exposition) || Math.Abs(exposition) > 2))
+            return "Exposition à l'impression invalide (−2 à +2 diaphragmes, 0 = aucune correction).";
 
         int sheetCopies = 6;
         double sheetW = 35, sheetH = 45;
@@ -228,7 +242,7 @@ public partial class ProductEditView : UserControl
                        $"(maximum {capacity}).";
         }
 
-        parsed = new Parsed(price, width, height, border, dpi, sheetCopies, sheetW, sheetH);
+        parsed = new Parsed(price, width, height, border, dpi, exposition, sheetCopies, sheetW, sheetH);
         return null;
     }
 

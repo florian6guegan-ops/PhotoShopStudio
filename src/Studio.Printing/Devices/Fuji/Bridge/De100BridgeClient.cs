@@ -128,10 +128,15 @@ public sealed class De100BridgeClient : IAsyncDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true,
+
+            // Le relais écrit son journal en UTF-8 ; sans cette ligne, .NET le relit dans
+            // la page de codes ANSI du poste et « trouvé » arrive en « trouvÃ© ».
+            StandardErrorEncoding = new UTF8Encoding(false),
         };
         PointerVersLeRuntime32Bits(demarrage);
 
         _host = Process.Start(demarrage);
+        DrainerLaSortieDErreur();
 
         _pipe = new NamedPipeClientStream(".", De100Protocol.PipeName, PipeDirection.InOut,
             PipeOptions.Asynchronous);
@@ -169,6 +174,20 @@ public sealed class De100BridgeClient : IAsyncDisposable
 
     public async Task<De100PrinterInfo?> GetPrinterInfoAsync(char machineId) =>
         await SendAsync<De100PrinterInfo>(De100Commands.PrinterInfo, machineId.ToString());
+
+    /// <summary>
+    /// La définition que la machine attend pour un format, en pixels. <c>(0, 0)</c> = elle
+    /// n'a rien voulu en dire.
+    /// </summary>
+    public async Task<(uint Width, uint Height)> PixelCountAsync(
+        char machineId, double widthMm, double heightMm, uint dpi)
+    {
+        var reponse = await SendAsync<De100PixelCountResponse>(
+            De100Commands.PixelCount,
+            new De100PixelCountRequest(machineId, widthMm, heightMm, dpi));
+
+        return reponse is null ? (0, 0) : (reponse.Width, reponse.Height);
+    }
 
     /// <summary>Abonne le relais aux notifications : sans cela, aucun tirage n'aura d'issue.</summary>
     public async Task SubscribeAsync(char machineId) =>
@@ -217,6 +236,53 @@ public sealed class De100BridgeClient : IAsyncDisposable
     }
 
     /// <summary>
+    /// Les dernières lignes que le relais a écrites sur sa sortie d'erreur.
+    ///
+    /// Bornée : le relais journalise chaque commande, et on ne garde que de quoi
+    /// comprendre une panne — pas la séance entière.
+    /// </summary>
+    private readonly Queue<string> _dernieresLignes = new();
+
+    private const int LignesGardees = 40;
+
+    /// <summary>
+    /// Vide la sortie d'erreur du relais EN CONTINU, et la déverse dans le journal.
+    ///
+    /// <b>Sans cela, le relais se fige.</b> Il écrit tous ses journaux sur
+    /// <c>Console.Error</c> — une ligne par commande traitée — et cette sortie est
+    /// redirigée. Le tampon d'un tube anonyme fait quelques kilo-octets : une fois plein,
+    /// <c>WriteLine</c> BLOQUE le processus enfant, qui cesse de répondre. L'application
+    /// voyait alors « Pipe is broken », relançait le relais, et le cycle recommençait —
+    /// vingt-sept redémarrages dans la journée du 04/08/2026, des verdicts de tirage
+    /// perdus, et un bandeau des machines qui se vidait.
+    ///
+    /// La lecture ne se faisait qu'en cas d'échec au DÉMARRAGE (<see cref="DescribeStartupFailure"/>) :
+    /// autant dire jamais, puisque le démarrage réussit presque toujours.
+    ///
+    /// Effet de bord recherché : ce que le relais a à dire arrive enfin au journal, avec le
+    /// préfixe « relais ». C'est le seul endroit d'où l'on voit ce qui se passe côté SDK.
+    /// </summary>
+    private void DrainerLaSortieDErreur()
+    {
+        if (_host is null) return;
+
+        _host.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+
+            lock (_dernieresLignes)
+            {
+                _dernieresLignes.Enqueue(e.Data);
+                while (_dernieresLignes.Count > LignesGardees) _dernieresLignes.Dequeue();
+            }
+
+            Log?.Invoke($"relais · {e.Data}");
+        };
+
+        _host.BeginErrorReadLine();
+    }
+
+    /// <summary>
     /// Explique pourquoi le relais n'a pas répondu, en reprenant sa sortie d'erreur quand
     /// il s'est arrêté tout seul. Le cas le plus fréquent au premier déploiement est
     /// l'absence du runtime .NET 32 bits, que rien d'autre ne signale.
@@ -226,15 +292,10 @@ public sealed class De100BridgeClient : IAsyncDisposable
         if (_host is null || !_host.HasExited)
             return "Le relais DE100 a démarré mais n'a pas ouvert la liaison dans le délai imparti.";
 
-        var stderr = "";
-        try
-        {
-            stderr = _host.StandardError.ReadToEnd().Trim();
-        }
-        catch (InvalidOperationException)
-        {
-            // sortie déjà consommée ou non redirigée
-        }
+        // ce que le drainage a recueilli : ReadToEnd n'est plus possible une fois
+        // BeginErrorReadLine engagé, et ce serait de toute façon la même chose
+        string stderr;
+        lock (_dernieresLignes) stderr = string.Join("\n", _dernieresLignes).Trim();
 
         var message = $"Le relais DE100 s'est arrêté aussitôt lancé (code {_host.ExitCode}).\n{hostPath}";
 

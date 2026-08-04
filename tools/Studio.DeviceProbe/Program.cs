@@ -145,6 +145,20 @@ int ProbeDe100(string[] argv)
             Console.WriteLine();
         }
 
+        if (argv.Length >= 2 && argv[1].Equals("formats", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var machineId in machines) SonderLesFormats(driver, machineId);
+            return 0;
+        }
+
+        // « de100 essais <machine> <image> » : fait varier un paramètre d'envoi à la fois
+        if (argv.Length >= 4 && argv[1].Equals("essais", StringComparison.OrdinalIgnoreCase))
+            return SonderLesEnvois(driver, argv[2][0], argv[3]);
+
+        // « de100 definitions <machine> <image> » : fait varier la DÉFINITION de l'image
+        if (argv.Length >= 4 && argv[1].Equals("definitions", StringComparison.OrdinalIgnoreCase))
+            return SonderLesDefinitions(driver, argv[2][0], argv[3]);
+
         if (argv.Length >= 3 && argv[1].Equals("test", StringComparison.OrdinalIgnoreCase))
         {
             // jamais la première machine venue : la A de la boutique est hors ligne
@@ -174,6 +188,287 @@ int ProbeDe100(string[] argv)
         Console.WriteLine($"  Le SDK a refusé la demande : {ex.Message}");
         return 1;
     }
+}
+
+/// Demande à la MACHINE quels formats elle sait produire, sans rien imprimer.
+///
+/// Écrit pour le 21×29,7 des commandes 04-015 à 04-029 du 04/08/2026 : accepté à l'envoi,
+/// refusé dix secondes plus tard, sans message ni événement machine. Notre table des
+/// formats vient du pilote de DiLand ; celle-ci vient du minilab lui-même.
+void SonderLesFormats(De100Driver driver, char machineId)
+{
+    Section($"Machine '{machineId}' — formats acceptés par la machine");
+
+    var info = driver.GetPrinterInfo(machineId);
+    var rouleau = info.Media?.PaperWidthMm ?? 0;
+    Console.WriteLine($"  Rouleau chargé : {rouleau} mm\n");
+
+    // les formats de la boutique, plus le 21×29,7 en cause
+    (string Nom, double L, double H)[] candidats =
+    [
+        ("10x15", 152, 102),
+        ("13x18", 152, 127),
+        ("15x20", 152, 203),
+        ("20x30", 203, 305),
+        ("21x29,7 (210x297)", 210, 297),
+        ("21x29,7 en travers", 297, 210),
+        ("A4 exact (210x297)", 210, 297),
+        ("21x21", 210, 210),
+        ("21x15", 210, 152),
+    ];
+
+    Console.WriteLine($"  {"Format",-22} {"demandé",-14} {"verdict SDK",-12} définition attendue");
+    foreach (var (nom, l, h) in candidats)
+    {
+        var (resultat, w, px) = driver.FormatAccepte(machineId, l, h);
+        var pixels = resultat == PifResult.Ok && w > 0 ? $"{w} × {px} px" : "—";
+        Console.WriteLine($"  {nom,-22} {$"{l:0}×{h:0} mm",-14} {resultat,-12} {pixels}");
+    }
+
+    // Les noms viennent de DevPrintInfoParam.ini, le fichier de correspondance du SDK
+    // livré avec DiLand : c'est la liste EXHAUSTIVE de ce que PHIF_GetValue sait rendre.
+    // PaperLengthMin/Max sont les plus attendues ici — un rouleau qui plafonne sous
+    // 297 mm expliquerait à lui seul le refus du 21×29,7.
+    Console.WriteLine("\n  Propriétés lisibles de la machine :");
+    string[] noms =
+    [
+        "PaperLengthMin", "PaperLengthMax", "PaperName", "PaperType", "PaperAuxiliaryInfo",
+        "MagazineCaption", "NumResolution", "Resolution", "LongScale",
+        "PrinterDetailStatus", "CntDrvWaiting", "CntPrnWaiting", "CntPrnPrinting", "CntWaiting",
+        "FirmwareVersion", "QualitySupport", "ExpressSupport", "TwoSidedPrint", "DuplexPrint",
+        "CutWaste", "SorterUnit", "MaintenanceOpe", "PrintedSheets",
+    ];
+
+    var trouvees = driver.LireProprietes(machineId, noms, [0, 1, 2, 3]);
+    if (trouvees.Count == 0)
+    {
+        Console.WriteLine("    (aucune de ces propriétés n'a rendu de valeur)");
+    }
+    else
+    {
+        foreach (var (nom, indice, valeur) in trouvees)
+            Console.WriteLine($"    {nom}{(indice == 0 ? "" : $"[{indice}]"),-6} = {valeur}");
+    }
+
+    Console.WriteLine();
+}
+
+/// Enchaîne des envois d'essai en faisant varier UN paramètre à la fois, et s'arrête au
+/// premier qui sort.
+///
+/// Écrit pour le 21×29,7 refusé par la machine B sans le moindre motif, quand « 210x297 »
+/// comme « A4 » ont échoué. Rien ne sort tant que la machine refuse : les essais ne
+/// coûtent donc pas de papier, et le premier qui réussit donne la réponse.
+///
+/// L'ordre compte. Le premier essai est un TÉMOIN : un format dont on SAIT qu'il sort
+/// (210 × 240, celui du 18×24). S'il échoue lui aussi, ce n'est pas le format qui est en
+/// cause mais le protocole d'essai, et il faut s'arrêter là.
+int SonderLesEnvois(De100Driver driver, char machineId, string imagePath)
+{
+    Section($"Essais d'envoi sur la machine '{machineId}'");
+
+    if (!File.Exists(imagePath))
+    {
+        Console.WriteLine($"  Image introuvable : {imagePath}");
+        return 1;
+    }
+
+    var info = driver.GetPrinterInfo(machineId);
+    var surface = info.Media?.Surface ?? De100Surface.Glossy;
+    Console.WriteLine($"  Rouleau {info.Media?.PaperWidthMm} mm, finition {surface}");
+    Console.WriteLine($"  Image : {Path.GetFullPath(imagePath)}\n");
+
+    (string Quoi, double W, double H, string Nom)[] essais =
+    [
+        ("TÉMOIN — le format du 18×24, qui sort",        210, 240, "210x240"),
+        ("le format actuel du 21×29,7",                  210, 297, "210x297"),
+        ("le nom du format chez DiLand",                 210, 297, "A4"),
+        ("le nom du CANAL chez DiLand",                  210, 297, "21xL"),
+        ("cotes inversées, nom du canal",                297, 210, "21xL"),
+        ("cotes inversées, nom du format",               297, 210, "A4"),
+        ("cotes inversées, nom déduit",                  297, 210, "297x210"),
+        ("canal variable, longueur juste sous 297",      210, 296, "21xL"),
+        ("sans nom de format du tout",                   210, 297, ""),
+    ];
+
+    De100JobResult? issue = null;
+    using var fini = new ManualResetEventSlim(false);
+
+    driver.JobFinished += (_, resultat) => { issue = resultat; fini.Set(); };
+    driver.MachineEvent += (_, evt) =>
+        Console.WriteLine($"    [machine] {evt.Level} {evt.ErrorNumber} : {evt.Message}");
+    driver.Subscribe(machineId);
+
+    for (var i = 0; i < essais.Length; i++)
+    {
+        var (quoi, w, h, nom) = essais[i];
+        Console.WriteLine($"  [{i + 1}/{essais.Length}] {quoi}");
+        Console.WriteLine($"        Width={w:0} Height={h:0} PrintSizeName=" +
+                          (nom.Length > 0 ? $"« {nom} »" : "(vide)"));
+
+        issue = null;
+        fini.Reset();
+
+        try
+        {
+            var handle = driver.Submit(new De100PrintJob(
+                JobId: $"essai-{i + 1}-" + DateTime.Now.ToString("HHmmss"),
+                ImagePath: Path.GetFullPath(imagePath),
+                WidthMm: w,
+                HeightMm: h,
+                PrintSizeName: nom,
+                Surface: surface,
+                Copies: 1), machineId);
+
+            Console.WriteLine($"        accepté à l'envoi (handle {handle}), attente du verdict…");
+        }
+        catch (De100Exception ex)
+        {
+            // refus À L'ENVOI : la machine n'a même pas pris la commande, c'est déjà une
+            // réponse et elle ne coûte rien
+            Console.WriteLine($"        REFUSÉ À L'ENVOI : {ex.Message}\n");
+            continue;
+        }
+
+        if (!fini.Wait(TimeSpan.FromMinutes(2)))
+        {
+            Console.WriteLine("        pas de verdict en 2 min — on passe au suivant.\n");
+            continue;
+        }
+
+        var verdict = issue!;
+        Console.WriteLine($"        → {verdict.Outcome} · {verdict.Reason}\n");
+
+        if (verdict.Outcome == De100JobOutcome.Printed)
+        {
+            Console.WriteLine("  ═══════════════════════════════════════════════════════");
+            Console.WriteLine($"  CELUI-CI SORT : Width={w:0} Height={h:0} " +
+                              $"PrintSizeName=" + (nom.Length > 0 ? $"« {nom} »" : "(vide)"));
+            Console.WriteLine("  ═══════════════════════════════════════════════════════");
+            Console.WriteLine("  On s'arrête ici : une feuille est en train de sortir.");
+            return 0;
+        }
+    }
+
+    Console.WriteLine("  Aucun essai n'est sorti. Le nom du format n'est pas en cause :");
+    Console.WriteLine("  il faut regarder ailleurs (configuration de la machine, canal");
+    Console.WriteLine("  absent de SA table, ou limitation du magasin).");
+    return 1;
+}
+
+/// Deuxième série : on fait varier la DÉFINITION de l'image, pas son nom de format.
+///
+/// La première série a montré que même le format du 18×24 est refusé quand on lui envoie
+/// une image au mauvais rapport — et que la machine ne consomme ni papier ni compteur sur
+/// un refus. `PIF_DevGetPixelCount` dit ce qu'elle ATTEND : 2515 × 3543 px pour un
+/// 210 × 297, là où Studio envoie 2480 × 3508. L'écart de 35 px est le débord de 3 mm que
+/// la machine ajoute.
+///
+/// L'hypothèse : les canaux VARIABLES tolèrent l'à-peu-près (le 18×24 sort en 2480 × 2835),
+/// les canaux FIXES comme A4 exigent la définition exacte.
+int SonderLesDefinitions(De100Driver driver, char machineId, string imagePath)
+{
+    Section($"Essais de DÉFINITION sur la machine '{machineId}'");
+
+    if (!File.Exists(imagePath))
+    {
+        Console.WriteLine($"  Image introuvable : {imagePath}");
+        return 1;
+    }
+
+    var info = driver.GetPrinterInfo(machineId);
+    var surface = info.Media?.Surface ?? De100Surface.Glossy;
+
+    var (verdict, attendueW, attendueH) = driver.FormatAccepte(machineId, 210, 297);
+    Console.WriteLine($"  La machine attend {attendueW} × {attendueH} px pour un 210 × 297 " +
+                      $"({verdict})");
+    Console.WriteLine($"  Studio envoie aujourd'hui 2480 × 3508 px\n");
+
+    var dossier = Path.Combine(Path.GetTempPath(), "studio-essais-de100");
+    Directory.CreateDirectory(dossier);
+
+    // chaque essai : cotes annoncées, nom, et définition de l'image à fabriquer
+    (string Quoi, double W, double H, string Nom, uint PxW, uint PxH)[] essais =
+    [
+        ("définition EXACTE attendue, nom déduit", 210, 297, "210x297", attendueW, attendueH),
+        ("définition EXACTE attendue, nom A4",     210, 297, "A4",      attendueW, attendueH),
+        ("définition EXACTE attendue, nom 21xL",   210, 297, "21xL",    attendueW, attendueH),
+        ("TÉMOIN 18×24 à sa définition juste",     210, 240, "210x240", 2480, 2835),
+    ];
+
+    De100JobResult? issue = null;
+    using var fini = new ManualResetEventSlim(false);
+
+    driver.JobFinished += (_, resultat) => { issue = resultat; fini.Set(); };
+    driver.MachineEvent += (_, evt) =>
+        Console.WriteLine($"    [machine] {evt.Level} {evt.ErrorNumber} : {evt.Message}");
+    driver.Subscribe(machineId);
+
+    for (var i = 0; i < essais.Length; i++)
+    {
+        var (quoi, w, h, nom, pxW, pxH) = essais[i];
+
+        // L'image est REDIMENSIONNÉE sans conserver le rapport : on veut exactement la
+        // définition demandée, c'est tout l'objet de l'essai.
+        //
+        // GDI+ et non Magick.NET : cette sonde est en 32 bits — le SDK Fuji l'impose — et
+        // le Magick.NET du projet est en x64.
+        var fichier = Path.Combine(dossier, $"essai-{i + 1}-{pxW}x{pxH}.png");
+        using (var source = new System.Drawing.Bitmap(Path.GetFullPath(imagePath)))
+        using (var cible = new System.Drawing.Bitmap((int)pxW, (int)pxH))
+        {
+            cible.SetResolution(300, 300);
+            using (var g = System.Drawing.Graphics.FromImage(cible))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(source, 0, 0, (int)pxW, (int)pxH);
+            }
+            cible.Save(fichier, System.Drawing.Imaging.ImageFormat.Png);
+        }
+
+        Console.WriteLine($"  [{i + 1}/{essais.Length}] {quoi}");
+        Console.WriteLine($"        Width={w:0} Height={h:0} PrintSizeName=« {nom} » " +
+                          $"image {pxW} × {pxH} px");
+
+        issue = null;
+        fini.Reset();
+
+        try
+        {
+            driver.Submit(new De100PrintJob(
+                JobId: $"def-{i + 1}-" + DateTime.Now.ToString("HHmmss"),
+                ImagePath: fichier,
+                WidthMm: w,
+                HeightMm: h,
+                PrintSizeName: nom,
+                Surface: surface,
+                Copies: 1), machineId);
+        }
+        catch (De100Exception ex)
+        {
+            Console.WriteLine($"        REFUSÉ À L'ENVOI : {ex.Message}\n");
+            continue;
+        }
+
+        if (!fini.Wait(TimeSpan.FromMinutes(2)))
+        {
+            Console.WriteLine("        pas de verdict en 2 min — on passe au suivant.\n");
+            continue;
+        }
+
+        Console.WriteLine($"        → {issue!.Outcome} · {issue.Reason}\n");
+
+        if (issue.Outcome == De100JobOutcome.Printed)
+        {
+            Console.WriteLine("  ═══════════════════════════════════════════════════════");
+            Console.WriteLine($"  CELUI-CI SORT : {pxW} × {pxH} px, nom « {nom} »");
+            Console.WriteLine("  ═══════════════════════════════════════════════════════");
+            return 0;
+        }
+    }
+
+    Console.WriteLine("  Aucun essai n'est sorti.");
+    return 1;
 }
 
 int SubmitTestPrint(De100Driver driver, char machineId, string imagePath)

@@ -45,12 +45,37 @@ public sealed class ThumbnailService
     }
 
     /// <summary>
+    /// Une vignette et la définition de la photo dont elle vient.
+    /// </summary>
+    /// <param name="Jpeg">La vignette.</param>
+    /// <param name="SourceWidth">Largeur de l'original, orientation EXIF appliquée.</param>
+    /// <param name="SourceHeight">Hauteur de l'original, orientation EXIF appliquée.</param>
+    public sealed record Vignette(byte[] Jpeg, int SourceWidth, int SourceHeight);
+
+    /// <summary>
     /// Une vignette d'AU MOINS <paramref name="boxPx"/> de côté, en JPEG.
     ///
     /// La taille rendue est arrondie au palier supérieur : on ne renvoie jamais moins fin que
     /// demandé, mais on accepte volontiers plus fin s'il traîne déjà en cache.
     /// </summary>
-    public byte[] GetJpeg(string sourcePath, int boxPx = Defaut)
+    public byte[] GetJpeg(string sourcePath, int boxPx = Defaut) => Lire(sourcePath, boxPx).Jpeg;
+
+    /// <summary>
+    /// La vignette ET la définition de l'original, en une seule ouverture du fichier.
+    ///
+    /// <b>Pourquoi les deux ensemble.</b> La grille affiche la définition et le rapport sur
+    /// chaque tuile, comme DiLand. Elle les demandait à <c>ImagePipeline.GetOrientedSize</c>,
+    /// c'est-à-dire par un SECOND parcours du fichier — un <c>Ping</c>, certes, mais qui
+    /// ouvre quand même chaque photo une fois de plus. Sur une carte SD ou une clé USB,
+    /// c'est le coût qui compte, pas le décodage. Et il était payé même quand la vignette
+    /// était déjà en cache : rouvrir un dossier déjà vu touchait donc les 33 fichiers pour
+    /// rien.
+    ///
+    /// La définition est donc mise en cache À CÔTÉ de la vignette, dans un fichier
+    /// <c>.dim</c>. Cache chaud = deux petites lectures dans le cache, zéro accès à
+    /// l'original.
+    /// </summary>
+    public Vignette Lire(string sourcePath, int boxPx = Defaut)
     {
         var demande = Palier(boxPx);
 
@@ -64,7 +89,15 @@ public sealed class ThumbnailService
 
             try
             {
-                return File.ReadAllBytes(candidat);
+                var jpeg = File.ReadAllBytes(candidat);
+
+                // Les vignettes d'avant ce fichier compagnon n'en ont pas : on lit la
+                // définition à l'ancienne, une fois, et on la dépose pour les suivantes.
+                var (largeur, hauteur) = LireLaDefinition(candidat)
+                                         ?? DefinitionDeLOriginal(sourcePath);
+                EcrireLaDefinition(candidat, largeur, hauteur);
+
+                return new Vignette(jpeg, largeur, hauteur);
             }
             catch (IOException)
             {
@@ -77,23 +110,106 @@ public sealed class ThumbnailService
         var settings = new MagickReadSettings();
         var ext = Path.GetExtension(sourcePath).ToLowerInvariant();
         if (ext is ".jpg" or ".jpeg")
-            settings.SetDefine(MagickFormat.Jpeg, "size", $"{demande * 2}x{demande * 2}");
+        {
+            // Le décodeur JPEG ne sait réduire que par 1/2, 1/4, 1/8, et il choisit le
+            // premier facteur qui reste AU MOINS aussi grand que l'indication. Demander le
+            // double de la vignette (1024 pour 512) lui faisait donc décoder deux fois
+            // trop de pixels : 3 557 ms pour 20 photos de 6 Mo, contre 2 378 ms à
+            // l'indication juste — un tiers de moins, pour une vignette d'un kilo-octet de
+            // différence. Mesuré le 04/08/2026 sur les photos de la commande 08-012.
+            settings.SetDefine(MagickFormat.Jpeg, "size", $"{demande}x{demande}");
+        }
 
         using var image = new MagickImage(sourcePath, settings);
+
+        // La définition de l'ORIGINAL, avant toute réduction : BaseWidth/BaseHeight ne
+        // suivent pas l'échelle appliquée par le décodeur. L'orientation se lit ici, avant
+        // AutoOrient — après, elle vaut TopLeft et le portrait passerait pour un paysage.
+        var (sourceW, sourceH) = OrienterLesCotes(
+            (int)image.BaseWidth, (int)image.BaseHeight, image.Orientation);
+
         image.AutoOrient();
         image.Thumbnail((uint)demande, (uint)demande); // conserve les proportions dans la boîte
         image.Quality = 82;
         var bytes = image.ToByteArray(MagickFormat.Jpeg);
 
+        var chemin = CheminCache(sourcePath, demande);
         try
         {
-            File.WriteAllBytes(CheminCache(sourcePath, demande), bytes);
+            File.WriteAllBytes(chemin, bytes);
+            EcrireLaDefinition(chemin, sourceW, sourceH);
         }
         catch (IOException)
         {
             // cache plein ou verrouillé : tant pis, la vignette est déjà en mémoire
         }
-        return bytes;
+        return new Vignette(bytes, sourceW, sourceH);
+    }
+
+    /// <summary>
+    /// Les cotes telles qu'on les VOIT, l'orientation EXIF appliquée : les quatre
+    /// orientations à quart de tour échangent largeur et hauteur.
+    ///
+    /// Aucun essai ne la couvre : produire un JPEG portant une orientation EXIF avec
+    /// Magick.NET s'est révélé peu fiable — l'étiquette écrite se relit à 0. La règle est
+    /// en revanche celle, éprouvée, d'<c>ImagePipeline.GetOrientedSize</c>, dont ce code
+    /// prend la place. À contrôler à l'œil sur une photo prise à la verticale : la tuile
+    /// doit annoncer « 4000 × 6000 » et non l'inverse.
+    /// </summary>
+    private static (int Width, int Height) OrienterLesCotes(int width, int height, OrientationType orientation) =>
+        orientation is OrientationType.LeftTop or OrientationType.RightTop
+            or OrientationType.RightBottom or OrientationType.LeftBottom
+            ? (height, width)
+            : (width, height);
+
+    /// <summary>Le fichier compagnon qui porte la définition de l'original.</summary>
+    private static string CheminDefinition(string cheminVignette) => cheminVignette + ".dim";
+
+    private static (int Width, int Height)? LireLaDefinition(string cheminVignette)
+    {
+        try
+        {
+            var chemin = CheminDefinition(cheminVignette);
+            if (!File.Exists(chemin)) return null;
+
+            var parts = File.ReadAllText(chemin).Split('x');
+            if (parts.Length == 2
+                && int.TryParse(parts[0], out var w)
+                && int.TryParse(parts[1], out var h)
+                && w > 0 && h > 0)
+                return (w, h);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // fichier compagnon illisible : on retombera sur la lecture de l'original
+        }
+
+        return null;
+    }
+
+    private static void EcrireLaDefinition(string cheminVignette, int width, int height)
+    {
+        try
+        {
+            File.WriteAllText(CheminDefinition(cheminVignette), $"{width}x{height}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // sans lui, on relira l'original la prochaine fois : coûteux, jamais faux
+        }
+    }
+
+    /// <summary>
+    /// La définition de l'original, lue dans son en-tête. Le repli quand le fichier
+    /// compagnon manque — c'est le cas des vignettes mises en cache avant lui.
+    /// </summary>
+    private static (int Width, int Height) DefinitionDeLOriginal(string sourcePath)
+    {
+        MagickInit.Configure();
+
+        using var image = new MagickImage();
+        image.Ping(sourcePath);
+        return OrienterLesCotes((int)image.Width, (int)image.Height, image.Orientation);
     }
 
     /// <summary>

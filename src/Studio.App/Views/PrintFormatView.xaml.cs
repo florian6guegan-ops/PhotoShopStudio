@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
 
@@ -79,22 +80,47 @@ public partial class PrintFormatView : UserControl
         public string Nom => Produit?.Name ?? "Personnalisé";
 
         public string Dimensions => Produit is not null
-            ? $"{Produit.WidthMm:0} × {Produit.HeightMm:0} mm · {Destination}"
+            ? $"{Produit.WidthMm:0} × {Produit.HeightMm:0} mm"
             : Famille == PrintFamily.Enlargement
-                ? "A4, A3, A2… ou la taille de votre choix · Epson"
-                : "taille au choix · minilab";
+                ? "A4, A3, A2… ou la taille de votre choix"
+                : "taille au choix";
 
         /// <summary>
         /// Machine qui sortira le tirage. Sans cette mention, deux formats homonymes
         /// deviennent indiscernables : le 10×15 du minilab et celui de la DS620 ne font
         /// pas la même taille et ne sortent pas de la même machine.
         /// </summary>
-        private string Destination => Produit!.Output switch
+        public string Destination => Produit is null
+            ? Famille == PrintFamily.Enlargement ? "Epson" : "Minilab DE100"
+            : Produit.Output switch
+            {
+                ProductOutput.FujiMinilab => "Minilab DE100",
+                ProductOutput.ManualFile => "Epson",
+                _ => string.IsNullOrWhiteSpace(Produit.PrinterName) ? "à définir" : Produit.PrinterName,
+            };
+
+        /// <summary>
+        /// Une couleur PAR MACHINE : c'est ce qui se repère sans lire, et c'est tout
+        /// l'intérêt de la pastille. Le minilab en bleu, la sublimation en violet, l'Epson
+        /// en vert — les mêmes teintes que le bandeau des machines.
+        /// </summary>
+        public Brush DestinationBrush
         {
-            ProductOutput.FujiMinilab => "minilab",
-            ProductOutput.ManualFile => "Epson",
-            _ => string.IsNullOrWhiteSpace(Produit.PrinterName) ? "à définir" : Produit.PrinterName,
-        };
+            get
+            {
+                var sortie = Produit?.Output
+                             ?? (Famille == PrintFamily.Enlargement
+                                 ? ProductOutput.ManualFile
+                                 : ProductOutput.FujiMinilab);
+
+                return sortie switch
+                {
+                    ProductOutput.FujiMinilab => (Brush)Application.Current.Resources["AccentDarkBrush"],
+                    ProductOutput.ManualFile => new SolidColorBrush(Color.FromRgb(0x2E, 0x6B, 0x33)),
+                    _ => new SolidColorBrush(Color.FromRgb(0x6A, 0x4C, 0x93)),
+                };
+            }
+        }
 
         /// <summary>
         /// Prix à l'unité, suivi des paliers dégressifs s'il y en a. DiLand écrit

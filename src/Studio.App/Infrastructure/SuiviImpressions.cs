@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using Studio.Core.Domain;
 using Studio.Printing;
 
@@ -129,13 +130,83 @@ public sealed class TravailImpression : ObservableObject
         Total = photosEnvoyees;
         Faits = 0;
         Etape = "Tirage en cours";
+        DebutDuTirage = DateTimeOffset.Now;
     }
 
+    /// <summary>
+    /// Quand la machine a commencé à sortir du papier. Sert à deux choses : estimer ce
+    /// qu'il reste, et MESURER le débit réel une fois la commande finie.
+    /// </summary>
+    public DateTimeOffset DebutDuTirage { get; private set; }
+
+    /// <summary>
+    /// Le format tiré, et la longueur de papier qu'un tirage consomme. Posés par
+    /// l'orchestrateur au moment de l'envoi : c'est de là que dépend la cadence.
+    /// </summary>
+    public string Format { get; internal set; } = "";
+
+    public int LongueurMm { get; internal set; }
+
+    /// <summary>
+    /// Ce qu'il reste à attendre, ou null quand on ne peut rien en dire.
+    ///
+    /// <b>Mesuré sur CETTE commande dès qu'elle a de quoi</b> : trois photos sorties
+    /// suffisent à connaître la cadence du moment, qui vaut mieux que n'importe quelle
+    /// moyenne — la machine peut être froide, occupée, ou en pleine maintenance. En deçà,
+    /// on prend le débit appris sur ce format, et à défaut la valeur par défaut.
+    /// </summary>
+    public TimeSpan? DureeRestante
+    {
+        get
+        {
+            var restants = _attendus - Sortis - Rates;
+            if (restants <= 0 || DebutDuTirage == default) return null;
+
+            if (Sortis >= 3)
+            {
+                var ecoule = DateTimeOffset.Now - DebutDuTirage;
+                return TimeSpan.FromSeconds(ecoule.TotalSeconds / Sortis * restants);
+            }
+
+            return EstimationDuree.Restant(restants, LongueurMm, Debit);
+        }
+    }
+
+    /// <summary>Le débit appris sur ce format, posé par le suivi.</summary>
+    internal DebitMesure? Debit { get; set; }
+
+    /// <summary>
+    /// Redit au bandeau que la durée a changé, sans qu'aucune photo ne soit sortie.
+    ///
+    /// <see cref="DureeRestante"/> se calcule à la lecture : rien ne la notifie d'elle-même,
+    /// et l'affichage resterait figé entre deux photos — vingt secondes sur un A4.
+    /// </summary>
+    internal void RafraichirLaDuree() => OnPropertyChanged(nameof(DureeRestante));
+
+    /// <summary>
+    /// Le motif du premier échec, tel que la MACHINE l'a donné. Vide tant que tout sort.
+    ///
+    /// Le premier et non le dernier : sur une commande refusée en bloc, ils sont tous
+    /// identiques, et c'est le premier qui dit ce qui s'est passé. Il reste affiché tant
+    /// que la commande est là — c'est la seule trace visible sans ouvrir le journal.
+    /// </summary>
+    public string MotifDEchec
+    {
+        get => _motifDEchec;
+        private set => Set(ref _motifDEchec, value);
+    }
+
+    private string _motifDEchec = "";
+
     /// <summary>La machine a rendu son verdict sur une photo.</summary>
-    internal void NoterTirage(bool reussi)
+    /// <param name="motif">Ce que la machine dit du refus, ou vide.</param>
+    internal void NoterTirage(bool reussi, string motif = "")
     {
         if (reussi) Sortis++;
         else Rates++;
+
+        if (!reussi && MotifDEchec.Length == 0 && !string.IsNullOrWhiteSpace(motif))
+            MotifDEchec = motif.Trim();
 
         Faits = Sortis + Rates;
         Etape = Rates == 0
@@ -222,6 +293,13 @@ public sealed class SuiviImpressions : ObservableObject
         {
             if (_travaux.Count > 0)
             {
+                // Un refus l'emporte sur le décompte : « Impression en cours — commande
+                // 04-027 » pendant que la machine vient de tout refuser est le pire des
+                // affichages. Le motif de la machine passe donc devant.
+                if (_travaux.FirstOrDefault(t => t.Rates > 0 && t.MotifDEchec.Length > 0) is { } fautif)
+                    return $"Commande {fautif.Numero} — {fautif.Rates} tirage(s) refusé(s) " +
+                           $"par la machine : {fautif.MotifDEchec}";
+
                 var numeros = string.Join(", ", _travaux.Select(t => t.Numero));
                 return _travaux.Count == 1
                     ? $"Impression en cours — commande {numeros}"
@@ -234,8 +312,15 @@ public sealed class SuiviImpressions : ObservableObject
 
     public Visibility Visibilite => Message.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    /// <summary>Vrai quand le bandeau porte un avertissement : il doit alors se voir autrement.</summary>
-    public bool EnAlerte => _travaux.Count == 0 && _note is not null;
+    /// <summary>
+    /// Vrai quand le bandeau porte un avertissement : il doit alors se voir autrement.
+    ///
+    /// Un tirage refusé compte comme tel, même pendant que la commande tourne encore : le
+    /// fond vert « tout va bien » sur une machine qui refuse est exactement ce qui fait
+    /// rater un incident.
+    /// </summary>
+    public bool EnAlerte =>
+        (_travaux.Count == 0 && _note is not null) || _travaux.Any(t => t.Rates > 0);
 
     /// <summary>
     /// Pose un avertissement dans le bandeau, au lieu d'ouvrir une boîte de dialogue.
@@ -305,7 +390,7 @@ public sealed class SuiviImpressions : ObservableObject
             // Tout est PARTI, rien n'est encore SORTI. Sur le minilab, l'attente qui
             // compte pour l'opérateur commence maintenant : on reste affiché tant que la
             // machine n'a pas rendu son verdict sur chaque photo.
-            await AttendreLesTirages(travail);
+            await AttendreLesTirages(travail, commande);
         }
         catch (PrintCanceledException arret)
         {
@@ -363,12 +448,30 @@ public sealed class SuiviImpressions : ObservableObject
     /// laisserait la commande affichée indéfiniment. Le pilote borne déjà chaque tirage à
     /// trente minutes et finit par rendre un verdict — celui-ci est la ceinture.
     /// </summary>
-    private async Task AttendreLesTirages(TravailImpression travail)
+    private async Task AttendreLesTirages(TravailImpression travail, Order commande)
     {
-        if (travail.PhotosEnvoyees <= 0) return;          // circuit sans retour machine
-        if (travail.Machine is null or "D") return;       // DNP : pas d'accusé de sortie
+        // Circuits sans accusé de sortie — spouleur, DNP : on ne saura jamais quand le
+        // papier est tombé. Le client est prévenu dès que tout est REMIS à la machine,
+        // c'est le mieux qu'on puisse promettre de ce côté.
+        if (travail.PhotosEnvoyees <= 0 || travail.Machine is null or "D")
+        {
+            await PrevenirLeClientSiDemande(travail, commande);
+            return;
+        }
+
+        // le débit déjà mesuré sur ce format, s'il y en a un : il sert le temps que la
+        // commande en cours ait de quoi se chronométrer elle-même
+        travail.Format = App.Services.Printer.DernierFormatMinilab ?? "";
+        travail.LongueurMm = App.Services.Printer.DerniereLongueurMinilabMm;
+        travail.Debit = App.Services.Debits.TryGetValue(travail.Format, out var debit) ? debit : null;
 
         travail.CommencerLeTirage(travail.PhotosEnvoyees);
+
+        // le bandeau montre une DURÉE qui s'écoule : sans battement, elle resterait figée
+        // entre deux photos, et une commande d'A4 ne bouge que toutes les vingt secondes
+        var battement = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        battement.Tick += (_, _) => travail.RafraichirLaDuree();
+        battement.Start();
 
         var attente = new TaskCompletionSource();
         _attentes[travail.Numero] = attente;
@@ -388,10 +491,84 @@ public sealed class SuiviImpressions : ObservableObject
             _attentes.Remove(travail.Numero);
         }
 
+        battement.Stop();
+
+        // Ce qu'on vient de mesurer sert aux commandes suivantes. Seulement quand tout est
+        // sorti : une commande interrompue en cours de route a passé du temps à attendre
+        // l'opérateur, pas à imprimer, et sa moyenne serait fausse.
+        if (travail.Rates == 0 && travail.Sortis >= 2)
+            App.Services.NoterLeDebit(
+                travail.Format, travail.Sortis, DateTimeOffset.Now - travail.DebutDuTirage);
+
+        await PrevenirLeClientSiDemande(travail, commande);
+
         if (travail.Rates > 0)
             _note = $"Commande {travail.Numero} : {travail.Sortis} photo(s) sorties, " +
                     $"{travail.Rates} en échec. Réimpression depuis « Commandes du jour ».";
     }
+
+    /// <summary>
+    /// Prévient le client que sa commande est prête, si son adresse a été prise au comptoir.
+    ///
+    /// <b>Quand la machine a fini, pas quand l'envoi est parti.</b> C'est toute la
+    /// différence : sur le minilab, envoyer trente tirages prend quelques secondes et les
+    /// sortir prend plusieurs minutes. Annoncer « c'est prêt » à l'envoi ferait venir le
+    /// client devant une machine qui travaille encore.
+    ///
+    /// <b>Jamais si un tirage a échoué</b> : on ne fait pas venir quelqu'un pour une
+    /// commande incomplète. L'opérateur reprend la main, réimprime, et préviendra
+    /// lui-même depuis « Commandes du jour ».
+    ///
+    /// <b>Une seule fois</b> : <c>CustomerNotified</c> est écrit sur la commande. Une
+    /// réimpression n'enverra pas un second message — deux courriels pour la même commande
+    /// font douter le client de ce qu'il doit venir chercher.
+    /// </summary>
+    private async Task PrevenirLeClientSiDemande(TravailImpression travail, Order commande)
+    {
+        if (commande.CustomerEmail is not { Length: > 0 } adresse) return;
+        if (commande.CustomerNotified) return;
+
+        if (travail.Rates > 0)
+        {
+            FileLog.Write($"Commande {travail.Numero} : client NON prévenu — " +
+                          $"{travail.Rates} tirage(s) en échec.");
+            return;
+        }
+
+        var quoi = DecrireLaCommande(commande);
+
+        try
+        {
+            await Task.Run(() => PhotoMailer.PrevenirCommandePrete(
+                App.Services.Mail, adresse, commande.DisplayNumber, quoi, commande.CustomerName));
+
+            commande.CustomerNotified = true;
+            App.Services.Store.Save(commande);
+
+            FileLog.Write($"Commande {travail.Numero} : client prévenu à {adresse}.");
+
+            _note = $"Commande {travail.Numero} : le client a été prévenu à {adresse}.";
+            Prevenir();
+        }
+        catch (Exception ex)
+        {
+            // Le tirage est sorti : ce qui compte est fait. Un courriel qui ne part pas se
+            // rattrape depuis « Commandes du jour », et ne doit pas ressembler à un échec
+            // d'impression.
+            FileLog.Write($"Commande {travail.Numero} : impossible de prévenir {adresse}", ex);
+
+            _note = $"Commande {travail.Numero} sortie, mais le client n'a pas pu être " +
+                    $"prévenu ({ex.Message}). Réessayez depuis « Commandes du jour ».";
+            Prevenir();
+        }
+    }
+
+    /// <summary>Ce que la commande contient, en produits — c'est ce que le client comprend.</summary>
+    private static string DecrireLaCommande(Order commande) =>
+        string.Join(", ", commande.Envelopes
+            .SelectMany(e => e.Lines)
+            .GroupBy(l => App.Services.Catalog.Find(l.ProductCode)?.Name ?? l.ProductCode)
+            .Select(g => $"{g.Sum(l => l.TotalPrints)} × {g.Key}"));
 
     /// <summary>
     /// Le minilab a rendu son verdict sur un tirage.
@@ -400,7 +577,8 @@ public sealed class SuiviImpressions : ObservableObject
     /// <c>{numéro}-{enveloppe}-{rang}</c>, où le numéro contient lui-même un tiret
     /// (« 01-016 »). On retire donc les DEUX derniers segments pour retrouver la commande.
     /// </summary>
-    public void TirageTermine(string jobId, bool reussi)
+    /// <param name="motif">Ce que la machine dit du refus, ou vide.</param>
+    public void TirageTermine(string jobId, bool reussi, string motif = "")
     {
         var numero = PrintOrchestrator.OrderNumberOf(jobId);
         if (numero is null) return;
@@ -408,7 +586,7 @@ public sealed class SuiviImpressions : ObservableObject
         var travail = _travaux.FirstOrDefault(t => t.Numero == numero);
         if (travail is null) return;
 
-        travail.NoterTirage(reussi);
+        travail.NoterTirage(reussi, motif);
         Prevenir();
 
         if (travail.TirageTermine && _attentes.TryGetValue(numero, out var attente))

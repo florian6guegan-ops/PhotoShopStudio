@@ -26,6 +26,22 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- Dossiers de l'ordinateur mis en avant : pour l'E-Photo, la photo
+                     arrive par courriel ou par téléphone et atterrit dans Téléchargements,
+                     pas sur une carte mémoire. -->
+                <ItemsControl x:Name="RaccourcisList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource BigButton}" Margin="0,8"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Click="OnRaccourciClicked" Tag="{Binding Chemin}"
+                                    ToolTip="{Binding Chemin}">
+                                <TextBlock Text="{Binding Libelle}"/>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <TextBlock x:Name="NoDrivesText" Style="{StaticResource Hint}" Margin="0,16"
                            Text="Aucun support détecté pour l'instant…"/>
             </StackPanel>

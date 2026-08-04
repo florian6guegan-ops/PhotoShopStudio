@@ -42,13 +42,27 @@
 
                 <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
-                        <TextBlock Text="Adresse du client" Style="{StaticResource Hint}"/>
+                        <TextBlock Text="Adresse(s) du client" Style="{StaticResource Hint}"/>
                         <TextBox x:Name="AdresseBox" FontSize="22" Padding="12,10" Margin="0,6,0,0"
+                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60"
+                                 VerticalScrollBarVisibility="Auto"
                                  TextChanged="OnAdresseChanged"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="Plusieurs adresses : séparez-les par un point-virgule, une virgule ou un retour à la ligne. Un seul message part, et aucun destinataire ne voit l'adresse des autres."/>
+                        <TextBlock x:Name="AdressesText" Style="{StaticResource Texte}" FontSize="15"
+                                   Margin="0,8,0,0" TextWrapping="Wrap"/>
 
                         <TextBlock Text="Mot pour le client (facultatif)" Style="{StaticResource Hint}"
                                    Margin="0,20,0,0"/>
-                        <TextBox x:Name="MotBox" FontSize="18" Padding="12,10" Margin="0,6,0,0"
+                        <!-- Les messages prédéfinis REMPLISSENT la case, ils ne la
+                             remplacent pas : le mot reste retouchable, et le nom du client
+                             s'y ajoute en deux mots. -->
+                        <ComboBox x:Name="MessagesCombo" FontSize="17" Padding="10,8" Margin="0,6,0,0"
+                                  DisplayMemberPath="Libelle"
+                                  AutomationProperties.Name="Message prédéfini"
+                                  SelectionChanged="OnMessagePredefini"/>
+                        <TextBox x:Name="MotBox" FontSize="18" Padding="12,10" Margin="0,8,0,0"
                                  AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90"
                                  VerticalScrollBarVisibility="Auto"/>
 

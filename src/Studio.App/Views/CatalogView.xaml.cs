@@ -50,13 +50,6 @@ public partial class CatalogView : UserControl
         }), "Nouveau produit");
     }
 
-    /// <summary>
-    /// Formats mis en avant dans le module photo d'identité. Ils vivent ici parce que
-    /// c'est l'écran où l'on décide ce que la boutique vend, et non dans le code.
-    /// </summary>
-    private void OnIdShortcuts(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new IdShortcutsView(), "Raccourcis photo d'identité");
-
     private void OnEditProduct(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is not ProductRow row) return;

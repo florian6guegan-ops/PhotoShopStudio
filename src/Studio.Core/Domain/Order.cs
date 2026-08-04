@@ -202,6 +202,22 @@ public sealed class Order
     public OrderStatus Status { get; set; } = OrderStatus.Draft;
     public string? CustomerName { get; set; }
     public string? CustomerPhone { get; set; }
+
+    /// <summary>
+    /// Adresse à prévenir dès que la commande est SORTIE, ou null.
+    ///
+    /// Saisie avant l'impression, à l'écran des tirages : c'est le moment où le client est
+    /// encore là. Le message part tout seul quand la machine a fini — l'opérateur n'a rien
+    /// à surveiller, et c'est tout l'intérêt.
+    /// </summary>
+    public string? CustomerEmail { get; set; }
+
+    /// <summary>
+    /// Vrai une fois le client prévenu. Empêche un second message si la commande est
+    /// réimprimée : elle était déjà annoncée, et deux courriels pour la même commande font
+    /// douter le client de ce qu'il doit venir chercher.
+    /// </summary>
+    public bool CustomerNotified { get; set; }
     public string? Note { get; set; }
     public List<Envelope> Envelopes { get; set; } = new();
 

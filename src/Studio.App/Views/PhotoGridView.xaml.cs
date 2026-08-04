@@ -15,7 +15,7 @@ using Studio.Store.DiLand;
 
 namespace Studio.App.Views;
 
-public partial class PhotoGridView : UserControl
+public partial class PhotoGridView : UserControl, ITravailReprenable
 {
     private readonly string _rootPath;
     private readonly bool _avecSousDossiers;
@@ -87,6 +87,10 @@ public partial class PhotoGridView : UserControl
         ProductCombo.SelectedIndex = prechoisi >= 0 ? prechoisi : 0;
 
         if (taillePerso is not null) PasserEnTaillePersonnalisee(taillePerso);
+
+        // posé dès l'ouverture, et pas seulement au changement de produit : la commande
+        // 04-024 est partie sur la mauvaise machine sans que rien n'ait jamais été changé
+        AfficherLaSortie();
 
         Loaded += async (_, _) =>
         {
@@ -392,6 +396,33 @@ public partial class PhotoGridView : UserControl
     /// </summary>
     internal void MettreEnAttente()
     {
+        if (!EnregistrerPourReprise())
+        {
+            MessageBox.Show("La commande n'a pas pu être mise en attente — voir le journal.",
+                "En attente", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        MessageBox.Show(
+            "Commande mise en attente.\n\n" +
+            "Elle vous attend sur l'accueil, sous « En attente » : « Reprendre » la " +
+            "rouvrira telle que vous la laissez.",
+            "En attente", MessageBoxButton.OK, MessageBoxImage.Information);
+
+        Navigator.Home(new HomeView(), "Studio Photo");
+    }
+
+    /// <summary>
+    /// L'enregistrement seul, sans message ni navigation : c'est ce que le bouton
+    /// « Accueil » de l'en-tête appelle, lui qui a sa propre suite.
+    ///
+    /// Une grille VIDE n'est pas mise de côté : ouvrir un dossier sans rien y faire puis
+    /// revenir à l'accueil ne doit pas déposer une ligne « 0 photo » à chaque fois.
+    /// </summary>
+    public bool EnregistrerPourReprise()
+    {
+        if (_photos.Count == 0) return false;
+
         try
         {
             var travail = ConstruireLAttente();
@@ -399,24 +430,63 @@ public partial class PhotoGridView : UserControl
 
             FileLog.Write($"Commande mise en attente ({travail.Resume}) — " +
                           $"{travail.PhotosDirectory}");
-
-            MessageBox.Show(
-                "Commande mise en attente.\n\n" +
-                "Elle vous attend sur l'accueil, sous « En attente » : « Reprendre » la " +
-                "rouvrira telle que vous la laissez.",
-                "En attente", MessageBoxButton.OK, MessageBoxImage.Information);
-
-            Navigator.Home(new HomeView(), "Studio Photo");
+            return true;
         }
         catch (Exception ex)
         {
             FileLog.Write("Mise en attente impossible", ex);
-            MessageBox.Show($"La commande n'a pas pu être mise en attente : {ex.Message}",
-                "En attente", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
         }
     }
 
+    /// <inheritdoc/>
+    public string ResumeDeLAttente => ResumerPourLAccueil();
+
     private void OnMettreEnAttente(object sender, RoutedEventArgs e) => MettreEnAttente();
+
+    // ----- prévenir le client à la fin du tirage -----
+
+    /// <summary>
+    /// Adresse à prévenir dès que la commande sera SORTIE, ou null.
+    ///
+    /// Prise ICI, avant l'impression, parce que c'est le seul moment où le client est
+    /// encore devant le comptoir. Le message part tout seul quand la machine a fini :
+    /// l'opérateur n'a rien à surveiller, et c'est tout l'intérêt.
+    /// </summary>
+    private string? _adresseAPrevenir;
+
+    private void OnPrevenirALaFin(object sender, RoutedEventArgs e)
+    {
+        if (!App.Services.Mail.EstUtilisable)
+        {
+            MessageBox.Show(
+                "L'envoi par courriel n'est pas configuré : il manque " +
+                App.Services.Mail.CeQuiManque() + ".\n\n" +
+                "Ouvrez Paramètres → Envoi par courriel.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var saisie = SaisirLAdresse.Demander(_adresseAPrevenir);
+        if (saisie is null) return;   // annulé : on ne touche à rien
+
+        _adresseAPrevenir = saisie.Length == 0 ? null : saisie;
+        AfficherLAdresseAPrevenir();
+    }
+
+    /// <summary>Le bouton dit ce qui est armé : sinon rien ne distingue les deux états.</summary>
+    private void AfficherLAdresseAPrevenir()
+    {
+        PrevenirButton.Content = _adresseAPrevenir is null
+            ? "🔔  Prévenir à la fin"
+            : $"🔔  {_adresseAPrevenir}";
+
+        PrevenirButton.ToolTip = _adresseAPrevenir is null
+            ? "Saisir l'adresse du client : dès que la commande sera sortie, un courriel " +
+              "lui dira qu'elle l'attend en magasin."
+            : $"Le client sera prévenu à {_adresseAPrevenir} dès que la commande sera " +
+              "sortie. Cliquez pour changer ou retirer l'adresse.";
+    }
 
     /// <summary>Ce qu'on affiche sur l'accueil : de quoi reconnaître la commande d'un coup d'œil.</summary>
     private string ResumerPourLAccueil()
@@ -504,9 +574,11 @@ public partial class PhotoGridView : UserControl
     /// l'opérateur passait devant une planche grise — et c'est aussi lui qui rendait la planche
     /// d'index lente, puisqu'elle part du cache que ce chargement remplit.
     ///
-    /// <b>Une seule ouverture par photo.</b> La définition venait d'un seul appel de plus à
-    /// <c>GetOrientedSize</c>, soit un second parcours du fichier pour une information que la
-    /// vignette porte déjà : elle est lue une fois pour toutes, ici.
+    /// <b>Une seule ouverture par photo — pour de bon.</b> La définition venait d'un appel
+    /// de plus à <c>GetOrientedSize</c>, soit un second parcours du fichier, payé même
+    /// quand la vignette était déjà en cache : rouvrir un dossier déjà vu touchait les
+    /// trente-trois originaux pour rien. Elle vient maintenant de la lecture qui fabrique
+    /// la vignette, et voyage avec elle dans le cache — voir <c>ThumbnailService.Lire</c>.
     ///
     /// <b>Par tranches, dans l'ordre de la planche.</b> Un seul grand lot laisserait la grille
     /// vide jusqu'au bout — jusqu'à 1200 photos peuvent être affichées
@@ -539,12 +611,12 @@ public partial class PhotoGridView : UserControl
                         var photo = lot[i];
                         try
                         {
-                            var jpeg = thumbnails.GetJpeg(photo.Path);
-
-                            // définition et rapport, affichés sur la vignette comme chez DiLand :
-                            // l'opérateur voit tout de suite ce qu'il peut tirer sans perte
-                            var (largeur, hauteur) = ImagePipeline.GetOrientedSize(photo.Path, 0);
-                            lues[i] = new VignetteLue(photo, jpeg, largeur, hauteur);
+                            // définition et rapport, affichés sur la vignette comme chez
+                            // DiLand : l'opérateur voit tout de suite ce qu'il peut tirer
+                            // sans perte. Ils viennent de la MÊME lecture que la vignette —
+                            // voir ThumbnailService.Lire.
+                            var lue = thumbnails.Lire(photo.Path);
+                            lues[i] = new VignetteLue(photo, lue.Jpeg, lue.SourceWidth, lue.SourceHeight);
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
@@ -781,36 +853,74 @@ public partial class PhotoGridView : UserControl
         UpdateSummary();
     }
 
-    /// <summary>Une machine du minilab, avec le papier qui y est chargé.</summary>
-    private sealed record MachineChoice(char Id, string Label);
+    /// <summary>
+    /// Une machine du minilab, avec le papier qui y est chargé.
+    /// <see cref="Automatique"/> = aucune machine imposée, le rouleau décide.
+    /// </summary>
+    private sealed record MachineChoice(char Id, string Label)
+    {
+        /// <summary>Identifiant réservé au choix « automatique » et aux lignes d'excuse.</summary>
+        public const char Aucune = ' ';
+
+        public bool Automatique => Id == Aucune;
+    }
 
     /// <summary>
     /// Charge les machines du minilab et le papier de chacune. L'opérateur choisit sur
     /// quelle machine tirer, et voit du même coup ce qui y est chargé : imprimer un 13×18
     /// sur un rouleau de 152 mm ne donne rien de bon.
+    ///
+    /// <b>« Automatique » est en tête, et c'est ce qui est retenu par défaut.</b> La liste
+    /// se posait auparavant sur sa première ligne, ce qui IMPOSAIT la machine A à chaque
+    /// ouverture de la grille sans que personne ne l'ait demandé — un choix imposé
+    /// court-circuite la recherche du bon rouleau (voir
+    /// <c>PrintOrchestrator.ChoisirMachineEtRouleau</c>). Le 21×29,7 était donc refusé
+    /// « le rouleau chargé dans la machine A fait 152 mm » pendant que le rouleau de 210
+    /// tournait dans la machine B, à côté. Constaté sur les commandes 04-010, 04-014 et
+    /// 04-019 du 04/08/2026.
     /// </summary>
     private async Task LoadMachinesAsync()
     {
+        // rien d'imposé tant que l'opérateur n'a pas choisi lui-même
+        App.Services.Printer.PreferredMinilabMachine = null;
+
         try
         {
             var etats = await App.Services.Minilab.SnapshotAsync();
 
-            var choix = etats
+            var machines = etats
                 .Where(e => e.Status != De100PrinterStatus.Offline)
                 .Select(e => new MachineChoice(e.MachineId, DecrireMachine(e)))
                 .ToList();
 
-            MachineCombo.ItemsSource = choix;
-            if (choix.Count > 0) MachineCombo.SelectedIndex = 0;
-            MachineCombo.IsEnabled = choix.Count > 1;
+            if (machines.Count == 0)
+            {
+                MachineCombo.ItemsSource = new[]
+                {
+                    new MachineChoice(MachineChoice.Aucune, "aucune machine en ligne"),
+                };
+                MachineCombo.SelectedIndex = 0;
+                MachineCombo.IsEnabled = false;
+                return;
+            }
 
-            if (choix.Count == 0)
-                MachineCombo.ItemsSource = new[] { new MachineChoice(' ', "aucune machine en ligne") };
+            var choix = new List<MachineChoice>
+            {
+                new(MachineChoice.Aucune, "Automatique — selon le rouleau"),
+            };
+            choix.AddRange(machines);
+
+            MachineCombo.ItemsSource = choix;
+            MachineCombo.SelectedIndex = 0;
+            MachineCombo.IsEnabled = true;
         }
         catch (Exception ex)
         {
             FileLog.Write("Liste des machines du minilab indisponible", ex);
-            MachineCombo.ItemsSource = new[] { new MachineChoice(' ', "minilab injoignable") };
+            MachineCombo.ItemsSource = new[]
+            {
+                new MachineChoice(MachineChoice.Aucune, "minilab injoignable"),
+            };
             MachineCombo.SelectedIndex = 0;
             MachineCombo.IsEnabled = false;
         }
@@ -825,10 +935,17 @@ public partial class PhotoGridView : UserControl
         return $"{info.MachineId} — {media.PaperWidthMm} mm {media.Surface}{suffixe}";
     }
 
+    /// <summary>
+    /// La machine imposée pour la session, ou null pour laisser le rouleau décider.
+    ///
+    /// « Automatique » remet bien la préférence à NULL : sans cela, revenir sur ce choix
+    /// après avoir désigné une machine ne l'aurait pas relâchée.
+    /// </summary>
     private void OnMachineChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (MachineCombo.SelectedItem is not MachineChoice choix || choix.Id == ' ') return;
-        App.Services.Printer.PreferredMinilabMachine = choix.Id.ToString();
+        if (MachineCombo.SelectedItem is not MachineChoice choix) return;
+
+        App.Services.Printer.PreferredMinilabMachine = choix.Automatique ? null : choix.Id.ToString();
     }
 
     private void UpdateSummary()
@@ -864,11 +981,13 @@ public partial class PhotoGridView : UserControl
             return;
         }
 
-        // une planche d'une seule vignette n'aurait pas de sens : on indexe un lot
-        IndexButton.IsEnabled = selected.Count > 1;
-        IndexButton.Content = selected.Count > 1 ? $"Planche index ({selected.Count})" : "Planche index";
-        IndexButton.ToolTip = "Une planche avec les vignettes NUMÉROTÉES de la sélection, " +
-                              "au format choisi — le client coche, on tire ensuite";
+        // une planche d'une seule vignette n'aurait pas de sens : on indexe un lot.
+        // Le bouton reste actif dès que le DOSSIER en porte deux, même sans rien de coché :
+        // c'est justement le cas du premier passage, où le client veut voir avant de choisir.
+        IndexButton.IsEnabled = _photos.Count > 1;
+        IndexButton.Content = "Planche index";
+        IndexButton.ToolTip = "Une planche avec les vignettes NUMÉROTÉES — de la sélection ou " +
+                              "de tout le dossier, au choix. Le client coche, on tire ensuite.";
     }
 
     /// <summary>
@@ -955,7 +1074,7 @@ public partial class PhotoGridView : UserControl
     /// aucune photo. Et sa grille étant fixe, vingt-sept photos sortaient sur deux 10×15
     /// dont le second à trois vignettes.
     /// </summary>
-    private async void OnIndexSheet(object sender, RoutedEventArgs e)
+    private void OnIndexSheet(object sender, RoutedEventArgs e)
     {
         // deuxième appui : on défait. Voir UpdateSummary.
         if (_planchesIndex.Count > 0)
@@ -965,6 +1084,50 @@ public partial class PhotoGridView : UserControl
         }
 
         var choisies = _photos.Where(p => p.Selected).ToList();
+        var toutes = _photos.ToList();
+
+        // Deux planches d'index, et ce ne sont pas les mêmes gestes.
+        //
+        // La SÉLECTION sert quand le client a déjà écarté ce qu'il ne veut pas — on lui
+        // tire l'index de ce qui reste. LE DOSSIER sert au premier passage, quand il
+        // arrive avec une carte et veut voir ce qu'il a avant de choisir : lui demander de
+        // tout cocher d'abord, sur quatre-vingts photos, n'a pas de sens.
+        //
+        // Le compte est écrit sur chaque entrée : c'est la seule chose qui les distingue
+        // quand tout est coché, et l'opérateur doit pouvoir le voir avant de cliquer.
+        var menu = new ContextMenu();
+
+        var surSelection = new MenuItem
+        {
+            Header = $"La sélection — {choisies.Count} photo{(choisies.Count > 1 ? "s" : "")}",
+            FontSize = 18,
+            FontWeight = FontWeights.SemiBold,
+            IsEnabled = choisies.Count > 1,
+        };
+        surSelection.Click += (_, _) => FabriquerLaPlanche(choisies);
+        menu.Items.Add(surSelection);
+
+        var surDossier = new MenuItem
+        {
+            Header = $"Tout le dossier — {toutes.Count} photo{(toutes.Count > 1 ? "s" : "")}",
+            FontSize = 18,
+            IsEnabled = toutes.Count > 1,
+        };
+        surDossier.Click += (_, _) => FabriquerLaPlanche(toutes);
+        menu.Items.Add(surDossier);
+
+        menu.PlacementTarget = IndexButton;
+        menu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Fabrique la planche d'index d'un lot de photos et la pose dans la grille.
+    ///
+    /// Le lot vient de la sélection ou du dossier entier (voir <see cref="OnIndexSheet"/>) :
+    /// à partir d'ici, rien ne les distingue.
+    /// </summary>
+    private async void FabriquerLaPlanche(List<PhotoItem> choisies)
+    {
         if (choisies.Count < 2) return;
 
         if (DefaultProduct is not { } produit)
@@ -1088,6 +1251,8 @@ public partial class PhotoGridView : UserControl
 
     private void OnDefaultProductChanged(object sender, SelectionChangedEventArgs e)
     {
+        AfficherLaSortie();
+
         // en taille personnalisée, cette liste ne désigne plus un produit mais le PAPIER de
         // sortie : les photos gardent leur format, seul le récapitulatif change
         if (EnTaillePersonnalisee)
@@ -1100,6 +1265,54 @@ public partial class PhotoGridView : UserControl
         foreach (var photo in _photos.Where(p => p.Selected))
             photo.Product = DefaultProduct;
         UpdateSummary();
+    }
+
+    /// <summary>
+    /// Dit SUR QUELLE MACHINE le tirage va sortir, en toutes lettres et en couleur.
+    ///
+    /// Le catalogue porte deux produits nommés « 10x15 » — l'un au minilab, l'autre à la
+    /// DS620 — et rien ici ne disait lequel était retenu : la commande 04-024 du
+    /// 04/08/2026 est partie sur la mauvaise machine, onze tirages, et personne ne pouvait
+    /// s'en apercevoir avant que le papier ne sorte.
+    ///
+    /// Le choix de machine du minilab disparaît quand le produit n'y va pas : il ne
+    /// commandait rien et laissait croire le contraire.
+    /// </summary>
+    private void AfficherLaSortie()
+    {
+        // Une planche en taille libre sort toujours du minilab, quel que soit le papier
+        // retenu dans la liste : la liste y désigne le PAPIER, pas la machine.
+        if (EnTaillePersonnalisee)
+        {
+            SortieText.Text = "Sortie : minilab DE100";
+            SortieBadge.Background = (Brush)Application.Current.Resources["AccentDarkBrush"];
+            MachineLabel.Visibility = Visibility.Visible;
+            MachineCombo.Visibility = Visibility.Visible;
+            return;
+        }
+
+        // les mêmes teintes que les tuiles de format et le bandeau des machines : le
+        // minilab en bleu, la sublimation en violet, l'Epson en vert
+        var (texte, fond, minilab) = DefaultProduct?.Output switch
+        {
+            ProductOutput.FujiMinilab =>
+                ("Sortie : minilab DE100", (Brush)Application.Current.Resources["AccentDarkBrush"], true),
+            ProductOutput.ManualFile =>
+                ("Sortie : fichier pour l'Epson", Pinceau(0x2E, 0x6B, 0x33), false),
+            null =>
+                ("Sortie : à choisir", Pinceau(0x4A, 0x4A, 0x4A), false),
+            _ =>
+                ($"Sortie : {DefaultProduct!.PrinterName}", Pinceau(0x6A, 0x4C, 0x93), false),
+        };
+
+        SortieText.Text = texte;
+        SortieBadge.Background = fond;
+
+        var visible = minilab ? Visibility.Visible : Visibility.Collapsed;
+        MachineLabel.Visibility = visible;
+        MachineCombo.Visibility = visible;
+
+        static Brush Pinceau(byte r, byte v, byte b) => new SolidColorBrush(Color.FromRgb(r, v, b));
     }
 
     private void OnQuantityMinus(object sender, RoutedEventArgs e) => SetQuantity(_quantity - 1);
@@ -1409,6 +1622,15 @@ public partial class PhotoGridView : UserControl
             {
                 var created = services.Orders.CreateOrder(
                     _commandeBorne is null ? "Operateur" : DiLandImporter.SourceName, items);
+
+                // L'adresse prise au comptoir voyage AVEC la commande, et non dans l'écran :
+                // le message part quand la machine a fini, bien après que cet écran a été
+                // quitté, et une commande enregistrée survit à un redémarrage.
+                if (_adresseAPrevenir is { Length: > 0 } adresse)
+                {
+                    created.CustomerEmail = adresse;
+                    services.Store.Save(created);
+                }
 
                 // le lien est noté AVANT d'imprimer : si Studio est coupé en cours de
                 // tirage, la commande de borne reste rattachée à sa commande Studio et

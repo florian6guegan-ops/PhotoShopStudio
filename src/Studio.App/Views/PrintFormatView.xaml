@@ -50,9 +50,24 @@
                                 <TextBlock Text="{Binding Nom}" FontSize="34" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextBrush}"
                                            HorizontalAlignment="Center"/>
+
+                                <!-- La MACHINE en pastille, et non plus en petit texte gris
+                                     au milieu des cotes. Le catalogue porte deux produits
+                                     nommés « 10x15 » — l'un au minilab, l'autre à la DS620 —
+                                     et leurs deux tuiles se suivent dans la grille : la
+                                     commande 04-024 du 04/08/2026 est partie sur la mauvaise
+                                     machine parce que rien ne les distinguait au premier
+                                     coup d'œil. -->
+                                <Border CornerRadius="8" Padding="10,3" Margin="0,4,0,6"
+                                        HorizontalAlignment="Center"
+                                        Background="{Binding DestinationBrush}">
+                                    <TextBlock Text="{Binding Destination}" FontSize="14"
+                                               FontWeight="SemiBold" Foreground="White"/>
+                                </Border>
+
                                 <TextBlock Text="{Binding Dimensions}" FontSize="14"
                                            Foreground="{StaticResource MutedBrush}"
-                                           HorizontalAlignment="Center" Margin="0,2,0,8"/>
+                                           HorizontalAlignment="Center" Margin="0,0,0,6"/>
                                 <TextBlock Text="{Binding Tarif}" FontSize="15"
                                            Foreground="{StaticResource TitleBrush}"
                                            HorizontalAlignment="Center" TextAlignment="Center"

@@ -123,18 +123,44 @@ public static class PhotoMailer
         MailSettings reglages,
         string destinataire,
         PhotosDuClient photos,
+        string? motDuPhotographe = null) =>
+        Envoyer(reglages, [destinataire], photos, motDuPhotographe);
+
+    /// <summary>
+    /// Envoie les fichiers à PLUSIEURS adresses.
+    ///
+    /// UN seul message part, et un seul envoi SMTP : les pièces jointes d'une photo
+    /// d'identité pèsent plusieurs mégaoctets, et les téléverser une fois par adresse
+    /// ferait attendre le comptoir pour rien.
+    ///
+    /// La première adresse est en <c>To</c>, les autres en <c>Cci</c>. Ce n'est pas une
+    /// précaution abstraite : au comptoir, « envoyez-le aussi à ma fille » et « envoyez-le
+    /// aussi au photographe du mariage » se tapent dans la même case, et rien à l'écran ne
+    /// dit si les gens se connaissent. Le <c>Cci</c> ne dévoile aucune adresse ; le
+    /// <c>Cc</c> les dévoilerait toutes, et cela ne se rattrape pas.
+    /// </summary>
+    public static void Envoyer(
+        MailSettings reglages,
+        IReadOnlyList<string> destinataires,
+        PhotosDuClient photos,
         string? motDuPhotographe = null)
     {
         ArgumentNullException.ThrowIfNull(reglages);
         ArgumentNullException.ThrowIfNull(photos);
+        ArgumentNullException.ThrowIfNull(destinataires);
 
         if (!reglages.EstUtilisable)
             throw new InvalidOperationException(
                 "L'envoi par courriel n'est pas configuré : " + reglages.CeQuiManque() +
                 ".\n\nOuvrez Paramètres → Envoi par courriel pour le renseigner.");
 
-        if (string.IsNullOrWhiteSpace(destinataire))
-            throw new ArgumentException("Aucune adresse de destination.", nameof(destinataire));
+        var propres = destinataires
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Select(a => a.Trim())
+            .ToList();
+
+        if (propres.Count == 0)
+            throw new ArgumentException("Aucune adresse de destination.", nameof(destinataires));
 
         foreach (var fichier in photos.Tous)
             if (!File.Exists(fichier))
@@ -147,14 +173,104 @@ public static class PhotoMailer
             Body = Corps(motDuPhotographe),
             IsBodyHtml = false,
         };
-        message.To.Add(destinataire);
+
+        message.To.Add(propres[0]);
+        foreach (var autre in propres.Skip(1))
+            message.Bcc.Add(autre);
 
         // les pièces jointes tiennent des flux ouverts jusqu'à l'envoi : on les libère
         // avec le message
         foreach (var fichier in photos.Tous)
             message.Attachments.Add(new Attachment(fichier));
 
-        Expedier(reglages, message, destinataire, photos.Tous.Count);
+        Expedier(reglages, message, string.Join(", ", propres), photos.Tous.Count);
+    }
+
+    /// <summary>
+    /// Prévient le client que sa commande est prête à être retirée en magasin.
+    ///
+    /// <b>Aucune pièce jointe</b>, et c'est tout le sujet : ce message ne livre pas les
+    /// photos, il annonce qu'elles attendent au comptoir. Les joindre reviendrait à les
+    /// donner sans les vendre — l'envoi des fichiers est une prestation à part, facturée,
+    /// qui passe par <see cref="Envoyer(MailSettings, IReadOnlyList{string}, PhotosDuClient, string?)"/>.
+    ///
+    /// Il emprunte la même voie SMTP que le reste : un serveur qui accepte l'un accepte
+    /// l'autre, et les refus se traduisent au même endroit.
+    /// </summary>
+    /// <param name="reglages">Configuration du poste.</param>
+    /// <param name="destinataire">Adresse du client.</param>
+    /// <param name="numero">Numéro de commande, tel que le client le lira sur son ticket.</param>
+    /// <param name="quoi">Ce qui l'attend, en clair : « 24 tirages 10×15 ».</param>
+    /// <param name="nomClient">Nom du client, pour l'en-tête ; vide = formule neutre.</param>
+    /// <param name="mot">Mot libre ajouté par l'opérateur, ou null.</param>
+    public static void PrevenirCommandePrete(
+        MailSettings reglages,
+        string destinataire,
+        string numero,
+        string quoi,
+        string? nomClient = null,
+        string? mot = null)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinataire);
+
+        if (!reglages.EstUtilisable)
+            throw new InvalidOperationException(
+                "L'envoi par courriel n'est pas configuré : " + reglages.CeQuiManque() +
+                ".\n\nOuvrez Paramètres → Envoi par courriel pour le renseigner.");
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(reglages.Expediteur, reglages.NomExpediteur),
+            Subject = $"Votre commande {numero} est prête",
+            Body = CorpsCommandePrete(numero, quoi, nomClient, mot, reglages.NomExpediteur),
+            IsBodyHtml = false,
+        };
+
+        message.To.Add(destinataire.Trim());
+
+        Expedier(reglages, message, destinataire.Trim(), fichiers: 0);
+    }
+
+    /// <summary>
+    /// Le message tel que le client le lira, pour le montrer AVANT de l'envoyer.
+    ///
+    /// La même méthode que l'envoi, et non une copie : deux textes entretenus séparément
+    /// finiraient par différer, et l'aperçu montrerait autre chose que ce qui part.
+    /// </summary>
+    public static string ApercuCommandePrete(
+        string numero, string quoi, string? nomClient, string? mot, string magasin) =>
+        CorpsCommandePrete(numero, quoi, nomClient, mot, magasin);
+
+    /// <summary>
+    /// Le message de mise à disposition.
+    ///
+    /// Court, et il dit les trois choses qu'on cherche dans ce genre de courriel : ce qui
+    /// est prêt, sous quel numéro le réclamer, et où. Le reste ferait du remplissage.
+    /// </summary>
+    private static string CorpsCommandePrete(
+        string numero, string quoi, string? nomClient, string? mot, string magasin)
+    {
+        var lignes = new List<string>
+        {
+            string.IsNullOrWhiteSpace(nomClient) ? "Bonjour," : $"Bonjour {nomClient.Trim()},",
+            "",
+            $"Votre commande {numero} est prête : elle vous attend en magasin.",
+        };
+
+        if (!string.IsNullOrWhiteSpace(quoi)) lignes.Add($"Elle contient {quoi}.");
+
+        if (!string.IsNullOrWhiteSpace(mot))
+        {
+            lignes.Add("");
+            lignes.Add(mot.Trim());
+        }
+
+        lignes.Add("");
+        lignes.Add("À bientôt,");
+        lignes.Add(string.IsNullOrWhiteSpace(magasin) ? "Le magasin" : magasin);
+
+        return string.Join("\n", lignes);
     }
 
     /// <summary>
@@ -178,7 +294,9 @@ public static class PhotoMailer
         try
         {
             client.Send(message);
-            Log?.Invoke($"Photos envoyées à {destinataire} ({fichiers} fichiers).");
+            Log?.Invoke(fichiers > 0
+                ? $"Photos envoyées à {destinataire} ({fichiers} fichiers)."
+                : $"Message envoyé à {destinataire} (sans pièce jointe).");
         }
         catch (SmtpException ex)
         {

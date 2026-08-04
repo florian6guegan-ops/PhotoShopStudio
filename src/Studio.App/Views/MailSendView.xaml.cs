@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Core.Mail;
 using Studio.Printing;
 using Studio.Store;
 
@@ -52,8 +53,34 @@ public partial class MailSendView : UserControl
         {
             AnnoncerLePrix();
             VerifierLaConfiguration();
+            RemplirLesMessages();
             AdresseBox.Focus();
         };
+    }
+
+    /// <summary>
+    /// Les mots prêts à joindre, réglés dans Paramètres.
+    ///
+    /// Une entrée vide ouvre la liste : sans elle, on ne pourrait pas revenir à « pas de
+    /// message » après en avoir choisi un, et la case resterait remplie sans qu'on sache
+    /// comment la vider.
+    /// </summary>
+    private void RemplirLesMessages()
+    {
+        var messages = MailMessages.Load(App.Services.ConfigDir);
+
+        MessagesCombo.ItemsSource = new[] { new MessagePredefini("— aucun message —", "") }
+            .Concat(messages)
+            .ToList();
+
+        MessagesCombo.SelectedIndex = 0;
+        MessagesCombo.Visibility = messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnMessagePredefini(object sender, SelectionChangedEventArgs e)
+    {
+        if (MessagesCombo.SelectedItem is MessagePredefini choix)
+            MotBox.Text = choix.Texte;
     }
 
     /// <summary>
@@ -93,32 +120,64 @@ public partial class MailSendView : UserControl
         MettreAJourLeBouton();
     }
 
-    private void OnAdresseChanged(object sender, TextChangedEventArgs e) => MettreAJourLeBouton();
+    private void OnAdresseChanged(object sender, TextChangedEventArgs e)
+    {
+        AnnoncerLesAdresses();
+        MettreAJourLeBouton();
+    }
+
+    /// <summary>Les adresses saisies, dans l'ordre, sans doublon.</summary>
+    private IReadOnlyList<string> AdressesSaisies() => Destinataires.Analyser(AdresseBox.Text);
 
     /// <summary>
-    /// Le bouton n'est actif que si l'envoi peut réellement aboutir : une adresse
-    /// plausible, et un poste configuré.
+    /// Dit ce qui va partir, et à qui.
+    ///
+    /// Une adresse mal tapée est NOMMÉE plutôt que de simplement griser le bouton :
+    /// « envoyer » désactivé sans un mot, sur trois adresses dont une fausse, ne dit pas
+    /// laquelle reprendre.
     /// </summary>
-    private void MettreAJourLeBouton() =>
+    private void AnnoncerLesAdresses()
+    {
+        var adresses = AdressesSaisies();
+        var douteuses = adresses.Where(a => !Destinataires.Recevable(a)).ToList();
+
+        if (adresses.Count == 0)
+        {
+            AdressesText.Text = "";
+            return;
+        }
+
+        if (douteuses.Count > 0)
+        {
+            AdressesText.Text = douteuses.Count == 1
+                ? $"Adresse douteuse : {douteuses[0]}"
+                : "Adresses douteuses : " + string.Join(", ", douteuses);
+            AdressesText.Foreground = (System.Windows.Media.Brush)FindResource("DangerBrush");
+            return;
+        }
+
+        AdressesText.Text = adresses.Count == 1
+            ? "1 destinataire."
+            : $"{adresses.Count} destinataires — un seul message, en copie cachée.";
+        AdressesText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+    }
+
+    /// <summary>
+    /// Le bouton n'est actif que si l'envoi peut réellement aboutir : au moins une adresse,
+    /// TOUTES plausibles, et un poste configuré.
+    ///
+    /// Toutes, et non « au moins une » : un envoi part en bloc, et une adresse fausse au
+    /// milieu ferait refuser le message entier par le serveur après qu'on a facturé.
+    /// </summary>
+    private void MettreAJourLeBouton()
+    {
+        var adresses = AdressesSaisies();
+
         EnvoyerButton.IsEnabled =
             !_envoiEnCours
             && App.Services.Mail.EstUtilisable
-            && AdresseRecevable(AdresseBox.Text);
-
-    /// <summary>
-    /// Contrôle volontairement grossier : une arobase entourée de quelque chose, et un
-    /// point après. On ne cherche pas à valider une adresse — seul le serveur sait — mais
-    /// à rattraper la faute de frappe évidente avant de facturer.
-    /// </summary>
-    private static bool AdresseRecevable(string? adresse)
-    {
-        if (string.IsNullOrWhiteSpace(adresse)) return false;
-
-        var arobase = adresse.Trim().IndexOf('@');
-        if (arobase <= 0) return false;
-
-        var domaine = adresse.Trim()[(arobase + 1)..];
-        return domaine.Contains('.') && !domaine.StartsWith('.') && !domaine.EndsWith('.');
+            && adresses.Count > 0
+            && adresses.All(Destinataires.Recevable);
     }
 
     private void OnOuvrirParametres(object sender, RoutedEventArgs e) =>
@@ -130,7 +189,11 @@ public partial class MailSendView : UserControl
     {
         if (_envoiEnCours) return;
 
-        var destinataire = AdresseBox.Text.Trim();
+        var adresses = AdressesSaisies();
+        if (adresses.Count == 0) return;
+
+        // ce qu'on lit dans la confirmation, au ticket et dans le journal
+        var destinataire = string.Join(", ", adresses);
         var mot = MotBox.Text;
         var reglages = App.Services.Mail;
 
@@ -167,7 +230,7 @@ public partial class MailSendView : UserControl
                         photo.SourcePath, photo.Crop, photo.RotationQuarterTurns,
                         photo.FineRotationDegrees, photo.Adjustments, dossier, nomDeBase);
 
-                    PhotoMailer.Envoyer(reglages, destinataire, fichiers, mot);
+                    PhotoMailer.Envoyer(reglages, adresses, fichiers, mot);
                 }
             });
 

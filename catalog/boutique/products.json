@@ -6,10 +6,19 @@
         "HeightMm":  102,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -29,7 +38,8 @@
                                "UnitPrice":  0.45
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "10x15",
@@ -38,10 +48,19 @@
         "HeightMm":  152,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -61,7 +80,8 @@
                                "UnitPrice":  0.45
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "13x13",
@@ -70,15 +90,25 @@
         "HeightMm":  127,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "13x18",
@@ -87,15 +117,25 @@
         "HeightMm":  180,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "15x15",
@@ -104,15 +144,25 @@
         "HeightMm":  152,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "15x20",
@@ -121,15 +171,25 @@
         "HeightMm":  203,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "15x30",
@@ -138,15 +198,25 @@
         "HeightMm":  304,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "20x20",
@@ -155,15 +225,25 @@
         "HeightMm":  203,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "20x25",
@@ -172,15 +252,25 @@
         "HeightMm":  256,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "20x30",
@@ -189,15 +279,25 @@
         "HeightMm":  307,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-10x10",
@@ -206,10 +306,19 @@
         "HeightMm":  102,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -229,7 +338,8 @@
                                "UnitPrice":  0.45
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-10x15",
@@ -238,10 +348,19 @@
         "HeightMm":  152,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -261,7 +380,8 @@
                                "UnitPrice":  0.45
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-13x13",
@@ -270,15 +390,25 @@
         "HeightMm":  127,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-13x18",
@@ -287,15 +417,25 @@
         "HeightMm":  180,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-15x15",
@@ -304,15 +444,25 @@
         "HeightMm":  152,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-15x20",
@@ -321,15 +471,25 @@
         "HeightMm":  203,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  1.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-20x20",
@@ -338,15 +498,25 @@
         "HeightMm":  203,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-20x25",
@@ -355,15 +525,25 @@
         "HeightMm":  256,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-20x30",
@@ -372,15 +552,25 @@
         "HeightMm":  307,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.5,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "8x10",
@@ -389,10 +579,19 @@
         "HeightMm":  102,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -412,7 +611,8 @@
                                "UnitPrice":  0.45
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "10x15pola",
@@ -421,10 +621,19 @@
         "HeightMm":  152,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Polaroid",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -444,7 +653,8 @@
                                "UnitPrice":  0.45
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "30x30",
@@ -453,15 +663,25 @@
         "HeightMm":  300,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "30x40",
@@ -470,15 +690,25 @@
         "HeightMm":  400,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  12.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "30x45",
@@ -487,15 +717,25 @@
         "HeightMm":  450,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "40x40",
@@ -504,15 +744,25 @@
         "HeightMm":  400,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "40x50",
@@ -521,15 +771,25 @@
         "HeightMm":  500,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "40x60",
@@ -538,15 +798,25 @@
         "HeightMm":  600,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  19.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "50x50",
@@ -555,15 +825,25 @@
         "HeightMm":  500,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "50x60",
@@ -572,15 +852,25 @@
         "HeightMm":  600,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "50x70",
@@ -589,15 +879,25 @@
         "HeightMm":  700,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  24.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "50x75",
@@ -606,15 +906,25 @@
         "HeightMm":  750,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  29.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "70x100",
@@ -623,15 +933,25 @@
         "HeightMm":  1000,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  0,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  false,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "60x80",
@@ -640,15 +960,25 @@
         "HeightMm":  800,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  29.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "60x90",
@@ -657,15 +987,25 @@
         "HeightMm":  900,
         "PrinterName":  "",
         "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Agrandissements (Photoshop)",
         "Dpi":  300,
         "Price":  35.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Agrandissements (Photoshop)"
+        "Channel":  "Agrandissements (Photoshop)",
+        "PrintExposure":  0
     },
     {
         "Code":  "10x15-dnp",
@@ -674,10 +1014,19 @@
         "HeightMm":  156.1,
         "PrinterName":  "DP-DS620",
         "Output":  "Printer",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  null,
         "Dpi":  300,
         "Price":  0.6,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -696,7 +1045,9 @@
                                "FromQuantity":  100,
                                "UnitPrice":  0.45
                            }
-                       ]
+                       ],
+        "Channel":  "DP-DS620",
+        "PrintExposure":  0
     },
     {
         "Code":  "bord-blanc-21x29-7",
@@ -705,15 +1056,25 @@
         "HeightMm":  297,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fit",
         "BorderMm":  5,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "21x29-7",
@@ -722,15 +1083,25 @@
         "HeightMm":  297,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  7.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "a4",
@@ -739,15 +1110,25 @@
         "HeightMm":  297,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  false,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "18x24",
@@ -756,15 +1137,25 @@
         "HeightMm":  240,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  6.9,
         "DefaultFit":  "Fill",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "e-photo-dnp",
@@ -773,14 +1164,25 @@
         "HeightMm":  156.1,
         "PrinterName":  "DP-DS620",
         "Output":  "Printer",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  null,
         "Dpi":  300,
         "Price":  10,
-        "DefaultFit":  "Fill",
+        "DefaultFit":  "Fit",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
 
-                       ]
+                       ],
+        "Channel":  "DP-DS620",
+        "PrintExposure":  0
     },
     {
         "Code":  "pola",
@@ -789,10 +1191,19 @@
         "HeightMm":  152,
         "PrinterName":  "",
         "Output":  "FujiMinilab",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  "Minilab DE100",
         "Dpi":  300,
         "Price":  0.9,
         "DefaultFit":  "Polaroid",
         "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
         "Enabled":  true,
         "PriceTiers":  [
                            {
@@ -812,7 +1223,8 @@
                                "UnitPrice":  0.5
                            }
                        ],
-        "PrinterChannel":  "Minilab DE100"
+        "Channel":  "Minilab DE100",
+        "PrintExposure":  0
     },
     {
         "Code":  "ID-FR-6",
@@ -821,6 +1233,8 @@
         "HeightMm":  104.9,
         "PrinterName":  "DP-DS620",
         "Output":  "Printer",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
         "PrinterChannel":  null,
         "Dpi":  300,
         "Price":  6.00,
@@ -835,11 +1249,17 @@
                       "Copies":  8,
                       "CellWidthMm":  35,
                       "CellHeightMm":  45,
-                      "GapMm":  2,
-                      "CutMarks":  true
+                      "GapMm":  0.2,
+                      "CutMarks":  true,
+                      "CutBorder":  true,
+                      "DateStamp":  true
                   },
         "Enabled":  true,
-        "Channel":  "DP-DS620"
+        "PriceTiers":  [
+
+                       ],
+        "Channel":  "DP-DS620",
+        "PrintExposure":  0
     },
     {
         "Code":  "TEST-PDF",
@@ -847,6 +1267,9 @@
         "WidthMm":  102,
         "HeightMm":  152,
         "PrinterName":  "Microsoft Print to PDF",
+        "Output":  "Printer",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
         "PrinterChannel":  null,
         "Dpi":  300,
         "Price":  0.00,
@@ -859,6 +1282,64 @@
                      ],
         "Sheet":  null,
         "Enabled":  false,
-        "Channel":  "Microsoft Print to PDF"
+        "PriceTiers":  [
+
+                       ],
+        "Channel":  "Microsoft Print to PDF",
+        "PrintExposure":  0
+    },
+    {
+        "Code":  "agr-297x420",
+        "Name":  "A3 (29,7 × 42 cm)",
+        "WidthMm":  297,
+        "HeightMm":  420,
+        "PrinterName":  "",
+        "Output":  "ManualFile",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  null,
+        "Dpi":  300,
+        "Price":  19.9,
+        "DefaultFit":  "Fill",
+        "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ],
+        "Channel":  "",
+        "PrintExposure":  0
+    },
+    {
+        "Code":  "envoi-courriel",
+        "Name":  "Envoi des photos par courriel",
+        "WidthMm":  102,
+        "HeightMm":  152,
+        "PrinterName":  "",
+        "Output":  "Email",
+        "MinilabMachineId":  null,
+        "MinilabPrintSizeName":  null,
+        "PrinterChannel":  null,
+        "Dpi":  300,
+        "Price":  5.00,
+        "DefaultFit":  "Fill",
+        "BorderMm":  0,
+        "IccProfile":  null,
+        "DevmodeFile":  null,
+        "Finishes":  [
+
+                     ],
+        "Sheet":  null,
+        "Enabled":  true,
+        "PriceTiers":  [
+
+                       ],
+        "Channel":  "",
+        "PrintExposure":  0
     }
 ]

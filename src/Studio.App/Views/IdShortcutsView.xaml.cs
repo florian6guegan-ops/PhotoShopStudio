@@ -40,31 +40,12 @@ public partial class IdShortcutsView : UserControl
     /// </summary>
     private void ChargerDocuments()
     {
-        try
-        {
-            var chemin = Path.Combine(App.Services.CatalogDir, "diland-id-documents.json");
-            if (!File.Exists(chemin) && TrouverDansLeDepot() is { } depot) chemin = depot;
+        _documents = ReferentielIdentite.Charger();
 
-            _documents = File.Exists(chemin) ? IdDocumentCatalog.Load(chemin) : [IdDocumentSpec.France];
-        }
-        catch (Exception ex)
-        {
-            FileLog.Write("Référentiel des documents d'identité illisible (raccourcis)", ex);
-            _documents = [IdDocumentSpec.France];
+        // le repli du référentiel est la seule norme française : le dire ici, où l'on vient
+        // justement en ajouter d'autres
+        if (_documents.Count <= 1)
             MessageText.Text = "Référentiel des documents illisible : seuls les produits sont proposés.";
-        }
-    }
-
-    private static string? TrouverDansLeDepot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidat = Path.Combine(dir.FullName, "catalog", "diland-id-documents.json");
-            if (File.Exists(candidat)) return candidat;
-            dir = dir.Parent;
-        }
-        return null;
     }
 
     private void RemplirListesDAjout()

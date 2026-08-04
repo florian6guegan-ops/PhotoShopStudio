@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Studio.App.Infrastructure;
+using Studio.Printing;
 using Studio.Printing.Devices.Dnp;
 using Studio.Printing.Devices.Fuji;
 
@@ -183,52 +184,78 @@ public partial class MachineBarView : UserControl
         Dispatcher.Invoke(Reafficher);
     }
 
-    /// <summary>Relit l'état des machines. Appelable après une impression.</summary>
+    /// <summary>
+    /// Relit l'état des machines. Appelable après une impression.
+    ///
+    /// <b>Une lecture qui échoue ne fait JAMAIS disparaître une machine.</b> Chaque famille
+    /// est relue de son côté ; si l'une ne répond pas, on garde ce qu'on savait d'elle et
+    /// l'on recompose la barre entière. Les deux DE100 s'évanouissaient du bandeau dès que
+    /// le relais toussait : le minilab échouait, sa liste restait vide, et la DNP écrasait
+    /// ensuite l'ensemble des tuiles avec la sienne. Constaté le 04/08/2026 en réimprimant
+    /// la commande 04-040.
+    /// </summary>
     public async Task RefreshAsync()
     {
-        var lignes = new List<MachineTile>();
+        var fujis = _dernieresFuji;
+        var dnps = _dernieresDnp;
 
         // Le minilab d'abord : il répond vite et de façon fiable. La DNP est interrogée
         // ensuite et séparément — son SDK peut rester bloqué quand DiLand tient le port
         // USB, et ce blocage ne doit pas effacer les machines déjà connues.
         try
         {
-            foreach (var fuji in await App.Services.Minilab.SnapshotAsync())
-                lignes.Add(new MachineTile(fuji));
+            var lues = await App.Services.Minilab.SnapshotAsync();
 
-            _tuiles = lignes;
-            Reafficher();
+            // le relevé sert aussi à APPRENDRE la consommation de chaque machine : il ne
+            // coûte rien de plus, l'instantané est déjà là
+            App.Services.NoterLesConsommables(lues);
+
+            fujis = [.. lues.Select(f => new MachineTile(f))];
+            _dernieresFuji = fujis;
             MessageText.Text = "";
         }
         catch (Exception ex)
         {
             FileLog.Write("Bandeau : minilab indisponible", ex);
-            MessageText.Text = "Minilab injoignable — les tirages restent possibles si la machine répond.";
+            MessageText.Text = fujis.Count > 0
+                ? "Minilab injoignable pour l'instant — le bandeau montre son dernier état connu."
+                : "Minilab injoignable — les tirages restent possibles si la machine répond.";
         }
 
         try
         {
-            var dnps = await App.Services.Minilab.DnpSnapshotAsync();
+            var lues = await App.Services.Minilab.DnpSnapshotAsync();
 
             // Le SDK n'en découvre aucune : la machine dort peut-être. On complète d'après
             // le spouleur Windows pour l'afficher « en veille » plutôt que de la faire
             // disparaître. Cette lecture-là se fait ICI et jamais dans le relais — voir
             // DiLandPresence.VuesParWindows.
-            if (dnps.Count == 0)
-                dnps = [.. DiLandPresence.VuesParWindows()];
+            if (lues.Count == 0)
+                lues = [.. DiLandPresence.VuesParWindows()];
 
-            foreach (var dnp in dnps)
-                lignes.Add(new MachineTile(dnp));
-
-            _tuiles = lignes;
-            Reafficher();
+            dnps = [.. lues.Select(d => new MachineTile(d))];
+            _dernieresDnp = dnps;
         }
         catch (Exception ex)
         {
             // silencieux à l'écran : les machines Fuji restent affichées
             FileLog.Write("Bandeau : imprimante DNP indisponible", ex);
         }
+
+        _tuiles = [.. fujis, .. dnps];
+        Reafficher();
     }
+
+    /// <summary>
+    /// Le dernier état CONNU de chaque famille de machines.
+    ///
+    /// Gardé pour qu'une lecture ratée n'efface pas la tuile : une machine qu'on n'arrive
+    /// pas à joindre pendant dix secondes n'a pas disparu de la boutique, et l'opérateur a
+    /// besoin de la voir — ne serait-ce que pour savoir qu'elle existe.
+    /// </summary>
+    private List<MachineTile> _dernieresFuji = [];
+
+    private List<MachineTile> _dernieresDnp = [];
 
     /// <summary>
     /// Repose les tuiles avec l'avancement du moment. Les travaux dont on ne connaît pas
@@ -273,6 +300,82 @@ public partial class MachineBarView : UserControl
         if (reponse == MessageBoxResult.Yes) travail.Annuler();
     }
 
+    /// <summary>
+    /// Vide la file Windows d'une imprimante bloquée.
+    ///
+    /// <b>Le geste de dernier recours.</b> Le 04/08/2026, trois travaux sont restés deux
+    /// heures dans la file de la DS620 sans jamais imprimer une page — dont deux venus de
+    /// DiLand. La machine se déclarait prête, aucune erreur n'était signalée, et rien ne
+    /// sortait : il fallait passer par les fenêtres d'impression de Windows.
+    ///
+    /// Une confirmation, une seule, parce que ce qui est supprimé ne revient pas — et elle
+    /// dit COMBIEN de photos ne sortiront pas, seul chiffre qui compte pour décider.
+    /// </summary>
+    private void OnPurgerLaFile(object sender, RoutedEventArgs e)
+    {
+        // Le bouton porte sa PROPRE tuile en DataContext : la retrouver par sa lettre dans
+        // `_tuiles` la manquait dès que la barre avait été recomposée entre-temps — et le
+        // bouton ne faisait alors rien du tout, sans un mot.
+        if ((sender as FrameworkElement)?.DataContext is not MachineTile tuile)
+        {
+            FileLog.Write("Vider la file : la tuile de la machine n'a pas été retrouvée.");
+            return;
+        }
+
+        if (tuile.NomDeFile.Length == 0)
+        {
+            FileLog.Write($"Vider la file : la machine « {tuile.Nom} » n'a pas de file Windows.");
+            return;
+        }
+
+        var reponse = MessageBox.Show(
+            $"Vider la file de « {tuile.NomDeFile} » ?\n\n" +
+            $"{tuile.PagesEnFile} photo(s) attendent d'être imprimées : elles ne sortiront " +
+            "pas, et ce qui est supprimé ne revient pas.\n\n" +
+            "À faire quand la machine ne sort plus rien alors qu'elle se déclare prête. " +
+            "Les tirages perdus se refont depuis « Commandes du jour ».",
+            "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+        if (reponse != MessageBoxResult.Yes) return;
+
+        var supprimes = DnpSpouleur.Vider(tuile.NomDeFile);
+
+        MessageText.Text = supprimes >= 0
+            ? $"File de « {tuile.NomDeFile} » vidée — {supprimes} travail/travaux supprimé(s)."
+            : $"La file de « {tuile.NomDeFile} » n'a pas répondu. Voir le journal.";
+
+        _ = RefreshAsync();
+    }
+
+    // ----- estimation de ce qui reste -----
+
+    /// <summary>
+    /// Le format sur lequel porte l'estimation : celui qu'on S'APPRÊTE À TIRER quand un
+    /// produit est choisi, sinon le premier format fixe du rouleau.
+    ///
+    /// « ~576 × 10x15 » annoncé à quelqu'un qui lance des A4 ne lui apprend rien, et c'est
+    /// pourtant ce que le bandeau affichait.
+    /// </summary>
+    private static De100Format? FormatVise(De100PrinterInfo info)
+    {
+        if (info.Media is not { } media) return null;
+
+        // le produit retenu pour la session, s'il y en a un et s'il sort du minilab
+        if (App.Services.Printer.DernierFormatMinilab is { } demande)
+        {
+            var correspondant = De100Formats.ForPaperWidth(media.PaperWidthMm)
+                .FirstOrDefault(f => f.Name.Equals(demande, StringComparison.OrdinalIgnoreCase));
+            if (correspondant is not null) return correspondant;
+        }
+
+        return info.Formats.FirstOrDefault(f => !f.Format.IsVariable)?.Format
+               ?? De100Formats.ForPaperWidth(media.PaperWidthMm).FirstOrDefault(f => !f.IsVariable);
+    }
+
+    /// <summary>Ce qu'on a appris de la consommation de cette machine.</summary>
+    private static ObservationMachine? ObservationDe(char machine) =>
+        App.Services.Consommables.TryGetValue(machine.ToString(), out var vue) ? vue : null;
+
     private sealed record InkGauge(string Info, Brush Couleur, double Hauteur);
 
     private sealed class MachineTile
@@ -281,7 +384,8 @@ public partial class MachineBarView : UserControl
         {
             Lettre = info.MachineId.ToString();
             Nom = info.Model;
-            Etat = DecrireEtat(info.Status);
+            // l'état ET le geste : voir ConduiteMachine
+            Etat = ConduiteMachine.PourLeMinilab(info.Status).Message;
 
             var horsLigne = info.Status == De100PrinterStatus.Offline;
             if (horsLigne)
@@ -297,10 +401,18 @@ public partial class MachineBarView : UserControl
                 ? $"{media.PaperWidthMm} mm · {media.Surface}"
                 : "papier inconnu";
 
-            var format = info.Formats.FirstOrDefault(f => !f.Format.IsVariable);
+            // L'estimation porte sur le format QU'ON VA TIRER quand on le connaît, et non
+            // sur le premier de la liste : annoncer « 576 × 10x15 » à quelqu'un qui lance
+            // des A4 ne lui apprend rien. Et elle compte les ENCRES et le bac, pas
+            // seulement le papier — voir EstimationConsommables.
+            var vise = FormatVise(info);
             Restant = info.Media is { } m
                 ? $"{m.PaperRemainingMm / 1000:0.0} m" +
-                  (format is null ? "" : $" · ~{format.RemainingPrints} × {format.Format.Name}")
+                  (vise is null
+                      ? ""
+                      : " · " + EstimationConsommables
+                          .Pour(vise, m, info.Supplies, ObservationDe(info.MachineId))
+                          .Resume(vise.Name))
                 : "";
 
             Encres = info.Supplies is { } s
@@ -339,12 +451,16 @@ public partial class MachineBarView : UserControl
 
                 if (info.Spouleur is { } file && info.VueParLeSpouleur)
                 {
-                    Etat = DnpSpouleur.Decrire(file);
+                    // l'état ET le geste à faire : « Intervention nécessaire » tout seul
+                    // n'a jamais dit à personne quoi toucher
+                    Etat = ConduiteMachine.PourLaFile(file.Etat, file.PhotosRestantes).Message;
                     Papier = "consommables lisibles seulement DiLand fermé";
                     Restant = file.PhotosRestantes > 0
                         ? $"{file.PhotosRestantes} photo(s) à sortir"
                         : "rien dans la file";
                     Fond = CouleurSpouleur(file.Etat);
+                    NomDeFile = file.Nom;
+                    PagesEnFile = file.PhotosRestantes;
                     return;
                 }
 
@@ -459,6 +575,24 @@ public partial class MachineBarView : UserControl
 
         public Visibility ArretVisible => TravailVisible;
 
+        /// <summary>File Windows de cette machine, quand elle en a une. Vide sinon.</summary>
+        public string NomDeFile { get; private set; } = "";
+
+        /// <summary>Pages que le spouleur dit encore avoir à sortir.</summary>
+        public int PagesEnFile { get; private set; }
+
+        /// <summary>
+        /// « Vider la file » ne paraît que là où il sert : une machine du SPOULEUR qui a
+        /// quelque chose en attente. Sur le minilab, la file est à la machine et se rappelle
+        /// par le SDK — c'est le bouton d'arrêt qui s'en charge.
+        ///
+        /// Il ne se cache PAS quand la machine imprime normalement : une file qui descend
+        /// n'a rien d'anormal, mais c'est justement l'écran où l'on constate qu'elle ne
+        /// descend plus, et le bouton doit être là à ce moment-là.
+        /// </summary>
+        public Visibility PurgeVisible =>
+            NomDeFile.Length > 0 && PagesEnFile > 0 ? Visibility.Visible : Visibility.Collapsed;
+
         public bool ArretPossible => Travail is { ArretDemande: false };
 
         public string ArretTexte => Travail is { ArretDemande: true } ? "Arrêt…" : "✕  Arrêter";
@@ -476,10 +610,24 @@ public partial class MachineBarView : UserControl
 
                 if (t.Etape.StartsWith("Tirage", StringComparison.Ordinal))
                 {
-                    var echecs = t.Rates > 0 ? $" · {t.Rates} en échec" : "";
-                    return t.TirageTermine
-                        ? $"Commande {t.Numero} — terminée : {t.Sortis} photo(s) sorties{echecs}"
-                        : $"Commande {t.Numero} — {t.Sortis} / {t.Total} photo(s) sorties{echecs}";
+                    // Le MOTIF avec le compte : « 3 en échec » ne dit pas quoi faire,
+                    // « Paper size mismatch » si. C'est la machine qui parle.
+                    var echecs = t.Rates > 0
+                        ? $" · {t.Rates} en échec" +
+                          (t.MotifDEchec.Length > 0 ? $" — {t.MotifDEchec}" : "")
+                        : "";
+
+                    if (t.TirageTermine)
+                        return $"Commande {t.Numero} — terminée : {t.Sortis} photo(s) sorties{echecs}";
+
+                    // LA question de l'opérateur qui a un client devant lui : ai-je le
+                    // temps d'en servir un autre ? Elle n'a qu'une réponse, une durée.
+                    var reste = t.DureeRestante is { } duree
+                        ? " · " + EstimationDuree.Ecrire(duree, approximatif: t.Debit?.Fiable != true)
+                        : "";
+
+                    return $"Commande {t.Numero} — {t.Sortis} / {t.Total} photo(s) sorties" +
+                           $"{echecs}{reste}";
                 }
 
                 return $"Commande {t.Numero} — {t.Etape} {t.Detail}";

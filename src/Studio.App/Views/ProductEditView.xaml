@@ -36,7 +36,8 @@
                     <Grid.RowDefinitions>
                         <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                         <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
-                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Nom affiché"/>
@@ -103,8 +104,35 @@
                                 ToolTip="Importer un profil fourni par le pilote (dossier couleur de Windows)">📥 Importer…</Button>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="10" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Visible à la vente"/>
-                    <CheckBox x:Name="EnabledCheck" Grid.Row="10" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,14">
+                    <!-- La machine ne rend pas ce que l'écran montre, et l'écart est le
+                         sien : la DS620 sort plus sombre que le minilab. Le réglage se
+                         mesure sur un tirage réel, d'où sa place ici et non dans le code. -->
+                    <TextBlock Grid.Row="10" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                               Text="Exposition à l'impression"/>
+                    <StackPanel Grid.Row="10" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox x:Name="PrintExposureBox" Style="{StaticResource FieldBox}" Width="120"/>
+                        <TextBlock Style="{StaticResource Hint}" FontSize="15" MaxWidth="480"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,14"
+                                   Text="En diaphragmes, 0 = aucune correction. Positif éclaircit. Corrige l'écart propre à la machine, sans toucher à l'aperçu à l'écran : +0,25 environ pour la DS620, qui sort plus sombre que le minilab."/>
+                    </StackPanel>
+
+                    <!-- Le nom que le MINILAB attend pour ce format. Studio en fabrique un
+                         d'après le rouleau (« 152x102 »), ce qui marche pour tout ce que la
+                         boutique tire ; le champ existe pour les cas où la configuration de
+                         la machine en attend un autre — c'est le seul paramètre du tirage
+                         qui dépende d'elle, et donc le seul suspect quand elle refuse sans
+                         rien dire. -->
+                    <TextBlock Grid.Row="11" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                               Text="Nom du format au minilab"/>
+                    <StackPanel Grid.Row="11" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox x:Name="MinilabSizeNameBox" Style="{StaticResource FieldBox}" Width="180"/>
+                        <TextBlock Style="{StaticResource Hint}" FontSize="15" MaxWidth="460"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,14"
+                                   Text="Vide = Studio le déduit du rouleau chargé, ce qui convient presque toujours. À remplir seulement si le minilab refuse ce format sans donner de motif : essayez alors le nom de sa propre configuration (« A4 », « 21xL »…)."/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="12" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Visible à la vente"/>
+                    <CheckBox x:Name="EnabledCheck" Grid.Row="12" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,14">
                         <TextBlock Text="produit proposé dans les listes" Style="{StaticResource Texte}" FontSize="18"/>
                     </CheckBox>
                 </Grid>

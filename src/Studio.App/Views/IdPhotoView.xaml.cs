@@ -19,7 +19,7 @@ namespace Studio.App.Views;
 /// gabarit surimprimé (vert quand conforme), ajustement manuel, impression
 /// de la planche (produit à SheetSpec).
 /// </summary>
-public partial class IdPhotoView : UserControl
+public partial class IdPhotoView : UserControl, ITravailReprenable
 {
     private static readonly Brush OkBrush = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50));
     private static readonly Brush WarnBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
@@ -99,15 +99,54 @@ public partial class IdPhotoView : UserControl
     /// </summary>
     private double _axeVisage = 0.5;
 
+    /// <summary>
+    /// Les photos imposées par l'écran de sélection, dans SON ordre. Null = on scanne le
+    /// dossier, comme avant.
+    ///
+    /// Les deux entrées coexistent : le parcours normal passe par la sélection, mais
+    /// « Modifier » sur une commande du jour rouvre un dossier de commande entier, où tout
+    /// est à traiter.
+    /// </summary>
+    private readonly IReadOnlyList<string>? _cheminsImposes;
+
+    /// <param name="chemins">Photos retenues à l'écran précédent, dans l'ordre du choix.</param>
+    /// <param name="document">Norme visée. Null = norme française.</param>
+    public IdPhotoView(IReadOnlyList<string> chemins, IdDocumentSpec? document = null)
+        : this("", document, false, chemins)
+    {
+    }
+
     /// <param name="rootPath">Dossier des photos.</param>
     /// <param name="document">
     /// Norme visée. Null = norme française, le cas courant de la boutique.
     /// </param>
     /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
     public IdPhotoView(string rootPath, IdDocumentSpec? document = null, bool avecSousDossiers = true)
+        : this(rootPath, document, avecSousDossiers, null)
+    {
+    }
+
+    /// <summary>
+    /// Reprend une planche mise de côté, telle qu'elle a été laissée : même norme, mêmes
+    /// photos, mêmes repères, même photo affichée.
+    /// </summary>
+    /// <param name="travail">Le travail mis de côté ; son <c>Identite</c> ne doit pas être null.</param>
+    public IdPhotoView(TravailEnAttente travail)
+        : this(travail?.PhotosDirectory ?? "",
+               DocumentDe(travail?.Identite ?? throw new ArgumentNullException(nameof(travail))),
+               travail.AvecSousDossiers,
+               travail.Identite.Chemins.Count > 0 ? travail.Identite.Chemins : null)
+    {
+        _enAttente = travail;
+        _attenteId = travail.Id;
+    }
+
+    private IdPhotoView(string rootPath, IdDocumentSpec? document, bool avecSousDossiers,
+        IReadOnlyList<string>? chemins)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
+        _cheminsImposes = chemins;
         _document = document ?? IdDocumentSpec.France;
         InitializeComponent();
 
@@ -183,24 +222,52 @@ public partial class IdPhotoView : UserControl
 
         if (_photos.Count == 0)
         {
-            // La plus récente en premier, comme sur la grille des tirages : la photo
-            // d'identité qu'on vient de prendre est en bout de carte.
+            // Photos imposées par l'écran de sélection : SON ordre, et rien d'autre. Le
+            // rescanner ramènerait les quatre-vingts photos de la carte, dont l'opérateur
+            // vient justement de désigner trois.
+            //
+            // Sinon on scanne, la plus récente en premier comme sur la grille des tirages :
+            // la photo d'identité qu'on vient de prendre est en bout de carte.
             //
             // Les PDF sont écartés : on ne fait pas une photo d'identité depuis un
             // document, et la détection de visage n'aurait rien à y chercher.
-            var files = await Task.Run(
-                () => PhotoScanner.TrierParDateDecroissante(
-                    PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct)
-                        .Where(f => !PhotoScanner.IsPdf(f))),
-                ct);
+            var files = _cheminsImposes is not null
+                ? _cheminsImposes.Where(f => !PhotoScanner.IsPdf(f)).ToList()
+                : await Task.Run(
+                    () => PhotoScanner.TrierParDateDecroissante(
+                            PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct)
+                                .Where(f => !PhotoScanner.IsPdf(f)))
+                        .ToList(),
+                    ct);
+
+            var rang = 0;
             foreach (var file in files)
-                _photos.Add(new StripItem(file));
+                _photos.Add(new StripItem(file) { Rang = ++rang });
             PhotoStrip.ItemsSource = _photos;
+
+            // le travail mis de côté est reposé AVANT toute ouverture : ouvrir d'abord
+            // relancerait la détection de visage sur une photo dont les repères sont
+            // pourtant déjà connus
+            if (_enAttente?.Identite is { } garde) AppliquerLAttente(garde);
 
             // sans photo, la bande reste vide : on le dit là où l'aperçu s'afficherait
             if (_photos.Count == 0)
                 EmptyText.Text = "Aucune photo dans ce dossier — revenez en arrière " +
                                  "pour en choisir un autre.";
+
+            AnnoncerLeLot();
+
+            // La première photo s'ouvre TOUTE SEULE quand elles ont été choisies à l'écran
+            // précédent : l'opérateur vient de les désigner, lui redemander de cliquer sur
+            // la première serait un clic pour rien. Sur un dossier scanné, en revanche, il
+            // n'a encore rien choisi — l'écran attend.
+            // Une planche reprise rouvre la photo qu'on regardait, et non la première :
+            // l'opérateur repart exactement là où il s'était arrêté.
+            var aOuvrir = _enAttente?.Identite?.PhotoCourante is { Length: > 0 } nom
+                ? _photos.FirstOrDefault(p => string.Equals(p.Name, nom, StringComparison.OrdinalIgnoreCase))
+                : _cheminsImposes is not null ? _photos.FirstOrDefault() : null;
+
+            if (aOuvrir is not null) await OuvrirLaPhotoAsync(aOuvrir);
         }
 
         var thumbnails = App.Services.Thumbnails;
@@ -235,18 +302,31 @@ public partial class IdPhotoView : UserControl
     private async void OnStripPhotoClicked(object sender, MouseButtonEventArgs e)
     {
         if ((sender as Border)?.Tag is not StripItem item) return;
+        await OuvrirLaPhotoAsync(item);
+    }
+
+    /// <summary>
+    /// Ouvre une photo dans la scène de cadrage, en DÉPOSANT d'abord le travail fait sur
+    /// la précédente.
+    ///
+    /// L'ordre compte : sans le dépôt préalable, changer de photo perdrait tout ce qui vient
+    /// d'être réglé sur celle qu'on quitte — c'était le comportement d'avant, et il
+    /// obligeait à imprimer une photo avant d'en toucher une autre.
+    /// </summary>
+    private async Task OuvrirLaPhotoAsync(StripItem item)
+    {
+        if (ReferenceEquals(_current, item)) return;
+
+        SauverDansLaPhoto();
 
         foreach (var p in _photos) p.Selected = p == item;
         _current = item;
 
-        // détourage, corrections et redressement appartiennent à la photo précédente : les
-        // garder afficherait le fond blanc, l'exposition et l'inclinaison d'un autre client
+        // Les aperçus calculés appartiennent à la photo précédente : les garder
+        // afficherait le fond blanc et l'exposition d'un autre client. Ils se refont ; le
+        // travail, lui, est repris de l'objet.
         _detoure = null;
         _corrige = null;
-        _corrections = new ImageAdjustments();
-        MontrerLesCorrections();
-        WhiteBackgroundCheck.IsChecked = false;
-        Redresser(0);
 
         EmptyText.Visibility = Visibility.Collapsed;
         Mouse.OverrideCursor = Cursors.Wait;
@@ -256,12 +336,23 @@ public partial class IdPhotoView : UserControl
             var path = item.Path;
             var bytes = await Task.Run(() => App.Services.Thumbnails.GetJpeg(path, 1600));
             _displayBitmap = ToBitmap(bytes);
-            ApplyGrayscalePreview();
 
-            var face = await Task.Run(() => App.Services.Faces.DetectMain(path));
-            var detecte = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
-            PoserReperes(detecte);
-            AutoCrop();
+            ReprendreDeLaPhoto(item);
+
+            // Première ouverture seulement : la détection écraserait le placement manuel
+            // que l'opérateur vient de corriger à la main.
+            if (!item.Prete)
+            {
+                var face = await Task.Run(() => App.Services.Faces.DetectMain(path));
+                var detecte = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
+                PoserReperes(detecte);
+                AutoCrop();
+                item.Prete = true;
+            }
+
+            // le fond blanc se recalcule sur la nouvelle image, il ne se reporte pas
+            if (item.FondBlanc) await RefaireLeFondBlancAsync();
+            await RecalculerLApercuCorrigeAsync();
         }
         catch (Exception ex)
         {
@@ -273,9 +364,94 @@ public partial class IdPhotoView : UserControl
         {
             Mouse.OverrideCursor = null;
         }
+
         PrintButton.IsEnabled = _current is not null;
         MailButton.IsEnabled = _current is not null;
         Redraw();
+        AnnoncerLeLot();
+    }
+
+    /// <summary>Dépose sur la photo courante tout ce que l'écran porte.</summary>
+    private void SauverDansLaPhoto()
+    {
+        if (_current is not { } photo) return;
+
+        photo.Crop = _crop;
+        photo.Crown = _crown;
+        photo.Chin = _chin;
+        photo.Head = _head;
+        photo.AxeVisage = _axeVisage;
+        photo.Redressement = _redressement;
+        photo.Corrections = _corrections.Clone();
+        photo.NoirEtBlanc = GrayscaleCheck.IsChecked == true;
+        photo.FondBlanc = WhiteBackgroundCheck.IsChecked == true;
+        photo.Copies = _copies;
+        photo.Quantite = _quantity;
+    }
+
+    /// <summary>
+    /// Reprend sur l'écran ce que la photo porte.
+    ///
+    /// Les deux cases sont posées SANS déclencher leur gestionnaire : cocher « fond
+    /// blanc » ici relancerait un détourage de quatre secondes alors qu'on vient de
+    /// l'ordonner nous-même juste après.
+    /// </summary>
+    private void ReprendreDeLaPhoto(StripItem photo)
+    {
+        _crop = photo.Crop;
+        _crown = photo.Crown;
+        _chin = photo.Chin;
+        _head = photo.Head;
+        _axeVisage = photo.AxeVisage;
+        _corrections = photo.Corrections.Clone();
+
+        SansGestionnaires(() =>
+        {
+            GrayscaleCheck.IsChecked = photo.NoirEtBlanc;
+            WhiteBackgroundCheck.IsChecked = photo.FondBlanc;
+        });
+
+        Redresser(photo.Redressement);
+        SetQuantity(photo.Quantite);
+
+        // 0 = jamais réglée : on part de la planche pleine, comme au choix du papier
+        SetCopies(photo.Copies > 0 ? photo.Copies : MaxCopiesForSelectedProduct());
+
+        MontrerLesCorrections();
+    }
+
+    /// <summary>
+    /// Vrai pendant qu'on repose l'état d'une photo : les gestionnaires des deux cases
+    /// doivent alors se taire.
+    /// </summary>
+    private bool _enReprise;
+
+    private void SansGestionnaires(Action action)
+    {
+        _enReprise = true;
+        try
+        {
+            action();
+        }
+        finally
+        {
+            _enReprise = false;
+        }
+    }
+
+    /// <summary>
+    /// Ce que le lot représente, en bas d'écran : le compte des planches à sortir.
+    ///
+    /// Il ne DÉPOSE rien : appelé depuis <c>SetQuantity</c>, qui est lui-même appelé
+    /// pendant la reprise d'une photo, un dépôt écrirait sur la nouvelle photo les
+    /// réglages de l'ancienne, à moitié repris.
+    /// </summary>
+    private void AnnoncerLeLot()
+    {
+        var planches = _photos.Sum(p => Math.Max(1, p.Quantite));
+        LotText.Text = _photos.Count <= 1
+            ? ""
+            : $"{_photos.Count} photos · {planches} planche{(planches > 1 ? "s" : "")}";
     }
 
     /// <summary>
@@ -437,7 +613,12 @@ public partial class IdPhotoView : UserControl
         Canvas.SetTop(anneau, centre.Y - anneau.Height / 2);
     }
 
-    private void OnGrayscaleChanged(object sender, RoutedEventArgs e) => ApplyGrayscalePreview();
+    private void OnGrayscaleChanged(object sender, RoutedEventArgs e)
+    {
+        if (_enReprise) return;
+        if (_current is not null) _current.NoirEtBlanc = GrayscaleCheck.IsChecked == true;
+        ApplyGrayscalePreview();
+    }
 
     /// <summary>
     /// Aperçu du fond blanc.
@@ -449,7 +630,10 @@ public partial class IdPhotoView : UserControl
     /// </summary>
     private async void OnWhiteBackgroundChanged(object sender, RoutedEventArgs e)
     {
+        if (_enReprise) return;
         if (_current is null || _displayBitmap is null) return;
+
+        _current.FondBlanc = WhiteBackgroundCheck.IsChecked == true;
 
         if (WhiteBackgroundCheck.IsChecked != true)
         {
@@ -457,6 +641,20 @@ public partial class IdPhotoView : UserControl
             await RecalculerLApercuCorrigeAsync();  // les corrections repartent de l'original
             return;
         }
+
+        await RefaireLeFondBlancAsync();
+    }
+
+    /// <summary>
+    /// Calcule (ou recalcule) le détourage de la photo courante.
+    ///
+    /// Isolé du gestionnaire de la case parce qu'il sert aussi à la REPRISE : une photo
+    /// déjà réglée en fond blanc doit retrouver son détourage en revenant dessus, sans que
+    /// reposer la case ne déclenche autre chose.
+    /// </summary>
+    private async Task RefaireLeFondBlancAsync()
+    {
+        if (_current is null || _displayBitmap is null) return;
 
         Mouse.OverrideCursor = Cursors.Wait;
         try
@@ -556,6 +754,10 @@ public partial class IdPhotoView : UserControl
                 // les deux cases de cet écran restent maîtresses de leur réglage
                 _corrections.Grayscale = false;
                 _corrections.WhiteBackground = false;
+
+                // les corrections appartiennent à la photo : sans ce report, revenir
+                // dessus après en avoir vu une autre les retrouverait à neutre
+                if (_current is not null) _current.Corrections = _corrections.Clone();
 
                 _ = RecalculerLApercuCorrigeAsync();
             }),
@@ -836,6 +1038,12 @@ public partial class IdPhotoView : UserControl
             RedressementArme = false;
             e.Handled = true;
         }
+        else if (e.Key == Key.Escape && _agrandi)
+        {
+            // le redressement d'abord : c'est un MODE, et Échap sort du plus imbriqué
+            Agrandissement(false);
+            e.Handled = true;
+        }
     }
 
     private void MontrerLeBandeauRedressement()
@@ -864,6 +1072,7 @@ public partial class IdPhotoView : UserControl
     private void Redresser(double degres)
     {
         _redressement = Math.Clamp(degres, -RedressementMax, RedressementMax);
+        if (_current is not null) _current.Redressement = _redressement;
 
         RedressementText.Text = Math.Abs(_redressement) < 0.01
             ? "0°"
@@ -988,6 +1197,11 @@ public partial class IdPhotoView : UserControl
     {
         _quantity = Math.Clamp(value, 1, 20);
         QuantityText.Text = _quantity.ToString();
+
+        // la vignette porte « ×N » : sans ce report, la bande annoncerait encore l'ancienne
+        // quantité et l'opérateur ne verrait son geste que sur le compteur
+        if (_current is not null) _current.Quantite = _quantity;
+        AnnoncerLeLot();
     }
 
     private void OnCopiesMinus(object sender, RoutedEventArgs e) => SetCopies(_copies - 1);
@@ -998,6 +1212,8 @@ public partial class IdPhotoView : UserControl
     {
         _copies = Math.Clamp(value, 1, Math.Max(1, MaxCopiesForSelectedProduct()));
         CopiesText.Text = _copies.ToString();
+
+        if (_current is not null) _current.Copies = _copies;
     }
 
     private int MaxCopiesForSelectedProduct() =>
@@ -1013,6 +1229,15 @@ public partial class IdPhotoView : UserControl
     private void OnProductChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ProductCombo.SelectedItem is not ProductChoice choice) return;
+
+        // Le papier vaut pour TOUT le lot — c'est le rouleau chargé, il n'y en a qu'un.
+        // Les photos qu'on n'a pas encore rouvertes doivent donc repartir de la planche
+        // pleine du NOUVEAU papier : garder « 8 » sur un papier qui en porte 12 laisserait
+        // des places vides payées au même prix, sans que rien ne le dise.
+        foreach (var photo in _photos)
+            if (!ReferenceEquals(photo, _current))
+                photo.Copies = 0;
+
         SetCopies(choice.Capacite);
         ShowFinishes(choice.Product);
     }
@@ -1031,7 +1256,15 @@ public partial class IdPhotoView : UserControl
 
     // ----- impression -----
 
-    private async void OnPrint(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Passe au récapitulatif : la planche s'y regarde AVANT d'engager le papier.
+    ///
+    /// Ce bouton imprimait directement, et c'est ce qui coûtait une feuille à chaque
+    /// mauvaise surprise — l'écran de cadrage montre le CADRE sur la photo, pas la
+    /// planche : ni la disposition, ni le nombre de vignettes, ni l'horodatage. Voir
+    /// <see cref="IdSheetRecapView"/>, qui porte désormais l'impression.
+    /// </summary>
+    private void OnPrint(object sender, RoutedEventArgs e)
     {
         // ne jamais sortir en silence : sans produit planche activé, le bouton semblait mort
         if (ProductCombo.SelectedItem is not ProductChoice choice)
@@ -1046,80 +1279,359 @@ public partial class IdPhotoView : UserControl
         }
         if (_current is null)
         {
-            MessageBox.Show("Choisissez d'abord une photo dans la bande du bas.",
+            MessageBox.Show("Choisissez d'abord une photo dans la bande de gauche.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        // avertit sans bloquer : l'opérateur reste juge (visage non détecté, photo médiocre…)
-        // le gabarit nommé est celui du document visé, pas un 35×45 figé
-        if (_head is not null && !IdPhotoFr.Check(_crop, _head, _document).Compliant)
+        // le travail de la photo affichée n'est pas encore déposé : sans cela, le
+        // récapitulatif montrerait le cadrage d'AVANT la dernière retouche
+        SauverDansLaPhoto();
+
+        // Avertit sans bloquer : l'opérateur reste juge (visage non détecté, photo
+        // médiocre…). Le contrôle porte sur TOUT le lot — n'examiner que la photo à
+        // l'écran laisserait passer les autres sans un mot.
+        var douteuses = _photos
+            .Where(p => p.Head is not null && !IdPhotoFr.Check(p.Crop, p.Head, _document).Compliant)
+            .ToList();
+
+        if (douteuses.Count > 0)
         {
-            var answer = MessageBox.Show(
-                $"Le cadrage ne respecte pas le gabarit {_document.WidthMm:0.#}×{_document.HeightMm:0.#}.\n" +
-                "Imprimer quand même ?",
+            var lesquelles = string.Join(", ", douteuses.Select(p => p.Name));
+            var reponse = MessageBox.Show(
+                $"Le cadrage ne respecte pas le gabarit {_document.WidthMm:0.#}×{_document.HeightMm:0.#} " +
+                $"sur {douteuses.Count} photo(s) : {lesquelles}.\n\nContinuer quand même ?",
                 "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (answer != MessageBoxResult.Yes) return;
+            if (reponse != MessageBoxResult.Yes) return;
         }
 
-        var services = App.Services;
-        var items = new List<DraftItem>
+        var finition = FinishCombo.SelectedItem as string;
+
+        var planches = _photos
+            .Select(p => new IdSheetRecapView.Planche(
+                p.Path,
+                p.Crop,
+                p.Redressement,
+                ReglagesDe(p),
+                p.Copies > 0 ? p.Copies : choice.Capacite,
+                Math.Max(1, p.Quantite),
+                choice.Product,
+                finition,
+                p.Rang))
+            .ToList();
+
+        Navigator.Go(
+            new IdSheetRecapView(planches, _document,
+                surModifier: RevenirSurLaPhoto,
+                surRemplacer: RevenirAuChoixDesPhotos,
+                attenteId: _attenteId),
+            planches.Count == 1 ? "Récapitulatif de la planche" : "Récapitulatif des planches");
+    }
+
+    /// <summary>
+    /// Tout ce qui sera appliqué aux pixels d'une photo du lot : ses corrections, plus ses
+    /// deux cases.
+    ///
+    /// Jumelle de <see cref="ReglagesRetenus"/>, qui ne sait lire que l'écran. Les deux
+    /// existent parce que l'envoi par courriel porte sur la photo AFFICHÉE, tandis que le
+    /// récapitulatif porte sur toutes.
+    /// </summary>
+    private static ImageAdjustments ReglagesDe(StripItem photo)
+    {
+        var reglages = photo.Corrections.Clone();
+        reglages.Grayscale = photo.NoirEtBlanc;
+        reglages.WhiteBackground = photo.FondBlanc;
+        return reglages;
+    }
+
+    /// <summary>Retour du récapitulatif sur une photo précise, pour la recadrer.</summary>
+    private void RevenirSurLaPhoto(int rang)
+    {
+        Navigator.Back();
+
+        var photo = _photos.FirstOrDefault(p => p.Rang == rang);
+        if (photo is not null) _ = OuvrirLaPhotoAsync(photo);
+    }
+
+    /// <summary>
+    /// Retour au choix des photos.
+    ///
+    /// Deux retours quand on vient de l'écran de sélection, un seul sinon : « Modifier »
+    /// depuis les commandes du jour ouvre cet écran directement, et un second retour
+    /// remonterait à la liste des commandes — c'est-à-dire ailleurs que là où le bouton
+    /// promet d'aller.
+    /// </summary>
+    private void RevenirAuChoixDesPhotos()
+    {
+        Navigator.Back();
+        if (_cheminsImposes is not null) Navigator.Back();
+    }
+
+    // ----- voir la photo en grand -----
+
+    /// <summary>Vrai quand la bande et les réglages sont escamotés au profit de la photo.</summary>
+    private bool _agrandi;
+
+    /// <summary>
+    /// Escamote la bande de gauche et la barre de réglages pour ne garder que la photo.
+    ///
+    /// <b>Pourquoi ce bouton existe.</b> Une photo d'identité est en portrait, et la scène
+    /// de cadrage est large et basse : c'est la HAUTEUR qui la limite, et elle est prise
+    /// par le titre, la barre de réglages et le bandeau des machines. On a resserré tout ce
+    /// qui pouvait l'être — bande à 160 px, boutons à 40, marges réduites —, mais le vrai
+    /// gain est là : sans la barre, la photo double presque de taille.
+    ///
+    /// <b>Rien n'est perdu en chemin</b> : les repères, le cadrage et les réglages
+    /// continuent de vivre dans la photo courante. Le mode ne fait que cacher des panneaux.
+    ///
+    /// Échap en sort, comme du mode redressement — c'est le même réflexe.
+    /// </summary>
+    private void OnBasculerAgrandissement(object sender, RoutedEventArgs e) =>
+        Agrandissement(!_agrandi);
+
+    private void Agrandissement(bool actif)
+    {
+        _agrandi = actif;
+
+        var panneaux = actif ? Visibility.Collapsed : Visibility.Visible;
+        BandePhotos.Visibility = panneaux;
+        BarreReglages.Visibility = panneaux;
+        AideText.Visibility = panneaux;
+
+        // la colonne elle-même doit disparaître : masquer son contenu lui laisserait ses
+        // 160 px, c'est-à-dire précisément ce qu'on vient chercher
+        BandeColonne.Width = actif ? new GridLength(0) : new GridLength(160);
+
+        // un seul espace : XAML normalise les blancs de son contenu littéral, pas le C#, et
+        // le libellé aurait changé d'espacement en basculant
+        AgrandirButton.Content = actif ? "⛶ Réduire" : "⛶ Agrandir";
+
+        // la scène change de taille : le cadre et les anneaux se replacent dessus
+        Redraw();
+    }
+
+    // ----- mise en attente : servir quelqu'un d'autre, puis reprendre -----
+
+    /// <summary>
+    /// L'identité de CETTE planche, qu'elle ait déjà été mise de côté ou non. Fixe pour
+    /// toute la vie de l'écran : deux mises en attente successives mettent à jour la même
+    /// entrée au lieu d'en empiler deux sur l'accueil.
+    /// </summary>
+    private readonly Guid _attenteId = Guid.NewGuid();
+
+    /// <summary>Le travail repris, s'il y en a un : sert à garder son titre.</summary>
+    private readonly TravailEnAttente? _enAttente;
+
+    /// <inheritdoc/>
+    public string ResumeDeLAttente
+    {
+        get
         {
-            new(_current.Path, choice.Product, _quantity, _crop, 0, _redressement, null, ReglagesRetenus(), _copies,
-                FinishCombo.SelectedItem as string,
-                // la case suit le document, jamais celle inscrite au produit
-                SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm)),
-        };
+            var prêtes = _photos.Count(p => p.Prete);
+            var morceaux = new List<string>
+            {
+                _document.Country == "France"
+                    ? $"identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
+                    : $"{_document.Country} — {_document.Document}",
+                $"{_photos.Count} photo(s)",
+            };
 
-        PrintButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
-        try
-        {
-            // Seule la création de la commande est attendue — c'est court : un numéro, une
-            // enveloppe, la copie de l'original. Le RENDU de la planche et l'envoi à la
-            // machine partent en tâche de fond, comme sur les tirages.
-            //
-            // Cet écran les attendait, puis affichait une boîte de dialogue : c'était le
-            // seul parcours qui retenait l'opérateur devant sa machine pendant que le
-            // client suivant attendait. Corrigé le 04/08/2026 à sa demande.
-            var order = await Task.Run(() => services.Orders.CreateOrder("Operateur", items));
-
-            Mouse.OverrideCursor = null;
-
-            services.Impressions.Lancer(order,
-                imprimer: (avancement, arret) =>
-                {
-                    foreach (var envelope in order.Envelopes)
-                        services.Printer.PrintEnvelope(order, envelope,
-                            progression: avancement, ct: arret);
-                });
-
-            // On rend la main IMMÉDIATEMENT. Plus de boîte de dialogue de succès :
-            // l'avancement, l'attente d'imprimante et les échecs se lisent tous dans le
-            // bandeau du haut, qui est justement fait pour ça.
-            Navigator.Home(new HomeView(), "Studio Photo");
-        }
-        catch (Exception ex)
-        {
-            // seule la création de la commande peut encore échouer ici ; l'impression, elle,
-            // se plaint dans le bandeau
-            Mouse.OverrideCursor = null;
-            FileLog.Write("Échec de la création de la commande (planche identité)", ex);
-            MessageBox.Show($"Commande impossible à créer : {ex.Message}",
-                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
-            PrintButton.IsEnabled = true;
+            if (prêtes > 0) morceaux.Add($"{prêtes} cadrée(s)");
+            return string.Join(" · ", morceaux);
         }
     }
 
+    /// <inheritdoc/>
+    public bool EnregistrerPourReprise()
+    {
+        if (_photos.Count == 0) return false;
+
+        // ce que l'écran porte appartient à la photo courante : sans ce dépôt, le cadrage
+        // et les repères qu'on vient de poser partiraient à la corbeille
+        SauverDansLaPhoto();
+
+        try
+        {
+            var travail = ConstruireLAttente();
+            App.Services.CommandesEnAttente.Enregistrer(travail);
+
+            FileLog.Write($"Planche d'identité mise en attente ({travail.Resume}) — " +
+                          $"{travail.PhotosDirectory}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Mise en attente de la planche d'identité impossible", ex);
+            return false;
+        }
+    }
+
+    private TravailEnAttente ConstruireLAttente() => new()
+    {
+        Id = _attenteId,
+        SavedAt = DateTimeOffset.Now,
+
+        // Le dossier sert à VÉRIFIER que les photos sont encore là avant de rouvrir. Avec
+        // des photos imposées par la sélection, il peut être vide — on prend alors le
+        // dossier de la première, qui est celui que le client a apporté.
+        PhotosDirectory = !string.IsNullOrWhiteSpace(_rootPath)
+            ? _rootPath
+            : System.IO.Path.GetDirectoryName(_photos[0].Path) ?? "",
+        AvecSousDossiers = _avecSousDossiers,
+        Titre = _enAttente?.Titre is { Length: > 0 } deja ? deja : TitreDeLaPlanche(),
+        Resume = ResumeDeLAttente,
+        Identite = new IdentiteEnAttente
+        {
+            Country = _document.Country,
+            Document = _document.Document,
+            WidthMm = _document.WidthMm,
+            HeightMm = _document.HeightMm,
+            HeadMinMm = _document.HeadMinMm,
+            HeadMaxMm = _document.HeadMaxMm,
+            CrownMarginMm = _document.CrownMarginMm,
+            TargetHeadOverrideMm = _document.TargetHeadOverrideMm,
+            Chemins = _cheminsImposes is null ? [] : [.. _cheminsImposes],
+            PhotoCourante = _current?.Name,
+            Photos = _photos.Select(p => new PhotoIdentiteEnAttente
+            {
+                FileName = p.Name,
+                Selected = p.Selected,
+                Quantity = p.Quantite,
+                Copies = p.Copies,
+                Prete = p.Prete,
+                CropX = p.Crop.X,
+                CropY = p.Crop.Y,
+                CropWidth = p.Crop.Width,
+                CropHeight = p.Crop.Height,
+                CrownX = p.Crown?.X,
+                CrownY = p.Crown?.Y,
+                ChinX = p.Chin?.X,
+                ChinY = p.Chin?.Y,
+                HeadX = p.Head?.X,
+                HeadY = p.Head?.Y,
+                HeadWidth = p.Head?.Width,
+                HeadHeight = p.Head?.Height,
+                AxeVisage = p.AxeVisage,
+                Redressement = p.Redressement,
+                NoirEtBlanc = p.NoirEtBlanc,
+                FondBlanc = p.FondBlanc,
+                Corrections = p.Corrections.Clone(),
+            }).ToList(),
+        },
+    };
+
+    private string TitreDeLaPlanche() => _document.Country == "France"
+        ? $"Identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
+        : $"Identité {_document.Country} — {_document.Document}";
+
+    /// <summary>La norme telle qu'elle a été mise de côté.</summary>
+    private static IdDocumentSpec DocumentDe(IdentiteEnAttente identite) => new(
+        identite.Country, identite.Document,
+        identite.WidthMm, identite.HeightMm,
+        identite.HeadMinMm, identite.HeadMaxMm,
+        identite.CrownMarginMm, identite.TargetHeadOverrideMm);
+
+    /// <summary>
+    /// Repose sur les photos de la bande le travail mis de côté.
+    ///
+    /// Les photos sont retrouvées par leur NOM DE FICHIER : le rang se décalerait dès
+    /// qu'un fichier manque, et on reprendrait le cadrage du voisin sans que rien ne le
+    /// dise. Une photo disparue est simplement sautée.
+    ///
+    /// <b><see cref="StripItem.Prete"/> est reposé en dernier</b>, avec le reste : c'est
+    /// lui qui empêche la détection de visage de se relancer et d'écraser les repères
+    /// qu'on vient justement de reprendre.
+    /// </summary>
+    private void AppliquerLAttente(IdentiteEnAttente identite)
+    {
+        var parNom = identite.Photos.ToDictionary(p => p.FileName, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var photo in _photos)
+        {
+            if (!parNom.TryGetValue(photo.Name, out var garde)) continue;
+
+            photo.Crop = new CropSpec(garde.CropX, garde.CropY, garde.CropWidth, garde.CropHeight);
+            photo.Crown = garde.CrownX is { } cx && garde.CrownY is { } cy ? new NormPoint(cx, cy) : null;
+            photo.Chin = garde.ChinX is { } mx && garde.ChinY is { } my ? new NormPoint(mx, my) : null;
+            photo.Head = garde.HeadX is { } hx && garde.HeadY is { } hy
+                         && garde.HeadWidth is { } hw && garde.HeadHeight is { } hh
+                ? new NormRect(hx, hy, hw, hh)
+                : null;
+            photo.AxeVisage = garde.AxeVisage;
+            photo.Redressement = garde.Redressement;
+            photo.NoirEtBlanc = garde.NoirEtBlanc;
+            photo.FondBlanc = garde.FondBlanc;
+            photo.Corrections = garde.Corrections.Clone();
+            photo.Quantite = garde.Quantity;
+            photo.Copies = garde.Copies;
+            photo.Prete = garde.Prete;
+        }
+    }
+
+    /// <summary>
+    /// Une photo de la bande, avec TOUT ce que l'opérateur a posé dessus.
+    ///
+    /// L'écran ne traitait qu'une photo à la fois et jetait son travail dès qu'on en
+    /// choisissait une autre — repères, cadrage, corrections, redressement, tout repartait
+    /// à neutre. Pour deux personnes d'une même famille, il fallait imprimer la première
+    /// avant de toucher à la seconde, donc deux commandes et deux passages en caisse.
+    ///
+    /// Le travail vit donc ICI, et l'écran n'en est que la vue : il DÉPOSE l'état courant
+    /// avant de changer de photo (<c>SauverDansLaPhoto</c>) et le REPREND ensuite
+    /// (<c>ReprendreDeLaPhoto</c>).
+    /// </summary>
     private sealed class StripItem : ObservableObject
     {
         private ImageSource? _thumbnail;
         private bool _selected;
+        private int _quantite = 1;
 
         public StripItem(string path) => Path = path;
 
         public string Path { get; }
         public string Name => System.IO.Path.GetFileName(Path);
+
+        /// <summary>Rang dans le lot, à partir de 1 — celui de l'écran de sélection.</summary>
+        public int Rang { get; init; }
+
+        /// <summary>
+        /// Vrai dès que les repères ont été posés au moins une fois. Sans ce drapeau, une
+        /// photo rouverte relancerait la détection de visage et écraserait le placement
+        /// manuel que l'opérateur venait justement de corriger.
+        /// </summary>
+        public bool Prete { get; set; }
+
+        // — le travail de l'opérateur, photo par photo —
+
+        public CropSpec Crop { get; set; } = CropSpec.Full;
+        public NormPoint? Crown { get; set; }
+        public NormPoint? Chin { get; set; }
+        public NormRect? Head { get; set; }
+        public double AxeVisage { get; set; } = 0.5;
+        public double Redressement { get; set; }
+        public ImageAdjustments Corrections { get; set; } = new();
+        public bool NoirEtBlanc { get; set; }
+        public bool FondBlanc { get; set; }
+
+        /// <summary>Photos par planche. Recalé sur la capacité du papier au premier passage.</summary>
+        public int Copies { get; set; }
+
+        /// <summary>
+        /// Nombre de planches identiques pour CETTE photo. Deux personnes commandent
+        /// rarement la même quantité, et c'est ce que la bande affiche (« ×2 »).
+        /// </summary>
+        public int Quantite
+        {
+            get => _quantite;
+            set
+            {
+                if (!Set(ref _quantite, value)) return;
+                OnPropertyChanged(nameof(Etiquette));
+            }
+        }
+
+        /// <summary>Ce qui se lit sur la vignette : le rang et le nombre de planches.</summary>
+        public string Etiquette => $"{Rang}  ·  ×{Quantite}";
 
         public ImageSource? Thumbnail
         {

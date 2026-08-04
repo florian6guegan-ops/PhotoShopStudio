@@ -123,6 +123,19 @@ public partial class CropSurface : UserControl
     /// <summary>Sort du mode redressement — l'appelant le fait en changeant de photo.</summary>
     public void DesarmerLeRedressement() => RedressementArme = false;
 
+    /// <summary>
+    /// Montre le trait de découpe sur le bord du tirage, tel qu'il sortira sur le papier.
+    ///
+    /// La case « Contour de découpe » ne changeait RIEN à l'écran : le trait n'existait
+    /// qu'au rendu final. Elle fonctionnait, mais rien ne le disait — elle passait donc
+    /// pour morte, et c'est ce que l'exploitant a signalé le 04/08/2026.
+    /// </summary>
+    public bool ContourDeDecoupe
+    {
+        get => TraitDeDecoupe.Visibility == Visibility.Visible;
+        set => TraitDeDecoupe.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         // Une répétition de touche ne doit pas faire clignoter le mode : garder T enfoncée
@@ -273,6 +286,12 @@ public partial class CropSurface : UserControl
         Canvas.SetTop(Cadre, cadreY);
         Cadre.Width = cadreLargeur;
         Cadre.Height = cadreHauteur;
+
+        // le trait de découpe se pose sur le même rectangle : c'est le bord du tirage
+        Canvas.SetLeft(TraitDeDecoupe, cadreX);
+        Canvas.SetTop(TraitDeDecoupe, cadreY);
+        TraitDeDecoupe.Width = cadreLargeur;
+        TraitDeDecoupe.Height = cadreHauteur;
     }
 
     private static readonly string ConsigneRecadrage =

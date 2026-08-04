@@ -151,11 +151,25 @@
                                MinWidth="44" Margin="0,0,0,6"/>
                     <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
                             FontSize="24" Click="OnQuantityPlus" Margin="0,0,20,6">+</Button>
-                    <TextBlock Text="Minilab :" Style="{StaticResource Hint}"
+                    <!-- SUR QUELLE MACHINE ça va sortir, en toutes lettres et en couleur.
+                         Le catalogue porte deux produits nommés « 10x15 » — l'un au
+                         minilab, l'autre à la DS620 — et rien ici ne disait lequel était
+                         choisi : la commande 04-024 du 04/08/2026 est partie sur la
+                         mauvaise machine, onze tirages, sans que personne ne puisse s'en
+                         apercevoir avant le papier. -->
+                    <Border x:Name="SortieBadge" CornerRadius="8" Padding="12,6" Margin="0,0,20,6"
+                            VerticalAlignment="Center" Background="{StaticResource AccentDarkBrush}">
+                        <TextBlock x:Name="SortieText" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="White"/>
+                    </Border>
+
+                    <!-- Le choix de machine ne vaut QUE pour le minilab : sur un produit
+                         DNP, la liste ne commandait rien et laissait croire le contraire. -->
+                    <TextBlock x:Name="MachineLabel" Text="Minilab :" Style="{StaticResource Hint}"
                                VerticalAlignment="Center" Margin="0,0,8,6"/>
                     <ComboBox x:Name="MachineCombo" MinWidth="260" FontSize="15" Padding="10,8"
                               DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,0,6"
-                              ToolTip="Machine du minilab et papier qui y est chargé"
+                              ToolTip="Machine du minilab et papier qui y est chargé. « Automatique » envoie sur celle dont le rouleau porte le format."
                               SelectionChanged="OnMachineChanged"/>
                 </WrapPanel>
 
@@ -163,7 +177,7 @@
                             VerticalAlignment="Center" Margin="16,0,0,0">
                     <Button x:Name="IndexButton" Style="{StaticResource FlatButton}" MinHeight="56"
                             Padding="20,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
-                            ToolTip="Une planche avec les vignettes NUMÉROTÉES de la sélection, au format choisi — le client coche, on tire ensuite"
+                            ToolTip="Une planche avec les vignettes NUMÉROTÉES — de la sélection ou de tout le dossier, au choix. Le client coche, on tire ensuite."
                             Click="OnIndexSheet">Planche index</Button>
                     <Button x:Name="ModifyButton" Style="{StaticResource FlatButton}" MinHeight="56"
                             Padding="26,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
@@ -175,6 +189,13 @@
                             Padding="20,0" FontSize="18" Margin="0,0,20,0"
                             ToolTip="Mettre cette commande de côté pour servir quelqu'un d'autre. Elle vous attend sur l'accueil et se rouvre telle que vous la laissez."
                             Click="OnMettreEnAttente">⏸  Mettre en attente</Button>
+                    <!-- Prévenir le client SANS avoir à y penser plus tard : l'adresse se
+                         prend maintenant, pendant qu'il est là, et le message part tout
+                         seul quand la machine a fini de sortir la commande. -->
+                    <Button x:Name="PrevenirButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="20,0" FontSize="18" Margin="0,0,20,0"
+                            ToolTip="Saisir l'adresse du client : dès que la commande sera sortie, un courriel lui dira qu'elle l'attend en magasin."
+                            Click="OnPrevenirALaFin">🔔  Prévenir à la fin</Button>
                     <TextBlock x:Name="TotalText" Style="{StaticResource Valeur}" Margin="0,0,16,0"/>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
                             Click="OnPrint" IsEnabled="False">

@@ -95,12 +95,15 @@ public class IndexSheetRenderTests : IDisposable
         // ce que fait la planche-contact en affichant ses vignettes
         foreach (var photo in photos) _vignettes.GetJpeg(photo);
 
-        var avant = Directory.GetFiles(_cache).Length;
+        // les seules VIGNETTES : chacune a depuis un petit fichier compagnon « .dim » qui
+        // porte la définition de l'original, et ce qu'on compte ici est ce qui a été
+        // décodé, pas le nombre d'entrées du dossier
+        var avant = Directory.GetFiles(_cache, "*.jpg").Length;
         Assert.Equal(27, avant);
 
         Rendre(photos);
 
-        Assert.Equal(avant, Directory.GetFiles(_cache).Length);
+        Assert.Equal(avant, Directory.GetFiles(_cache, "*.jpg").Length);
     }
 
     /// <summary>

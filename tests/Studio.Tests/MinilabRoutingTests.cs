@@ -34,7 +34,26 @@ public class MinilabRoutingTests : IDisposable
         /// <summary>Rouleau chargé ; 0 par défaut = largeur inconnue, aucun contrôle.</summary>
         public int PaperWidthMm { get; set; }
 
-        public int LoadedPaperWidthMm(char machineId) => PaperWidthMm;
+        /// <summary>
+        /// Rouleau propre à une machine, quand elles n'ont pas le même — le cas normal sur
+        /// le DE100 de la boutique, qui en compte deux justement pour cela. Ce qui n'y
+        /// figure pas retombe sur <see cref="PaperWidthMm"/>.
+        /// </summary>
+        public Dictionary<char, int> Rouleaux { get; } = [];
+
+        public int LoadedPaperWidthMm(char machineId) =>
+            Rouleaux.TryGetValue(machineId, out var largeur) ? largeur : PaperWidthMm;
+
+        /// <summary>
+        /// Définition que la machine réclame, en pixels. Vide = elle n'en dit rien, et
+        /// l'orchestrateur garde son propre calcul — le cas de toutes les machines qui ne
+        /// répondent pas, et celui de tous les essais qui ne s'y intéressent pas.
+        /// </summary>
+        public Dictionary<(double W, double H), (uint W, uint H)> Definitions { get; } = [];
+
+        public (uint Width, uint Height) ExpectedPixels(
+            char machineId, double widthMm, double heightMm, uint dpi) =>
+            Definitions.TryGetValue((widthMm, heightMm), out var px) ? px : (0, 0);
 
         /// <summary>Commandes reçues, chacune avec toutes ses photos. Une enveloppe = une entrée.</summary>
         public List<(IReadOnlyList<De100PrintJob> Jobs, char Machine)> Commandes { get; } = [];
@@ -333,6 +352,218 @@ public class MinilabRoutingTests : IDisposable
     {
         Assert.Equal('A', PrintOrchestrator.ChooseMachine(['A', 'B'], requested: null));
         Assert.Equal('A', PrintOrchestrator.ChooseMachine(['A', 'B'], requested: ""));
+    }
+
+    // — choix de la machine selon le ROULEAU chargé —
+
+    /// <summary>
+    /// Rouleaux montés sur le DE100 de la boutique, par machine.
+    /// </summary>
+    private static Func<char, int> Rouleaux(params (char Machine, int LargeurMm)[] montes) =>
+        machine => montes.FirstOrDefault(m => m.Machine == machine).LargeurMm;
+
+    /// <summary>Le format cherché : vrai si le rouleau est assez large.</summary>
+    private static Func<int, bool> AuMoins(int millimetres) => largeur => largeur >= millimetres;
+
+    /// <summary>
+    /// LE défaut du 04/08/2026 : un 21×29,7 refusé « le rouleau chargé dans la machine A
+    /// fait 152 mm » (commandes 04-010 et 04-014) alors que le rouleau de 210 était monté
+    /// sur la machine B, juste à côté. Les deux machines du DE100 n'ont jamais le même
+    /// rouleau — c'est tout l'intérêt d'en avoir deux.
+    /// </summary>
+    [Fact]
+    public void La_machine_est_choisie_selon_le_rouleau_quon_y_a_monte()
+    {
+        var choix = PrintOrchestrator.ChoisirSelonLeRouleau(
+            ['A', 'B'], defaut: 'A',
+            Rouleaux(('A', 152), ('B', 210)),
+            AuMoins(210));
+
+        Assert.Equal(('B', 210), choix);
+    }
+
+    /// <summary>
+    /// À format égal, rien ne change : la machine par défaut est examinée en premier et
+    /// gagne dès que son rouleau convient. Un 10×15 ne doit pas se mettre à sortir de
+    /// l'autre machine parce qu'elle porte un rouleau plus large.
+    /// </summary>
+    [Fact]
+    public void La_machine_par_defaut_garde_la_main_quand_son_rouleau_convient()
+    {
+        var choix = PrintOrchestrator.ChoisirSelonLeRouleau(
+            ['A', 'B'], defaut: 'A',
+            Rouleaux(('A', 152), ('B', 210)),
+            AuMoins(102));
+
+        Assert.Equal(('A', 152), choix);
+    }
+
+    /// <summary>
+    /// Aucun rouleau ne convient : on rend le premier qui a répondu, pour
+    /// qu'<c>EnsurePaperFits</c> puisse nommer la machine et le rouleau à charger. Rendre
+    /// « rien » ferait perdre cette explication, la seule utile à l'opérateur.
+    /// </summary>
+    [Fact]
+    public void Sans_rouleau_convenable_on_garde_la_machine_par_defaut_pour_le_refus()
+    {
+        var choix = PrintOrchestrator.ChoisirSelonLeRouleau(
+            ['A', 'B'], defaut: 'A',
+            Rouleaux(('A', 152), ('B', 127)),
+            AuMoins(210));
+
+        Assert.Equal(('A', 152), choix);
+    }
+
+    // — le NOM du format envoyé au minilab —
+
+    /// <summary>
+    /// <b>Le défaut du 21×29,7, du 04/08/2026.</b> Studio fabrique un nom d'après le
+    /// rouleau — « 210x297 » —, et le DE100 l'a refusé six fois de suite sans donner le
+    /// moindre motif, pendant que le 18×24 sortait de la MÊME machine sur le MÊME rouleau.
+    ///
+    /// La base de DiLand a tranché : ses canaux de sortie pour un rouleau de 210 sont
+    /// <c>21xS</c> (50 à 210 mm, variable), <c>21xL</c> (210 à 1000 mm, variable) et
+    /// <c>A4</c> (297 mm exactement, <b>NON variable</b>). Le 18×24 part en « 210x240 » et
+    /// tombe dans le canal variable ; le 21×29,7 fait exactement 297 et correspond au
+    /// canal FIXE, que la machine exige par son nom.
+    ///
+    /// D'où <c>MinilabPrintSizeName = "A4"</c> sur les produits 210 × 297 du catalogue.
+    /// </summary>
+    [Fact]
+    public void Le_nom_de_format_du_produit_l_emporte_sur_celui_deduit_du_rouleau()
+    {
+        var produit = Minilab("21x29-7");
+        produit.MinilabPrintSizeName = "A4";
+
+        Assert.Equal("A4", PrintOrchestrator.MinilabSizeName(produit, 210, 297));
+    }
+
+    /// <summary>
+    /// Sans nom imposé, on garde celui qu'on déduit du rouleau : c'est ce qui sort des
+    /// centaines de fois par jour sur la machine A, et le 18×24 en dépend aussi.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Sans_nom_impose_le_format_se_deduit_du_rouleau(string? nom)
+    {
+        var produit = Minilab("18x24");
+        produit.MinilabPrintSizeName = nom;
+
+        Assert.Equal("210x240", PrintOrchestrator.MinilabSizeName(produit, 210, 240));
+    }
+
+    // — la machine à NOMMER quand celle qu'on a imposée ne porte pas le format —
+
+    /// <summary>
+    /// Une machine imposée n'est jamais détournée : c'est l'opérateur qui l'a choisie, et
+    /// lui seul sait quel rouleau il vient de monter. Mais le refus doit dire que la
+    /// machine d'à côté porterait le format — sans quoi il envoie changer un rouleau qui
+    /// tourne déjà à deux mètres, ce qu'il faisait le 04/08/2026 sur le 21×29,7.
+    /// </summary>
+    [Fact]
+    public void Le_refus_nomme_la_machine_voisine_qui_porte_le_format()
+    {
+        var trouvee = PrintOrchestrator.MachineQuiPorteLeFormat(
+            ['A', 'B'], visee: 'A',
+            Rouleaux(('A', 152), ('B', 210)),
+            AuMoins(210));
+
+        Assert.Equal(('B', 210), trouvee);
+    }
+
+    /// <summary>
+    /// Aucune voisine ne convient : on ne propose rien, et le refus retombe sur le rouleau
+    /// à charger. Proposer une machine au hasard enverrait tirer un 21×29,7 sur du 127.
+    /// </summary>
+    [Fact]
+    public void Aucune_voisine_ne_porte_le_format_rien_n_est_propose()
+    {
+        var trouvee = PrintOrchestrator.MachineQuiPorteLeFormat(
+            ['A', 'B'], visee: 'A',
+            Rouleaux(('A', 152), ('B', 127)),
+            AuMoins(210));
+
+        Assert.Equal(PrintOrchestrator.Aucune, trouvee.Machine);
+    }
+
+    /// <summary>
+    /// Un rouleau de largeur INCONNUE n'est jamais proposé : « la machine B porte du 0 mm »
+    /// serait pire que se taire. <c>Rouleaux</c> rend 0 pour une machine qu'il ne connaît
+    /// pas, ce qui est exactement ce que la machine répond quand elle n'en dit rien.
+    /// </summary>
+    [Fact]
+    public void Une_largeur_inconnue_n_est_pas_proposee()
+    {
+        var trouvee = PrintOrchestrator.MachineQuiPorteLeFormat(
+            ['A', 'B'], visee: 'A',
+            Rouleaux(('A', 152)),
+            AuMoins(210));
+
+        Assert.Equal(PrintOrchestrator.Aucune, trouvee.Machine);
+    }
+
+    /// <summary>Une voisine muette est sautée : on est déjà dans un chemin d'échec.</summary>
+    [Fact]
+    public void Une_voisine_qui_ne_repond_pas_est_sautee_a_son_tour()
+    {
+        var trouvee = PrintOrchestrator.MachineQuiPorteLeFormat(
+            ['A', 'B', 'C'], visee: 'A',
+            machine => machine == 'B'
+                ? throw new InvalidOperationException("La machine n'a pas répondu en 10 s.")
+                : 210,
+            AuMoins(210));
+
+        Assert.Equal(('C', 210), trouvee);
+    }
+
+    /// <summary>
+    /// Une machine endormie ne bloque pas : le DE100 en compte deux, dont une souvent
+    /// éteinte, et c'est justement le cas où l'autre doit prendre le tirage.
+    /// </summary>
+    [Fact]
+    public void Une_machine_qui_ne_repond_pas_est_sautee()
+    {
+        var choix = PrintOrchestrator.ChoisirSelonLeRouleau(
+            ['A', 'B'], defaut: 'A',
+            machine => machine == 'A'
+                ? throw new InvalidOperationException("La machine n'a pas répondu en 10 s.")
+                : 210,
+            AuMoins(210));
+
+        Assert.Equal(('B', 210), choix);
+    }
+
+    /// <summary>
+    /// Aucune machine n'a répondu : le choix ne rend rien, et l'appelant met la commande
+    /// en attente au lieu de tirer dans le vide.
+    /// </summary>
+    [Fact]
+    public void Aucune_machine_ne_repond_le_choix_ne_rend_rien()
+    {
+        var choix = PrintOrchestrator.ChoisirSelonLeRouleau(
+            ['A', 'B'], defaut: 'A',
+            _ => throw new InvalidOperationException("La machine n'a pas répondu en 10 s."),
+            AuMoins(210));
+
+        Assert.Null(choix);
+    }
+
+    /// <summary>
+    /// Largeur inconnue (machine avare en informations) : on ne bloque rien, comme
+    /// <c>EnsurePaperFits</c>. La machine par défaut passe donc, et le contrôle de papier
+    /// ne s'exercera pas.
+    /// </summary>
+    [Fact]
+    public void Une_largeur_inconnue_laisse_passer_la_machine_par_defaut()
+    {
+        var choix = PrintOrchestrator.ChoisirSelonLeRouleau(
+            ['A', 'B'], defaut: 'A',
+            Rouleaux(('B', 210)),
+            AuMoins(210));
+
+        Assert.Equal(('A', 0), choix);
     }
 
     // — modèle —

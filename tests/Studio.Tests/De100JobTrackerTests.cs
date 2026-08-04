@@ -58,6 +58,39 @@ public class De100JobTrackerTests
         Assert.Equal(0, tracker.PendingCount);
     }
 
+    /// <summary>
+    /// Le MOTIF de la machine (<c>ST_PRINT_INFO.errmsg</c>) accompagne le statut, il ne le
+    /// remplace pas : le statut situe le moment, le motif dit la cause. Sans lui, le
+    /// 21×29,7 des commandes 04-015, 04-020 et 04-027 du 04/08/2026 n'a laissé que
+    /// « erreur signalée par le minilab », trois fois de suite.
+    /// </summary>
+    [Fact]
+    public void Le_motif_de_la_machine_accompagne_le_statut()
+    {
+        var tracker = WithTrackedJob();
+
+        var result = Assert.Single(tracker.Report(
+            "OH-1", De100OrderStatus.Error, T0.AddMinutes(3),
+            motif: "Paper size mismatch. Load the correct paper."));
+
+        Assert.Contains("erreur", result.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Paper size mismatch", result.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>Machine muette : on garde le libellé du statut, sans tiret orphelin.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Sans_motif_la_raison_reste_le_seul_statut(string motif)
+    {
+        var tracker = WithTrackedJob();
+
+        var result = Assert.Single(tracker.Report(
+            "OH-1", De100OrderStatus.Error, T0.AddMinutes(3), motif));
+
+        Assert.Equal(De100JobTracker.Describe(De100OrderStatus.Error), result.Reason);
+    }
+
     [Theory]
     [InlineData(De100OrderStatus.PrintWaiting)]
     [InlineData(De100OrderStatus.Printing)]

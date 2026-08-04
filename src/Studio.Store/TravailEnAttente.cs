@@ -46,6 +46,94 @@ public sealed class PhotoEnAttente
 }
 
 /// <summary>
+/// Une photo d'identité en préparation, avec le travail de l'opérateur.
+///
+/// Elle a sa propre classe plutôt que d'allonger <see cref="PhotoEnAttente"/> : une photo
+/// d'identité ne porte ni produit, ni finition, ni découpe, et porte en revanche des
+/// repères de visage qui n'ont aucun sens sur un tirage. Les mêler ferait un objet dont la
+/// moitié des champs serait toujours vide.
+/// </summary>
+public sealed class PhotoIdentiteEnAttente
+{
+    /// <summary>Nom du fichier, jamais le rang : voir <see cref="PhotoEnAttente"/>.</summary>
+    public string FileName { get; set; } = "";
+
+    public bool Selected { get; set; }
+    public int Quantity { get; set; } = 1;
+
+    /// <summary>Photos sur la planche.</summary>
+    public int Copies { get; set; }
+
+    /// <summary>
+    /// Les repères ont déjà été posés. Sans ce drapeau, une photo rouverte relancerait la
+    /// détection de visage et écraserait le placement manuel qu'on vient de corriger.
+    /// </summary>
+    public bool Prete { get; set; }
+
+    public double CropX { get; set; }
+    public double CropY { get; set; }
+    public double CropWidth { get; set; } = 1;
+    public double CropHeight { get; set; } = 1;
+
+    /// <summary>Sommet du crâne, en fraction de l'image ; null = pas encore posé.</summary>
+    public double? CrownX { get; set; }
+    public double? CrownY { get; set; }
+
+    /// <summary>Bas du menton, en fraction de l'image ; null = pas encore posé.</summary>
+    public double? ChinX { get; set; }
+    public double? ChinY { get; set; }
+
+    /// <summary>Visage détecté, en fractions de l'image ; null = aucune détection retenue.</summary>
+    public double? HeadX { get; set; }
+    public double? HeadY { get; set; }
+    public double? HeadWidth { get; set; }
+    public double? HeadHeight { get; set; }
+
+    /// <summary>Axe vertical du visage, en fraction de la largeur.</summary>
+    public double AxeVisage { get; set; } = 0.5;
+
+    /// <summary>Redressement en degrés — le « Tilt ».</summary>
+    public double Redressement { get; set; }
+
+    public bool NoirEtBlanc { get; set; }
+    public bool FondBlanc { get; set; }
+
+    public ImageAdjustments Corrections { get; set; } = new();
+}
+
+/// <summary>
+/// Une planche de photos d'identité mise de côté.
+///
+/// La NORME est enregistrée à plat, et non par son nom : le référentiel compte 274
+/// documents et peut être rechargé entre-temps, alors que les cotes, elles, ne bougent
+/// pas. C'est aussi ce qui permet de reprendre une planche dont la norme aurait disparu
+/// du référentiel.
+/// </summary>
+public sealed class IdentiteEnAttente
+{
+    public string Country { get; set; } = "";
+    public string Document { get; set; } = "";
+    public double WidthMm { get; set; }
+    public double HeightMm { get; set; }
+    public double HeadMinMm { get; set; }
+    public double HeadMaxMm { get; set; }
+    public double? CrownMarginMm { get; set; }
+    public double? TargetHeadOverrideMm { get; set; }
+
+    /// <summary>
+    /// Les photos imposées par l'écran de sélection, dans SON ordre ; vide si l'écran
+    /// scannait un dossier. Ce sont des chemins complets : la sélection peut piocher
+    /// ailleurs que sous <see cref="TravailEnAttente.PhotosDirectory"/>.
+    /// </summary>
+    public List<string> Chemins { get; set; } = [];
+
+    /// <summary>Nom du fichier affiché au moment de la mise de côté, pour y revenir.</summary>
+    public string? PhotoCourante { get; set; }
+
+    public List<PhotoIdentiteEnAttente> Photos { get; set; } = [];
+}
+
+/// <summary>
 /// Une commande qu'on prépare et qu'on met de côté pour servir quelqu'un d'autre.
 ///
 /// C'est le geste du comptoir : un client hésite ou s'absente, un autre attend derrière.
@@ -104,6 +192,15 @@ public sealed class TravailEnAttente
     public string? PaperCode { get; set; }
 
     public List<PhotoEnAttente> Photos { get; set; } = [];
+
+    /// <summary>
+    /// La planche d'identité en préparation, ou null s'il s'agit de tirages.
+    ///
+    /// Une planche se reprend dans l'écran d'IDENTITÉ, avec ses repères de crâne et de
+    /// menton — la rouvrir dans la grille des tirages donnerait un cadre libre, c'est-à-dire
+    /// précisément ce qui ne permet PAS de refaire une photo d'identité.
+    /// </summary>
+    public IdentiteEnAttente? Identite { get; set; }
 
     [JsonIgnore]
     public bool EnTaillePersonnalisee => CustomWidthMm > 0 && CustomHeightMm > 0;

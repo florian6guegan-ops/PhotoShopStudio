@@ -69,6 +69,19 @@
                     </StackPanel>
                 </Border>
 
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,14,0,0">
+                    <StackPanel>
+                        <Button Style="{StaticResource FlatButton}" MinHeight="56" MinWidth="320"
+                                FontSize="20" HorizontalAlignment="Left"
+                                ToolTip="Les mots proposés dans une liste au moment d'envoyer les photos"
+                                Click="OnMessagesPredefinis">✉  Messages prédéfinis…</Button>
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,10,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="Cet écran enregistre à part : enregistrez d'abord les réglages ci-dessus si vous venez d'y toucher."/>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,14,0,0"
                            Text="Le tarif de l'envoi se règle au Catalogue, sur le produit « Envoi des photos par courriel »."/>
 
@@ -146,6 +159,98 @@
 
                         <TextBlock x:Name="DetourageEtatText" Style="{StaticResource Texte}" FontSize="17"
                                    Margin="0,14,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== WiFi du magasin =====
+                     Le code QR de connexion s'affiche sur l'écran « téléphone », juste
+                     avant celui qui sert à envoyer les photos : le second ne mène nulle
+                     part tant que le client est sur son réseau mobile. Le réseau se
+                     saisissait jusqu'ici dans config\wifi.json, à la main, fichier qu'il
+                     fallait connaître — donc rien ne s'affichait sur les autres postes. -->
+
+                <TextBlock Text="WiFi du magasin (code QR de connexion)" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                           Text="Le client scanne ce code pour rejoindre le réseau, puis le second code pour envoyer ses photos. Ce poste est branché en Ethernet : il n'a aucun profil WiFi à lire, le réseau doit donc être saisi ici. Laissé vide, Studio tentera de lire le profil de Windows — ce qui ne vaut que pour un portable."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <TextBlock Text="Nom du réseau (SSID)" Style="{StaticResource Hint}"/>
+                            <TextBox x:Name="WifiSsidBox" FontSize="20" Padding="12,10" Margin="0,6,0,0"
+                                     TextChanged="OnWifiChanged"/>
+
+                            <TextBlock Text="Clé du réseau" Style="{StaticResource Hint}" Margin="0,18,0,0"/>
+                            <!-- En clair, et c'est voulu : c'est une clé qu'on donne aux
+                                 clients, affichée au mur dans la plupart des boutiques.
+                                 La masquer obligerait à la ressaisir en aveugle pour
+                                 corriger une faute de frappe. -->
+                            <TextBox x:Name="WifiCleBox" FontSize="20" Padding="12,10" Margin="0,6,0,0"
+                                     TextChanged="OnWifiChanged"/>
+
+                            <TextBlock Text="Sécurité" Style="{StaticResource Hint}" Margin="0,18,0,0"/>
+                            <ComboBox x:Name="WifiSecuriteCombo" FontSize="18" Margin="0,6,0,0"
+                                      HorizontalAlignment="Left" MinWidth="320"
+                                      SelectionChanged="OnWifiChanged">
+                                <ComboBoxItem Content="WPA / WPA2 / WPA3 (le cas courant)" IsSelected="True"/>
+                                <ComboBoxItem Content="WEP (ancien)"/>
+                                <ComboBoxItem Content="Réseau ouvert, sans clé"/>
+                            </ComboBox>
+
+                            <CheckBox x:Name="WifiMasqueCheck" Margin="0,18,0,0"
+                                      Checked="OnWifiChanged" Unchecked="OnWifiChanged">
+                                <TextBlock Text="Réseau à nom masqué" Style="{StaticResource Texte}"
+                                           FontSize="18"/>
+                            </CheckBox>
+                            <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Text="À cocher seulement si le réseau ne diffuse pas son nom : le téléphone doit le savoir pour s'y joindre."/>
+
+                            <TextBlock x:Name="WifiEtatText" Style="{StaticResource Texte}" FontSize="17"
+                                       Margin="0,18,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <!-- L'aperçu vaut mieux qu'un message « enregistré » : on scanne
+                             avec son propre téléphone, et on sait avant le premier client
+                             si le code marche. -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                            <Border Background="White" CornerRadius="10" Padding="10">
+                                <Image x:Name="WifiQrImage" Width="220" Height="220"/>
+                            </Border>
+                            <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,8,0,0"
+                                       TextAlignment="Center" TextWrapping="Wrap" MaxWidth="240"
+                                       Text="Scannez-le pour vérifier avant d'enregistrer."/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- ===== Raccourcis photo d'identité =====
+                     Ils étaient au Catalogue, avec les prix et les imprimantes. Mais ce
+                     n'est pas un produit qu'on règle ici : c'est ce que l'écran identité
+                     met en avant. L'opérateur les cherchait dans Paramètres. -->
+
+                <TextBlock Text="Photos d'identité" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                           Text="Le référentiel compte 274 documents ; la boutique en tire deux toute la journée. Les raccourcis sont les tuiles mises devant, avant le reste du référentiel."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+                        <Button Style="{StaticResource FlatButton}" MinHeight="56" MinWidth="300"
+                                FontSize="20" HorizontalAlignment="Left"
+                                ToolTip="Choisir les formats mis en avant dans le module photo d'identité"
+                                Click="OnIdShortcuts">🪪  Raccourcis identité…</Button>
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,10,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="Cet écran enregistre à part : enregistrez d'abord les réglages ci-dessus si vous venez d'y toucher."/>
                     </StackPanel>
                 </Border>
             </StackPanel>

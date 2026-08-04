@@ -24,6 +24,12 @@ public static class De100Commands
     /// <summary>Abonne le relais aux notifications d'une machine.</summary>
     public const string Subscribe = "subscribe";
 
+    /// <summary>
+    /// Définition que la MACHINE attend pour un format donné (<c>PIF_DevGetPixelCount</c>).
+    /// Charge utile : <see cref="De100PixelCountRequest"/>.
+    /// </summary>
+    public const string PixelCount = "pixel-count";
+
     public const string Submit = "submit";
     public const string Cancel = "cancel";
     public const string PendingJobs = "pending-jobs";
@@ -79,6 +85,21 @@ public sealed record De100Message(
 /// Pour un tirage seul, on passe une liste d'un élément.
 /// </summary>
 public sealed record De100SubmitRequest(IReadOnlyList<De100PrintJob> Jobs, char MachineId);
+
+/// <summary>
+/// Demande la définition que la machine attend pour un format, en millimètres.
+/// </summary>
+/// <param name="MachineId">Machine visée.</param>
+/// <param name="WidthMm">Largeur du tirage.</param>
+/// <param name="HeightMm">Hauteur du tirage.</param>
+/// <param name="Dpi">Résolution.</param>
+public sealed record De100PixelCountRequest(char MachineId, double WidthMm, double HeightMm, uint Dpi);
+
+/// <summary>
+/// Ce que la machine attend, en pixels. <c>0 × 0</c> = elle n'a rien voulu en dire, et
+/// l'appelant garde alors son propre calcul.
+/// </summary>
+public sealed record De100PixelCountResponse(uint Width, uint Height);
 
 /// <summary>
 /// Encodage et décodage des messages du relais DE100 : une ligne de JSON par message.

@@ -22,17 +22,31 @@
                         MinWidth="140" MinHeight="56" FontSize="22" Visibility="Collapsed">
                     ← Retour
                 </Button>
+                <!-- Accueil : la sortie de secours, à portée depuis n'importe quel écran.
+                     Ce qui est en préparation part EN ATTENTE et se reprend sur l'accueil,
+                     sans quoi le bouton serait une trappe à travail perdu. -->
+                <Button x:Name="HomeButton" DockPanel.Dock="Left" Click="OnHomeClicked"
+                        Style="{StaticResource FlatButton}" Margin="12,0,0,0"
+                        MinWidth="150" MinHeight="56" FontSize="22" Visibility="Collapsed"
+                        ToolTip="Revenir à l'accueil. Une commande en préparation est mise en attente et vous attendra sur l'accueil.">
+                    ⌂ Accueil
+                </Button>
                 <!-- Suivi des impressions : le seul retour qu'on ait une fois la
                      commande partie, puisqu'il n'y a plus de boîte de dialogue à la fin.
                      Dans l'en-tête et non sur l'accueil, pour qu'il reste visible même
                      quand on enchaîne sur le client suivant. -->
+                <!-- Le message se lit EN ENTIER : il est renvoyé à la ligne, jamais coupé.
+                     Il portait « … » au-delà de 620 px, et c'est précisément la fin qui
+                     compte — un motif de panne du minilab tient en une phrase dont on
+                     perdait la moitié. La largeur maximale reste, pour que le bandeau ne
+                     mange pas le titre de l'écran ; c'est la HAUTEUR qui s'adapte. -->
                 <Border x:Name="PrintBanner" DockPanel.Dock="Right" CornerRadius="8"
                         Padding="16,8" Margin="16,0,0,0" VerticalAlignment="Center"
                         Background="#1B5E20" Visibility="Collapsed"
                         MouseLeftButtonUp="OnPrintBannerClicked" Cursor="Hand">
                     <TextBlock x:Name="PrintBannerText" Foreground="White" FontSize="16"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                               MaxWidth="620"/>
+                               VerticalAlignment="Center" TextWrapping="Wrap"
+                               MaxWidth="720"/>
                 </Border>
                 <TextBlock x:Name="TitleText" Text="Studio Photo"
                            Foreground="{StaticResource TitleBrush}"

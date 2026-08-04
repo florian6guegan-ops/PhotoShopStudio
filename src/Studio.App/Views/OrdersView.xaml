@@ -47,7 +47,17 @@
                          IsChecked="True" Checked="OnTabChanged"/>
             <RadioButton x:Name="OngletTirages" Style="{StaticResource Onglet}"
                          Checked="OnTabChanged"
-                         ToolTip="Les tirages photo : minilab, DNP, agrandissements."/>
+                         ToolTip="Tous les tirages photo, quelle qu'en soit l'origine : minilab, DNP, agrandissements."/>
+            <!-- Les tirages faits AU COMPTOIR et ceux qui viennent d'une borne ne se
+                 traitent pas pareil : les premiers attendent un client devant soi, les
+                 seconds attendent qu'on aille les chercher. Mêlés, on cherchait la
+                 commande de borne à sortir au milieu des paquets du comptoir. -->
+            <RadioButton x:Name="OngletTiragesOperateur" Style="{StaticResource Onglet}"
+                         Checked="OnTabChanged"
+                         ToolTip="Les tirages préparés au comptoir par l'opérateur."/>
+            <RadioButton x:Name="OngletTiragesBorne" Style="{StaticResource Onglet}"
+                         Checked="OnTabChanged"
+                         ToolTip="Les tirages venus d'une borne : commandes du client, reprises ou non."/>
             <RadioButton x:Name="OngletIdentite" Style="{StaticResource Onglet}"
                          Checked="OnTabChanged"
                          ToolTip="Les planches de photos d'identité."/>
@@ -64,7 +74,18 @@
                                     Padding="16" Margin="0,0,0,12">
                                 <StackPanel>
                                     <DockPanel>
+                                        <!-- L'origine en pastille : c'est ce qu'on cherche
+                                             des yeux dans la liste « Tout », et une
+                                             couleur se repère plus vite qu'un mot au
+                                             milieu d'une ligne. -->
+                                        <Border DockPanel.Dock="Left" CornerRadius="8" Padding="12,4"
+                                                Margin="0,0,12,0" VerticalAlignment="Center"
+                                                Background="{Binding OrigineBrush}">
+                                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="White"
+                                                       Text="{Binding OrigineTexte}"/>
+                                        </Border>
                                         <TextBlock DockPanel.Dock="Left" FontSize="24" FontWeight="Bold"
+                                                   VerticalAlignment="Center"
                                                    Foreground="{StaticResource TextBrush}" Text="{Binding Header}"/>
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                                             <!-- Les photos d'une commande restent dans son dossier :
@@ -76,8 +97,26 @@
                                                     Click="OnDownload" Tag="{Binding}">⬇ Télécharger</Button>
                                             <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="130"
                                                     FontSize="17" Padding="12,4" Margin="0,0,10,0"
-                                                    ToolTip="Rouvre les photos pour les recadrer et les corriger. La commande d'origine n'est pas touchée : un nouveau tirage donnera une nouvelle commande."
+                                                    ToolTip="Rouvre les photos pour les recadrer et les corriger — dans l'écran d'identité s'il s'agit d'une planche, dans celui des tirages sinon. La commande d'origine n'est pas touchée : un nouveau tirage donnera une nouvelle commande."
                                                     Click="OnModify" Tag="{Binding}">✏ Modifier</Button>
+                                            <!-- L'envoi par courriel, le MÊME module que
+                                                 l'écran identité : le client rappelle le
+                                                 lendemain pour demander ses fichiers, et
+                                                 il fallait jusqu'ici refaire la planche
+                                                 pour les lui envoyer. -->
+                                            <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="150"
+                                                    FontSize="17" Padding="12,4" Margin="0,0,10,0"
+                                                    Visibility="{Binding MailVisibility}"
+                                                    ToolTip="Envoyer les photos d'identité de cette commande par courriel, avec leur cadrage. Prestation facturée."
+                                                    Click="OnSendByMail" Tag="{Binding}">✉ Envoyer</Button>
+                                            <!-- Prévenir le client que sa commande l'attend.
+                                                 Aucune pièce jointe : ce message annonce,
+                                                 il ne livre pas — l'envoi des fichiers est
+                                                 une prestation à part, facturée. -->
+                                            <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="160"
+                                                    FontSize="17" Padding="12,4" Margin="0,0,10,0"
+                                                    ToolTip="Envoie au client un courriel lui disant que sa commande est prête à être retirée en magasin. Sans les photos."
+                                                    Click="OnPrevenirClient" Tag="{Binding}">🔔 Prévenir</Button>
                                             <Button Style="{StaticResource FlatButton}" MinHeight="44" MinWidth="120"
                                                     FontSize="17" Padding="12,4" Margin="0,0,16,0"
                                                     ToolTip="Imprimer le ticket de caisse"

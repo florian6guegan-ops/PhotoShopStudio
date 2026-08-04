@@ -33,7 +33,17 @@
             <Path x:Name="Voile" Fill="#A6000000"/>
 
             <!-- Le cadre, immobile : c'est le format du tirage. -->
-            <Rectangle x:Name="Cadre" Stroke="White" StrokeThickness="3"/>
+            <!-- Jaune et non blanc : sur une photo claire — un mariage, un ciel, un fond
+                 de studio — un cadre blanc se confond avec l'image et l'on ne voit plus ce
+                 qu'on recadre. C'est aussi la couleur des poignées, qui appartiennent au
+                 même objet. -->
+            <Rectangle x:Name="Cadre" Stroke="#FFD24A" StrokeThickness="3"/>
+
+            <!-- Le trait de découpe, tel qu'il sortira sur le papier : un filet noir sur le
+                 bord du tirage. Il ne se voyait NULLE PART à l'écran — la case « Contour de
+                 découpe » ne changeait rien de visible, et passait donc pour morte. -->
+            <Rectangle x:Name="TraitDeDecoupe" Stroke="#111111" StrokeThickness="1"
+                       Visibility="Collapsed"/>
 
             <!-- Poignées aux quatre COINS DU CADRE : on tire un coin vers l'extérieur pour
                  élargir le cadrage, le coin opposé restant en place. Sur le cadre et non

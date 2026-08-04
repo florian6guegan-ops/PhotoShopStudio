@@ -1,0 +1,95 @@
+<UserControl x:Class="Studio.App.Views.IdSheetRecapView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+            <TextBlock x:Name="TitleText" DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
+                       Text="Récapitulatif des planches"/>
+            <TextBlock x:Name="TotalText" DockPanel.Dock="Right" Style="{StaticResource Valeur}"
+                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <!-- La planche telle qu'elle sortira, fond blanc compris : c'est le dernier
+             regard avant le papier, et la feuille doit se voir comme une feuille. -->
+        <Border Grid.Row="1" Background="#263238" CornerRadius="12" Margin="0,12,0,0"
+                ClipToBounds="True">
+            <Grid>
+                <!-- L'image REMPLIT la place disponible (Stretch="Uniform" dans une grille,
+                     sans alignement central) : posée à sa taille naturelle, une planche
+                     rendue à 150 ppp s'affichait deux fois trop petite pour qu'on y juge
+                     quoi que ce soit — c'est pourtant le seul but de cet écran. -->
+                <Image x:Name="Feuille" Stretch="Uniform" Margin="24"/>
+                <TextBlock x:Name="EtatText" Foreground="White" FontSize="22" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Text="Préparation des planches…"/>
+            </Grid>
+        </Border>
+
+        <!-- Pagination et quantité : les gestes de DiLand, que les opérateurs connaissent -->
+        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12"
+                Padding="16" Margin="0,12,0,0">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <!-- Chevrons plutôt que les symboles de magnétophone : « ⏮ » et « ⏭ »
+                         n'existent pas dans toutes les polices et sortaient en carrés. -->
+                    <Button x:Name="PremiereButton" Style="{StaticResource FlatButton}" MinWidth="64"
+                            MinHeight="52" FontSize="24" Padding="0" Click="OnPremiere"
+                            ToolTip="Première planche">«</Button>
+                    <Button x:Name="PrecedenteButton" Style="{StaticResource FlatButton}" MinWidth="64"
+                            MinHeight="52" FontSize="24" Padding="0" Margin="8,0,0,0"
+                            Click="OnPrecedente" ToolTip="Planche précédente">‹</Button>
+                    <TextBlock x:Name="PageText" Style="{StaticResource Valeur}" MinWidth="220"
+                               HorizontalAlignment="Center" TextAlignment="Center"
+                               VerticalAlignment="Center" Margin="12,0,12,0"/>
+                    <Button x:Name="SuivanteButton" Style="{StaticResource FlatButton}" MinWidth="64"
+                            MinHeight="52" FontSize="24" Padding="0" Margin="0,0,8,0"
+                            Click="OnSuivante" ToolTip="Planche suivante">›</Button>
+                    <Button x:Name="DerniereButton" Style="{StaticResource FlatButton}" MinWidth="64"
+                            MinHeight="52" FontSize="24" Padding="0" Click="OnDerniere"
+                            ToolTip="Dernière planche">»</Button>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
+                    <TextBlock Text="quantité" Style="{StaticResource Hint}" VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               ToolTip="Nombre de planches identiques pour CETTE photo"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="24" Click="OnQuantiteMoins">−</Button>
+                    <TextBlock x:Name="QuantiteText" Style="{StaticResource Valeur}" MinWidth="52"
+                               TextAlignment="Center"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
+                            FontSize="24" Click="OnQuantitePlus">+</Button>
+
+                    <Button Style="{StaticResource FlatButton}" MinWidth="230" MinHeight="52"
+                            FontSize="18" Margin="24,0,0,0" Click="OnModifierLaPhoto"
+                            ToolTip="Revenir au cadrage de cette photo">Modifier la photo</Button>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="230" MinHeight="52"
+                            FontSize="18" Margin="12,0,0,0" Click="OnRemplacerLaPhoto"
+                            ToolTip="Revenir au choix des photos">Remplacer la photo</Button>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="3" Background="{StaticResource CardBrush}" CornerRadius="12"
+                Padding="16" Margin="0,12,0,0">
+            <DockPanel>
+                <TextBlock x:Name="DetailText" DockPanel.Dock="Left" Style="{StaticResource Hint}"
+                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnRetour">← Précédent</Button>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="140" Margin="12,0,0,0"
+                            Click="OnAnnuler">✕ Annuler</Button>
+                    <Button x:Name="ImprimerButton" Style="{StaticResource BigButton}" MinWidth="240"
+                            Margin="12,0,0,0" Click="OnImprimer">🖨  Imprimer</Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

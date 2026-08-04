@@ -107,6 +107,29 @@ public sealed class Product
     public double BorderMm { get; set; }
     /// <summary>Fichier ICC dans catalog/icc, null = sRGB géré par le pilote.</summary>
     public string? IccProfile { get; set; }
+
+    /// <summary>
+    /// Correction d'exposition propre à ce produit, en diaphragmes (IL), appliquée au
+    /// RENDU par-dessus les réglages de l'opérateur. 0 = rien.
+    ///
+    /// Elle existe parce qu'une machine ne rend pas ce que l'écran montre, et que l'écart
+    /// est le sien : la DS620 sort plus sombre que le minilab, sur la même photo et le
+    /// même fichier. Signalé par l'exploitant le 04/08/2026 sur les photos d'identité et
+    /// les E-Photo — les deux produits de cette imprimante.
+    ///
+    /// Trois raisons d'en faire un réglage de PRODUIT plutôt qu'une constante dans le code :
+    ///
+    /// 1. l'écart dépend de la machine ET du papier, donc du produit ;
+    /// 2. il se mesure sur un tirage réel, et se corrige au dixième de diaphragme après
+    ///    l'avoir regardé — recompiler entre deux essais n'aurait pas de sens ;
+    /// 3. il ne doit pas toucher l'aperçu à l'écran : l'opérateur cadre sur ce qu'il voit,
+    ///    et une photo éclaircie à l'écran l'amènerait à la rassombrir à la main, ce qui
+    ///    annulerait la correction.
+    ///
+    /// L'échelle est celle de l'exposition photographique : +1 double la lumière. Les
+    /// valeurs utiles se comptent en dixièmes.
+    /// </summary>
+    public double PrintExposure { get; set; }
     /// <summary>Fichier DEVMODE capturé dans catalog/, null = réglages par défaut du pilote.</summary>
     public string? DevmodeFile { get; set; }
     /// <summary>Finitions proposées à l'impression ; vide = pas de choix, on prend DevmodeFile.</summary>
@@ -157,6 +180,7 @@ public sealed class Product
         DefaultFit = DefaultFit,
         BorderMm = BorderMm,
         IccProfile = IccProfile,
+        PrintExposure = PrintExposure,
         DevmodeFile = DevmodeFile,
         Finishes = Finishes
             .Select(f => new FinishOption

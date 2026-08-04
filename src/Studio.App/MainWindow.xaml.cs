@@ -53,10 +53,44 @@ public partial class MainWindow : Window
         view.Tag = title;
         ScreenHost.Content = view;
         TitleText.Text = title;
+
+        // Les deux boutons vont ensemble : sur l'accueil il n'y a ni retour à faire, ni
+        // accueil à rejoindre. En mode borne, aucun des deux — le parcours client est
+        // verrouillé et n'a pas d'accueil opérateur où revenir.
+        var horsAccueil = Navigator.CanGoBack && !App.Services.Mode.IsKiosk;
         BackButton.Visibility = Navigator.CanGoBack ? Visibility.Visible : Visibility.Collapsed;
+        HomeButton.Visibility = horsAccueil ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnBackClicked(object sender, RoutedEventArgs e) => Navigator.Back();
+
+    /// <summary>
+    /// Retour à l'accueil depuis n'importe où, en mettant de côté ce qui était en
+    /// préparation.
+    ///
+    /// <b>Le bouton ramène TOUJOURS à l'accueil</b>, même si la mise de côté échoue :
+    /// c'est sa promesse, et un opérateur coincé sur un écran parce qu'un fichier ne
+    /// s'écrit pas serait le pire des deux maux. L'échec se dit, il ne bloque pas.
+    ///
+    /// Le travail est cherché dans toute la PILE et non sur le seul écran affiché : depuis
+    /// le recadrage d'une photo, c'est la grille qui porte la commande, deux écrans plus
+    /// bas — voir <see cref="Reprises.Trouver"/>.
+    /// </summary>
+    private void OnHomeClicked(object sender, RoutedEventArgs e)
+    {
+        if (Reprises.Trouver() is { } ecran)
+        {
+            var resume = ecran.ResumeDeLAttente;
+            if (ecran.EnregistrerPourReprise())
+                FileLog.Write($"Accueil : travail mis en attente — {resume}");
+        }
+
+        // Rien n'est annoncé à l'écran, et c'est voulu : l'accueil affiche déjà le bandeau
+        // « En attente » avec la commande et son heure, juste sous les yeux de celui qui
+        // vient d'appuyer. Une boîte de dialogue à chaque retour serait un clic de plus,
+        // cinquante fois par jour.
+        Navigator.Home(new HomeView(), "Studio Photo");
+    }
 
     /// <summary>
     /// Le bandeau des impressions en cours.

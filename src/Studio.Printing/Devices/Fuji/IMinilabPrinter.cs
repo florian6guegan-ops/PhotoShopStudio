@@ -28,6 +28,19 @@ public interface IMinilabPrinter
     int LoadedPaperWidthMm(char machineId);
 
     /// <summary>
+    /// La définition, en pixels, que la MACHINE attend pour un format donné.
+    ///
+    /// <b>Elle n'est pas celle qu'on calcule.</b> Le DE100 ajoute son débord : pour un
+    /// 210 × 297 à 300 ppp il réclame 2515 × 3543 px, soit 213 × 300 mm. Les canaux à
+    /// format FIXE — <c>A4</c> en est un — refusent tout ce qui n'est pas exactement cette
+    /// taille, sans donner le moindre motif. C'est ce qui a fait échouer le 21×29,7 six
+    /// fois de suite le 04/08/2026, pendant que le 18×24 sortait : lui passe par un canal
+    /// VARIABLE, qui tolère l'à-peu-près.
+    /// </summary>
+    /// <returns><c>(0, 0)</c> si la machine n'en dit rien : l'appelant garde son calcul.</returns>
+    (uint Width, uint Height) ExpectedPixels(char machineId, double widthMm, double heightMm, uint dpi);
+
+    /// <summary>
     /// Envoie TOUS les tirages d'une enveloppe et renvoie le handle de la commande
     /// attribué par le minilab.
     ///
@@ -78,6 +91,20 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         remove => _client.JobFinished -= value;
     }
 
+    /// <summary>
+    /// Panne, avertissement ou fin de consommable signalés par la machine.
+    ///
+    /// Le relais les transmettait depuis toujours, et personne ne les écoutait : un tirage
+    /// refusé ne laissait que « erreur signalée par le minilab », sans jamais le motif que
+    /// la machine venait pourtant de donner. C'est ce qui a rendu l'échec des commandes
+    /// 04-015 et 04-020 du 04/08/2026 inexplicable depuis le journal.
+    /// </summary>
+    public event EventHandler<De100MachineEvent>? MachineEvent
+    {
+        add => _client.MachineEvent += value;
+        remove => _client.MachineEvent -= value;
+    }
+
     private void EnsureConnected()
     {
         lock (_sync)
@@ -125,6 +152,27 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
 
         var info = _client.GetPrinterInfoAsync(machineId).GetAwaiter().GetResult();
         return info?.Media?.PaperWidthMm ?? 0;
+    }
+
+    public (uint Width, uint Height) ExpectedPixels(
+        char machineId, double widthMm, double heightMm, uint dpi)
+    {
+        EnsureConnected();
+
+        try
+        {
+            return _client.PixelCountAsync(machineId, widthMm, heightMm, dpi)
+                .GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            // On ne perd JAMAIS un tirage parce que cette lecture a échoué : sans réponse,
+            // l'orchestrateur garde son propre calcul, celui qui sort depuis toujours sur
+            // les canaux variables.
+            Log?.Invoke($"Minilab : définition attendue illisible pour " +
+                        $"{widthMm:0}×{heightMm:0} mm — {ex.Message}");
+            return (0, 0);
+        }
     }
 
     /// <summary>

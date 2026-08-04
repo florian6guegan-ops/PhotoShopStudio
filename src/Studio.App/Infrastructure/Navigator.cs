@@ -25,6 +25,15 @@ public static class Navigator
 
     public static bool CanGoBack => Stack.Count > 1;
 
+    /// <summary>
+    /// Les écrans empilés, du plus récent au plus ancien.
+    ///
+    /// Sert au bouton « Accueil » : le travail à mettre de côté n'est pas toujours porté
+    /// par l'écran affiché — depuis le recadrage d'une photo, c'est la grille qui tient la
+    /// commande, deux écrans plus bas.
+    /// </summary>
+    public static IEnumerable<UserControl> Ecrans => Stack;
+
     public static void Back()
     {
         if (Stack.Count <= 1) return;

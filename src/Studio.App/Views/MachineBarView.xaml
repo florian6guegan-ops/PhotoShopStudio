@@ -4,8 +4,10 @@
     <Border Background="#0C1116" BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0"
             Padding="10,8">
         <Grid>
+            <!-- Renvoyé à la ligne : ce message porte les motifs de panne, et une phrase
+                 coupée au milieu ne sert à personne. -->
             <TextBlock x:Name="MessageText" FontSize="15" Foreground="{StaticResource MutedBrush}"
-                       VerticalAlignment="Center" Margin="6,0"/>
+                       VerticalAlignment="Center" Margin="6,0" TextWrapping="Wrap"/>
 
             <ItemsControl x:Name="MachinesList">
                 <ItemsControl.ItemsPanel>
@@ -49,6 +51,34 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- Vider la file : n'apparaît que sur une machine du
+                                     SPOULEUR dont la file ne descend plus. Trois travaux
+                                     morts y sont restés deux heures le 04/08/2026, dont
+                                     deux venus de DiLand, et la DS620 n'imprimait plus
+                                     rien — il fallait passer par Windows pour s'en sortir. -->
+                                <Button DockPanel.Dock="Right" Visibility="{Binding PurgeVisible}"
+                                        Tag="{Binding Lettre}" Click="OnPurgerLaFile"
+                                        Content="🗑  Vider la file"
+                                        Background="#CC8A620E" Foreground="White" BorderThickness="0"
+                                        FontSize="14" FontWeight="SemiBold" Padding="14,8"
+                                        Cursor="Hand" VerticalAlignment="Center" Margin="14,0,0,0"
+                                        ToolTip="Supprime les travaux restés dans la file Windows de cette imprimante. À utiliser quand la machine ne sort plus rien alors qu'elle est prête.">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="fondPurge" Background="{TemplateBinding Background}"
+                                                    CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="fondPurge" Property="Background" Value="#F0932B"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
 
                                 <!-- bouton d'arrêt : n'apparaît que si CETTE machine travaille -->
                                 <Button DockPanel.Dock="Right" Visibility="{Binding ArretVisible}"
@@ -101,7 +131,7 @@
                                         </Grid.RowDefinitions>
 
                                         <TextBlock Grid.Row="0" Text="{Binding TravailTexte}" FontSize="13"
-                                                   Foreground="White" TextTrimming="CharacterEllipsis"/>
+                                                   Foreground="White" TextWrapping="Wrap"/>
 
                                         <ProgressBar Grid.Row="1" Height="10" Margin="0,4,0,0"
                                                      Minimum="0" Maximum="1"

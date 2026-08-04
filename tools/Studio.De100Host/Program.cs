@@ -13,8 +13,17 @@ using Studio.Printing.Devices.Fuji.Bridge;
 // Il se lance tout seul (l'application le démarre au besoin) et s'arrête dès que
 // l'application se déconnecte : aucun processus fantôme sur la borne.
 
+// UTF-8 sur la sortie d'erreur : c'est par elle que le journal du relais remonte à
+// l'application, et la console d'un processus sans fenêtre est en CP850 par défaut — les
+// accents arrivaient en « trouvâ€š » dans app-*.log.
+Console.OutputEncoding = new UTF8Encoding(false);
+var sortieErreur = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false))
+{
+    AutoFlush = true,
+};
+
 var log = new Action<string>(m =>
-    Console.Error.WriteLine($"[{DateTime.Now:HH:mm:ss}] {m}"));
+    sortieErreur.WriteLine($"[{DateTime.Now:HH:mm:ss}] {m}"));
 
 if (Environment.Is64BitProcess)
 {
@@ -66,6 +75,9 @@ De100Driver Driver()
     if (driver is not null) return driver;
 
     driver = new De100Driver();
+    // sans cela, ce que le pilote a à dire d'un callback en défaut se perd : c'est le seul
+    // fil qui traverse la frontière native, et rien d'autre ne l'observe
+    driver.Log = message => log(message);
     driver.JobFinished += (_, result) => Send(De100Protocol.Event(De100Events.JobFinished, result));
     driver.MachineEvent += (_, evt) => Send(De100Protocol.Event(De100Events.MachineEvent, evt));
     log("Pilote DE100 ouvert.");
@@ -181,6 +193,8 @@ De100Message Handle(De100Message request) => request.Name switch
     De100Commands.PrinterInfo => De100Protocol.Success(request,
         Driver().GetPrinterInfo(MachineId(request))),
 
+    De100Commands.PixelCount => PixelCount(request),
+
     De100Commands.Subscribe => Subscribe(request),
 
     De100Commands.Submit => Submit(request),
@@ -279,6 +293,33 @@ De100Message Submit(De100Message request)
     log($"Commande de {demande.Jobs.Count} tirage(s) acceptée par le minilab " +
         $"(handle {Tronque(handle)}) : {string.Join(", ", demande.Jobs.Select(j => j.JobId))}.");
     return De100Protocol.Success(request, handle);
+}
+
+/// <summary>
+/// La définition que la MACHINE attend pour un format donné.
+///
+/// Elle ajoute son débord — 2515 × 3543 px pour un 210 × 297 à 300 ppp, soit 213 × 300 mm —
+/// et les canaux à format FIXE refusent tout ce qui n'est pas exactement cette taille. Voir
+/// <c>PrintOrchestrator.FitPageToRoll</c>.
+/// </summary>
+De100Message PixelCount(De100Message request)
+{
+    var demande = De100Protocol.Payload<De100PixelCountRequest>(request)
+                  ?? throw new InvalidOperationException("Demande de définition vide.");
+
+    var (resultat, largeur, hauteur) = Driver().FormatAccepte(
+        demande.MachineId, demande.WidthMm, demande.HeightMm, demande.Dpi);
+
+    // un refus n'est pas une erreur du relais : on rend 0 × 0, et l'appelant garde son
+    // propre calcul plutôt que de perdre le tirage
+    if (resultat != PifResult.Ok)
+    {
+        log($"Définition refusée pour {demande.WidthMm:0}×{demande.HeightMm:0} mm " +
+            $"sur « {demande.MachineId} » ({resultat}).");
+        return De100Protocol.Success(request, new De100PixelCountResponse(0, 0));
+    }
+
+    return De100Protocol.Success(request, new De100PixelCountResponse(largeur, hauteur));
 }
 
 De100Message Cancel(De100Message request)

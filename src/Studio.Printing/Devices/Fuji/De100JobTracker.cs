@@ -118,7 +118,13 @@ public sealed class De100JobTracker
     /// laisserait cinq sur six sans verdict, et le compte des photos restantes ne
     /// descendrait jamais.
     /// </summary>
-    public IReadOnlyList<De100JobResult> Report(string orderHandle, De100OrderStatus status, DateTimeOffset now)
+    /// <param name="motif">
+    /// Ce que la MACHINE dit du refus (<c>ST_PRINT_INFO.errmsg</c>), quand elle le dit.
+    /// Vide le reste du temps. Il complète le libellé du statut au lieu de le remplacer :
+    /// « erreur signalée par le minilab » situe le moment, le motif dit la cause.
+    /// </param>
+    public IReadOnlyList<De100JobResult> Report(string orderHandle, De100OrderStatus status,
+        DateTimeOffset now, string motif = "")
     {
         lock (_sync)
         {
@@ -137,10 +143,17 @@ public sealed class De100JobTracker
             }
 
             _byHandle.Remove(orderHandle);
+            var raison = Raison(status, motif);
             return [.. entry.JobIds.Select(jobId =>
-                new De100JobResult(jobId, orderHandle, outcome.Value, Describe(status)))];
+                new De100JobResult(jobId, orderHandle, outcome.Value, raison))];
         }
     }
+
+    /// <summary>Le statut, et ce que la machine en dit quand elle en dit quelque chose.</summary>
+    internal static string Raison(De100OrderStatus status, string motif) =>
+        string.IsNullOrWhiteSpace(motif)
+            ? Describe(status)
+            : $"{Describe(status)} — {motif.Trim()}";
 
     /// <summary>
     /// Rend leur issue aux tirages dont l'échéance est dépassée. À appeler périodiquement :

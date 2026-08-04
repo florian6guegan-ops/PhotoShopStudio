@@ -37,7 +37,12 @@ public class ThumbnailCacheTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private int FichiersEnCache() => Directory.GetFiles(_cache).Length;
+    /// <summary>
+    /// Les VIGNETTES en cache. Le compte porte sur les seuls « .jpg » : chacune a depuis un
+    /// petit fichier compagnon « .dim » qui porte la définition de l'original, et ce qu'on
+    /// vérifie ici est le nombre de vignettes produites, pas le nombre d'entrées du dossier.
+    /// </summary>
+    private int FichiersEnCache() => Directory.GetFiles(_cache, "*.jpg").Length;
 
     private static uint Cote(byte[] jpeg)
     {
@@ -122,6 +127,69 @@ public class ThumbnailCacheTests : IDisposable
 
         using var image = new MagickImage(jpeg);
         Assert.Equal(2400.0 / 1600.0, image.Width / (double)image.Height, 1);
+    }
+
+    // — la définition de l'original, rendue avec la vignette —
+
+    /// <summary>
+    /// La grille affiche la définition et le rapport sur chaque tuile. Elle les demandait
+    /// par un SECOND parcours du fichier ; ils viennent maintenant de la lecture qui
+    /// fabrique la vignette.
+    /// </summary>
+    [Fact]
+    public void La_definition_de_l_original_est_rendue_avec_la_vignette()
+    {
+        var lue = _vignettes.Lire(_photo);
+
+        Assert.Equal(2400, lue.SourceWidth);
+        Assert.Equal(1600, lue.SourceHeight);
+    }
+
+    /// <summary>
+    /// <b>C'est tout l'objet du fichier compagnon</b> : cache chaud, le CONTENU de
+    /// l'original n'est plus lu du tout. C'est le second parcours qu'on cherchait à
+    /// supprimer — sur une carte SD, ce qui coûte est d'ouvrir le fichier, pas de le
+    /// décoder.
+    ///
+    /// Le test remplace les pixels par du charabia de MÊME longueur et remet la date : la
+    /// clé de cache est donc inchangée, mais le fichier est devenu indécodable. S'il
+    /// fallait encore le lire, l'appel lèverait.
+    /// </summary>
+    [Fact]
+    public void Cache_chaud_le_contenu_de_l_original_n_est_plus_lu()
+    {
+        var premiere = _vignettes.Lire(_photo);
+
+        var taille = new FileInfo(_photo).Length;
+        var date = File.GetLastWriteTimeUtc(_photo);
+        File.WriteAllBytes(_photo, new byte[taille]);
+        File.SetLastWriteTimeUtc(_photo, date);
+
+        var seconde = _vignettes.Lire(_photo);
+
+        Assert.Equal(2400, seconde.SourceWidth);
+        Assert.Equal(1600, seconde.SourceHeight);
+        Assert.Equal(premiere.Jpeg.Length, seconde.Jpeg.Length);
+    }
+
+    /// <summary>
+    /// Les vignettes mises en cache avant le fichier compagnon n'en ont pas : la définition
+    /// se relit alors sur l'original, une fois, et le compagnon est déposé pour les
+    /// suivantes. Sans ce repli, les 4 300 vignettes déjà en cache rendraient 0 × 0.
+    /// </summary>
+    [Fact]
+    public void Une_vignette_d_avant_le_compagnon_retrouve_sa_definition()
+    {
+        _vignettes.Lire(_photo);
+
+        // on remet le cache dans l'état d'avant : la vignette, sans son compagnon
+        foreach (var compagnon in Directory.GetFiles(_cache, "*.dim")) File.Delete(compagnon);
+
+        var lue = _vignettes.Lire(_photo);
+
+        Assert.Equal(2400, lue.SourceWidth);
+        Assert.Equal(1600, lue.SourceHeight);
+        Assert.Single(Directory.GetFiles(_cache, "*.dim")); // et le compagnon est reposé
     }
 
     /// <summary>

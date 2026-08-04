@@ -5,6 +5,7 @@ using Studio.Core.Catalog;
 using Studio.Core.Domain;
 using Studio.Imaging;
 using Studio.Imaging.Geometry;
+using Studio.Printing.Devices.Dnp;
 using Studio.Printing.Devices.Fuji;
 using Studio.Store;
 
@@ -38,8 +39,15 @@ public sealed record SpoolState(string Status, DateTimeOffset At)
 /// Où en était une enveloppe quand elle s'est interrompue.
 /// </summary>
 /// <param name="PagesRemises">
-/// Pages physiques déjà confiées à Windows. La reprise saute celles-là : sans ce compte,
-/// un bourrage à la vingtième photo d'une planche de trente en refaisait trente.
+/// Pages physiques déjà SORTIES de la machine. La reprise saute celles-là : sans ce
+/// compte, un bourrage à la vingtième photo d'une planche de trente en refaisait trente.
+///
+/// Le nom dit « remises » pour une raison d'histoire — le champ est sérialisé dans les
+/// fichiers <c>envNN.reprise</c> déjà sur les disques —, mais ce qu'il porte est bien ce
+/// que la MACHINE a sorti, pas ce que Windows a pris. La différence est tout le sujet de
+/// <see cref="CadenceSpouleur"/> : sur six cents photos, une panne d'encre à la troisième
+/// laissait le spouleur avec cinq cent quatre-vingt-dix-sept pages et le point de reprise
+/// à 600.
 /// </param>
 /// <param name="Raison">Ce qui a arrêté le tirage, pour l'écran de reprise.</param>
 public sealed record PrintResumePoint(int PagesRemises, string Raison, DateTimeOffset At);
@@ -271,10 +279,16 @@ public sealed class PrintOrchestrator
         _store.AppendEvent(order, "spool-start",
             $"env={envelope.Number}, pages={pages.Sum(p => p.Copies)}, destinations=[{destinations}]");
 
-        var deja = reprise?.PagesRemises ?? 0;
-        if (deja > 0)
+        // On REFAIT la dernière photo sortie. Quand une machine s'arrête faute d'encre ou
+        // de ruban, celle qui était en cours sort pâle ou à moitié, et rien ne permet de le
+        // savoir depuis le logiciel. Une feuille refaite coûte quelques centimes ; une
+        // photo ratée au milieu d'un paquet de six cents coûte le paquet. Demandé par
+        // l'exploitant le 04/08/2026.
+        var deja = CadenceSpouleur.ReprendreA(reprise?.PagesRemises ?? 0);
+        if (deja > 0 || reprise is not null)
             _store.AppendEvent(order, "spool-resume",
-                $"env={envelope.Number}, reprise à la page {deja + 1}");
+                $"env={envelope.Number}, sorties={reprise?.PagesRemises ?? 0}, " +
+                $"reprise à la page {deja + 1}");
 
         try
         {
@@ -301,10 +315,16 @@ public sealed class PrintOrchestrator
             var faites = ReadResumePoint(order, envelope)?.PagesRemises ?? deja;
             MettreEnAttente(order, envelope, faites, ex.Message);
 
+            var reprendAt = CadenceSpouleur.ReprendreA(faites) + 1;
             throw new PrinterNotReadyException(
-                $"Commande {order.DisplayNumber} interrompue après {faites} page(s) — {ex.Message}.\n\n" +
-                "Elle reprendra à la page suivante dès que l'imprimante sera prête : " +
-                "les pages déjà sorties ne seront pas refaites.");
+                $"Commande {order.DisplayNumber} interrompue — {ex.Message}.\n\n" +
+                $"{faites} photo(s) sont sorties. Elle reprendra toute seule à la photo " +
+                $"n° {reprendAt} dès que la machine sera prête : changez ce qu'il faut, " +
+                "il n'y a rien d'autre à faire.\n\n" +
+                (faites > 0
+                    ? $"La photo n° {faites} sera refaite — c'est celle qui était en cours " +
+                      "quand la machine s'est arrêtée, et elle a pu sortir mal imprimée."
+                    : "Aucune photo n'est sortie : rien ne sera perdu."));
         }
 
         ClearResumePoint(order, envelope);
@@ -372,36 +392,13 @@ public sealed class PrintOrchestrator
     private void SubmitToMinilab(Order order, Envelope envelope, List<RenderedPage> pages,
         IProgress<PrintProgress>? progression, CancellationToken ct)
     {
-        var machine = ChooseMinilabMachine(pages);
-
-        // Interroger le rouleau chargé est la PREMIÈRE chose qui touche la machine, donc
-        // la première qui peut rester suspendue quand elle dort. Une commande de 41 photos
-        // est restée douze minutes ici sans un mot le 03/08/2026 : le rendu était fait, et
-        // rien ne disait à l'opérateur ce qu'on attendait.
-        //
-        // Elle part maintenant EN ATTENTE, comme pour une imprimante pas prête : la file
-        // la reprendra dès que le minilab répondra, et l'opérateur sait pourquoi.
-        int paperWidthMm;
-        try
-        {
-            paperWidthMm = _minilab!.LoadedPaperWidthMm(machine);
-        }
-        catch (Exception ex)
-        {
-            MettreEnAttente(order, envelope, 0,
-                $"le minilab {machine} ne répond pas ({ex.Message})");
-
-            throw new PrinterNotReadyException(
-                $"Commande {order.DisplayNumber} mise en attente : le minilab {machine} ne " +
-                "répond pas — il est probablement en veille.\n\n" +
-                "Réveillez-le : la commande partira toute seule, sans rien réimprimer.");
-        }
+        var (machine, paperWidthMm, repli) = ChoisirMachineEtRouleau(order, envelope, pages);
 
         // vérifié AVANT le moindre envoi : demander un format que le rouleau chargé ne
         // permet pas ne donne pas un tirage plus petit, mais un tirage faux — la machine
         // avertit que le papier n'est pas adapté et gâche la feuille. Constaté en
         // boutique le 01/08/2026.
-        EnsurePaperFits(pages, machine, paperWidthMm);
+        EnsurePaperFits(pages, machine, paperWidthMm, repli);
 
         WriteSpoolState(order, envelope, SpoolState.Spooled);
         envelope.Status = EnvelopeStatus.Spooled;
@@ -411,10 +408,31 @@ public sealed class PrintOrchestrator
 
         // la finition doit être celle du papier réellement chargé : annoncer « brillant »
         // sur du lustré fausse le rendu
-        var surface = _minilab.LoadedSurface(machine);
+        var surface = _minilab!.LoadedSurface(machine);
 
         var cible = machine.ToString();
         var jobs = new List<De100PrintJob>(pages.Count);
+
+        // le format de CETTE enveloppe : le bandeau estimera ce qui reste dessus plutôt
+        // que sur le premier format du rouleau, et la DURÉE d'après sa longueur
+        var formatDeLEnveloppe = pages
+            .Select(p => De100Formats.All.FirstOrDefault(f =>
+                Math.Abs(f.ShortSideMm - Math.Min(p.WidthMm, p.HeightMm)) <= Tolerance &&
+                Math.Abs(f.LengthMm - Math.Max(p.WidthMm, p.HeightMm)) <= Tolerance))
+            .FirstOrDefault(f => f is not null);
+
+        if (formatDeLEnveloppe is not null)
+        {
+            DernierFormatMinilab = formatDeLEnveloppe.Name;
+            DerniereLongueurMinilabMm =
+                De100Formats.ConsumedLengthMm(formatDeLEnveloppe, paperWidthMm);
+        }
+        else if (pages.Count > 0)
+        {
+            // format hors catalogue — une taille personnalisée : on n'a pas de nom, mais la
+            // longueur suffit à estimer la durée
+            DerniereLongueurMinilabMm = (int)Math.Max(pages[0].WidthMm, pages[0].HeightMm);
+        }
 
         // PRÉPARATION — c'est ici que l'arrêt s'examine, et nulle part ailleurs : rien
         // n'est encore parti, tout est rattrapable. Une fois la commande transmise elle est
@@ -427,7 +445,7 @@ public sealed class PrintOrchestrator
 
             var page = pages[i];
             var (largeur, longueur) = MinilabPrintSize(page.WidthMm, page.HeightMm, paperWidthMm);
-            var image = FitPageToRoll(page, largeur, longueur);
+            var image = FitPageToRoll(page, largeur, longueur, machine);
 
             jobs.Add(new De100PrintJob(
                 JobId: MinilabJobId(order.DisplayNumber, envelope.Number, i + 1),
@@ -551,21 +569,268 @@ public sealed class PrintOrchestrator
     }
 
     /// <summary>
-    /// Machine visée : celle demandée par le produit si elle est prête, sinon la première
-    /// machine prête. Le DE100 de la boutique en compte deux, dont une souvent hors ligne.
-    /// </summary>
-    /// <summary>
     /// Machine du minilab choisie par l'opérateur pour la session en cours. Elle prime sur
     /// celle éventuellement fixée par le produit ; null = choix automatique.
+    ///
+    /// <b>Null est l'état normal.</b> Une machine posée ici n'est plus jamais discutée : le
+    /// rouleau ne décide plus rien. La barre de la grille la remettait à la première
+    /// machine de la liste à chaque ouverture, ce qui imposait la machine A sans que
+    /// personne ne l'ait demandé — voir <see cref="ChoisirMachineEtRouleau"/>.
     /// </summary>
     public string? PreferredMinilabMachine { get; set; }
 
-    private char ChooseMinilabMachine(List<RenderedPage> pages) =>
-        ChooseMachine(
-            _minilab!.ReadyMachines(),
-            !string.IsNullOrWhiteSpace(PreferredMinilabMachine)
-                ? PreferredMinilabMachine
-                : pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id)));
+    /// <summary>
+    /// Nom du dernier format envoyé au minilab, pour que le bandeau estime ce qui reste
+    /// SUR CE FORMAT-LÀ.
+    ///
+    /// « ~576 × 10x15 » annoncé à quelqu'un qui lance des A4 ne lui apprend rien. Null tant
+    /// qu'aucun tirage n'est parti : on retombe alors sur le premier format du rouleau.
+    /// </summary>
+    public string? DernierFormatMinilab { get; private set; }
+
+    /// <summary>
+    /// Longueur de papier qu'un tirage du dernier format consomme. C'est elle qui décide de
+    /// la cadence — un A4 défile deux fois plus longtemps qu'un 10×15 — et donc de
+    /// l'estimation de durée.
+    /// </summary>
+    public int DerniereLongueurMinilabMm { get; private set; }
+
+    /// <summary>
+    /// Machine demandée : par l'opérateur pour la session, sinon par le produit. Null =
+    /// personne n'a tranché, le choix revient au ROULEAU (voir
+    /// <see cref="ChoisirMachineEtRouleau"/>).
+    /// </summary>
+    private string? MachineDemandee(List<RenderedPage> pages) =>
+        !string.IsNullOrWhiteSpace(PreferredMinilabMachine)
+            ? PreferredMinilabMachine
+            : pages.Select(p => p.Product.MinilabMachineId).FirstOrDefault(id => !string.IsNullOrWhiteSpace(id));
+
+    /// <summary>
+    /// La machine qui recevra l'enveloppe, et la largeur du rouleau qu'elle porte.
+    ///
+    /// Le DE100 de la boutique compte DEUX machines, et elles n'ont jamais le même
+    /// rouleau : c'est tout l'intérêt d'en avoir deux. Prendre la première prête revenait
+    /// à ignorer la seconde — un 21×29,7 était refusé « le rouleau chargé dans la machine
+    /// A fait 152 mm » alors que le rouleau de 210 était monté à côté. Constaté le
+    /// 04/08/2026 sur les commandes 04-010 et 04-014.
+    ///
+    /// La machine par défaut passe en tête : à format égal, rien ne change. Les autres ne
+    /// sont examinées que si son rouleau ne porte pas le format.
+    ///
+    /// Un choix IMPOSÉ — barre de la grille, ou produit — ne se discute pas : l'opérateur
+    /// seul sait quel rouleau il vient de monter, et un format qui n'y tient pas se dira
+    /// dans <see cref="EnsurePaperFits"/>, avec le rouleau à charger — et avec la machine
+    /// d'à côté qui le porterait, s'il y en a une.
+    /// </summary>
+    private (char Machine, int PaperWidthMm, MachineDeRepli? Repli) ChoisirMachineEtRouleau(
+        Order order, Envelope envelope, List<RenderedPage> pages)
+    {
+        var pretes = _minilab!.ReadyMachines();
+        var demandee = MachineDemandee(pages);
+        var defaut = ChooseMachine(pretes, demandee);
+
+        if (!string.IsNullOrWhiteSpace(demandee) && pretes.Contains(demandee[0]))
+        {
+            var largeurImposee = LargeurDuRouleau(order, envelope, defaut);
+
+            // le format ne tient pas sur la machine demandée : avant de refuser, on regarde
+            // si une AUTRE machine le porterait — c'est l'information qui manquait à
+            // l'opérateur, qui lisait « chargez le rouleau de 210 mm » avec ce rouleau déjà
+            // monté dans la machine voisine
+            var repli = largeurImposee > 0 && !PagesTiennent(pages, largeurImposee)
+                ? ChercherUneAutreMachine(pretes, defaut, pages)
+                : null;
+
+            return (defaut, largeurImposee, repli);
+        }
+
+        // le silence d'une machine n'est retenu que si AUCUNE ne répond : sans cela, une
+        // machine endormie à côté d'une machine prête mettrait la commande en attente
+        Exception? muette = null;
+
+        var choix = ChoisirSelonLeRouleau(
+            pretes, defaut,
+            machine =>
+            {
+                try
+                {
+                    return _minilab.LoadedPaperWidthMm(machine);
+                }
+                catch (Exception ex)
+                {
+                    muette ??= ex;
+                    throw;
+                }
+            },
+            largeur => PagesTiennent(pages, largeur));
+
+        if (choix is not null)
+        {
+            if (choix.Value.Machine != defaut)
+                Log?.Invoke($"Minilab : machine {choix.Value.Machine} retenue " +
+                            $"({choix.Value.PaperWidthMm} mm) — le rouleau de {defaut} ne porte " +
+                            "pas ce format.");
+            return (choix.Value.Machine, choix.Value.PaperWidthMm, null);
+        }
+
+        // aucune machine n'a répondu
+        MettreEnAttente(order, envelope, 0,
+            $"le minilab {defaut} ne répond pas ({muette?.Message})");
+
+        throw new PrinterNotReadyException(
+            $"Commande {order.DisplayNumber} mise en attente : le minilab {defaut} ne " +
+            "répond pas — il est probablement en veille.\n\n" +
+            "Réveillez-le : la commande partira toute seule, sans rien réimprimer.");
+    }
+
+    /// <summary>
+    /// Une machine prête, autre que celle visée, dont le rouleau porterait le format.
+    /// </summary>
+    /// <param name="Machine">Identifiant machine.</param>
+    /// <param name="PaperWidthMm">Largeur de son rouleau.</param>
+    private sealed record MachineDeRepli(char Machine, int PaperWidthMm);
+
+    /// <summary>Toutes les pages tiennent-elles sur un rouleau de cette largeur ?</summary>
+    private static bool PagesTiennent(List<RenderedPage> pages, int largeurMm) =>
+        pages.All(p => FitsPaperWidth(p.WidthMm, p.HeightMm, largeurMm));
+
+    /// <summary>
+    /// Une machine prête, autre que <paramref name="visee"/>, dont le rouleau porterait le
+    /// format — ou null.
+    ///
+    /// Elle ne sert PAS à détourner le tirage : une machine imposée reste imposée. Elle ne
+    /// sert qu'à le dire dans le refus, parce que « chargez le rouleau de 210 mm » devant
+    /// une machine voisine qui le porte déjà envoie l'opérateur démonter un rouleau pour
+    /// rien.
+    ///
+    /// Une machine muette est sautée sans bruit : on est déjà dans un chemin d'échec, et
+    /// une seconde panne n'a rien à y ajouter.
+    /// </summary>
+    private MachineDeRepli? ChercherUneAutreMachine(
+        IReadOnlyList<char> pretes, char visee, List<RenderedPage> pages)
+    {
+        var (machine, largeur) = MachineQuiPorteLeFormat(
+            pretes, visee,
+            m => _minilab!.LoadedPaperWidthMm(m),
+            l => PagesTiennent(pages, l));
+
+        return machine == Aucune ? null : new MachineDeRepli(machine, largeur);
+    }
+
+    /// <summary>Réponse de <see cref="MachineQuiPorteLeFormat"/> quand aucune ne convient.</summary>
+    internal const char Aucune = '\0';
+
+    /// <summary>
+    /// La recherche proprement dite, isolée pour être vérifiable sans minilab.
+    ///
+    /// Une machine muette est sautée sans bruit : on est déjà dans un chemin d'échec, et
+    /// une seconde panne n'a rien à y ajouter. Un rouleau de largeur INCONNUE n'est jamais
+    /// proposé — annoncer « la machine B porte du 0 mm » serait pire que se taire.
+    /// </summary>
+    /// <param name="pretes">Machines prêtes.</param>
+    /// <param name="visee">Machine imposée, qu'on ne se propose évidemment pas à elle-même.</param>
+    /// <param name="largeurDuRouleau">Lecture du rouleau ; lève si la machine ne répond pas.</param>
+    /// <param name="porteLeFormat">Vrai si un rouleau de cette largeur porte toutes les pages.</param>
+    /// <returns>La machine et son rouleau ; <see cref="Aucune"/> si aucune ne convient.</returns>
+    internal static (char Machine, int PaperWidthMm) MachineQuiPorteLeFormat(
+        IReadOnlyList<char> pretes, char visee,
+        Func<char, int> largeurDuRouleau, Func<int, bool> porteLeFormat)
+    {
+        ArgumentNullException.ThrowIfNull(pretes);
+        ArgumentNullException.ThrowIfNull(largeurDuRouleau);
+        ArgumentNullException.ThrowIfNull(porteLeFormat);
+
+        foreach (var machine in pretes.Where(m => m != visee))
+        {
+            try
+            {
+                var largeur = largeurDuRouleau(machine);
+                if (largeur > 0 && porteLeFormat(largeur)) return (machine, largeur);
+            }
+            catch
+            {
+                // machine endormie ou injoignable : rien à proposer de son côté
+            }
+        }
+
+        return (Aucune, 0);
+    }
+
+    /// <summary>
+    /// Le choix proprement dit, isolé pour être vérifiable sans minilab.
+    ///
+    /// Trois règles, dans cet ordre :
+    ///
+    /// 1. la machine par défaut est examinée EN PREMIER — à format égal, rien ne change ;
+    /// 2. une machine qui ne répond pas est sautée, jamais bloquante ;
+    /// 3. si aucun rouleau ne porte le format, on rend le PREMIER qui a répondu — c'est
+    ///    lui qu'<see cref="EnsurePaperFits"/> nommera dans son refus, avec le rouleau à
+    ///    charger. Rendre « rien » ferait perdre cette explication.
+    /// </summary>
+    /// <param name="pretes">Machines prêtes, dans l'ordre où le relais les rend.</param>
+    /// <param name="defaut">Machine que <see cref="ChooseMachine"/> aurait retenue seule.</param>
+    /// <param name="largeurDuRouleau">Lecture du rouleau ; lève si la machine ne répond pas.</param>
+    /// <param name="porteLeFormat">Vrai si un rouleau de cette largeur porte TOUTES les pages.</param>
+    /// <returns>La machine retenue et son rouleau ; null si aucune machine n'a répondu.</returns>
+    internal static (char Machine, int PaperWidthMm)? ChoisirSelonLeRouleau(
+        IReadOnlyList<char> pretes, char defaut,
+        Func<char, int> largeurDuRouleau, Func<int, bool> porteLeFormat)
+    {
+        ArgumentNullException.ThrowIfNull(pretes);
+        ArgumentNullException.ThrowIfNull(largeurDuRouleau);
+        ArgumentNullException.ThrowIfNull(porteLeFormat);
+
+        (char Machine, int PaperWidthMm)? repli = null;
+
+        foreach (var machine in pretes.OrderByDescending(m => m == defaut))
+        {
+            int largeur;
+            try
+            {
+                largeur = largeurDuRouleau(machine);
+            }
+            catch
+            {
+                continue;
+            }
+
+            // largeur inconnue : on ne bloque rien, comme EnsurePaperFits
+            if (largeur <= 0 || porteLeFormat(largeur)) return (machine, largeur);
+
+            repli ??= (machine, largeur);
+        }
+
+        return repli;
+    }
+
+    /// <summary>
+    /// Largeur du rouleau chargé, ou mise en attente de la commande.
+    ///
+    /// Interroger le rouleau est la PREMIÈRE chose qui touche la machine, donc la première
+    /// qui peut rester suspendue quand elle dort. Une commande de 41 photos est restée
+    /// douze minutes ici sans un mot le 03/08/2026 : le rendu était fait, et rien ne disait
+    /// à l'opérateur ce qu'on attendait.
+    ///
+    /// Elle part donc EN ATTENTE, comme pour une imprimante pas prête : la file la
+    /// reprendra dès que le minilab répondra, et l'opérateur sait pourquoi.
+    /// </summary>
+    private int LargeurDuRouleau(Order order, Envelope envelope, char machine)
+    {
+        try
+        {
+            return _minilab!.LoadedPaperWidthMm(machine);
+        }
+        catch (Exception ex)
+        {
+            MettreEnAttente(order, envelope, 0,
+                $"le minilab {machine} ne répond pas ({ex.Message})");
+
+            throw new PrinterNotReadyException(
+                $"Commande {order.DisplayNumber} mise en attente : le minilab {machine} ne " +
+                "répond pas — il est probablement en veille.\n\n" +
+                "Réveillez-le : la commande partira toute seule, sans rien réimprimer.");
+        }
+    }
 
     /// <summary>
     /// Refuse l'enveloppe entière si l'un de ses formats ne peut pas sortir du rouleau
@@ -573,7 +838,13 @@ public sealed class PrintOrchestrator
     /// enveloppe de trois pages dont la deuxième est impossible, il ne faut pas non plus
     /// avoir tiré la première.
     /// </summary>
-    private void EnsurePaperFits(List<RenderedPage> pages, char machine, int paperWidthMm)
+    /// <param name="repli">
+    /// Machine voisine dont le rouleau porterait le format, quand la machine visée a été
+    /// IMPOSÉE. Nommée dans le refus : sans elle, le message envoie changer un rouleau qui
+    /// tourne déjà dans la machine d'à côté.
+    /// </param>
+    private void EnsurePaperFits(List<RenderedPage> pages, char machine, int paperWidthMm,
+        MachineDeRepli? repli = null)
     {
         // largeur inconnue (machine avare en informations) : on laisse passer plutôt que
         // de bloquer la boutique sur un défaut de remontée
@@ -604,6 +875,15 @@ public sealed class PrintOrchestrator
                 .DefaultIfEmpty(0)
                 .Min();
 
+            // une machine voisine porte le format : c'est elle qu'il faut désigner, et non
+            // un rouleau à changer
+            var conseil = repli is { } autre
+                ? $"\n\nLa machine {autre.Machine} porte du {autre.PaperWidthMm} mm : choisissez-la " +
+                  "dans la liste « Minilab », ou repassez-la sur « Automatique »."
+                : rouleau > 0
+                    ? $"\n\nPour ce produit, chargez le rouleau de {rouleau} mm."
+                    : "";
+
             throw new InvalidOperationException(
                 $"Le rouleau chargé dans la machine {machine} fait {paperWidthMm} mm de large : " +
                 $"le {page.Product.Name} a besoin d'au moins {petitCote:0} mm. " +
@@ -611,7 +891,7 @@ public sealed class PrintOrchestrator
                 (possibles.Count > 0
                     ? "Ce papier permet : " + string.Join(", ", possibles) + "."
                     : "Aucun produit du catalogue ne sort de ce rouleau.") +
-                (rouleau > 0 ? $"\n\nPour ce produit, chargez le rouleau de {rouleau} mm." : ""));
+                conseil);
         }
     }
 
@@ -642,23 +922,28 @@ public sealed class PrintOrchestrator
     /// autrement.
     /// </summary>
     /// <returns>Le fichier à envoyer : l'original si rien n'était à corriger.</returns>
-    private static string FitPageToRoll(RenderedPage page, double rollWidthMm, double lengthMm)
+    private string FitPageToRoll(RenderedPage page, double rollWidthMm, double lengthMm, char machine)
     {
         const int dpi = 300; // le DE100 travaille à 300 ppp, quel que soit le produit
 
-        var cibleW = MmPx.ToPixels(rollWidthMm, dpi);
-        var cibleH = MmPx.ToPixels(lengthMm, dpi);
+        var (cibleW, cibleH) = DefinitionAttendue(machine, rollWidthMm, lengthMm, dpi);
 
         using var image = new MagickImage(page.Path);
 
         var pivote = image.Width > image.Height != cibleW > cibleH && image.Width != image.Height;
         if (pivote) image.Rotate(90);
 
-        if (!pivote && image.Width == (uint)cibleW && image.Height == (uint)cibleH)
+        // Une image en NIVEAUX DE GRIS doit être réécrite même si sa taille est déjà juste
+        // — voir EnTroisCanaux : le minilab la refuse.
+        var enCouleur = image.ColorSpace == ColorSpace.sRGB && image.ChannelCount >= 3;
+
+        if (!pivote && enCouleur
+            && image.Width == (uint)cibleW && image.Height == (uint)cibleH)
             return page.Path;
 
         image.BackgroundColor = MagickColors.White;
         image.Extent((uint)cibleW, (uint)cibleH, Gravity.Center, MagickColors.White);
+        EnTroisCanaux(image);
 
         var sortie = Path.Combine(
             Path.GetDirectoryName(page.Path)!,
@@ -668,6 +953,76 @@ public sealed class PrintOrchestrator
         // le prix de la compression rapide, sur des images que rien ne conserve
         MagickInit.Write(image, sortie);
         return sortie;
+    }
+
+    /// <summary>
+    /// Force l'image en sRGB sur TROIS canaux, alpha retiré.
+    ///
+    /// <b>Le minilab refuse les images en niveaux de gris</b>, et il le fait comme tout le
+    /// reste : sans un mot. Un scan noir et blanc — ou une photo passée en noir et blanc —
+    /// traverse tout le rendu en conservant son unique canal, et la commande était rejetée
+    /// dix secondes après avoir été acceptée.
+    ///
+    /// C'est la cause du 21×29,7 des commandes 04-015 à 04-041 du 04/08/2026 : la photo
+    /// d'essai était un scan gris. Prouvé en renvoyant le fichier de Studio, converti en
+    /// sRGB et rien d'autre : il est sorti du premier coup. Le paramètre <c>ColorSpace</c>
+    /// que Studio envoie au SDK vaut d'ailleurs « 1 » — RGB — depuis toujours : l'image
+    /// doit lui correspondre.
+    ///
+    /// <b>Le define PNG est indispensable.</b> Poser <c>ColorSpace</c> et <c>ColorType</c>
+    /// ne suffit pas : le format PNG réécrit en niveaux de gris dès que tous les pixels le
+    /// sont, c'est son optimisation automatique. <c>color-type 2</c> l'interdit.
+    /// </summary>
+    private static void EnTroisCanaux(MagickImage image)
+    {
+        image.ColorSpace = ColorSpace.sRGB;
+        image.ColorType = ColorType.TrueColor;
+        image.Alpha(AlphaOption.Off);
+        image.Settings.SetDefine(MagickFormat.Png, "color-type", "2");
+    }
+
+    /// <summary>
+    /// La définition que la MACHINE attend pour ce format, ou la nôtre si elle n'en dit rien.
+    ///
+    /// <b>C'est la correction du 21×29,7</b>, trouvée par essais sur la machine le
+    /// 04/08/2026. Le DE100 ajoute son DÉBORD : pour un 210 × 297 à 300 ppp il réclame
+    /// 2515 × 3543 px, soit 213 × 300 mm. Studio calculait 2480 × 3508 — les cotes nues —
+    /// et la machine refusait, sans motif, six fois de suite.
+    ///
+    /// Pourquoi le 18×24 sortait, lui, avec le même écart : il passe par un canal VARIABLE
+    /// (<c>21xL</c>), qui tolère l'à-peu-près. Le 210 × 297 tombe sur le canal FIXE
+    /// <c>A4</c>, qui exige la définition au pixel près. Neuf essais de NOMS de format ont
+    /// tous échoué avant qu'on regarde de ce côté ; le nom n'y était pour rien.
+    ///
+    /// <b>Le repli n'est pas une précaution de style</b> : une machine muette, un relais
+    /// coupé, un format qu'elle ne connaît pas, et l'on retombe sur le calcul qui sort
+    /// depuis toujours. On ne perd jamais un tirage parce qu'une lecture a échoué.
+    /// </summary>
+    private (int Width, int Height) DefinitionAttendue(
+        char machine, double largeurMm, double longueurMm, int dpi)
+    {
+        var nôtre = (MmPx.ToPixels(largeurMm, dpi), MmPx.ToPixels(longueurMm, dpi));
+
+        if (_minilab is null) return nôtre;
+
+        try
+        {
+            var (w, h) = _minilab.ExpectedPixels(machine, largeurMm, longueurMm, (uint)dpi);
+            if (w == 0 || h == 0) return nôtre;
+
+            if (w != (uint)nôtre.Item1 || h != (uint)nôtre.Item2)
+                Log?.Invoke($"Minilab : {largeurMm:0}×{longueurMm:0} mm — la machine attend " +
+                            $"{w}×{h} px (notre calcul : {nôtre.Item1}×{nôtre.Item2}). " +
+                            "C'est SA définition qui est retenue.");
+
+            return ((int)w, (int)h);
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Minilab : définition attendue illisible ({ex.Message}) — " +
+                        "on garde notre calcul.");
+            return nôtre;
+        }
     }
 
     /// <summary>
@@ -924,6 +1279,10 @@ public sealed class PrintOrchestrator
 
                     var iccPath = IccPath(product, item.Finish);
 
+                    // la correction propre à la machine, par-dessus ce que l'opérateur a
+                    // posé — voir Product.PrintExposure
+                    var reglages = AvecLaCorrectionDuProduit(item.Adjustments, product);
+
                     var chrono = System.Diagnostics.Stopwatch.StartNew();
                     if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
                     {
@@ -940,7 +1299,7 @@ public sealed class PrintOrchestrator
                             ImagePipeline.RenderIdSheetToFile(new RenderRequest(
                                     sourcePath, cellW, cellH,
                                     item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees, FitMode.Fill, 0,
-                                    item.Adjustments, iccPath),
+                                    reglages, iccPath),
                                 item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
                                 targetW, targetH, output, product.Dpi,
                                 sheet.CutBorder,
@@ -958,7 +1317,7 @@ public sealed class PrintOrchestrator
                                 item.FineRotationDegrees,
                                 item.FitOverride ?? product.DefaultFit,
                                 borderPx,
-                                item.Adjustments,
+                                reglages,
                                 iccPath,
                                 item.CutBorder),
                                 output, product.Dpi);
@@ -988,6 +1347,30 @@ public sealed class PrintOrchestrator
             pages.AddRange(rendus.Select(p => p!));
         }
         return pages;
+    }
+
+    /// <summary>
+    /// Les réglages de l'opérateur, plus la correction d'exposition du produit.
+    ///
+    /// Une COPIE, jamais l'objet de l'article : celui-ci appartient à la commande
+    /// enregistrée, et l'y ajouter ferait s'empiler la correction à chaque réimpression —
+    /// la troisième sortirait délavée. Ce que la commande garde doit rester ce que
+    /// l'opérateur a demandé ; la correction de machine se rejoue au rendu.
+    ///
+    /// Elle s'ajoute à l'exposition et ne la remplace pas : l'opérateur qui a déjà remonté
+    /// une photo sous-exposée ne doit pas voir son geste effacé.
+    /// </summary>
+    public static ImageAdjustments AvecLaCorrectionDuProduit(
+        ImageAdjustments reglages, Product product)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+        ArgumentNullException.ThrowIfNull(product);
+
+        if (product.PrintExposure == 0) return reglages;
+
+        var corriges = reglages.Clone();
+        corriges.Exposure += product.PrintExposure;
+        return corriges;
     }
 
     /// <summary>
@@ -1046,7 +1429,7 @@ public sealed class PrintOrchestrator
                                 // le cadrage a été posé pour ce rapport dans l'écran d'édition
                                 item.FitOverride ?? FitMode.Fill,
                                 0,
-                                item.Adjustments,
+                                AvecLaCorrectionDuProduit(item.Adjustments, product),
                                 IccPath(product, item.Finish)),
                             place.Copies);
                     })
@@ -1140,6 +1523,16 @@ public sealed class PrintOrchestrator
                     // mais on cesse d'en donner
                     ct.ThrowIfCancellationRequested();
 
+                    // AU RYTHME DE LA MACHINE : on ne remet une page que si la file a de la
+                    // place, et on s'arrête net si elle tombe en panne. Voir CadenceSpouleur.
+                    var cadence = CadencePour(product.PrinterName);
+                    if (cadence is not null)
+                    {
+                        var place = cadence.Attendre(cadence.PlafondEnFile, ct);
+                        if (place.EnPanne)
+                            throw new PrinterNotReadyException(place.Panne);
+                    }
+
                     bitmap ??= new Bitmap(page.Path);
 
                     BitmapPrinter.Print(
@@ -1147,7 +1540,10 @@ public sealed class PrintOrchestrator
                         devMode, pdfPath, documentName);
 
                     faites++;
-                    noterAvancement?.Invoke(faites);
+
+                    // ce qui est SORTI, pas ce qui est remis : c'est ce nombre qui décide
+                    // où l'on reprendrait
+                    noterAvancement?.Invoke(cadence?.PagesSorties(faites) ?? faites);
                     progression?.Report(new PrintProgress(
                         PrintProgress.Impression, faites, total, tuileDnp));
                 }
@@ -1157,6 +1553,74 @@ public sealed class PrintOrchestrator
                 bitmap?.Dispose();
             }
         }
+
+        // Fin de commande : on attend que la machine ait VRAIMENT tout sorti avant de
+        // déclarer l'enveloppe imprimée. Sans cette attente, une commande de six cents
+        // photos passait « imprimée » cinq secondes après le premier tirage, et une panne
+        // survenue ensuite ne trouvait plus rien à reprendre.
+        var derniere = CadencePour(pages.LastOrDefault()?.Product.PrinterName);
+        if (derniere is not null)
+        {
+            var fin = derniere.Attendre(plafond: 0, ct);
+            if (fin.EnPanne) throw new PrinterNotReadyException(fin.Panne);
+        }
+    }
+
+    /// <summary>
+    /// La cadence d'une file d'impression, ou null quand on ne sait pas la lire.
+    ///
+    /// Null n'est pas un cas d'erreur : une file que le spouleur ne décrit pas — pilote
+    /// avare, machine virtuelle, « Print to PDF » — s'imprime comme avant, d'un trait. On
+    /// ne bloque jamais une impression parce qu'une lecture WMI n'a rien donné.
+    /// </summary>
+    private CadenceSpouleur? CadencePour(string? printerName)
+    {
+        if (string.IsNullOrWhiteSpace(printerName)) return null;
+
+        if (_cadences.TryGetValue(printerName, out var connue)) return connue;
+
+        var cadence = new CadenceSpouleur(
+            () => LirePlace(printerName),
+            Thread.Sleep)
+        {
+            Log = Log,
+        };
+
+        // une file inconnue du spouleur ne se cadence pas : on le décide UNE fois, à la
+        // première lecture, plutôt qu'à chaque page
+        var premiere = LirePlace(printerName);
+        var retenue = premiere.PagesEnFile < 0 ? null : cadence;
+
+        _cadences[printerName] = retenue;
+        return retenue;
+    }
+
+    private readonly Dictionary<string, CadenceSpouleur?> _cadences =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// L'état de la file, traduit pour la cadence. <c>PagesEnFile = -1</c> = le spouleur
+    /// n'a rien à en dire.
+    /// </summary>
+    private static PlaceEnFile LirePlace(string printerName)
+    {
+        var etat = DnpSpouleur.Lire(printerName);
+
+        if (etat.Etat == EtatFileDnp.Inconnu)
+            return new PlaceEnFile(PeutEnvoyer: true, Panne: "", PagesEnFile: -1);
+
+        // Une file EN PAUSE est une panne de notre point de vue : rien n'en sortira tant
+        // que personne ne la relance, et continuer à la remplir ne ferait qu'empiler ce
+        // qu'on ne pourra pas reprendre.
+        var panne = etat.Etat switch
+        {
+            EtatFileDnp.Erreur => etat.Message.Length > 0 ? etat.Message : "intervention nécessaire",
+            EtatFileDnp.HorsLigne => $"« {printerName} » est hors ligne",
+            EtatFileDnp.EnPause => $"la file de « {printerName} » est en pause",
+            _ => "",
+        };
+
+        return new PlaceEnFile(panne.Length == 0, panne, etat.PhotosRestantes);
     }
 
     private string SpoolStatePath(Order order, Envelope envelope) =>

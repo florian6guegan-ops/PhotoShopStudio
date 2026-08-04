@@ -310,6 +310,9 @@ internal partial class EditSelectionView : UserControl
         var cadre = Cadre(_courante);
         var angle = _courante.FineRotationDegrees;
 
+        // le trait de découpe se voit sur la surface, comme il sortira sur le papier
+        Surface.ContourDeDecoupe = _courante.CutBorder;
+
         if (_photosPretes.TryGet(_courante.Path, out var prete))
         {
             Surface.Show(prete, cadre, angle);
@@ -804,6 +807,12 @@ internal partial class EditSelectionView : UserControl
         var visees = Visees();
 
         foreach (var photo in visees) photo.CutBorder = actif;
+
+        // Il manquait TOUT retour : la case posait bien le contour — il sortait au
+        // tirage — mais rien ne bougeait à l'écran, ni ici ni sur la vignette. Elle
+        // passait donc pour morte. Signalé le 04/08/2026.
+        Surface.ContourDeDecoupe = _courante.CutBorder;
+        foreach (var photo in visees) Redessiner(photo);
 
         FileLog.Write($"Contour de découpe {(actif ? "activé" : "retiré")} sur {visees.Count} photo(s)");
     }

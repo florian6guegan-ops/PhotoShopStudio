@@ -17,8 +17,22 @@ public partial class SourcePickerView : UserControl
     /// </summary>
     private readonly Action<string, bool> _onFolderChosen;
 
+    /// <summary>Un dossier de l'ordinateur proposé en tuile, à côté des supports amovibles.</summary>
+    /// <param name="Libelle">Ce que l'opérateur lit sur la tuile.</param>
+    /// <param name="Chemin">Le dossier ouvert au clic.</param>
+    public sealed record DossierRaccourci(string Libelle, string Chemin);
+
     /// <param name="onFolderChosen">Suite du parcours ; par défaut la grille d'impression.</param>
-    public SourcePickerView(Action<string, bool>? onFolderChosen = null)
+    /// <param name="raccourcis">
+    /// Dossiers de l'ordinateur à proposer en plus des supports. Null = aucun.
+    ///
+    /// Ils ne sont pas mis partout : sur un tirage ordinaire, les photos viennent d'une
+    /// carte, et une tuile de plus ne ferait qu'allonger l'écran. C'est l'E-Photo qui en a
+    /// besoin — sa photo arrive par courriel ou par téléphone, donc dans Téléchargements.
+    /// </param>
+    public SourcePickerView(
+        Action<string, bool>? onFolderChosen = null,
+        IReadOnlyList<DossierRaccourci>? raccourcis = null)
     {
         _onFolderChosen = onFolderChosen
             ?? ((root, profond) => Navigator.Go(
@@ -27,10 +41,32 @@ public partial class SourcePickerView : UserControl
         _watcher.DrivesChanged += drives => Dispatcher.Invoke(() => Refresh(drives));
         Loaded += (_, _) =>
         {
+            RaccourcisList.ItemsSource = raccourcis;
             Refresh(RemovableDriveWatcher.GetDrives());
             _watcher.Start();
         };
         Unloaded += (_, _) => _watcher.Dispose();
+    }
+
+    /// <summary>
+    /// Le raccourci « Téléchargements », ou rien si le dossier n'existe pas. À passer en
+    /// <c>raccourcis</c> depuis les parcours où la photo vient du web.
+    /// </summary>
+    public static IReadOnlyList<DossierRaccourci> RaccourciTelechargements()
+    {
+        var chemin = DossiersUtilisateur.Telechargement();
+        return chemin is null ? [] : [new DossierRaccourci("⬇  Téléchargements", chemin)];
+    }
+
+    /// <summary>
+    /// Un dossier de l'ordinateur : sans sous-dossiers, comme un dossier désigné à la
+    /// main. Téléchargements contient tout ce que le navigateur a rapporté, et descendre
+    /// dedans ramènerait des dizaines de milliers de fichiers.
+    /// </summary>
+    private void OnRaccourciClicked(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is string chemin)
+            _onFolderChosen(chemin, false);
     }
 
     private void Refresh(IReadOnlyList<RemovableDrive> drives)

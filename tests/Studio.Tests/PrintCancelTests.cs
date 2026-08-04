@@ -48,6 +48,10 @@ public class PrintCancelTests : IDisposable
         public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
         public int LoadedPaperWidthMm(char machineId) => 152;
 
+        /// <summary>Muette : l'orchestrateur garde son propre calcul de définition.</summary>
+        public (uint Width, uint Height) ExpectedPixels(
+            char machineId, double widthMm, double heightMm, uint dpi) => (0, 0);
+
         public string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId)
         {
             var handle = $"OH-{Envoyes.Count + 1}";
