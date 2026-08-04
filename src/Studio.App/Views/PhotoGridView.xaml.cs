@@ -44,14 +44,36 @@ public partial class PhotoGridView : UserControl
     /// disparaît alors de l'écran — le papier est décidé à la validation, d'après la
     /// quantité — et les photos partent en planches.
     /// </param>
+    /// <param name="cadragesBorne">
+    /// Ce que le CLIENT a réglé à la borne, par nom de fichier.
+    ///
+    /// Sans ce paramètre, ouvrir une commande de borne repartait d'un cadrage centré : cet
+    /// écran ne voit qu'un dossier d'images, et le recadrage validé à la borne n'y était
+    /// nulle part. Voir <see cref="AppliquerLeCadrageDeLaBorne"/>.
+    /// </param>
+    /// <param name="enAttente">
+    /// Une commande mise de côté, qu'on reprend. Elle est appliquée APRÈS le cadrage de la
+    /// borne et le remplace : c'est ce que l'OPÉRATEUR a décidé, il l'emporte sur ce que le
+    /// client avait réglé.
+    /// </param>
     public PhotoGridView(
         string rootPath, string? produitParDefaut = null, long? commandeBorne = null,
-        bool avecSousDossiers = true, CustomSize? taillePerso = null)
+        bool avecSousDossiers = true, CustomSize? taillePerso = null,
+        IReadOnlyDictionary<string, DiLandImporter.CadrageBorne>? cadragesBorne = null,
+        TravailEnAttente? enAttente = null)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
-        _commandeBorne = commandeBorne;
+        _commandeBorne = commandeBorne ?? enAttente?.KioskOid;
         _taillePerso = taillePerso;
+        _cadragesBorne = cadragesBorne;
+        _enAttente = enAttente;
+        _produitParDefaut = produitParDefaut;
+
+        // reprendre une commande en attente REMET À JOUR la même entrée, elle n'en crée pas
+        // une seconde : sans cela, chaque aller-retour laisserait un doublon sur l'accueil
+        _attenteId = enAttente?.Id ?? Guid.NewGuid();
+
         InitializeComponent();
 
         var choix = App.Services.Catalog.Enabled.Select(p => new ProductChoice(p)).ToList();
@@ -222,11 +244,30 @@ public partial class PhotoGridView : UserControl
 
         if (_photos.Count == 0)
         {
+            // Les PDF sont éclatés en une image par page AVANT le tri : chaque page devient
+            // une vignette ordinaire, et rien en aval ne sait qu'un PDF existe. C'est fait
+            // ici, sur le fil de fond qui parcourt déjà le dossier — le rendu PDFium coûte
+            // quelques dizaines de millisecondes par page.
+            //
+            // Ensuite la plus récente en premier : c'est ce que le client vient de prendre,
+            // et c'est ce qu'il veut tirer. Le bouton « trier » bascule vers le nom.
             var files = await Task.Run(
-                () => PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct),
+                () => PhotoScanner.TrierParDateDecroissante(
+                    PdfPages.Developper(
+                        PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct),
+                        App.Services.CacheDir)),
                 ct);
             foreach (var file in files)
-                _photos.Add(new PhotoItem(file, OnCartChanged));
+            {
+                var photo = new PhotoItem(file, OnCartChanged);
+
+                // le cadrage du client d'abord, le brouillon par-dessus : le second est ce
+                // que l'OPÉRATEUR a décidé, il l'emporte
+                AppliquerLeCadrageDeLaBorne(photo);
+                AppliquerLAttente(photo);
+
+                _photos.Add(photo);
+            }
             PhotosGrid.ItemsSource = _photos;
             AfficherEtatDuDossier();
             UpdateSummary();
@@ -234,6 +275,223 @@ public partial class PhotoGridView : UserControl
 
         await ChargerLesVignettesAsync(ct);
     }
+
+    // ----- ce que le client a réglé à la borne, et ce que l'opérateur a mis de côté -----
+
+    private readonly IReadOnlyDictionary<string, DiLandImporter.CadrageBorne>? _cadragesBorne;
+    private readonly TravailEnAttente? _enAttente;
+    private readonly string? _produitParDefaut;
+
+    /// <summary>
+    /// L'identité de CETTE préparation de commande, qu'elle ait déjà été mise de côté ou
+    /// non. Fixe pour toute la vie de l'écran : deux mises en attente successives mettent à
+    /// jour la même entrée au lieu d'en empiler deux sur l'accueil.
+    /// </summary>
+    private readonly Guid _attenteId;
+
+    /// <summary>
+    /// Repose sur une photo le recadrage validé par le client à la borne.
+    ///
+    /// <b>L'ORDRE DES QUATRE AFFECTATIONS EST IMPOSÉ, et c'est tout l'objet de cette
+    /// méthode</b> — trois mutateurs de <see cref="PhotoItem"/> remettent le cadrage à
+    /// zéro, et dans le mauvais ordre ils effacent ce qu'on vient de poser :
+    ///
+    /// <list type="table">
+    /// <item><term><c>Product</c></term><description>appelle <c>OublierCadre()</c> → <c>Crop = Full</c></description></item>
+    /// <item><term><c>RotationQuarterTurns</c></term><description>jette le cadre ET le recadrage</description></item>
+    /// <item><term><c>FitOverride</c></term><description>jette le cadre</description></item>
+    /// </list>
+    ///
+    /// Le produit est posé ICI, à la création, et pas seulement parce qu'il vient en
+    /// premier : sans lui, le <c>photo.Product ??= DefaultProduct</c> d'<c>OnModify</c> le
+    /// poserait plus tard et emporterait le recadrage avec lui. C'est précisément ce qui
+    /// faisait que « Modifier » perdait le cadrage du client.
+    /// </summary>
+    private void AppliquerLeCadrageDeLaBorne(PhotoItem photo)
+    {
+        if (_cadragesBorne is null) return;
+        if (!_cadragesBorne.TryGetValue(photo.Name, out var cadrage)) return;
+
+        // 1. le produit — en taille personnalisée c'est le produit fantôme qui l'emporte,
+        //    une planche ne peut pas mélanger deux formats
+        photo.Product = EnTaillePersonnalisee
+            ? _produitPerso
+            : ProduitDuCatalogue(cadrage.CodeProduit) ?? DefaultProduct;
+
+        // 2. les quarts de tour
+        photo.RotationQuarterTurns = cadrage.QuartsDeTour;
+
+        // 3. le redressement fin (le « Tilt » de DiLand)
+        photo.FineRotationDegrees = cadrage.RedressementDegres;
+
+        // 4. le recadrage, en DERNIER. Un rectangle incohérent est ignoré pour CETTE photo
+        //    seulement : mieux vaut une photo cadrée au centre que l'ouverture qui échoue
+        photo.PoserLeCadrageDOrigine(cadrage.Crop);
+
+        // La quantité commandée, mais la case reste DÉCOCHÉE : cet écran est celui où
+        // l'opérateur contrôle avant d'engager du papier (décision du 01/08/2026). Rien ne
+        // part tant qu'il n'a pas coché.
+        photo.Quantity = Math.Clamp(cadrage.Quantite, 1, 99);
+    }
+
+    /// <summary>
+    /// Repose sur une photo la commande mise en attente. Même ordre imposé que ci-dessus.
+    ///
+    /// Une photo absente de l'attente arrive dans son état par défaut, et une photo de
+    /// l'attente absente du dossier est simplement ignorée : les deux listes n'ont aucune
+    /// raison de coïncider un mois plus tard.
+    /// </summary>
+    private void AppliquerLAttente(PhotoItem photo)
+    {
+        if (_enAttente is null) return;
+
+        var enregistree = _enAttente.Photos
+            .FirstOrDefault(p => p.FileName.Equals(photo.Name, StringComparison.OrdinalIgnoreCase));
+        if (enregistree is null) return;
+
+        photo.Product = EnTaillePersonnalisee
+            ? _produitPerso
+            : ProduitDuCatalogue(enregistree.ProductCode) ?? photo.Product ?? DefaultProduct;
+
+        photo.Finish = enregistree.Finish;
+        photo.RotationQuarterTurns = enregistree.RotationQuarterTurns;
+        photo.FineRotationDegrees = enregistree.FineRotationDegrees;
+        photo.FitOverride = enregistree.Fit;
+        photo.CutBorder = enregistree.CutBorder;
+        photo.Adjustments = enregistree.Adjustments;
+
+        photo.PoserLeCadrageDOrigine(enregistree.Crop);
+
+        photo.Quantity = Math.Clamp(enregistree.Quantity, 1, 99);
+
+        // l'attente rend AUSSI les cases cochées : c'est le travail de l'opérateur, pas la
+        // commande brute du client — il avait déjà décidé ce qu'il tirait
+        photo.Selected = enregistree.Selected;
+        if (photo.Selected) _photoCourante = photo;
+    }
+
+    /// <summary>Un produit du catalogue par son code, ou null — un code disparu ne doit rien casser.</summary>
+    private static Product? ProduitDuCatalogue(string? code) =>
+        string.IsNullOrWhiteSpace(code)
+            ? null
+            : App.Services.Catalog.Enabled.FirstOrDefault(
+                p => p.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+
+    // ----- mise en attente : servir quelqu'un d'autre, puis reprendre -----
+
+    /// <summary>
+    /// Met la commande de côté et revient à l'accueil.
+    ///
+    /// <b>Le geste du comptoir</b> : un client hésite ou s'absente, un autre attend
+    /// derrière. On revient à l'accueil parce que c'est là qu'on sert le suivant, et c'est
+    /// aussi là que la commande mise de côté réapparaît.
+    ///
+    /// <b>Explicite, jamais automatique.</b> Mettre en attente en quittant l'écran ferait
+    /// s'accumuler sur l'accueil des commandes qu'on n'a fait qu'ouvrir, et la liste ne
+    /// voudrait plus rien dire.
+    /// </summary>
+    internal void MettreEnAttente()
+    {
+        try
+        {
+            var travail = ConstruireLAttente();
+            App.Services.CommandesEnAttente.Enregistrer(travail);
+
+            FileLog.Write($"Commande mise en attente ({travail.Resume}) — " +
+                          $"{travail.PhotosDirectory}");
+
+            MessageBox.Show(
+                "Commande mise en attente.\n\n" +
+                "Elle vous attend sur l'accueil, sous « En attente » : « Reprendre » la " +
+                "rouvrira telle que vous la laissez.",
+                "En attente", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            Navigator.Home(new HomeView(), "Studio Photo");
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Mise en attente impossible", ex);
+            MessageBox.Show($"La commande n'a pas pu être mise en attente : {ex.Message}",
+                "En attente", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnMettreEnAttente(object sender, RoutedEventArgs e) => MettreEnAttente();
+
+    /// <summary>Ce qu'on affiche sur l'accueil : de quoi reconnaître la commande d'un coup d'œil.</summary>
+    private string ResumerPourLAccueil()
+    {
+        var cochees = _photos.Count(p => p.Selected);
+
+        var morceaux = new List<string>
+        {
+            $"{_photos.Count} photo(s)",
+            cochees == 0 ? "aucune cochée" : $"{cochees} cochée(s)",
+        };
+
+        if (_taillePerso is not null) morceaux.Add(_taillePerso.Libelle);
+        else if (_photos.FirstOrDefault(p => p.Selected)?.Product is { } produit)
+            morceaux.Add(produit.Name);
+
+        if (!string.IsNullOrWhiteSpace(TotalText.Text)) morceaux.Add(TotalText.Text);
+
+        return string.Join(" · ", morceaux);
+    }
+
+    private TravailEnAttente ConstruireLAttente() => new()
+    {
+        Id = _attenteId,
+        SavedAt = DateTimeOffset.Now,
+        PhotosDirectory = _rootPath,
+        AvecSousDossiers = _avecSousDossiers,
+        ProduitParDefaut = _produitParDefaut,
+        KioskOid = _commandeBorne,
+        Titre = _enAttente?.Titre is { Length: > 0 } deja ? deja : TitreDeLEcran(),
+        Resume = ResumerPourLAccueil(),
+        CustomWidthMm = _taillePerso?.WidthMm ?? 0,
+        CustomHeightMm = _taillePerso?.HeightMm ?? 0,
+        PaperCode = PapierImpose,
+        Photos = _photos
+            // les planches d'index sont FABRIQUÉES par l'écran, pas trouvées dans le
+            // dossier : les enregistrer ferait reprendre un fichier du cache qui aura pu
+            // disparaître, et la bascule du bouton les refait de toute façon
+            .Where(p => !_planchesIndex.Contains(p))
+            .Select(p =>
+            {
+                // le cadre porte la vérité : sans ce report, une photo jamais ouverte
+                // partirait en attente en « pleine image » (même piège qu'à l'impression)
+                p.AppliquerCadre();
+
+                return new PhotoEnAttente
+                {
+                    FileName = p.Name,
+                    Selected = p.Selected,
+                    Quantity = p.Quantity,
+                    ProductCode = p.Product?.Code,
+                    Finish = p.Finish,
+                    CropX = p.Crop.X,
+                    CropY = p.Crop.Y,
+                    CropWidth = p.Crop.Width,
+                    CropHeight = p.Crop.Height,
+                    RotationQuarterTurns = p.RotationQuarterTurns,
+                    FineRotationDegrees = p.FineRotationDegrees,
+                    Fit = p.FitOverride,
+                    CutBorder = p.CutBorder,
+                    Adjustments = p.Adjustments,
+                };
+            })
+            .ToList(),
+    };
+
+    /// <summary>
+    /// De quoi renommer la commande sur l'accueil : le numéro de borne s'il y en a un,
+    /// sinon le nom du dossier — c'est ce que l'opérateur reconnaîtra.
+    /// </summary>
+    private string TitreDeLEcran() => _commandeBorne is not null
+        ? "Commande de borne"
+        : Path.GetFileName(_rootPath.TrimEnd('\\', '/')) is { Length: > 0 } dossier
+            ? dossier
+            : "Tirages";
 
     /// <summary>Ce qu'une photo a donné : sa vignette et sa définition, ou l'échec de lecture.</summary>
     private sealed record VignetteLue(PhotoItem Photo, byte[]? Jpeg, int Largeur, int Hauteur);
@@ -447,15 +705,22 @@ public partial class PhotoGridView : UserControl
         _photoCourante = null;
     }
 
-    private bool _triParDate;
+    /// <summary>
+    /// Vrai quand la planche est dans son ordre d'ARRIVÉE : la plus récente d'abord.
+    ///
+    /// C'est l'état de départ depuis le 04/08/2026 — il valait faux, et la planche
+    /// s'ouvrait par ordre alphabétique. Le bouton bascule donc désormais vers le NOM et
+    /// revient, au lieu de partir du nom pour aller vers la date.
+    /// </summary>
+    private bool _triParDate = true;
 
-    /// <summary>Bascule entre tri par nom et tri par date de prise de vue, comme « trier » chez DiLand.</summary>
+    /// <summary>Bascule entre tri par date (la plus récente d'abord) et tri par nom, comme « trier » chez DiLand.</summary>
     private void OnSort(object sender, RoutedEventArgs e)
     {
         _triParDate = !_triParDate;
 
         var triees = _triParDate
-            ? _photos.OrderBy(p => File.GetLastWriteTime(p.Path)).ToList()
+            ? TrierParDate(_photos)
             : _photos.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
         _photos.Clear();
@@ -464,6 +729,27 @@ public partial class PhotoGridView : UserControl
         PhotosGrid.ItemsSource = null;
         PhotosGrid.ItemsSource = _photos;
         UpdateSummary();
+    }
+
+    /// <summary>
+    /// Reclasse les photos DÉJÀ chargées de la plus récente à la plus ancienne, en passant
+    /// par la même règle que le chargement (<see cref="PhotoScanner.TrierParDateDecroissante"/>).
+    /// Deux règles de date finiraient par diverger, et l'écart se verrait au premier appui
+    /// sur « trier ».
+    /// </summary>
+    private static List<PhotoItem> TrierParDate(IEnumerable<PhotoItem> photos)
+    {
+        var liste = photos.ToList();
+
+        // le rang que le tri de référence donne à chaque chemin ; les planches d'index
+        // ajoutées à la planche peuvent partager un chemin, d'où un regroupement plutôt
+        // qu'un dictionnaire — un doublon ferait échouer « trier », pas se tromper d'ordre
+        var rangs = PhotoScanner.TrierParDateDecroissante(
+                liste.Select(p => p.Path).Distinct(StringComparer.OrdinalIgnoreCase))
+            .Select((chemin, rang) => (chemin, rang))
+            .ToDictionary(x => x.chemin, x => x.rang, StringComparer.OrdinalIgnoreCase);
+
+        return liste.OrderBy(p => rangs.TryGetValue(p.Path, out var rang) ? rang : int.MaxValue).ToList();
     }
 
     /// <summary>Ctrl+A : toute la planche d'un coup, comme chez DiLand.</summary>
@@ -789,7 +1075,12 @@ public partial class PhotoGridView : UserControl
             new EditSelectionView(choisies, () => OnPrint(this, new RoutedEventArgs()),
                 // depuis « Modifier » aussi : c'est là que l'opérateur voit la photo en
                 // grand, donc là qu'on décide souvent de changer de format
-                personnalise: EnTaillePersonnalisee ? null : DemanderUneTaillePersonnalisee),
+                personnalise: EnTaillePersonnalisee ? null : DemanderUneTaillePersonnalisee,
+                // et là aussi qu'on s'interrompt : c'est l'écran où l'on passe le plus de
+                // temps, donc celui où un client peut demander à revenir plus tard.
+                // C'est la GRILLE qui enregistre — elle seule connaît les photos non
+                // cochées, et les perdre reviendrait à ne mettre de côté qu'une moitié.
+                mettreEnAttente: MettreEnAttente),
             $"Modifier — {choisies.Count} photo(s)");
     }
 
@@ -1125,6 +1416,11 @@ public partial class PhotoGridView : UserControl
                 if (_commandeBorne is { } borne)
                     services.DiLandImport.Journal.AttachStudioOrder(borne, created.Id);
 
+                // La commande est passée en caisse : ce qui attendait en son nom n'a plus
+                // d'objet. Le laisser ferait proposer « Reprendre » sur l'accueil pour une
+                // commande déjà tirée, et on la tirerait deux fois.
+                services.CommandesEnAttente.Effacer(_attenteId);
+
                 return created;
             });
 
@@ -1292,6 +1588,36 @@ public partial class PhotoGridView : UserControl
         /// </summary>
         public CropSpec Crop { get; set; } = CropSpec.Full;
 
+        /// <summary>
+        /// Le recadrage vient d'une DÉCISION — celle du client à la borne, ou celle de
+        /// l'opérateur dans un brouillon — et non d'un cadre calculé.
+        /// </summary>
+        /// <remarks>
+        /// Ce drapeau existe pour un seul cas, et il compte : les tirages « bord blanc »
+        /// sont en mode « photo entière », où <see cref="Cadre"/> IGNORE le recadrage
+        /// enregistré. La règle est juste dans son cas d'origine — un cadrage hérité du
+        /// mode « remplir » ferait déborder la photo du format — mais elle jetait aussi le
+        /// cadrage que le client avait validé à la borne sur ses dix produits bord blanc,
+        /// et le correctif du cadrage se serait arrêté à mi-chemin.
+        ///
+        /// Il tombe dès que l'OPÉRATEUR reprend la main sur le format (produit ou
+        /// remplir/entier) : à partir de là, le cadrage n'est plus celui qui accompagnait
+        /// la commande.
+        /// </remarks>
+        public bool CadrageImpose { get; private set; }
+
+        /// <summary>
+        /// Pose le recadrage qui accompagnait la commande — voir <see cref="CadrageImpose"/>.
+        /// À appeler EN DERNIER : produit, quarts de tour et mode le remettent à zéro.
+        /// </summary>
+        public void PoserLeCadrageDOrigine(CropSpec crop)
+        {
+            if (!crop.IsValid || crop.IsFull) return;
+
+            Crop = crop;
+            CadrageImpose = true;
+        }
+
         private int _quartsDeTour;
 
         public int RotationQuarterTurns
@@ -1304,8 +1630,7 @@ public partial class PhotoGridView : UserControl
 
                 // les deux côtés de la photo s'échangent : le cadre est à refaire, et le
                 // cadrage repart du centre — ses repères viennent de tourner avec elle
-                _cadre = null;
-                Crop = CropSpec.Full;
+                OublierCadre();
             }
         }
 
@@ -1402,7 +1727,13 @@ public partial class PhotoGridView : UserControl
                 // On reprend le cadrage déjà enregistré, s'il y en a un — sauf en « photo
                 // entière », où il n'y a rien à reprendre : la photo est posée dans le
                 // format, et un cadrage hérité du mode « remplir » la ferait déborder.
-                if (!Crop.IsFull && !_cadre.AllowsWhiteMargins) _cadre.SetFromCropSpec(Crop);
+                //
+                // Un cadrage IMPOSÉ fait exception, et c'est tout l'objet du drapeau : sur
+                // un « bord blanc », le client a bel et bien choisi sa zone à la borne, et
+                // ce n'est pas un cadrage hérité d'un autre mode. Contraindre() ne fait
+                // rien quand le blanc est permis : la géométrie posée ici tient.
+                if (!Crop.IsFull && (CadrageImpose || !_cadre.AllowsWhiteMargins))
+                    _cadre.SetFromCropSpec(Crop);
 
                 return _cadre;
             }
@@ -1426,6 +1757,9 @@ public partial class PhotoGridView : UserControl
         {
             _cadre = null;
             Crop = CropSpec.Full;
+
+            // le cadrage d'origine s'en va avec : il n'y a plus de recadrage à imposer
+            CadrageImpose = false;
         }
 
         /// <summary>Rapport largeur/hauteur du fichier d'origine, une fois orienté.</summary>
@@ -1450,6 +1784,10 @@ public partial class PhotoGridView : UserControl
                 if (_fit == value) return;
                 _fit = value;
                 _cadre = null;
+
+                // l'opérateur reprend la main sur le format : le cadrage n'est plus celui
+                // qui accompagnait la commande, et le cadre redevient seul juge
+                CadrageImpose = false;
             }
         }
         /// <summary>

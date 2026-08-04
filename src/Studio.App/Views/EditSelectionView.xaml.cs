@@ -36,6 +36,7 @@ internal partial class EditSelectionView : UserControl
     private readonly List<PhotoGridView.PhotoItem> _photos;
     private readonly Action _imprimer;
     private readonly Action? _personnalise;
+    private readonly Action? _mettreEnAttente;
     private PhotoGridView.PhotoItem _courante;
 
     private Point _dernierPoint;
@@ -48,14 +49,22 @@ internal partial class EditSelectionView : UserControl
     /// Bascule la commande vers une taille libre. Null quand elle y est déjà, ou quand
     /// l'écran appelant ne sait pas la faire.
     /// </param>
+    /// <param name="mettreEnAttente">
+    /// Met la commande de côté pour servir quelqu'un d'autre.
+    ///
+    /// C'est la GRILLE qui enregistre, pas cet écran : lui ne tient que les photos
+    /// COCHÉES, et mettre de côté la moitié d'une commande serait pire que de ne rien
+    /// mettre de côté du tout.
+    /// </param>
     public EditSelectionView(List<PhotoGridView.PhotoItem> photos, Action imprimer,
-        Action? personnalise = null)
+        Action? personnalise = null, Action? mettreEnAttente = null)
     {
         ArgumentNullException.ThrowIfNull(photos);
 
         _photos = photos;
         _imprimer = imprimer;
         _personnalise = personnalise;
+        _mettreEnAttente = mettreEnAttente;
         _courante = photos[0];
 
         // rien n'est visé en entrant : on travaille la photo affichée, et l'on vise
@@ -63,6 +72,10 @@ internal partial class EditSelectionView : UserControl
         foreach (var photo in _photos) photo.Ciblee = false;
 
         InitializeComponent();
+
+        // l'écran peut être ouvert par un appelant qui ne sait pas mettre de côté :
+        // un bouton qui ne fait rien vaut moins que pas de bouton
+        AttenteButton.Visibility = mettreEnAttente is null ? Visibility.Collapsed : Visibility.Visible;
 
         Strip.ItemsSource = _photos;
         Sliders.ItemsSource = ConstruireReglages();
@@ -751,8 +764,33 @@ internal partial class EditSelectionView : UserControl
         Refresh();
     }
 
-    private void OnRotateFrame(object sender, RoutedEventArgs e) => PivoterCadre(_courante);
-    private void OnRotatePhoto(object sender, RoutedEventArgs e) => PivoterPhoto(_courante, 1);
+    /// <summary>
+    /// Les boutons du panneau de recadrage portent sur les photos VISÉES, comme les
+    /// corrections et le contour de découpe.
+    ///
+    /// Ils ne le faisaient pas : ils écrivaient sur <c>_courante</c> et sur elle seule.
+    /// Ctrl+A puis « Remplir » ne changeait donc qu'UNE photo sur trente — signalé par
+    /// l'exploitant le 04/08/2026. Le même défaut touchait les deux rotations et la
+    /// réinitialisation ; on les corrige ensemble, parce que le geste est le même et que
+    /// l'opérateur ne distingue pas ces quatre boutons du reste du panneau.
+    ///
+    /// La ligne de journal n'est pas une politesse : c'est le seul moyen de vérifier après
+    /// coup qu'un geste a bien porté sur la planche entière — aucun essai ne clique.
+    /// </summary>
+    private void SurLesVisees(string geste, Action<PhotoGridView.PhotoItem> action)
+    {
+        var visees = Visees();
+        foreach (var photo in visees) action(photo);
+
+        FileLog.Write($"{geste} sur {visees.Count} photo(s)");
+        Refresh();
+    }
+
+    private void OnRotateFrame(object sender, RoutedEventArgs e) =>
+        SurLesVisees("Cadre pivoté", PivoterCadre);
+
+    private void OnRotatePhoto(object sender, RoutedEventArgs e) =>
+        SurLesVisees("Photo pivotée d'un quart de tour", photo => PivoterPhoto(photo, 1));
 
     /// <summary>
     /// Le contour de découpe, posé sur toutes les photos VISÉES — comme les corrections.
@@ -770,6 +808,14 @@ internal partial class EditSelectionView : UserControl
         FileLog.Write($"Contour de découpe {(actif ? "activé" : "retiré")} sur {visees.Count} photo(s)");
     }
 
+    /// <summary>
+    /// Bascule « remplir le format » / « photo entière » sur toutes les photos visées.
+    ///
+    /// Le mode voulu est déduit de la photo COURANTE, puis IMPOSÉ aux autres — il n'est pas
+    /// basculé photo par photo. Sur une planche à moitié en « remplir » et à moitié en
+    /// « entier », basculer chacune de son côté les inverserait sans jamais les aligner,
+    /// alors que le geste demandé est « mets-moi tout en remplir ».
+    /// </summary>
     private void OnToggleFit(object sender, RoutedEventArgs e)
     {
         var produit = _courante.Product;
@@ -782,10 +828,17 @@ internal partial class EditSelectionView : UserControl
         if (actuel == FitMode.Polaroid) return;
 
         var voulu = actuel == FitMode.Fill ? FitMode.Fit : FitMode.Fill;
-        _courante.FitOverride = voulu == produit.DefaultFit ? null : voulu;
 
-        Redessiner(_courante);
-        Refresh();
+        SurLesVisees($"Mode « {(voulu == FitMode.Fill ? "remplir le format" : "photo entière")} » posé", photo =>
+        {
+            // le produit se lit sur CHAQUE photo : une planche peut mélanger deux formats,
+            // et le mode ne s'exprime que par rapport au défaut de son propre produit
+            if (photo.Product is not { } sien || (photo.FitOverride ?? sien.DefaultFit) == FitMode.Polaroid)
+                return;
+
+            photo.FitOverride = voulu == sien.DefaultFit ? null : voulu;
+            Redessiner(photo);
+        });
     }
 
     /// <summary>
@@ -796,16 +849,16 @@ internal partial class EditSelectionView : UserControl
     /// qui porte la vérité, et le laisser en place ferait revenir l'ancien cadrage au
     /// premier geste suivant.
     /// </summary>
-    private void OnResetCrop(object sender, RoutedEventArgs e)
-    {
-        _courante.RotationQuarterTurns = 0;
-        _courante.FineRotationDegrees = 0;
-        _courante.OublierCadre();
+    private void OnResetCrop(object sender, RoutedEventArgs e) =>
+        SurLesVisees("Recadrage réinitialisé", photo =>
+        {
+            photo.RotationQuarterTurns = 0;
+            photo.FineRotationDegrees = 0;
+            photo.OublierCadre();
 
-        Perimer(_courante);
-        Redessiner(_courante);
-        Refresh();
-    }
+            Perimer(photo);
+            Redessiner(photo);
+        });
 
     /// <summary>Le cadrage de la photo courante, repris sur toute la planche d'un geste.</summary>
     private void OnCropToAll(object sender, RoutedEventArgs e)
@@ -979,4 +1032,6 @@ internal partial class EditSelectionView : UserControl
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();
 
     private void OnPrint(object sender, RoutedEventArgs e) => _imprimer();
+
+    private void OnMettreEnAttente(object sender, RoutedEventArgs e) => _mettreEnAttente?.Invoke();
 }

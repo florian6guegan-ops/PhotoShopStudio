@@ -41,11 +41,16 @@ public sealed class DiLandImporter
     private readonly OrderService _commandes;
     private readonly IReadOnlyList<Product> _catalogue;
 
+    /// <param name="attente">
+    /// Les commandes mises en attente, pour que celles issues d'une borne meurent avec
+    /// elle. Facultatif : les essais qui ne s'en servent pas n'ont pas à en fabriquer une.
+    /// </param>
     public DiLandImporter(
         DiLandRepository depot,
         OrderService commandes,
         IReadOnlyList<Product> catalogue,
-        string registrePath)
+        string registrePath,
+        AttenteStore? attente = null)
     {
         _depot = depot;
         _commandes = commandes;
@@ -54,8 +59,12 @@ public sealed class DiLandImporter
 
         // à côté du journal, dans les données de Studio : les deux vivent et meurent
         // ensemble (voir KioskOrderJournal.Purge)
-        ArchiveRoot = Path.Combine(
-            Path.GetDirectoryName(registrePath) ?? ".", "archive");
+        ArchiveRoot = Path.Combine(Path.GetDirectoryName(registrePath) ?? ".", "archive");
+
+        // c'est le journal qui sait quand une commande est close ou périmée : c'est donc
+        // lui qui efface ce qui attend en son nom, et non chacun des endroits qui closent
+        // une commande
+        Journal.Attente = attente;
     }
 
     /// <summary>Le suivi des commandes de bornes : ce qui reste à faire, et ce qui a été fait.</summary>
@@ -393,11 +402,46 @@ public sealed class DiLandImporter
         return new DiLandImportOutcome(order, creee, avertissements);
     }
 
+    /// <summary>
+    /// Ce que le client a réglé sur une photo à la borne, tel qu'il faut le reposer dans
+    /// l'écran des photos.
+    /// </summary>
+    /// <param name="Crop">Recadrage en fractions de l'image ; <c>CropSpec.Full</c> si aucun.</param>
+    /// <param name="QuartsDeTour">Rotation par quarts de tour horaires.</param>
+    /// <param name="RedressementDegres">Redressement fin, le « Tilt » de DiLand.</param>
+    /// <param name="Quantite">Nombre d'exemplaires commandés.</param>
+    /// <param name="CodeProduit">
+    /// Produit de la LIGNE d'où vient cette photo, et non le produit majoritaire de la
+    /// commande : une commande mixte 10×15 + 13×18 doit s'ouvrir juste.
+    /// </param>
+    public sealed record CadrageBorne(
+        CropSpec Crop,
+        int QuartsDeTour,
+        double RedressementDegres,
+        int Quantite,
+        string? CodeProduit);
+
     /// <summary>Ce qu'il faut pour ouvrir une commande de borne dans l'écran des photos.</summary>
     /// <param name="PhotosDirectory">Dossier où les photos ont été recopiées.</param>
     /// <param name="ProductCode">Produit majoritaire de la commande, à présélectionner.</param>
     /// <param name="PhotoCount">Nombre de photos recopiées.</param>
-    public sealed record StagedOrder(string PhotosDirectory, string? ProductCode, int PhotoCount);
+    /// <param name="Cadrages">
+    /// Ce que le client a réglé, par nom de fichier.
+    ///
+    /// <b>C'est ce qui manquait au parcours « Modifier ».</b> Il recopie les FICHIERS puis
+    /// rescanne le dossier : l'écran ne voyait donc que des images, et le recadrage, les
+    /// rotations et les quantités du client disparaissaient à l'ouverture. Le parcours
+    /// « Reprendre » (<see cref="Import"/>), lui, les portait déjà — d'où deux tirages
+    /// différents pour la même commande selon le bouton pressé.
+    ///
+    /// Vide quand la commande a été retrouvée par ses seuls fichiers, DiLand l'ayant
+    /// purgée de sa base : il n'y a alors plus rien à reprendre.
+    /// </param>
+    public sealed record StagedOrder(
+        string PhotosDirectory,
+        string? ProductCode,
+        int PhotoCount,
+        IReadOnlyDictionary<string, CadrageBorne> Cadrages);
 
     /// <summary>
     /// Recopie les photos d'une commande de borne dans un dossier de travail, pour qu'on
@@ -437,14 +481,32 @@ public sealed class DiLandImporter
         // exemple. On ne la met à disposition qu'une fois, et on la compte une fois
         var deposees = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var photo in lignes.SelectMany(l => l.Photos))
-        {
-            if (!File.Exists(_depot.PhotoPath(order, photo))) continue;
+        // ce que le client a réglé, relevé au MÊME parcours que la recopie : la donnée est
+        // là depuis toujours, on ne la lisait simplement pas (voir StagedOrder.Cadrages)
+        var cadrages = new Dictionary<string, CadrageBorne>(StringComparer.OrdinalIgnoreCase);
 
-            // la recopie remet la photo en clair : DiLand brouille le début des fichiers
-            // des commandes qu'il a traitées
-            _depot.CopyPhotoTo(order, photo, Path.Combine(destination, photo.FileName), ecraser);
-            deposees.Add(photo.FileName);
+        foreach (var ligne in lignes)
+        {
+            var produit = MatchProduct(ligne.ProductName);
+
+            foreach (var photo in ligne.Photos)
+            {
+                if (!File.Exists(_depot.PhotoPath(order, photo))) continue;
+
+                // la recopie remet la photo en clair : DiLand brouille le début des fichiers
+                // des commandes qu'il a traitées
+                _depot.CopyPhotoTo(order, photo, Path.Combine(destination, photo.FileName), ecraser);
+                deposees.Add(photo.FileName);
+
+                // première occurrence gagne, comme la recopie : la photo n'apparaît qu'une
+                // fois dans la grille, elle ne peut donc porter qu'un cadrage
+                cadrages.TryAdd(photo.FileName, new CadrageBorne(
+                    CropOf(photo),
+                    QuarterTurns(photo.Angle),
+                    photo.FineRotationDegrees,
+                    Math.Max(1, photo.Quantity),
+                    produit?.Code));
+            }
         }
 
         // Rien en base, mais des fichiers sur le disque : c'est une commande que DiLand a
@@ -469,7 +531,8 @@ public sealed class DiLandImporter
         return new StagedOrder(
             destination,
             majoritaire is null ? null : MatchProduct(majoritaire.ProductName)!.Code,
-            deposees.Count);
+            deposees.Count,
+            cadrages);
     }
 
     /// <summary>
@@ -610,8 +673,12 @@ public sealed class DiLandImporter
     /// DiLand l'exprime en PIXELS ; il est ramené en fractions dès la lecture, par
     /// <see cref="DiLandOrderPhoto.FromRaw"/>. Un rectangle incohérent est ignoré plutôt
     /// que de produire un tirage faux.
+    ///
+    /// <b>Lu ici pour les DEUX parcours</b> — « Reprendre » (<see cref="Import"/>) et
+    /// « Modifier » (<see cref="Stage"/>). Deux lectures du même recadrage finiraient par
+    /// diverger, et le même bouton ne tirerait plus la même chose selon l'écran.
     /// </summary>
-    private static CropSpec CropOf(DiLandOrderPhoto photo)
+    internal static CropSpec CropOf(DiLandOrderPhoto photo)
     {
         if (!photo.ApplyCrop) return CropSpec.Full;
 

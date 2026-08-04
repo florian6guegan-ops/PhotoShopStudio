@@ -413,40 +413,54 @@ public sealed class PrintOrchestrator
         // sur du lustré fausse le rendu
         var surface = _minilab.LoadedSurface(machine);
 
-        var handles = new List<string>();
         var cible = machine.ToString();
+        var jobs = new List<De100PrintJob>(pages.Count);
 
-        foreach (var page in pages)
+        // PRÉPARATION — c'est ici que l'arrêt s'examine, et nulle part ailleurs : rien
+        // n'est encore parti, tout est rattrapable. Une fois la commande transmise elle est
+        // entière, et c'est ce qu'on veut : une demi-commande ouverte côté minilab est
+        // exactement le genre d'ordre fantôme qui bloque la file du DE100.
+        for (var i = 0; i < pages.Count; i++)
         {
-            // L'arrêt est examiné ENTRE deux envois, jamais pendant : une commande à
-            // moitié transmise resterait ouverte côté minilab, et c'est exactement le
-            // genre d'ordre fantôme qui bloque la file du DE100.
             if (ct.IsCancellationRequested)
-            {
-                RappelerDuMinilab(order, envelope, handles, machine, progression);
-                throw new PrintCanceledException(DecrireArret(order, handles.Count, pages.Count));
-            }
+                throw new PrintCanceledException(DecrireArret(order, 0, pages.Count));
 
-            var product = page.Product;
+            var page = pages[i];
             var (largeur, longueur) = MinilabPrintSize(page.WidthMm, page.HeightMm, paperWidthMm);
             var image = FitPageToRoll(page, largeur, longueur);
 
-            var job = new De100PrintJob(
-                JobId: MinilabJobId(order.DisplayNumber, envelope.Number, handles.Count + 1),
+            jobs.Add(new De100PrintJob(
+                JobId: MinilabJobId(order.DisplayNumber, envelope.Number, i + 1),
                 ImagePath: image,
                 WidthMm: largeur,
                 HeightMm: longueur,
-                PrintSizeName: MinilabSizeName(product, largeur, longueur),
+                PrintSizeName: MinilabSizeName(page.Product, largeur, longueur),
                 Surface: surface,
-                Copies: page.Copies);
+                Copies: page.Copies));
 
-            handles.Add(_minilab.Submit(job, machine));
             progression?.Report(new PrintProgress(
-                PrintProgress.Envoi, handles.Count, pages.Count, cible));
+                PrintProgress.Envoi, i + 1, pages.Count, cible));
+        }
+
+        // ENVOI — UNE commande minilab pour toute l'enveloppe. Studio en ouvrait une par
+        // photo, ce que rien dans le SDK ne prévoit : sur la commande 04-007 du
+        // 04/08/2026, quatre commandes ouvertes et refermées en 1,2 s ont toutes été
+        // acceptées, et deux tirages sur quatre ne sont jamais sortis. Voir
+        // De100Driver.Submit.
+        var handle = _minilab.Submit(jobs, machine);
+
+        // L'arrêt demandé PENDANT l'envoi reste rattrapable : le SDK sait annuler une
+        // commande que la machine n'a pas encore tirée (PIF_CancelOrder), et c'est le geste
+        // que DiLand ne sait pas faire. Il n'y a plus qu'un handle à rappeler au lieu d'un
+        // par photo, mais le bouton d'arrêt garde exactement le même pouvoir.
+        if (ct.IsCancellationRequested)
+        {
+            RappelerDuMinilab(order, envelope, [handle], machine, progression);
+            throw new PrintCanceledException(DecrireArret(order, jobs.Count, pages.Count));
         }
 
         _store.AppendEvent(order, "minilab-submitted",
-            $"env={envelope.Number}, machine={machine}, commandes=[{string.Join(", ", handles)}]");
+            $"env={envelope.Number}, machine={machine}, commande={handle}, tirages={jobs.Count}");
     }
 
     /// <summary>

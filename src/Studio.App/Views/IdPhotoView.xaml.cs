@@ -39,6 +39,23 @@ public partial class IdPhotoView : UserControl
     private BitmapSource? _detoure;
 
     /// <summary>
+    /// Corrections d'image posées par le module « Corriger », hors noir et blanc et fond
+    /// blanc — ces deux-là restent des cases de cet écran.
+    ///
+    /// Elles manquaient : une photo d'identité prise au comptoir est sous-exposée ou tire
+    /// au jaune comme n'importe quelle autre, et il n'y avait ici aucun moyen de la
+    /// reprendre. Demandé par l'exploitant le 04/08/2026.
+    ///
+    /// Elles valent pour la photo COURANTE : changer de photo dans la bande les remet à
+    /// neutre. Une planche d'identité ne porte qu'un visage — appliquer les réglages de
+    /// l'un à l'autre n'aurait pas de sens, et se remarquerait au tirage.
+    /// </summary>
+    private ImageAdjustments _corrections = new();
+
+    /// <summary>Aperçu corrigé, gardé pour ne pas repasser ImageMagick à chaque redessin.</summary>
+    private BitmapSource? _corrige;
+
+    /// <summary>
     /// Redressement, en degrés — le « Tilt » de DiLand.
     ///
     /// Une photo d'identité prise à main levée penche presque toujours d'un demi-degré ou
@@ -126,17 +143,11 @@ public partial class IdPhotoView : UserControl
         // Le mode redressement se capte sur la FENÊTRE : voir _redressementArme. Sur cet
         // écran-ci, le focus part sur la liste des papiers dès que l'opérateur choisit son
         // tirage — la touche ne serait jamais revenue jusqu'ici.
-        Loaded += (_, _) =>
-        {
-            if (Window.GetWindow(this) is { } fenetre)
-                fenetre.PreviewKeyDown += OnFenetreKeyDown;
-        };
-
-        Unloaded += (_, _) =>
-        {
-            if (Window.GetWindow(this) is { } fenetre)
-                fenetre.PreviewKeyDown -= OnFenetreKeyDown;
-        };
+        //
+        // L'abonnement passe par ToucheFenetre : posé à la main, un second Loaded le
+        // doublait et T — qui est une bascule — jouait deux fois, donc le mode ne
+        // s'armait jamais. Voir ToucheFenetre.
+        _ = new ToucheFenetre(this, OnFenetreKeyDown, auDepart: () => RedressementArme = false);
     }
 
     /// <param name="Capacite">Cases du document visé qui tiennent sur ce papier.</param>
@@ -172,8 +183,15 @@ public partial class IdPhotoView : UserControl
 
         if (_photos.Count == 0)
         {
+            // La plus récente en premier, comme sur la grille des tirages : la photo
+            // d'identité qu'on vient de prendre est en bout de carte.
+            //
+            // Les PDF sont écartés : on ne fait pas une photo d'identité depuis un
+            // document, et la détection de visage n'aurait rien à y chercher.
             var files = await Task.Run(
-                () => PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct),
+                () => PhotoScanner.TrierParDateDecroissante(
+                    PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct)
+                        .Where(f => !PhotoScanner.IsPdf(f))),
                 ct);
             foreach (var file in files)
                 _photos.Add(new StripItem(file));
@@ -221,9 +239,12 @@ public partial class IdPhotoView : UserControl
         foreach (var p in _photos) p.Selected = p == item;
         _current = item;
 
-        // détourage et redressement appartiennent à la photo précédente : les garder
-        // afficherait le fond blanc et l'inclinaison d'un autre client
+        // détourage, corrections et redressement appartiennent à la photo précédente : les
+        // garder afficherait le fond blanc, l'exposition et l'inclinaison d'un autre client
         _detoure = null;
+        _corrige = null;
+        _corrections = new ImageAdjustments();
+        MontrerLesCorrections();
         WhiteBackgroundCheck.IsChecked = false;
         Redresser(0);
 
@@ -274,16 +295,25 @@ public partial class IdPhotoView : UserControl
             return;
         }
 
-        var corrections = new ImageAdjustments
-        {
-            Grayscale = GrayscaleCheck.IsChecked == true,
-            WhiteBackground = WhiteBackgroundCheck.IsChecked == true,
-        };
-
         Navigator.Go(
             new MailSendView([new MailSendView.PhotoAEnvoyer(
-                _current.Path, _crop, 0, _redressement, corrections)]),
+                _current.Path, _crop, 0, _redressement, ReglagesRetenus())]),
             "Envoyer les photos par courriel");
+    }
+
+    /// <summary>
+    /// Tout ce qui sera appliqué aux pixels : les corrections du module, plus les deux
+    /// cases de cet écran.
+    ///
+    /// Un seul endroit, parce qu'il y a trois sorties — la planche, le courriel et
+    /// l'aperçu — et qu'une quatrième oubliée tirerait autre chose que ce qu'on montre.
+    /// </summary>
+    private ImageAdjustments ReglagesRetenus()
+    {
+        var reglages = _corrections.Clone();
+        reglages.Grayscale = GrayscaleCheck.IsChecked == true;
+        reglages.WhiteBackground = WhiteBackgroundCheck.IsChecked == true;
+        return reglages;
     }
 
     /// <summary>
@@ -424,7 +454,7 @@ public partial class IdPhotoView : UserControl
         if (WhiteBackgroundCheck.IsChecked != true)
         {
             _detoure = null;
-            ApplyGrayscalePreview();
+            await RecalculerLApercuCorrigeAsync();  // les corrections repartent de l'original
             return;
         }
 
@@ -464,13 +494,24 @@ public partial class IdPhotoView : UserControl
         finally
         {
             Mouse.OverrideCursor = null;
-            ApplyGrayscalePreview();
+
+            // le détourage vient de changer la base : l'aperçu corrigé est à refaire
+            // par-dessus, sans quoi il montrerait encore l'ancien fond
+            await RecalculerLApercuCorrigeAsync();
         }
     }
 
+    /// <summary>
+    /// L'aperçu, dans l'ordre du RENDU : fond blanc, puis corrections, puis noir et blanc.
+    ///
+    /// C'est celui d'<see cref="ImageAdjuster.Apply"/>, et il ne doit pas en différer : le
+    /// fond blanc raisonne sur les couleurs d'origine (après une correction, le fond ne
+    /// ressemblerait plus à ce que le pourtour a mesuré), et le noir et blanc vient en
+    /// dernier, sans quoi les réglages de couleur n'auraient plus de prise.
+    /// </summary>
     private void ApplyGrayscalePreview()
     {
-        var source = _detoure ?? _displayBitmap;
+        var source = _corrige ?? _detoure ?? _displayBitmap;
         if (source is null) return;
 
         if (GrayscaleCheck.IsChecked == true)
@@ -484,6 +525,103 @@ public partial class IdPhotoView : UserControl
             Photo.Source = source;
         }
     }
+
+    // ----- corrections -----
+
+    /// <summary>
+    /// Ouvre le module de corrections sur la photo courante — le même écran que sur les
+    /// tirages, avec les mêmes réglages.
+    ///
+    /// Le noir et blanc et le fond blanc n'y sont PAS passés : ce sont des cases de cet
+    /// écran-ci, et les laisser aussi dans le module donnerait deux commandes pour un même
+    /// réglage, dont l'une mentirait dès qu'on toucherait l'autre.
+    /// </summary>
+    private void OnCorrect(object sender, RoutedEventArgs e)
+    {
+        if (_current is null)
+        {
+            MessageBox.Show("Choisissez d'abord une photo dans la bande du bas.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var photo = _current.Path;
+        Navigator.Go(
+            new AdjustView([photo], _corrections, reglages =>
+            {
+                // un exemplaire à nous : l'écran des corrections garde le sien, et un objet
+                // partagé se ferait modifier sous nos pieds à la prochaine ouverture
+                _corrections = reglages.Clone();
+
+                // les deux cases de cet écran restent maîtresses de leur réglage
+                _corrections.Grayscale = false;
+                _corrections.WhiteBackground = false;
+
+                _ = RecalculerLApercuCorrigeAsync();
+            }),
+            "Corrections");
+    }
+
+    /// <summary>
+    /// Refait l'aperçu corrigé à partir de ce qui est déjà à l'écran, sur un fil de fond.
+    ///
+    /// Le calcul porte sur la vignette de 1600 px, pas sur l'original : quelques
+    /// millisecondes, mais l'écran ne doit pas se figer pendant qu'un client regarde.
+    /// Le TIRAGE, lui, refait tout en pleine résolution — c'est <see cref="ImagePipeline"/>
+    /// qui applique les mêmes <see cref="ImageAdjustments"/>.
+    /// </summary>
+    private async Task RecalculerLApercuCorrigeAsync()
+    {
+        MontrerLesCorrections();
+
+        var depart = _detoure ?? _displayBitmap;
+        if (depart is null) return;
+
+        if (_corrections.IsNeutral)
+        {
+            _corrige = null;
+            ApplyGrayscalePreview();
+            return;
+        }
+
+        var reglages = _corrections.Clone();
+        var png = EnPng(depart);
+
+        try
+        {
+            var octets = await Task.Run(() =>
+            {
+                using var image = new ImageMagick.MagickImage(png);
+                ImageAdjuster.Apply(image, reglages);
+                return image.ToByteArray(ImageMagick.MagickFormat.Png);
+            });
+
+            _corrige = ToBitmap(octets);
+        }
+        catch (Exception ex)
+        {
+            // l'aperçu n'est pas le tirage : on montre la photo non corrigée plutôt que
+            // de bloquer l'écran, et le journal garde de quoi comprendre
+            _corrige = null;
+            FileLog.Write("Aperçu corrigé impossible (photo d'identité)", ex);
+        }
+
+        ApplyGrayscalePreview();
+    }
+
+    private static byte[] EnPng(BitmapSource source)
+    {
+        var encodeur = new PngBitmapEncoder();
+        encodeur.Frames.Add(BitmapFrame.Create(source));
+
+        using var flux = new MemoryStream();
+        encodeur.Save(flux);
+        return flux.ToArray();
+    }
+
+    /// <summary>Dit à l'opérateur que des corrections sont posées — sinon rien ne le montre.</summary>
+    private void MontrerLesCorrections() =>
+        CorrectionsText.Text = _corrections.IsNeutral ? "" : "corrections posées";
 
     // ----- gabarit et dessin -----
 
@@ -925,14 +1063,9 @@ public partial class IdPhotoView : UserControl
         }
 
         var services = App.Services;
-        var adjustments = new ImageAdjustments
-        {
-            Grayscale = GrayscaleCheck.IsChecked == true,
-            WhiteBackground = WhiteBackgroundCheck.IsChecked == true,
-        };
         var items = new List<DraftItem>
         {
-            new(_current.Path, choice.Product, _quantity, _crop, 0, _redressement, null, adjustments, _copies,
+            new(_current.Path, choice.Product, _quantity, _crop, 0, _redressement, null, ReglagesRetenus(), _copies,
                 FinishCombo.SelectedItem as string,
                 // la case suit le document, jamais celle inscrite au produit
                 SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm)),
@@ -942,36 +1075,37 @@ public partial class IdPhotoView : UserControl
         Mouse.OverrideCursor = Cursors.Wait;
         try
         {
-            var order = await Task.Run(() =>
-            {
-                var created = services.Orders.CreateOrder("Operateur", items);
-                foreach (var envelope in created.Envelopes)
-                    services.Printer.PrintEnvelope(created, envelope);
-                return created;
-            });
+            // Seule la création de la commande est attendue — c'est court : un numéro, une
+            // enveloppe, la copie de l'original. Le RENDU de la planche et l'envoi à la
+            // machine partent en tâche de fond, comme sur les tirages.
+            //
+            // Cet écran les attendait, puis affichait une boîte de dialogue : c'était le
+            // seul parcours qui retenait l'opérateur devant sa machine pendant que le
+            // client suivant attendait. Corrigé le 04/08/2026 à sa demande.
+            var order = await Task.Run(() => services.Orders.CreateOrder("Operateur", items));
 
             Mouse.OverrideCursor = null;
-            MessageBox.Show(
-                $"Commande {order.DisplayNumber} envoyée à l'impression.\n" +
-                $"{_quantity} planche(s) de {_copies} photo(s) — total {order.Total:0.00} €",
-                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
-            Navigator.Home(new HomeView(), "Studio Photo");
-        }
-        catch (PrinterNotReadyException ex)
-        {
-            // Pas un échec : la commande est rangée en attente et repartira seule. Le dire
-            // comme une erreur pousserait l'opérateur à recliquer, donc à tirer en double.
-            Mouse.OverrideCursor = null;
-            FileLog.Write("Planche identité mise en attente d'imprimante", ex);
-            MessageBox.Show(ex.Message, "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            services.Impressions.Lancer(order,
+                imprimer: (avancement, arret) =>
+                {
+                    foreach (var envelope in order.Envelopes)
+                        services.Printer.PrintEnvelope(order, envelope,
+                            progression: avancement, ct: arret);
+                });
+
+            // On rend la main IMMÉDIATEMENT. Plus de boîte de dialogue de succès :
+            // l'avancement, l'attente d'imprimante et les échecs se lisent tous dans le
+            // bandeau du haut, qui est justement fait pour ça.
             Navigator.Home(new HomeView(), "Studio Photo");
         }
         catch (Exception ex)
         {
+            // seule la création de la commande peut encore échouer ici ; l'impression, elle,
+            // se plaint dans le bandeau
             Mouse.OverrideCursor = null;
-            FileLog.Write("Échec de l'impression (planche identité)", ex);
-            MessageBox.Show($"Échec de l'impression : {ex.Message}\n\n" +
-                            "La commande est visible dans « Commandes du jour » pour réimpression.",
+            FileLog.Write("Échec de la création de la commande (planche identité)", ex);
+            MessageBox.Show($"Commande impossible à créer : {ex.Message}",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
             PrintButton.IsEnabled = true;
         }

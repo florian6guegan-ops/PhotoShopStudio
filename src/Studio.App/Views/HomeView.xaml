@@ -162,14 +162,65 @@
             </Button>
         </UniformGrid>
 
-        <!-- 3. le récepteur des commandes de bornes -->
+        <!-- 3. ce qui attend, puis le récepteur des commandes de bornes -->
         <Grid Grid.Row="2">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <DockPanel Grid.Row="0" Margin="2,0,2,10">
+            <!-- Les commandes mises de côté pour servir quelqu'un d'autre. Le bandeau
+                 DISPARAÎT quand il n'y a rien en attente : un titre suivi du vide ferait
+                 croire à un écran cassé, et mangerait la place de la liste des bornes. -->
+            <Border x:Name="AttentePanel" Grid.Row="0" Background="#1B2A17" CornerRadius="12"
+                    Padding="14,12" Margin="2,0,2,14" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="AttenteTitle" Text="En attente" FontSize="20" FontWeight="Bold"
+                               Foreground="{StaticResource TitleBrush}" Margin="0,0,0,10"/>
+
+                    <ItemsControl x:Name="AttenteList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#24361F" CornerRadius="10" Padding="14,10"
+                                        Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Titre}" FontSize="18"
+                                                       FontWeight="SemiBold" Foreground="White"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Resume}" FontSize="14"
+                                                       Foreground="#DDFFFFFF"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Depuis}" FontSize="13"
+                                                       Foreground="#AAFFFFFF"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                    VerticalAlignment="Center">
+                                            <Button Style="{StaticResource ActionLigne}" Content="Reprendre"
+                                                    Tag="{Binding}" Click="OnAttenteReprendre"
+                                                    Background="{StaticResource OkBrush}"
+                                                    ToolTip="Rouvre la commande telle que vous l'avez laissée"/>
+                                            <Button Style="{StaticResource ActionLigne}" Content="Abandonner"
+                                                    Tag="{Binding}" Click="OnAttenteAbandonner"
+                                                    Background="#99B3261E" Margin="10,0,0,0"
+                                                    ToolTip="Retire la commande de l'attente — les photos ne sont pas touchées"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <DockPanel Grid.Row="1" Margin="2,0,2,10">
                 <Button DockPanel.Dock="Right" Style="{StaticResource Secondaire}" Margin="8,0,0,0"
                         Click="OnKioskHistory" AutomationProperties.Name="Historique des bornes">
                     Historique
@@ -182,7 +233,7 @@
                            Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center"/>
             </DockPanel>
 
-            <Border Grid.Row="1" Background="#0E141A" CornerRadius="12" Padding="8">
+            <Border Grid.Row="2" Background="#0E141A" CornerRadius="12" Padding="8">
                 <Grid>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="KioskList">
@@ -242,10 +293,23 @@
 
                                             <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                         VerticalAlignment="Center">
-                                                <Button Style="{StaticResource ActionLigne}" Content="Modifier"
+                                                <!-- Le travail mis de côté se voit ici aussi :
+                                                     l'accueil est l'écran qu'on regarde en
+                                                     servant un client. -->
+                                                <TextBlock Text="{Binding AttenteLabel}" FontSize="14"
+                                                           FontWeight="SemiBold" Foreground="White"
+                                                           VerticalAlignment="Center" Margin="0,0,12,0"
+                                                           Visibility="{Binding AttenteVisible}"/>
+                                                <Button Style="{StaticResource ActionLigne}" Content="✕ attente"
+                                                        Tag="{Binding}" Click="OnKioskDiscardDraft"
+                                                        Visibility="{Binding AttenteVisible}"
+                                                        IsEnabled="{Binding ActionsPossibles}"
+                                                        ToolTip="Abandonne le travail mis de côté et repart du cadrage que le client a validé à la borne"/>
+                                                <Button Style="{StaticResource ActionLigne}"
+                                                        Content="{Binding ModifierLabel}"
                                                         Tag="{Binding}" Click="OnKioskModify"
                                                         IsEnabled="{Binding ActionsPossibles}"
-                                                        ToolTip="Recadrer et corriger avant de tirer"/>
+                                                        ToolTip="Recadrer et corriger avant de tirer — le cadrage validé par le client est conservé"/>
                                                 <!-- Le client a commandé un format standard et veut
                                                      autre chose au comptoir : on ouvre en taille libre. -->
                                                 <Button Style="{StaticResource ActionLigne}" Content="Personnalisé…"

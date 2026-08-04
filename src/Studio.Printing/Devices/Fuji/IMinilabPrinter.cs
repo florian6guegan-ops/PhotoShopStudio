@@ -27,8 +27,18 @@ public interface IMinilabPrinter
     /// </summary>
     int LoadedPaperWidthMm(char machineId);
 
-    /// <summary>Envoie un tirage et renvoie le handle de commande attribué par le minilab.</summary>
-    string Submit(De100PrintJob job, char machineId);
+    /// <summary>
+    /// Envoie TOUS les tirages d'une enveloppe et renvoie le handle de la commande
+    /// attribué par le minilab.
+    ///
+    /// Une enveloppe = UNE commande DE100, parce que c'est ce qu'attend le SDK
+    /// (<c>PIF_Print</c> prend le handle en paramètre, <c>PIF_GetPrintInfo</c> relit par
+    /// indice) et ce que fait le pilote de DiLand. Envoyer photo par photo faisait perdre
+    /// des tirages sans un mot — voir <c>De100Driver.Submit</c>.
+    ///
+    /// La commande part entière ou pas du tout : un refus en cours de route l'annule.
+    /// </summary>
+    string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId);
 
     /// <summary>
     /// Rappelle une commande déjà transmise, tant que la machine ne l'a pas tirée.
@@ -73,6 +83,14 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         lock (_sync)
         {
             if (_connected && _client.IsConnected) return;
+
+            // Le relais est neuf : ce qu'on lui avait demandé ne tient plus. Sans cette
+            // remise à zéro, `_subscribed` gardait la machine d'AVANT la coupure, on ne se
+            // réabonnait donc jamais, et plus aucun tirage ne recevait son verdict — pour
+            // toute la vie de l'application, en silence. Le relais redémarre : c'est arrivé
+            // deux fois le 04/08/2026.
+            _subscribed.Clear();
+
             _client.ConnectAsync().GetAwaiter().GetResult();
             _connected = true;
         }
@@ -127,7 +145,7 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         return etats;
     }
 
-    public string Submit(De100PrintJob job, char machineId)
+    public string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId)
     {
         EnsureConnected();
 
@@ -138,7 +156,7 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
                 _client.SubscribeAsync(machineId).GetAwaiter().GetResult();
         }
 
-        return _client.SubmitAsync(job, machineId).GetAwaiter().GetResult();
+        return _client.SubmitAsync(jobs, machineId).GetAwaiter().GetResult();
     }
 
     public void Cancel(string orderHandle)

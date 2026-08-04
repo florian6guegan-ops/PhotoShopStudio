@@ -35,8 +35,15 @@ public partial class KioskGridView : UserControl
 
         if (_photos.Count == 0)
         {
+            // La plus récente en premier, comme sur l'écran de l'opérateur.
+            //
+            // Les PDF sont écartés : la borne est en libre-service, et éclater un document
+            // en pages devant un client sans personne pour l'aider ne mène nulle part.
+            // C'est au comptoir que ça se traite.
             var files = await Task.Run(
-                () => PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct),
+                () => PhotoScanner.TrierParDateDecroissante(
+                    PhotoScanner.Scan(_rootPath, _avecSousDossiers, PhotoScanner.MaxAffichable, ct)
+                        .Where(f => !PhotoScanner.IsPdf(f))),
                 ct);
             foreach (var file in files)
                 _photos.Add(new KioskPhoto(file, UpdateSummary));

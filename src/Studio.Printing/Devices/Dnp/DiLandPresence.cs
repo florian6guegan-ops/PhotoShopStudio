@@ -51,8 +51,14 @@ public static class DiLandPresence
     }
 
     /// <summary>
-    /// Les DNP que le spouleur Windows connaît, pour les montrer « en veille » quand le
-    /// SDK n'en découvre aucune.
+    /// Les DNP que le spouleur Windows connaît, quand le SDK n'en découvre aucune.
+    ///
+    /// <b>Leur état est LU, il n'est plus supposé.</b> Ces machines s'affichaient « en
+    /// veille » par défaut — or le SDK est aussi muet quand DiLand tient le port USB,
+    /// c'est-à-dire presque en permanence en boutique. L'écran d'état annonçait donc une
+    /// machine endormie alors qu'elle était prête, et même pendant qu'elle tirait
+    /// (signalé le 04/08/2026). Le spouleur, lui, répond toujours : c'est par lui que
+    /// Studio imprime. Voir <see cref="DnpSpouleur"/>.
     ///
     /// Cette énumération vit CÔTÉ APPLICATION et surtout pas dans le relais 32 bits :
     /// lister les imprimantes peut rester suspendu quand une file ne répond pas, et le
@@ -73,6 +79,8 @@ public static class DiLandPresence
             {
                 if (!EstUneDnp(nom)) continue;
 
+                var spouleur = DnpSpouleur.Lire(nom);
+
                 trouvees.Add(new DnpPrinterInfo(
                     PortNumber: -1,
                     SerialNumber: "",
@@ -82,9 +90,11 @@ public static class DiLandPresence
                     MediaInitialCount: 0,
                     MediaSize: DnpMediaSize.None,
                     MediaClass: DnpMediaClass.Unknown,
-                    QueuedPrints: 0,
+                    // ce que le spouleur a encore à sortir : le SDK, lui, ne le dira pas
+                    QueuedPrints: spouleur.PhotosRestantes,
                     LifetimePrints: 0,
-                    WindowsQueueName: nom));
+                    WindowsQueueName: nom,
+                    Spouleur: spouleur));
             }
 
             return trouvees;

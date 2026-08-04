@@ -329,13 +329,25 @@ public partial class MachineBarView : UserControl
             Lettre = "D";
             Encres = [];
 
-            // Machine connue de Windows mais muette au SDK : c'est une DS620 en veille
-            // prolongée. Elle ne disparaît plus du bandeau — l'opérateur doit pouvoir
-            // distinguer « endormie » de « débranchée », et savoir qu'un tirage la
-            // réveillera sans qu'il ait à toucher la machine.
+            // Machine muette au SDK. Deux raisons très différentes, et c'est le SPOULEUR
+            // qui les départage : soit elle dort vraiment, soit DiLand tient le port USB —
+            // ce qui est le cas presque en permanence en boutique. Afficher « en veille »
+            // dans les deux cas, c'est ce qui la déclarait endormie pendant qu'elle tirait.
             if (info.EndormieOuInjoignable)
             {
                 Nom = info.WindowsQueueName!;
+
+                if (info.Spouleur is { } file && info.VueParLeSpouleur)
+                {
+                    Etat = DnpSpouleur.Decrire(file);
+                    Papier = "consommables lisibles seulement DiLand fermé";
+                    Restant = file.PhotosRestantes > 0
+                        ? $"{file.PhotosRestantes} photo(s) à sortir"
+                        : "rien dans la file";
+                    Fond = CouleurSpouleur(file.Etat);
+                    return;
+                }
+
                 Etat = "En veille";
                 Papier = "consommables inconnus tant qu'elle dort";
                 Restant = "elle se réveille au premier tirage";
@@ -364,6 +376,22 @@ public partial class MachineBarView : UserControl
                 : info.Status.IsBusy ? Pinceau(0x1B, 0x5E, 0x8A)
                 : Pinceau(0x2E, 0x6B, 0x33);
         }
+
+        /// <summary>
+        /// Le fond d'une DNP vue par le seul spouleur — les MÊMES couleurs que le minilab,
+        /// pour que l'état se lise d'un coup d'œil sans avoir à savoir de quelle machine il
+        /// s'agit : vert prête, bleu en train de tirer, orangé en attente d'un geste,
+        /// rouge en panne, gris hors ligne.
+        /// </summary>
+        private static Brush CouleurSpouleur(EtatFileDnp etat) => etat switch
+        {
+            EtatFileDnp.Prete => Pinceau(0x2E, 0x6B, 0x33),
+            EtatFileDnp.Impression => Pinceau(0x1B, 0x5E, 0x8A),
+            EtatFileDnp.EnPause => Pinceau(0x8A, 0x62, 0x0E),
+            EtatFileDnp.Erreur => Pinceau(0xB3, 0x26, 0x1E),
+            EtatFileDnp.HorsLigne => Pinceau(0x4A, 0x4A, 0x4A),
+            _ => Pinceau(0x37, 0x47, 0x4F),
+        };
 
         /// <summary>
         /// L'état de la machine en toutes lettres.

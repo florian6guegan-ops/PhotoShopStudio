@@ -36,10 +36,14 @@ public class MinilabRoutingTests : IDisposable
 
         public int LoadedPaperWidthMm(char machineId) => PaperWidthMm;
 
-        public string Submit(De100PrintJob job, char machineId)
+        /// <summary>Commandes reçues, chacune avec toutes ses photos. Une enveloppe = une entrée.</summary>
+        public List<(IReadOnlyList<De100PrintJob> Jobs, char Machine)> Commandes { get; } = [];
+
+        public string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId)
         {
-            Submitted.Add((job, machineId));
-            return $"OH-{Submitted.Count}";
+            Commandes.Add((jobs, machineId));
+            foreach (var job in jobs) Submitted.Add((job, machineId));
+            return $"OH-{Commandes.Count}";
         }
 
         /// <summary>Commandes rappelées, dans l'ordre : c'est ce que l'annulation doit produire.</summary>

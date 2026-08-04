@@ -166,9 +166,15 @@
                             ToolTip="Une planche avec les vignettes NUMÉROTÉES de la sélection, au format choisi — le client coche, on tire ensuite"
                             Click="OnIndexSheet">Planche index</Button>
                     <Button x:Name="ModifyButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="26,0" FontSize="18" Margin="0,0,20,0" IsEnabled="False"
+                            Padding="26,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
                             ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"
                             Click="OnModify">Modifier</Button>
+                    <!-- Le geste du comptoir : un client s'absente, un autre attend. La
+                         commande part sur l'accueil, sous « En attente ». -->
+                    <Button x:Name="AttenteButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="20,0" FontSize="18" Margin="0,0,20,0"
+                            ToolTip="Mettre cette commande de côté pour servir quelqu'un d'autre. Elle vous attend sur l'accueil et se rouvre telle que vous la laissez."
+                            Click="OnMettreEnAttente">⏸  Mettre en attente</Button>
                     <TextBlock x:Name="TotalText" Style="{StaticResource Valeur}" Margin="0,0,16,0"/>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
                             Click="OnPrint" IsEnabled="False">

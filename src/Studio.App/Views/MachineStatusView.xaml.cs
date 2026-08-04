@@ -27,19 +27,47 @@ public partial class MachineStatusView : UserControl
     /// </summary>
     private const int SeuilTiragesBas = 25;
 
+    /// <summary>
+    /// Cadence de relecture.
+    ///
+    /// L'écran ne se lisait qu'à l'ouverture : le nombre de photos restantes y serait resté
+    /// figé pendant toute une commande, ce qui est exactement le moment où on le regarde.
+    /// Dix secondes suffisent — une DS620 met une quinzaine de secondes par tirage.
+    /// </summary>
+    private static readonly TimeSpan Periode = TimeSpan.FromSeconds(10);
+
+    private readonly System.Windows.Threading.DispatcherTimer _minuteur;
+
     public MachineStatusView()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await RefreshAsync();
+
+        _minuteur = new System.Windows.Threading.DispatcherTimer { Interval = Periode };
+        _minuteur.Tick += async (_, _) => await RefreshAsync(discret: true);
+
+        Loaded += async (_, _) =>
+        {
+            _minuteur.Start();
+            await RefreshAsync();
+        };
+
+        Unloaded += (_, _) => _minuteur.Stop();
     }
 
     private async void OnRefresh(object sender, RoutedEventArgs e) => await RefreshAsync();
 
-    private async Task RefreshAsync()
+    /// <param name="discret">
+    /// Relecture automatique : ni sablier ni liste vidée. Les faire à chaque tic ferait
+    /// clignoter l'écran toutes les dix secondes et volerait le curseur à l'opérateur.
+    /// </param>
+    private async Task RefreshAsync(bool discret = false)
     {
-        MessageText.Text = "Interrogation des machines…";
-        MachinesList.ItemsSource = null;
-        Mouse.OverrideCursor = Cursors.Wait;
+        if (!discret)
+        {
+            MessageText.Text = "Interrogation des machines…";
+            MachinesList.ItemsSource = null;
+            Mouse.OverrideCursor = Cursors.Wait;
+        }
 
         var lignes = new List<MachineRow>();
         var minilabMuet = (string?)null;
@@ -61,7 +89,17 @@ public partial class MachineStatusView : UserControl
         // tant qu'il tourne, donc son absence est une situation normale et non une panne.
         try
         {
-            foreach (var dnp in await App.Services.Minilab.DnpSnapshotAsync())
+            var dnps = await App.Services.Minilab.DnpSnapshotAsync();
+
+            // Le SDK ne la voit pas — DiLand tient le port, ou elle dort. On la montre
+            // quand même, avec ce que le SPOULEUR en sait : c'est par lui que Studio
+            // imprime, et il dit l'essentiel, à savoir si la machine sort du papier et
+            // combien il lui en reste. L'écran se contentait jusqu'ici de conseiller de
+            // fermer DiLand, ce qu'on ne peut pas faire en pleine journée.
+            if (dnps.Count == 0)
+                dnps = await Task.Run(() => DiLandPresence.VuesParWindows());
+
+            foreach (var dnp in dnps)
                 lignes.Add(new MachineRow(dnp));
         }
         catch (Exception ex)
@@ -84,10 +122,17 @@ public partial class MachineStatusView : UserControl
                     "La DS620 (DNP) n'apparaît pas : DiLand est ouvert et garde son port USB " +
                     "pour lui. Fermez DiLand — elle réapparaîtra toute seule en quelques secondes.";
             }
+            else if (minilabMuet is null && lignes.Any(l => l.EstDnp) && DiLandPresence.IsRunning())
+            {
+                MessageText.Text =
+                    "DiLand est ouvert et garde le port USB de la DS620 : son état vient du " +
+                    "spouleur Windows, qui dit ce qu'elle imprime mais pas ce qu'il reste de " +
+                    "rouleau. Fermez DiLand pour lire ses consommables.";
+            }
         }
         finally
         {
-            Mouse.OverrideCursor = null;
+            if (!discret) Mouse.OverrideCursor = null;
         }
     }
 
@@ -111,6 +156,16 @@ public partial class MachineStatusView : UserControl
             SousTitre = horsLigne
                 ? "Hors ligne : aucune information disponible."
                 : $"{Etat(info.Status)} · série {info.SerialNumber}";
+
+            EtatCouleur = info.Status switch
+            {
+                De100PrinterStatus.Ready => Pinceau(0x2E, 0x6B, 0x33),
+                De100PrinterStatus.Printing or De100PrinterStatus.Busy => Pinceau(0x1B, 0x5E, 0x8A),
+                De100PrinterStatus.Sleep => Pinceau(0x37, 0x47, 0x4F),
+                De100PrinterStatus.Offline => Pinceau(0x4A, 0x4A, 0x4A),
+                De100PrinterStatus.ErrorProcessingCanBeContinued => Pinceau(0x8A, 0x62, 0x0E),
+                _ => Pinceau(0xB3, 0x26, 0x1E),
+            };
 
             DetailVisibility = horsLigne ? Visibility.Collapsed : Visibility.Visible;
 
@@ -172,12 +227,57 @@ public partial class MachineStatusView : UserControl
                 : "DS620 (DNP)" +
                   (string.IsNullOrWhiteSpace(info.SerialNumber) ? "" : $" — série {info.SerialNumber}");
 
+            // Muette au SDK ne veut PAS dire endormie : DiLand tient le port USB presque en
+            // permanence, et c'est ce qui affichait « en veille » machine allumée, prête, et
+            // même en train de tirer. Le spouleur, lui, répond toujours.
+            if (info.EndormieOuInjoignable && info.VueParLeSpouleur)
+            {
+                var file = info.Spouleur!;
+
+                EtatCouleur = CouleurSpouleur(file.Etat);
+                SousTitre = DnpSpouleur.Decrire(file) +
+                            " · consommables lisibles seulement DiLand fermé";
+
+                DetailVisibility = Visibility.Visible;
+                Consommables = [];
+                Formats = [];
+                Compteur = "";
+
+                Papier = file.PhotosRestantes == 0
+                    ? "Rien dans la file d'impression."
+                    : file.PhotosRestantes == 1
+                        ? "1 photo reste à sortir."
+                        : $"{file.PhotosRestantes} photos restent à sortir.";
+
+                Alerte = file.Etat switch
+                {
+                    EtatFileDnp.Erreur => file.Message + " Le tirage reprendra tout seul une " +
+                                          "fois la machine remise en état.",
+                    EtatFileDnp.EnPause => "La file d'impression est EN PAUSE : rien ne sortira " +
+                                           "tant qu'elle n'est pas relancée depuis Windows.",
+                    EtatFileDnp.HorsLigne => "Windows la déclare hors ligne : vérifiez le câble " +
+                                             "et l'alimentation.",
+                    _ => "",
+                };
+                AlerteVisibility = Alerte.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                return;
+            }
+
             SousTitre = info.EndormieOuInjoignable
                 ? "En veille — elle se réveillera au premier tirage. Ses consommables ne " +
                   "sont lisibles que machine réveillée."
                 : horsLigne
                     ? "Hors ligne : aucune information disponible."
                     : $"{EtatDnp(info.Status)} · micrologiciel {info.FirmwareVersion}";
+
+            EtatCouleur = info.EndormieOuInjoignable
+                ? Pinceau(0x37, 0x47, 0x4F)
+                : horsLigne ? Pinceau(0x4A, 0x4A, 0x4A)
+                : info.Status.IsFault ? Pinceau(0xB3, 0x26, 0x1E)
+                : info.Status.NeedsOperator ? Pinceau(0x8A, 0x62, 0x0E)
+                : info.Status.IsBusy ? Pinceau(0x1B, 0x5E, 0x8A)
+                : info.Status.IsReady ? Pinceau(0x2E, 0x6B, 0x33)
+                : Pinceau(0x37, 0x47, 0x4F);
 
             DetailVisibility = horsLigne ? Visibility.Collapsed : Visibility.Visible;
             Consommables = [];
@@ -224,6 +324,33 @@ public partial class MachineStatusView : UserControl
 
         /// <summary>Vrai pour une DNP : l'écran s'en sert pour expliquer une absence.</summary>
         public bool EstDnp { get; }
+
+        /// <summary>
+        /// La pastille d'état, MÊMES COULEURS pour toutes les machines : vert prête, bleu
+        /// en train de tirer, orangé un geste à faire, rouge en panne, gris hors ligne,
+        /// ardoise en veille.
+        ///
+        /// L'écran n'en portait aucune : tout y était du texte, et il fallait lire chaque
+        /// ligne pour savoir laquelle des machines demandait quelque chose.
+        /// </summary>
+        public Brush EtatCouleur { get; } = Brushes.Transparent;
+
+        private static Brush Pinceau(byte r, byte v, byte b)
+        {
+            var brosse = new SolidColorBrush(Color.FromRgb(r, v, b));
+            brosse.Freeze();
+            return brosse;
+        }
+
+        private static Brush CouleurSpouleur(EtatFileDnp etat) => etat switch
+        {
+            EtatFileDnp.Prete => Pinceau(0x2E, 0x6B, 0x33),
+            EtatFileDnp.Impression => Pinceau(0x1B, 0x5E, 0x8A),
+            EtatFileDnp.EnPause => Pinceau(0x8A, 0x62, 0x0E),
+            EtatFileDnp.Erreur => Pinceau(0xB3, 0x26, 0x1E),
+            EtatFileDnp.HorsLigne => Pinceau(0x4A, 0x4A, 0x4A),
+            _ => Pinceau(0x37, 0x47, 0x4F),
+        };
 
         public string Titre { get; }
         public string SousTitre { get; }

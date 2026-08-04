@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Studio.Core.Catalog;
 using Studio.Core.Domain;
+using Studio.Core.Imaging;
 using Studio.Core.Mail;
 using Studio.Imaging;
 using Studio.Imaging.Faces;
@@ -33,6 +34,15 @@ public sealed class AppServices
     public required string DataRoot { get; init; }
     public string CatalogDir => Path.Combine(DataRoot, "catalog");
     public string ProductsJson => Path.Combine(CatalogDir, "products.json");
+
+    /// <summary>
+    /// Le cache du poste : vignettes, et pages de PDF rendues.
+    ///
+    /// Rien de ce qui s'y trouve n'est une donnée de la boutique — tout s'y refabrique.
+    /// Il est notamment le SEUL endroit où l'on écrit les pages d'un PDF : le dossier
+    /// ouvert est souvent la clé du client, sur laquelle on ne pose rien.
+    /// </summary>
+    public string CacheDir => Path.Combine(DataRoot, "cache");
 
     public required ProductCatalog Catalog { get; set; }
     public required OrderFolderStore Store { get; init; }
@@ -67,7 +77,24 @@ public sealed class AppServices
         new DiLandRepository(DiLandRepository.DefaultRoot, Path.Combine(DataRoot, "diland")),
         Orders,
         Catalog.All.ToList(),
-        Path.Combine(DataRoot, "diland", "reprises.json"));
+        Path.Combine(DataRoot, "diland", "reprises.json"),
+        CommandesEnAttente);
+
+    private AttenteStore? _attenteStore;
+
+    /// <summary>
+    /// Les commandes que l'opérateur a mises de côté pour servir quelqu'un d'autre.
+    ///
+    /// <b>À ne pas confondre avec <see cref="Attente"/></b>, qui est la file des tirages
+    /// que l'IMPRIMANTE fait attendre. Ici, c'est l'opérateur qui met de côté, et rien
+    /// n'est encore commandé.
+    ///
+    /// Hors du dossier de DiLand, et non sous lui : une commande mise de côté peut venir
+    /// d'une clé USB ou d'un téléphone tout autant que d'une borne. C'est en préparant une
+    /// commande AU COMPTOIR qu'on a le plus besoin de faire autre chose.
+    /// </summary>
+    public AttenteStore CommandesEnAttente =>
+        _attenteStore ??= new AttenteStore(Path.Combine(DataRoot, "attente"));
 
     private readonly Lazy<FaceDetector> _faces = new(() => new FaceDetector(
         Path.Combine(AppContext.BaseDirectory, "models", "face_detection_yunet_2023mar.onnx")));
@@ -102,6 +129,39 @@ public sealed class AppServices
     {
         MailSettings.Save(ConfigDir, reglages);
         _mail = reglages;
+    }
+
+    private DetourageSettings? _detourage;
+
+    /// <summary>
+    /// Comment le fond blanc des photos d'identité est détouré sur CE poste.
+    ///
+    /// Le réglage vit dans les données du poste parce que la réponse dépend de la machine :
+    /// le réseau de neurones donne un bien meilleur contour, mais il lui faut une carte
+    /// graphique et il se compte en secondes. Voir <see cref="DetourageSettings"/>.
+    /// </summary>
+    public DetourageSettings Detourage => _detourage ??= DetourageSettings.Load(ConfigDir);
+
+    /// <summary>Enregistre les réglages de détourage et les applique sans redémarrer.</summary>
+    public void SaveDetourage(DetourageSettings reglages)
+    {
+        DetourageSettings.Save(ConfigDir, reglages);
+        _detourage = reglages;
+        AppliquerLeDetourage(reglages);
+    }
+
+    /// <summary>
+    /// Pose les réglages sur le moteur de détourage.
+    ///
+    /// <c>Reinitialiser</c> est indispensable : la session ONNX est gardée pour la vie du
+    /// processus, et sans elle changer de modèle dans Paramètres n'aurait d'effet qu'au
+    /// redémarrage suivant — le réglage passerait pour inopérant.
+    /// </summary>
+    private static void AppliquerLeDetourage(DetourageSettings reglages)
+    {
+        BiRefNetMatting.Actif = reglages.Actif;
+        BiRefNetMatting.ModelePrefere = reglages.ModeleDemande;
+        BiRefNetMatting.Reinitialiser();
     }
 
     /// <summary>
@@ -207,7 +267,9 @@ public sealed class AppServices
 
     public static AppServices Load(string dataRoot = @"D:\PhotoStudioData")
     {
-        foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache", "incoming" })
+        // « models » en fait partie : l'écran Paramètres y renvoie pour poser le modèle de
+        // détourage, et un dossier qui n'existe pas se cherche longtemps
+        foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache", "incoming", "models", "attente" })
             Directory.CreateDirectory(Path.Combine(dataRoot, sub));
 
         var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
@@ -230,6 +292,17 @@ public sealed class AppServices
         // croyant avoir ses photos, et on n'avait rien à relire le lendemain.
         PhotoMailer.Log = message => FileLog.Write(message);
 
+        // Le détourage disait dans le vide quel modèle il chargeait, et pourquoi il
+        // retombait sur la méthode par couleur — même défaut que LargeFormatPrinter.Log.
+        // C'est la seule trace qui permette de comprendre un réglage sans effet.
+        BiRefNetMatting.Log = message => FileLog.Write(message);
+        BackgroundRemoval.Log = message => FileLog.Write(message);
+        PdfPages.Log = message => FileLog.Write(message);
+
+        // L'état de la DNP passe par le spouleur dès que DiLand tient son port USB : c'est
+        // la seule trace quand cette lecture-là échoue à son tour.
+        Studio.Printing.Devices.Dnp.DnpSpouleur.Log = message => FileLog.Write(message);
+
         var services = new AppServices
         {
             DataRoot = dataRoot,
@@ -250,12 +323,32 @@ public sealed class AppServices
             Wifi = LoadConfig<WifiConfig>(Path.Combine(dataRoot, "config", "wifi.json")),
         };
 
+        // Le modèle de détourage se cherche dans les données du poste, et non à un chemin
+        // écrit en dur : un second poste opérateur n'a aucune raison d'avoir le même.
+        BiRefNetMatting.DossiersCherches =
+        [
+            Path.Combine(dataRoot, "models"),
+            Path.Combine(AppContext.BaseDirectory, "models"),
+        ];
+
+        AppliquerLeDetourage(services.Detourage);
+
         // Ce que la MACHINE a réellement sorti, par opposition à ce qu'on lui a envoyé.
         // L'événement arrive du relais, donc d'un fil de fond : le suivi, lui, est lu par
         // l'interface — on repasse par le répartiteur avant d'y toucher.
         minilab.JobFinished += (_, resultat) =>
         {
             var reussi = resultat.Outcome == De100JobOutcome.Printed;
+
+            // Le verdict du minilab, ÉCRIT AU JOURNAL — il ne l'était nulle part, et ne
+            // servait qu'à rafraîchir le bandeau. Le fichier de la commande 04-007 du
+            // 04/08/2026 s'arrête donc à l'envoi : deux tirages sur quatre ne sont jamais
+            // sortis, et la machine n'a laissé aucune trace de ce qu'elle en a fait.
+            // Sans cette ligne, le prochain incident ne se diagnostiquera pas mieux.
+            FileLog.Write(
+                $"Minilab : tirage {resultat.JobId} — {Verdict(resultat.Outcome)} " +
+                $"(commande {resultat.OrderHandle}) · {resultat.Reason}");
+
             var repartiteur = System.Windows.Application.Current?.Dispatcher;
 
             if (repartiteur is null)
@@ -266,6 +359,16 @@ public sealed class AppServices
 
         return services;
     }
+
+    /// <summary>Le verdict du minilab, en français, pour le journal.</summary>
+    private static string Verdict(De100JobOutcome issue) => issue switch
+    {
+        De100JobOutcome.Printed => "SORTI",
+        De100JobOutcome.Failed => "ÉCHEC",
+        De100JobOutcome.Canceled => "ANNULÉ",
+        De100JobOutcome.TimedOut => "SANS RÉPONSE",
+        _ => issue.ToString(),
+    };
 
     /// <summary>Après modification du catalogue : recharge et recâble l'impression.</summary>
     public void ReloadCatalog()

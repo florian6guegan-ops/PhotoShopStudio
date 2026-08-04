@@ -80,18 +80,11 @@ public partial class CropSurface : UserControl
         // remonte depuis l'élément qui a le focus — accroché ici, il ne remonterait pas
         // tant qu'on n'aurait pas cliqué dans la photo, et c'est précisément le geste que
         // l'opérateur ne fait pas.
-        Loaded += (_, _) =>
-        {
-            if (Window.GetWindow(this) is { } fenetre)
-                fenetre.PreviewKeyDown += OnPreviewKeyDown;
-        };
-
-        Unloaded += (_, _) =>
-        {
-            if (Window.GetWindow(this) is { } fenetre)
-                fenetre.PreviewKeyDown -= OnPreviewKeyDown;
-            RedressementArme = false;
-        };
+        //
+        // L'abonnement passe par ToucheFenetre parce qu'il doit être IDEMPOTENT : posé à
+        // la main, un second Loaded le doublait et T — qui est une bascule — jouait deux
+        // fois, donc le mode ne s'armait jamais. Voir ToucheFenetre.
+        _ = new ToucheFenetre(this, OnPreviewKeyDown, auDepart: () => RedressementArme = false);
     }
 
     /// <summary>Le cadrage a bougé : à l'appelant d'en tirer le <c>CropSpec</c>.</summary>

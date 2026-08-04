@@ -30,23 +30,29 @@ public class PrintCancelTests : IDisposable
     /// <summary>Minilab factice : enregistre les envois, et ce qu'on lui rappelle.</summary>
     private sealed class FauxMinilab : IMinilabPrinter
     {
+        /// <summary>Handles des commandes envoyées — UNE par enveloppe depuis le 04/08/2026.</summary>
         public List<string> Envoyes { get; } = [];
+
+        /// <summary>Photos reçues, toutes commandes confondues.</summary>
+        public List<De100PrintJob> Tirages { get; } = [];
+
         public List<string> Rappeles { get; } = [];
 
         /// <summary>Handles que la machine refuse de rappeler — un tirage déjà sorti.</summary>
         public HashSet<string> Refuse { get; } = [];
 
-        /// <summary>Appelé après chaque envoi, avec le nombre d'envois faits.</summary>
+        /// <summary>Appelé pendant l'envoi, avec le nombre de commandes envoyées.</summary>
         public Action<int>? ApresEnvoi { get; set; }
 
         public IReadOnlyList<char> ReadyMachines() => ['A'];
         public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
         public int LoadedPaperWidthMm(char machineId) => 152;
 
-        public string Submit(De100PrintJob job, char machineId)
+        public string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId)
         {
             var handle = $"OH-{Envoyes.Count + 1}";
             Envoyes.Add(handle);
+            Tirages.AddRange(jobs);
             ApresEnvoi?.Invoke(Envoyes.Count);
             return handle;
         }
@@ -132,31 +138,60 @@ public class PrintCancelTests : IDisposable
         Assert.Contains("aucun tirage", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Toutes les photos d'une enveloppe forment UNE commande minilab.
+    ///
+    /// C'est la correction du 04/08/2026 : Studio en ouvrait une par photo — quatre
+    /// <c>PIF_StartOrder</c>/<c>PIF_EndOrder</c> en 1,2 s sur la commande 04-007 — et deux
+    /// tirages sur quatre ne sont jamais sortis. Le SDK attend l'inverse : <c>PIF_Print</c>
+    /// prend le handle en paramètre, et une commande porte N images.
+    /// </summary>
     [Fact]
-    public void Un_arret_apres_le_premier_envoi_rappelle_ce_qui_est_deja_parti()
+    public void Toute_l_enveloppe_part_en_une_seule_commande_minilab()
+    {
+        var minilab = new FauxMinilab();
+        var orchestrateur = Orchestrateur(minilab);
+        var commande = Commande(4);
+
+        orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]);
+
+        Assert.Single(minilab.Envoyes);
+        Assert.Equal(4, minilab.Tirages.Count);
+
+        // chaque photo garde son identifiant : c'est par lui que la machine rendra son
+        // verdict, photo par photo, sous le handle de la commande
+        Assert.Equal(4, minilab.Tirages.Select(t => t.JobId).Distinct().Count());
+    }
+
+    /// <summary>
+    /// L'arrêt demandé PENDANT l'envoi rappelle la commande — le geste que DiLand ne sait
+    /// pas faire. Il n'y a plus qu'un handle à reprendre, mais le pouvoir est le même.
+    /// </summary>
+    [Fact]
+    public void Un_arret_pendant_l_envoi_rappelle_la_commande()
     {
         var minilab = new FauxMinilab();
         var orchestrateur = Orchestrateur(minilab);
         var commande = Commande(4);
 
         using var arret = new CancellationTokenSource();
-        minilab.ApresEnvoi = faits => { if (faits == 2) arret.Cancel(); };
+        minilab.ApresEnvoi = _ => arret.Cancel();
 
         var ex = Assert.Throws<PrintCanceledException>(
             () => orchestrateur.PrintEnvelope(commande, commande.Envelopes[0], ct: arret.Token));
 
-        // deux partis, deux rappelés, les deux derniers jamais envoyés
-        Assert.Equal(2, minilab.Envoyes.Count);
         Assert.Equal(minilab.Envoyes, minilab.Rappeles);
         Assert.Contains("rappel", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// Une commande que la machine refuse de rappeler — déjà tirée — ne doit pas empêcher
-    /// d'annuler les autres. C'est tout l'intérêt : sauver ce qui peut l'être.
+    /// Une commande que la machine refuse de rappeler — déjà tirée — ne doit pas faire
+    /// échouer l'arrêt : l'enveloppe est close quand même, et le journal dit ce qui a
+    /// résisté. Sans quoi une commande à demi tirée resterait « Spooled » et repartirait
+    /// au prochain démarrage.
     /// </summary>
     [Fact]
-    public void Une_commande_qui_resiste_n_empeche_pas_d_annuler_les_autres()
+    public void Une_commande_qui_resiste_au_rappel_ne_fait_pas_echouer_l_arret()
     {
         var minilab = new FauxMinilab();
         minilab.Refuse.Add("OH-1");
@@ -165,13 +200,14 @@ public class PrintCancelTests : IDisposable
         var commande = Commande(4);
 
         using var arret = new CancellationTokenSource();
-        minilab.ApresEnvoi = faits => { if (faits == 3) arret.Cancel(); };
+        minilab.ApresEnvoi = _ => arret.Cancel();
 
         Assert.Throws<PrintCanceledException>(
             () => orchestrateur.PrintEnvelope(commande, commande.Envelopes[0], ct: arret.Token));
 
-        Assert.Equal(3, minilab.Envoyes.Count);
-        Assert.Equal(new[] { "OH-2", "OH-3" }, minilab.Rappeles);
+        Assert.Empty(minilab.Rappeles);
+        Assert.Equal(EnvelopeStatus.Canceled, commande.Envelopes[0].Status);
+        Assert.Empty(orchestrateur.FindEnvelopesNeedingConfirmation([commande]));
     }
 
     /// <summary>

@@ -1,0 +1,115 @@
+using System.Text.Json;
+
+namespace Studio.Core.Imaging;
+
+/// <summary>
+/// Comment le fond blanc des photos d'identité est détouré, sur CE poste.
+///
+/// Deux méthodes existent dans le code, et le choix dépend de la machine — d'où un réglage
+/// et non une constante :
+///
+/// - <b>par couleur</b> (<c>BackgroundRemoval</c>) : on reconnaît le fond de studio et on
+///   efface ce qui lui ressemble ET communique avec le bord. Environ une seconde, aucune
+///   exigence matérielle, et ça marche toujours ;
+/// - <b>par réseau de neurones</b> (<c>BiRefNetMatting</c>) : contour nettement meilleur —
+///   les mèches de cheveux sont tenues, aucune ombre ne subsiste — mais il faut une carte
+///   graphique, et le temps se compte en secondes.
+///
+/// <b>Deux drapeaux et non un</b>, parce que ce sont deux questions différentes : se servir
+/// du réseau, et lequel. L'entrée du modèle est figée à 1024 — on ne peut pas soulager la
+/// carte en réduisant la taille d'entrée, c'est le POIDS du modèle qu'il faut changer.
+///
+/// Les réglages vivent dans les DONNÉES du poste (<c>config\detourage.json</c>) : un poste
+/// à Quadro P2000 et un poste mieux doté n'ont pas le même réglage, et cela ne regarde pas
+/// le dépôt.
+/// </summary>
+/// <param name="Actif">
+/// Se servir du réseau de neurones. <b>Faux par défaut</b>, et c'est délibéré : mesuré sur
+/// la Quadro P2000 de l'atelier, 4,3 s sur l'aperçu et 9,5 s sur la photo pleine
+/// résolution, contre ~1,2 s pour la méthode par couleur. Dix secondes devant un client,
+/// c'est trop long — décision de l'exploitant, 03/08/2026. Une mise à jour ne doit pas
+/// allonger le détourage sans que personne l'ait demandé.
+/// </param>
+/// <param name="ModelePuissant">
+/// Préférer <c>birefnet-portrait-fp16.onnx</c> (467 Mo) à <c>birefnet-lite-fp16.onnx</c>
+/// (109 Mio). Le contour est meilleur, mais il lui faut de la mémoire vidéo : sur 4 Go, il
+/// réussit la première photo puis échoue sur la seconde (<c>DmlFusedNode</c>, constaté le
+/// 03/08/2026). Voir <see cref="MemoireVideoRecommandeeGo"/>.
+/// </param>
+public sealed record DetourageSettings(
+    bool Actif = false,
+    bool ModelePuissant = false)
+{
+    /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
+    public const string FileName = "detourage.json";
+
+    /// <summary>Fichier du modèle léger, celui qui tient sur la carte de l'atelier.</summary>
+    public const string ModeleLeger = "birefnet-lite-fp16.onnx";
+
+    /// <summary>Fichier du modèle le plus fin, et le plus gourmand.</summary>
+    public const string ModelePuissantFichier = "birefnet-portrait-fp16.onnx";
+
+    /// <summary>
+    /// Mémoire vidéo au-dessous de laquelle le modèle puissant est déconseillé, en
+    /// gigaoctets.
+    ///
+    /// Ce n'est pas une estimation : la Quadro P2000 de l'atelier annonce <b>5 Go</b>
+    /// (relevé dans le registre le 03/08/2026 — les commentaires plus anciens disent 4 Go,
+    /// c'est la valeur tronquée que rend WMI), et le modèle puissant y passe une fois puis
+    /// échoue. Le seuil est donc posé juste au-dessus de ce qui a été vu échouer, sans
+    /// prétendre à la précision : c'est un avertissement, pas un refus.
+    /// </summary>
+    public const double MemoireVideoMinimaleGo = 6;
+
+    /// <summary>Ce qu'on conseille réellement d'avoir pour le modèle puissant.</summary>
+    public const double MemoireVideoRecommandeeGo = 8;
+
+    /// <summary>Le fichier de modèle demandé par ces réglages.</summary>
+    public string ModeleDemande => ModelePuissant ? ModelePuissantFichier : ModeleLeger;
+
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    /// <summary>
+    /// Charge les réglages. Un fichier absent ou abîmé rend les valeurs par défaut plutôt
+    /// que de lever : le détourage doit rester possible, et la méthode par couleur ne
+    /// dépend de rien.
+    /// </summary>
+    public static DetourageSettings Load(string configDir)
+    {
+        var chemin = Path.Combine(configDir, FileName);
+        if (!File.Exists(chemin)) return new DetourageSettings();
+
+        try
+        {
+            using var flux = File.OpenRead(chemin);
+            return JsonSerializer.Deserialize<DetourageSettings>(flux, Options) ?? new DetourageSettings();
+        }
+        catch (Exception)
+        {
+            return new DetourageSettings();
+        }
+    }
+
+    /// <summary>Enregistre les réglages, en écrivant à côté puis en remplaçant.</summary>
+    public static void Save(string configDir, DetourageSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        Directory.CreateDirectory(configDir);
+        var chemin = Path.Combine(configDir, FileName);
+        var json = JsonSerializer.Serialize(settings, Options);
+
+        var tmp = chemin + ".tmp";
+        File.WriteAllText(tmp, json);
+        if (File.Exists(chemin))
+            File.Replace(tmp, chemin, chemin + ".bak", ignoreMetadataErrors: true);
+        else
+            File.Move(tmp, chemin);
+    }
+}

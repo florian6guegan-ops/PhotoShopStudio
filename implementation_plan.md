@@ -1,212 +1,289 @@
-# Plan d'implémentation — 5ᵉ passe
+# Plan d'implémentation — 7ᵉ passe
 
-Six chantiers. Chacun peut être validé ou écarté séparément.
-Le plan de la 4ᵉ passe est archivé dans `task.md` et `system_architecture.md`.
+Huit demandes de l'exploitant, 04/08/2026. Le plan de la 6ᵉ passe est archivé dans
+`task.md`.
 
-Le dépôt porte déjà **du travail non commité** (33 fichiers modifiés, 15 nouveaux) :
-`PhotoMailer`, `MailSettings`, `BackgroundRemoval`, `IdShortcuts`, `PendingPrintQueue`,
-`DiLandPresence`. `dotnet build` : 0 erreur, 0 avertissement. C'est le point de départ.
-
----
-
-## Ce que l'enquête a trouvé, et qu'il faut lire avant de valider
-
-### A. « Sans que DiLand ne soit allumé » : réalisable à moitié, et il faut le dire
-
-Les bornes ne déposent pas de fichier sur ce PC. Elles ouvrent une connexion
-**.NET Remoting** sur `tcp://192.168.1.102:19200`, et ce port est tenu par le processus
-**`FitEng.DiLand.Studio` lui-même** (PID 5824 au moment du relevé, avec les deux bornes
-connectées : 192.168.1.38 et 192.168.1.20). Il n'y a **aucun service Windows** derrière :
-DiLand fermé, le port est fermé, et la commande de la borne n'arrive nulle part — ni
-fichier, ni ligne en base.
-
-Reprendre cette écoute demanderait de réimplémenter .NET Remoting et la sérialisation
-binaire des objets DevExpress XPO. **.NET 8 ne sait pas faire du Remoting** : ce n'est pas
-une question d'effort, la brique n'existe plus.
-
-Ce qui EST faisable, et qui couvre la panne réelle de la boutique (DiLand tombe en OOM
-presque tous les jours, cf. `project_diland_oom_pattern`) : **tout ce qui vient APRÈS
-l'arrivée devient indépendant de DiLand.** Voir le chantier 6.
-
-Si l'objectif est vraiment « les bornes n'ont plus besoin de DiLand du tout », le seul
-chemin honnête est de **remplacer le logiciel de la borne** par un client qui parle à
-notre serveur (`UploadServer`, port 8123, l'API bornes existe déjà). C'est un chantier
-à part entière, pas une variante de celui-ci.
-
-### B. Les recadrages des bornes sont perdus depuis toujours — bug confirmé
-
-`DiLandRepository.ReadPhotos` et `DiLandImporter.CropOf` lisent `CropX/CropY/CropWidth/
-CropHeight` comme des **fractions** de l'image. Sur la vraie base de la boutique, ce sont
-des **pixels**.
-
-Relevé sur `Database.db` du 03/08/2026 : **1231 images, 986 recadrées, ZÉRO** dont
-`CropWidth` soit ≤ 1. Exemple vérifié — `7ce78654-5372-4e9d-88d1-8f6c478ed02c.jpg`,
-image 1536 × 2048, crop `X=0 Y=44 W=1536 H=1958`, soit un rapport 0,784 ≈ le 8x10
-commandé.
-
-`CropSpec(0, 44, 1536, 1958)` ne passe pas `IsValid` → on retombe sur `CropSpec.Full`.
-**Chaque « Tirer tel quel » recadre donc autrement que ce que le client a validé à la
-borne.** Correction : diviser par `Width`/`Height`, présents en base comme dans le XML.
-
-### C. Les bornes redressent, contrairement au commentaire du code
-
-`DiLandImporter.Import` passe `FineRotationDegrees: 0` avec le commentaire
-« les bornes ne redressent pas ». La colonne `FineRotationAngle` existe, et **113 des
-1231 images** de la base en portent une non nulle. À reprendre.
+Point de départ : `main`, 804 essais verts, la 6ᵉ passe **non encore commitée**
+(23 fichiers modifiés dans l'arbre de travail).
 
 ---
 
-## 1. Envoi par courriel des photos d'identité — terminer le raccordement
+## 1. Commande 04-007 : deux photos sur quatre ne sont jamais sorties
 
-### Ce qui existe déjà
+### Ce que le journal montre
 
-- `src/Studio.Core/Mail/MailSettings.cs` — réglages SMTP, `Load`/`Save` dans `config/`,
-  `EstUtilisable`, `CeQuiManque()`. Complet.
-- `src/Studio.Printing/PhotoMailer.cs` — `Preparer()` (trois fichiers : originale,
-  recadrée web 1200 px, recadrée HD) et `Envoyer()` avec traduction des refus SMTP.
-  Complet.
+`orders/2026/08/20260804-007-a8843d32/order.log` :
 
-### Ce qui manque
+```
+11:03:13.078  minilab-submit-start   env=1, machine=A, tirages=20
+11:03:14.298  minilab-submitted      commandes=[2608041103132608, 2608041103135879,
+                                                2608041103139320, 2608041103141931]
+```
 
-**Personne n'appelle ni l'un ni l'autre.** Aucun `using Studio.Core.Mail` hors de ces deux
-fichiers. Le code est écrit et mort.
+4 photos × 5 exemplaires = 20 tirages, **quatre commandes DE100 distinctes ouvertes et
+refermées en 1,2 seconde**. Le minilab a accepté les quatre handles. L'exploitant en a vu
+sortir deux, à cinq exemplaires chacune : **deux commandes entières ont été perdues à la
+machine**, pas des exemplaires manquants.
 
-| | Fichier | Changement |
-|---|---|---|
-| 1a | `[MODIFY]` `src/Studio.App/AppServices.cs` | propriété `Mail` (chargée de `config/mail.json`), `SaveMail(MailSettings)`, et branchement de `PhotoMailer.Log` sur `FileLog` dans `Load` — comme `LargeFormatPrinter.Log`, sans quoi le journal des envois part dans le vide |
-| 1b | `[NEW]` `src/Studio.App/Views/MailSendView.xaml(.cs)` | écran d'envoi : adresse du client, mot facultatif du photographe, rappel de ce qui part (trois fichiers), bouton Envoyer. Préparation ET envoi **hors du fil d'interface** — un SMTP qui ne répond pas gèlerait la caisse deux minutes |
-| 1c | `[MODIFY]` `src/Studio.App/Views/IdPhotoView.xaml(.cs)` | bouton **✉ Envoyer par courriel** dans la barre d'action, à côté d'« Imprimer la planche ». Il passe le cadrage EN COURS (`_crop`, `_redressement`, `ImageAdjustments`) — c'est ce que l'opérateur a sous les yeux |
-| 1d | `[MODIFY]` `PhotoMailer` | les fichiers sont déposés sous `DataRoot/courriel/<aaaa-MM-jj>/<nom>` et **conservés** : si l'envoi échoue, l'opérateur réessaie sans tout refaire (le message le dit déjà, mais rien ne le garantissait) |
+### Cause retenue — `PIF_Print` n'est pas fait pour une commande par image
 
-**Envoyer n'imprime pas et n'enregistre pas de commande.** Un client peut vouloir les deux,
-ou seulement le fichier ; ce sont deux gestes distincts et le prix n'est pas le même.
-Question posée plus bas.
+La signature du SDK le dit :
 
-## 2. Écran « Paramètres » — configurer le courriel poste par poste
+```csharp
+PIF_Print(StringBuilder orderHandle, ref ST_IMAGE_DATA, ST_PARAM[], uint);
+PIF_GetPrintInfo(StringBuilder orderHandle, uint index, ref ST_PRINT_INFO);
+```
 
-Demandé pour que **les futurs postes opérateur** se configurent sans toucher au code.
-`MailSettings` vit déjà dans `D:\PhotoStudioData\config\mail.json`, donc hors du dépôt
-public — c'est la bonne place pour un mot de passe d'application.
+`PIF_Print` prend le handle de commande **en paramètre**, et `PIF_GetPrintInfo` relit les
+tirages d'une commande **par INDICE**. Une commande DE100 porte donc N images : c'est ainsi
+que procède le pilote de DiLand, sur les 9 336 tirages de son journal.
 
-| | Fichier | Changement |
-|---|---|---|
-| 2a | `[NEW]` `src/Studio.App/Views/SettingsView.xaml(.cs)` | écran **Paramètres**, section « Envoi par courriel » : serveur, port, adresse d'expédition, nom affiché, mot de passe d'application (`PasswordBox`), interrupteur Actif |
-| 2b | `[MODIFY]` `SettingsView` | bouton **« Envoyer un message d'essai »** : s'envoie à l'adresse d'expédition elle-même et rapporte le refus en clair. Sans lui, une configuration fausse se découvre devant un client |
-| 2c | `[MODIFY]` `src/Studio.App/Views/HomeView.xaml(.cs)` | tuile **⚙ Paramètres** sur l'accueil |
-| 2d | `[MODIFY]` `PhotoMailer.Envoyer` | le message d'erreur dit « Catalogue → Envoi par courriel », qui n'existe pas. À corriger en « Paramètres → Envoi par courriel » |
+`PrintOrchestrator.SubmitToMinilab` ouvre au contraire **une commande par photo** —
+`PIF_StartOrder` → `PIF_Print` → `PIF_EndOrder`, quatre fois de suite en une seconde. Le
+`lock (_sendSync)` sérialise nos appels mais n'attend pas que la machine ait rangé la
+commande précédente. C'est un usage que rien ne garantit, et il est le seul candidat
+sérieux à une perte silencieuse : les quatre handles sont revenus `Ok`, aucune erreur n'a
+été remontée, et deux tirages n'existent pas.
 
-Aide en clair sur l'écran : Gmail exige un **mot de passe d'application** (validation en
-deux étapes activée), le mot de passe du compte est refusé depuis 2022. C'est la question
-qui reviendra sur chaque nouveau poste.
+**Correction : une ENVELOPPE = une commande DE100.** `PIF_StartOrder` une fois, `PIF_Print`
+pour chaque page, `PIF_EndOrder` une fois.
 
-## 3. Redressement : T ARME le mode, la molette règle
+### Le défaut qui a rendu l'enquête impossible, et qu'il faut corriger aussi
 
-### Ce que le code fait aujourd'hui
+**Rien n'écrit au journal le verdict du minilab.** `De100Driver.JobFinished` remonte bien
+jusqu'à `AppServices`, mais n'y sert qu'à rafraîchir le bandeau : `SuiviImpressions`
+n'écrit ni « photo 3 tirée » ni « photo 3 abandonnée après 30 min ». Le fichier de
+`04-007` s'arrête donc à l'envoi, et la machine n'a laissé aucune trace. Sans cette ligne,
+le prochain incident ne se diagnostiquera pas mieux.
 
-Deux endroits, même geste : `Keyboard.IsKeyDown(Key.T)` **pendant** le cran de molette.
+### Fichiers
 
-- `src/Studio.App/Views/IdPhotoView.xaml.cs:716` — `OnStageWheel`
-- `src/Studio.App/Controls/CropSurface.xaml.cs:475` — `OnWheel`
+- `[MODIFY] src/Studio.Printing/Devices/Fuji/IMinilabPrinter.cs` — `Submit` prend
+  `IReadOnlyList<De100PrintJob>` et rend UN handle ; `Cancel` inchangé.
+- `[MODIFY] src/Studio.Printing/Devices/Fuji/De100Driver.cs` — `Submit(jobs, machineId)` :
+  une transaction, un `PIF_Print` par travail, un `OrderId` commun. Chaque travail reste
+  suivi par le tracker sous le handle de la commande.
+- `[MODIFY] src/Studio.Printing/Devices/Fuji/De100JobTracker.cs` — plusieurs `JobId` sous
+  un même `OrderHandle` (aujourd'hui `Dictionary<handle, Entry>`, donc un seul).
+- `[MODIFY] src/Studio.Printing/Devices/Fuji/Bridge/De100Protocol.cs` +
+  `De100BridgeClient.cs` + `tools/Studio.De100Host/Program.cs` — la requête `submit` porte
+  une LISTE de travaux.
+- `[MODIFY] src/Studio.Printing/PrintOrchestrator.cs` — `SubmitToMinilab` prépare toutes
+  les pages puis appelle `Submit` une fois. L'arrêt s'examine pendant la PRÉPARATION des
+  images, plus entre deux envois : une fois la commande partie elle est entière, ce qui est
+  le comportement voulu.
+- `[MODIFY] src/Studio.App/AppServices.cs` — `JobFinished` écrit au journal :
+  numéro de commande, photo, verdict, motif.
+- `[NEW] tests/Studio.Tests/De100OrderGroupingTests.cs` — un envoi de quatre pages ouvre
+  UNE commande ; le tracker rend les quatre issues ; une erreur au milieu annule la
+  commande entière.
 
-Trois défauts :
-
-1. **Il faut tenir T et rouler en même temps** — à une main, au comptoir, c'est raté.
-2. **`Keyboard.IsKeyDown` dépend du focus.** Le focus posé sur une liste ou un bouton
-   (le cas dès qu'on a choisi un papier), la touche part ailleurs et la molette zoome
-   au lieu de redresser. C'est très probablement le « mal implémenté » signalé.
-3. **Rien à l'écran ne dit que le mode est armé.** Le seul retour est le chiffre en
-   degrés, dans un coin de la barre.
-
-### Ce qu'on fait
-
-| | Fichier | Changement |
-|---|---|---|
-| 3a | `[MODIFY]` `IdPhotoView`, `CropSurface` | **T bascule** un mode `RedressementArme`. Armé, la molette règle l'angle ; Échap ou un second T en sort. La touche est captée en `PreviewKeyDown` **sur la vue**, donc le focus n'a plus d'importance |
-| 3b | `[MODIFY]` idem | **T maintenue continue de marcher** : les deux gestes coexistent, personne ne réapprend |
-| 3c | `[MODIFY]` `IdPhotoView.xaml`, `CropSurface.xaml` | bandeau visible tant que le mode est armé : « Redressement — molette pour régler · T ou Échap pour sortir », et le champ des degrés mis en évidence |
-| 3d | `[MODIFY]` `CropEditorView`, `EditSelectionView` | vérifier les **trois** écrans qui recadrent (cf. `project_crop_gestures`) : la surface est partagée, mais l'armement et le bandeau se posent par écran |
-| 3e | `[MODIFY]` `DiLandImporter.Import` | lire `FineRotationAngle` au lieu de forcer 0 (constat C) |
-
-Le pas reste 0,25° par cran et la borne ±15° : ils n'ont pas été mis en cause.
-
-## 4. Commandes du jour : séparer tirages photo et photos d'identité
-
-`OrdersView` liste tout en un seul flot, commande par commande. Une planche d'identité y
-est indiscernable d'un paquet de 10×15 — or ce n'est ni le même client, ni le même délai,
-ni le même geste de rattrapage.
-
-| | Fichier | Changement |
-|---|---|---|
-| 4a | `[MODIFY]` `src/Studio.App/Views/OrdersView.xaml(.cs)` | deux onglets — **Tirages photo** / **Photos d'identité** — sur le modèle de la bascule Ordres/Historique de `KioskOrdersView`, que les opérateurs connaissent déjà. Plus un onglet **Tout** |
-| 4b | `[MODIFY]` `OrdersView.xaml.cs` | classement d'une ligne : identité si le produit du catalogue porte un `Sheet`, avec repli sur `OrderItem.SheetCellWidthMm` — les commandes déjà enregistrées n'ont pas toutes le champ |
-| 4c | `[MODIFY]` `OrdersView.xaml.cs` | **une commande mixte apparaît dans les deux onglets**, n'y montrant que ses lignes concernées. La masquer d'un côté ferait disparaître un tirage à réimprimer |
-| 4d | `[MODIFY]` `OrdersView.xaml` | compteur par onglet (« Tirages photo (7) ») : c'est ce qu'on lit en arrivant le matin |
-
-## 5. Historique des bornes : retélécharger et remodifier
-
-L'historique (`KioskOrdersView`, onglet Historique) ne propose que **« Remettre dans la
-liste »**. Une commande close ne peut être ni retéléchargée ni rouverte — c'est justement
-ce qu'on demande le lendemain, quand le client revient.
-
-Obstacle technique : l'historique tient des `KioskOrderEntry` (journal), pas des
-`DiLandOrder`. **Le journal ne mémorise pas `DirectoryName`**, donc on ne sait pas où sont
-les photos.
-
-| | Fichier | Changement |
-|---|---|---|
-| 5a | `[MODIFY]` `src/Studio.Store/DiLand/KioskOrderJournal.cs` | champ `DirectoryName` sur `KioskOrderEntry`, renseigné par `Describe`. Les entrées anciennes ne l'ont pas : repli par recherche de l'Oid dans l'instantané, et message clair si DiLand a purgé |
-| 5b | `[MODIFY]` `src/Studio.App/Views/KioskOrdersView.xaml(.cs)` | boutons **⬇ Télécharger** et **✏ Modifier** sur chaque ligne d'historique |
-| 5c | `[MODIFY]` `src/Studio.Store/DiLand/DiLandImporter.cs` | `Stage(..., ecraser: true)` : aujourd'hui `CopyPhotoTo` **saute les fichiers déjà présents**. Un second téléchargement rouvrait donc un dossier périmé sans rien dire — c'est le « malgré le fait que les photos ont été téléchargées » de la demande |
-| 5d | `[MODIFY]` `KioskOrdersView` | rouvrir depuis l'historique **ne remet pas la commande dans la liste du jour** : `MarkInProgress` refuse déjà une entrée close, on s'appuie dessus |
-| 5e | `[MODIFY]` `HomeView` | rappel de `system_architecture.md` : toute action de ligne ajoutée à un écran doit l'être à l'autre. L'historique n'existe que dans `KioskOrdersView` — rien à faire ici, mais le correctif 5c profite aux deux |
-
-## 6. Lire les commandes des bornes sans DiLand — ce qui est atteignable
-
-Lire le constat A avant de valider ce chantier : **l'arrivée** restera tributaire de
-DiLand. C'est **tout le reste** qu'on lui prend.
-
-Un dossier de commande est **auto-suffisant** : `Order.xml` + `Files.txt` + `F/`. Vérifié
-sur `20260803-1648-ommcdsbz.COM` — 41 photos, 22,55 €, `Sys_Product_Alias="8x10"`, et
-chaque image avec `FileName`, `OriginalFileName`, `Quantity`, `Angle`,
-`FineRotationAngle`, `CropX/Y/Width/Height`, `Width`, `Height`. **Tout ce que la base
-donne, le XML le donne** — sans base, sans instantané, sans DiLand.
-
-| | Fichier | Changement |
-|---|---|---|
-| 6a | `[NEW]` `src/Studio.Store/DiLand/DiLandOrderXml.cs` | lecture d'`Order.xml` → `DiLandOrder` + `DiLandOrderLine` + `DiLandOrderPhoto`. Le nom du produit vient de `OrderLine/@Sys_Product_Alias` |
-| 6b | `[MODIFY]` `src/Studio.Store/DiLand/DiLandRepository.cs` | balayage de **`IncomingOrders\*.COM`** (arrivées, pas encore intégrées : DiLand fermé, tombé, ou tâche d'import bloquée) **et** de `Orders\*.COM`. Le disque devient une source à part entière |
-| 6c | `[MODIFY]` `src/Studio.Store/DiLand/DiLandImporter.cs` | `Pending()` fusionne base et disque, **dédoublonné sur `DirectoryName`**. Une commande vue des deux côtés n'apparaît qu'une fois |
-| 6d | `[MODIFY]` `KioskOrderJournal` | clé du journal : les commandes venues du XML n'ont pas d'Oid numérique, seulement des GUID. Clé longue **déterministe** dérivée de `Sys_GlobalUniqueId`, pour qu'une commande intégrée plus tard par DiLand ne réapparaisse pas en double |
-| 6e | `[MODIFY]` `DiLandRepository.ReadPhotos` + `DiLandImporter.CropOf` | **correction du bug B** : les recadrages sont en pixels, à diviser par `Width`/`Height`. Vaut pour les deux sources |
-| 6f | `[MODIFY]` `KioskOrdersView`, `HomeView` | dire d'où vient chaque commande quand DiLand est absent : « lue sur le disque — DiLand est fermé ». `DiLandPresence.IsRunning()` existe déjà |
-| 6g | `[NEW]` `tools/Studio.DiLandProbe` (mode `xml`) | vérifier sur les vraies commandes de la boutique que le XML rend la même chose que la base — c'est le seul contrôle possible sans fermer DiLand en pleine journée |
-
-### Essais
-
-`tests/Studio.Tests/` : lecture d'un `Order.xml` réel anonymisé (recadrage en pixels →
-fractions, redressement, produit, quantités), dédoublonnage base/disque, clé
-déterministe, et non-régression du classement de `OrdersView`.
+⚠ **Ce n'est pas une cause prouvée, c'est la seule hypothèse compatible avec les faits.**
+La preuve viendra du journal des verdicts, à la prochaine commande multi-photos.
 
 ---
 
-## Vérification, pour chaque chantier
+## 2. Les PDF acceptés dans les tirages
 
-- `dotnet build` : 0 erreur, 0 avertissement nouveau
-- `dotnet test` : les 692 verts actuels + les nouveaux
-- toutes les clés `StaticResource` des vues se résolvent
-- application lancée, écrans parcourus
+Aucune dépendance PDF dans la solution ; Ghostscript n'est pas installé (Magick.NET ne
+lira donc pas un PDF tel quel). `PDFtoImage` 5.3.0 embarque PDFium en natif, sans rien à
+installer sur le poste — c'est ce qui convient à une boutique.
 
-⚠ Fermer `Studio.De100Host.exe` avant les essais, sinon les trois essais d'intégration
-DE100 échouent sur le canal occupé (ce n'est pas une régression, cf. `task.md`).
+**Une page = une photo.** Un PDF de trois pages entre dans la grille comme trois vignettes,
+recadrables et facturables une par une. Les pages sont rendues en JPEG dans
+`DataRoot\cache\pdf\<empreinte>\p001.jpg`, à 300 ppp bornés au plus grand format du
+catalogue : tout le reste du logiciel continue de ne connaître que des fichiers image, et
+ni le rendu, ni le minilab, ni la DNP n'ont à savoir qu'un PDF existe.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.Imaging/Studio.Imaging.csproj` — `PDFtoImage` 5.3.0.
+- `[NEW] src/Studio.Imaging/PdfPages.cs` — `Extraire(pdf, dossierCache)` → liste de JPEG,
+  idempotent (empreinte = chemin + date + taille), page par page pour ne pas tenir un
+  document de 200 pages en mémoire. Plafond de pages, avec message clair au-delà.
+- `[MODIFY] src/Studio.Sources/PhotoScanner.cs` — `.pdf` reconnu ; `IsPdf`.
+- `[MODIFY] src/Studio.App/Views/PhotoGridView.xaml.cs` — les PDF trouvés au scan sont
+  éclatés en pages avant construction de la grille, sur le fil de fond qui scanne déjà.
+- `[NEW] tests/Studio.Tests/PdfPagesTests.cs` — un PDF de deux pages donne deux fichiers,
+  la seconde extraction ne réécrit rien, un fichier illisible est écarté sans faire échouer
+  l'ouverture du dossier.
+
+**Hors périmètre**, et à dire : photo d'identité (on ne fait pas d'identité depuis un PDF)
+et agrandissements (l'écran grand format lit un fichier unique).
 
 ---
 
-## Trois questions avant de commencer
+## 3. Photo d'identité : un peu d'air au-dessus du crâne
 
-1. **Envoi par courriel** — le bouton ✉ doit-il aussi enregistrer une commande (donc
-   facturer l'envoi), ou reste-t-il un geste gratuit à côté de l'impression ?
-2. **Chantier 6** — vu le constat A, va-t-on jusqu'à la lecture disque (qui règle les
-   plantages de DiLand mais pas DiLand fermé), ou faut-il d'abord chiffrer le
-   remplacement du logiciel des bornes ?
-3. **Bugs B et C** (recadrages en pixels, redressement des bornes ignoré) — ils sont
-   indépendants du reste et corrigeables tout de suite. À faire en premier ?
+`IdPhotoFr.TargetCrownMarginMm` vaut **1,75 mm**, calé sur DiLand le 03/08/2026 (il valait
+4 mm avant). C'est ce calage qui serre trop.
+
+**1,75 → 3,0 mm.** Le cadre remonte de 1,25 mm sur 45 : la tête garde exactement sa taille
+(`TargetHeadMm` ne bouge pas), seul l'espace au-dessus grandit. Les bornes de conformité
+suivent toutes seules (`IdDocumentSpec.CrownMarginMinMm/MaxMm` se calculent depuis la
+cible), donc aucun cadrage ne passe à l'orange.
+
+Ne concerne que la norme française de la boutique — les 274 autres documents estiment leur
+marge depuis leur format et ne sont pas touchés.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.Imaging/Geometry/IdPhotoFr.cs` — la constante et son commentaire.
+- `[MODIFY] tests/Studio.Tests/…IdPhoto…Tests.cs` — les attendus qui citent 1,75.
+
+---
+
+## 4. « Imprimer » doit rendre la main tout de suite
+
+La grille le fait déjà (`PhotoGridView.OnPrint` → `Impressions.Lancer` → `Navigator.Home`).
+**`IdPhotoView.OnPrint`, non** : il attend `PrintEnvelope` en entier, affiche une boîte de
+dialogue, et ne rentre à l'accueil qu'après. C'est le rendu de la planche qui prend les
+secondes — l'écran identité est donc le seul qui fasse attendre l'opérateur.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.App/Views/IdPhotoView.xaml.cs` — `OnPrint` calque la grille :
+  création de la commande (court), puis `Impressions.Lancer` et `Navigator.Home`
+  immédiatement. Plus de `MessageBox` de succès — l'avancement se lit dans le bandeau du
+  haut, comme pour les tirages. `PrinterNotReadyException` est déjà traitée par
+  `SuiviImpressions`.
+
+---
+
+## 5. T + molette ne redresse pas
+
+Le journal du 04/08 le montre noir sur blanc :
+
+```
+10:59:23.318  Geste « OnStripWheel » · C=False T=False (armé=False) · 4300_001_page-0005.jpg
+```
+
+`armé=False` **après que l'opérateur a appuyé sur T**. `CropSurface` s'abonne au
+`PreviewKeyDown` de la FENÊTRE dans son `Loaded`, et se désabonne dans son `Unloaded` :
+
+```csharp
+Loaded   += (_, _) => { if (Window.GetWindow(this) is { } f) f.PreviewKeyDown += OnPreviewKeyDown; };
+Unloaded += (_, _) => { … f.PreviewKeyDown -= OnPreviewKeyDown; RedressementArme = false; };
+```
+
+WPF déclenche `Loaded` **plusieurs fois** sur un même élément (reparentage, retemplatage
+d'un conteneur) sans `Unloaded` entre les deux. Le gestionnaire est alors abonné deux fois,
+et un appui sur T bascule `RedressementArme` **deux fois : le mode ne s'arme jamais** et le
+bandeau n'apparaît pas. La touche MAINTENUE ne rattrape pas, parce que le geste attendu
+est justement l'appui-relâché.
+
+`IdPhotoView` a la même construction, donc le même défaut.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.App/Controls/CropSurface.xaml.cs` — abonnement idempotent
+  (`-=` avant `+=`), fenêtre retenue pour se désabonner de la BONNE.
+- `[MODIFY] src/Studio.App/Views/IdPhotoView.xaml.cs` — même correction.
+- `[NEW] src/Studio.App/Infrastructure/ToucheFenetre.cs` — le petit utilitaire d'abonnement
+  unique, pour que le troisième écran qui en aura besoin ne réinvente pas le défaut.
+
+Non couvert par les essais : `Studio.App` n'est pas référencé par la suite (aucun test ne
+presse une touche). **À vérifier à l'œil** — le bandeau « Redressement 0° » doit apparaître
+au premier appui sur T.
+
+---
+
+## 6. Le module « Corriger » sur les photos d'identité
+
+`IdPhotoView` n'a que deux cases : noir et blanc, fond blanc. `AdjustView` est déjà un
+écran autonome — `(photos, réglages de départ, callback)` — utilisé par la grille.
+
+Bouton **« Corriger »** à côté de « Fond blanc » : il ouvre `AdjustView` sur la photo
+courante, et les réglages retenus reviennent dans un champ `_corrections`, qui part dans le
+`DraftItem` à l'impression (aujourd'hui construit avec un `ImageAdjustments` ne portant que
+`Grayscale` et `WhiteBackground` — ils y sont repris).
+
+L'aperçu de l'écran identité applique les corrections sur la vignette 1600 px déjà chargée,
+en amont du détourage et du noir et blanc : `_corrige → _detoure → gris`. Le tirage, lui,
+refait tout en pleine résolution par `ImagePipeline`, comme pour le fond blanc.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.App/Views/IdPhotoView.xaml` — le bouton.
+- `[MODIFY] src/Studio.App/Views/IdPhotoView.xaml.cs` — `_corrections`, ouverture
+  d'`AdjustView`, chaîne d'aperçu, report dans le `DraftItem`.
+
+---
+
+## 7. Les photos triées de la plus RÉCENTE à la plus ancienne
+
+`PhotoScanner.Scan` trie par nom (`StringComparer.OrdinalIgnoreCase`), et les trois écrans
+qui l'appellent gardent cet ordre. Le tri par date existe, mais seulement derrière le bouton
+« trier », et il est CROISSANT.
+
+Le tri par défaut devient **date décroissante**, sur les trois écrans (tirages, identité,
+borne). Le bouton « trier » bascule ensuite vers le nom, puis revient.
+
+`Scan` garde son tri alphabétique — il est déterministe, testé, et c'est lui qui décide de
+ce qui rentre sous le plafond de 1 200. Le classement par date est posé APRÈS, à
+l'affichage, à partir des dates lues une seule fois.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.Sources/PhotoScanner.cs` — `TrierParDateDecroissante(List<string>)`,
+  une lecture de date par fichier, les illisibles en fin de liste plutôt qu'en exception.
+- `[MODIFY] src/Studio.App/Views/PhotoGridView.xaml.cs` — appliqué au chargement ; `OnSort`
+  bascule date↓ / nom.
+- `[MODIFY] src/Studio.App/Views/IdPhotoView.xaml.cs`, `KioskGridView.xaml.cs` — appliqué
+  au chargement.
+- `[NEW] tests/Studio.Tests/PhotoScannerOrderTests.cs`.
+
+---
+
+## 8. Ctrl+A puis « Remplir » ne change qu'une photo
+
+`EditSelectionView.OnToggleFit` écrit sur `_courante`, jamais sur `Visees()` :
+
+```csharp
+var actuel = _courante.FitOverride ?? produit.DefaultFit;
+_courante.FitOverride = voulu == produit.DefaultFit ? null : voulu;
+```
+
+Or Ctrl+A coche `Ciblee` sur toute la sélection, et c'est bien `Visees()` que suivent les
+corrections et le contour de découpe. **Trois autres boutons du même panneau ont le même
+défaut** : « Pivoter le cadre », « Pivoter la photo », « Réinitialiser ».
+
+Les quatre passent sur `Visees()`. Le MODE est décidé par la photo courante puis imposé aux
+autres — et non basculé photo par photo, sinon une planche mi-remplie mi-entière
+s'inverserait au lieu de s'aligner.
+
+### Fichiers
+
+- `[MODIFY] src/Studio.App/Views/EditSelectionView.xaml.cs` — `OnToggleFit`,
+  `OnRotateFrame`, `OnRotatePhoto`, `OnResetCrop` ; une ligne de journal comme pour le
+  contour de découpe (`… sur N photo(s)`), qui est ce qui rend ces gestes vérifiables.
+
+---
+
+## Vérification
+
+- `dotnet build` — 0 erreur, 0 avertissement (hors les 2 CS9057 d'OpenCvSharp).
+- `dotnet test` — 804 verts au départ, plus les nouveaux.
+- Application lancée, les trois écrans ouverts.
+
+⚠ Fermer `Studio.App` et `Studio.De100Host` avant de bâtir : ils verrouillent les DLL et le
+tube.
+
+### À contrôler par l'exploitant, parce qu'aucun essai ne le peut
+
+1. **Une commande de 4 photos ou plus sur le DE100**, et compter ce qui sort. Le journal
+   dira désormais le verdict de la machine photo par photo.
+2. **T dans « Modifier » et dans identité** : le bandeau « Redressement » doit apparaître au
+   premier appui.
+3. **Un PDF de plusieurs pages** posé dans un dossier de tirages.
+4. **Une photo d'identité** : le cadrage doit avoir un cheveu d'air en haut, sans que la
+   tête ait rétréci.
+
+---
+
+## Ordre d'exécution proposé
+
+Les points 3, 4, 5, 7 et 8 sont courts et sans risque — ils partent en premier, et
+l'exploitant peut s'en servir dès le prochain lancement. Le point 1 (regroupement des
+commandes DE100) et le point 2 (PDF) viennent ensuite : ils touchent le protocole du relais
+et ajoutent une dépendance.

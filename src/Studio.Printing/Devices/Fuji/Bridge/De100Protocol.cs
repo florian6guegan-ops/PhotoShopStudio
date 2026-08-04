@@ -64,8 +64,21 @@ public sealed record De100Message(
     bool Ok = true,
     string? Error = null);
 
-/// <summary>Paramètres d'une demande de tirage transmise au relais.</summary>
-public sealed record De100SubmitRequest(De100PrintJob Job, char MachineId);
+/// <summary>
+/// Paramètres d'une demande de tirage transmise au relais.
+///
+/// <see cref="Jobs"/> porte TOUTES les photos d'une enveloppe : elles forment une seule
+/// commande côté minilab (voir <c>De100Driver.Submit</c>). Le champ était au singulier, et
+/// Studio ouvrait donc une commande par photo — c'est ce qui a fait perdre deux tirages
+/// sur quatre le 04/08/2026.
+///
+/// <b>Un seul constructeur, et c'est délibéré.</b> Un second — le confort « un tirage
+/// seul » — laissait <c>System.Text.Json</c> sans règle pour choisir, et la
+/// désérialisation échouait net : « Deserialization of types without a parameterless
+/// constructor… is not supported ». Le relais aurait refusé toutes les demandes de tirage.
+/// Pour un tirage seul, on passe une liste d'un élément.
+/// </summary>
+public sealed record De100SubmitRequest(IReadOnlyList<De100PrintJob> Jobs, char MachineId);
 
 /// <summary>
 /// Encodage et décodage des messages du relais DE100 : une ligne de JSON par message.

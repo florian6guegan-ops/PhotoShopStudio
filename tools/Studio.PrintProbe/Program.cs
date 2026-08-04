@@ -13,6 +13,7 @@ return args switch
 {
     ["list"] => ListPrinters(),
     ["addforms"] => AddShopForms(),
+    ["dnp"] => EtatDnp(),
     ["papier", var printer, var w, var h] => CheckPaper(printer, ParseMm(w), ParseMm(h)),
     ["devmode", var printer, var file] => CaptureDevMode(printer, file),
     ["test", var printer, var w, var h] => PrintTestPage(printer, ParseMm(w), ParseMm(h), null),
@@ -30,11 +31,48 @@ static int Usage()
     Console.WriteLine("""
         Studio.PrintProbe — diagnostic impression
           list                                  liste les imprimantes et leurs formats
+          dnp                                   état des DNP vu par le spouleur Windows
           papier <imprimante> <Lmm> <Hmm>       ce format passera-t-il ? (n'imprime rien)
           devmode <imprimante> <fichier.bin>    capture les réglages pilote (dialogue)
           test <imprimante> <Lmm> <Hmm> [pdf]   page de test calibrée (règle cm)
         """);
     return 1;
+}
+
+/// <summary>
+/// Ce que le SPOULEUR dit des DNP — la seule source qui reste vraie quand DiLand tient le
+/// port USB, c'est-à-dire presque toujours en boutique.
+///
+/// À lancer machine allumée puis pendant un tirage : c'est le contrôle qui a manqué quand
+/// l'écran d'état annonçait « en veille » en continu (04/08/2026).
+/// </summary>
+static int EtatDnp()
+{
+    Studio.Printing.Devices.Dnp.DnpSpouleur.Log = Console.WriteLine;
+
+    var vues = Studio.Printing.Devices.Dnp.DiLandPresence.VuesParWindows();
+    if (vues.Count == 0)
+    {
+        Console.WriteLine("Aucune file DNP dans le spouleur Windows.");
+        return 1;
+    }
+
+    Console.WriteLine($"DiLand tourne : {Studio.Printing.Devices.Dnp.DiLandPresence.IsRunning()}");
+    Console.WriteLine();
+
+    foreach (var dnp in vues)
+    {
+        var file = dnp.Spouleur!;
+        Console.WriteLine($"  {file.Nom}");
+        Console.WriteLine($"    état            {file.Etat}");
+        Console.WriteLine($"    libellé         {Studio.Printing.Devices.Dnp.DnpSpouleur.Decrire(file)}");
+        Console.WriteLine($"    photos restantes {file.PhotosRestantes}");
+        Console.WriteLine($"    travaux en file  {file.TravauxEnAttente}");
+        if (file.Message.Length > 0) Console.WriteLine($"    message         {file.Message}");
+        Console.WriteLine();
+    }
+
+    return 0;
 }
 
 static int AddShopForms()

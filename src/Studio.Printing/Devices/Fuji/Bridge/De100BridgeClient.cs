@@ -176,7 +176,13 @@ public sealed class De100BridgeClient : IAsyncDisposable
 
     /// <summary>Envoie un tirage ; renvoie le handle de commande attribué par le minilab.</summary>
     public async Task<string> SubmitAsync(De100PrintJob job, char machineId) =>
-        await SendAsync<string>(De100Commands.Submit, new De100SubmitRequest(job, machineId))
+        await SubmitAsync([job], machineId);
+
+    /// <summary>
+    /// Envoie toutes les photos d'une enveloppe : elles forment UNE commande côté minilab.
+    /// </summary>
+    public async Task<string> SubmitAsync(IReadOnlyList<De100PrintJob> jobs, char machineId) =>
+        await SendAsync<string>(De100Commands.Submit, new De100SubmitRequest(jobs, machineId))
         ?? throw new InvalidOperationException("Le relais n'a pas renvoyé de handle de commande.");
 
     public async Task CancelAsync(string orderHandle) =>

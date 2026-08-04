@@ -278,6 +278,11 @@ l'écran dédié (`KioskOrdersView`). Toute action de ligne ajoutée à l'un doi
 l'autre — l'accueil est celui qu'on regarde en servant un client, et une action qui n'y
 figure pas passe pour absente.
 
+**Le COMPORTEMENT, lui, ne vit qu'à un endroit : `OuvertureBorne`.** Les deux écrans
+avaient chacun leur copie d'`Archiver` + `MarkInProgress` + `Navigator.Go`, mot pour mot.
+Ce qui se perdait à l'ouverture se perdait donc deux fois et se corrigeait une seule. Les
+BOUTONS se doublent ; ce qu'ils font, non.
+
 Les portes 2 et 3 existent parce qu'une borne ne propose que des formats standard : le client
 commande du 10×15 et demande autre chose au comptoir. Sans elles, il fallait repartir de
 l'accueil et retrouver le dossier, en perdant tout le travail déjà fait.
@@ -289,6 +294,141 @@ commande, elle ne peut pas mélanger deux tailles.
 « perso ») pour que cadres, vignettes et écran « Modifier » travaillent au bon rapport
 largeur/hauteur sans rien savoir du format. Il est remplacé par le papier retenu au moment de
 bâtir la commande : **ce code fantôme ne descend jamais jusqu'à la commande.**
+
+---
+
+## Le cadrage d'une commande de borne : quatre affectations, dans cet ordre
+
+Ouvrir une commande de borne dans « Modifier » doit reposer sur chaque vignette ce que le
+CLIENT a validé à la borne. Deux moitiés, et il faut les deux.
+
+**1. La donnée doit voyager.** `Archiver` recopie les FICHIERS ; `PhotoGridView` rescanne
+le dossier et ne voit donc que des images. `StagedOrder.Cadrages` (nom de fichier →
+`CadrageBorne`) porte le reste — recadrage, quarts de tour, redressement, quantité,
+produit de la ligne. Sans lui, le parcours « Reprendre » gardait le cadrage et le parcours
+« Modifier » le jetait : **le même bouton ne tirait pas la même chose selon l'écran.**
+`CropOf` et `QuarterTurns` sont partagés par les deux parcours, pour qu'ils ne divergent
+jamais.
+
+**2. L'ordre de pose est imposé.** Trois mutateurs de `PhotoItem` remettent le cadrage à
+zéro :
+
+| Mutateur | Effet de bord |
+|---|---|
+| `Product` (code différent) | `OublierCadre()` → `_cadre = null`, `Crop = Full` |
+| `RotationQuarterTurns` | idem |
+| `FitOverride` (valeur différente) | `_cadre = null`, `CadrageImpose = false` |
+
+D'où **produit → quarts de tour → redressement → recadrage**, et à un seul endroit :
+`PhotoGridView.AppliquerLeCadrageDeLaBorne`. Le produit est posé **à la création**, et pas
+seulement parce qu'il vient en premier : sans lui, le `photo.Product ??= DefaultProduct`
+d'`OnModify` le poserait plus tard et emporterait le recadrage avec lui.
+
+**`PoserLeCadrageDOrigine` et `CadrageImpose` existent pour les « bord blanc ».** Le
+getter `Cadre` ignore le recadrage enregistré en mode « photo entière » — juste dans son
+cas d'origine (un cadrage hérité du mode « remplir » ferait déborder la photo), mais il
+jetait aussi le cadrage validé par le client sur les **dix produits bord blanc** du
+catalogue, tous en `DefaultFit = Fit`. Le drapeau dit « ce recadrage est une décision, pas
+un héritage », et tombe dès que l'opérateur reprend la main sur le format.
+
+Vérifié par `tests/Studio.Tests/KioskCropCarryTests.cs`, sur les valeurs réelles de la
+boutique (image 1536 × 2048, crop `X=0 Y=44 W=1536 H=1958`). **L'ordre des affectations,
+lui, n'est pas couvert** : `Studio.App` n'est pas référencé par les essais.
+
+---
+
+## « Mettre en attente » : toute commande en préparation, pas seulement les bornes
+
+`DataRoot\attente\<guid>.json`, un fichier par commande — voir `TravailEnAttente` et
+`AttenteStore`.
+
+C'est le geste du comptoir : un client hésite ou s'absente, un autre attend derrière. La
+première version ne valait que pour les commandes de bornes, et c'était le contresens :
+**c'est en préparant une commande AU COMPTOIR qu'on a besoin de faire autre chose**, et
+l'origine des photos n'y est pour rien. L'identité est donc un `Guid` propre, et non l'oid
+d'une borne — une clé USB ou un envoi de téléphone n'en ont pas.
+
+**Deux boutons, parce qu'on s'interrompt à deux endroits** : la grille (`PhotoGridView`) et
+surtout l'écran « Modifier » (`EditSelectionView`), là où l'on passe le plus de temps sur
+une commande. Mais **c'est toujours la GRILLE qui enregistre** : « Modifier » ne tient que
+les photos COCHÉES, et mettre de côté la moitié d'une commande serait pire que de ne rien
+mettre de côté.
+
+Sept règles à ne pas défaire :
+
+1. **Les photos sont désignées par leur NOM DE FICHIER**, jamais par leur rang. Un fichier
+   illisible est écarté au chargement de la grille (`Ecarter`) : les rangs se décaleraient
+   d'une ouverture à l'autre, et on reprendrait le cadrage du voisin.
+2. **L'écran garde son `_attenteId` pour toute sa vie.** Remettre de côté met à jour la même
+   entrée ; sans cela, chaque aller-retour laisserait un doublon sur l'accueil et on ne
+   saurait plus laquelle reprendre.
+3. **L'enregistrement est explicite**, jamais automatique. Mettre en attente en quittant
+   l'écran ferait s'accumuler des commandes qu'on n'a fait qu'ouvrir, et la liste de
+   l'accueil ne voudrait plus rien dire.
+4. **Le bandeau de l'accueil disparaît quand il n'y a rien.** Un titre suivi du vide fait
+   croire à un écran cassé, et mange la place de la liste des bornes.
+5. **Reprendre n'efface pas l'entrée** : l'opérateur peut la remettre de côté aussitôt, ou
+   fermer l'écran sans rien décider. Elle part à l'impression (`OnPrint`) ou quand il
+   l'abandonne.
+6. **Pour une commande de borne, c'est `KioskOrderJournal` qui efface** —
+   `MarkPrinted`, `Dismiss`, `Purge`, via `AttenteStore.EffacerPourBorne` — et non les
+   écrans. Lui seul sait qu'une commande est close ou périmée ; le laisser aux appelants
+   reviendrait à répéter la règle partout et à l'oublier au prochain. `EffacerPourBorne`
+   ne touche QUE ce qui porte cet oid : une commande du comptoir mise de côté au même
+   moment n'a rien à voir avec elle.
+7. **L'attente l'emporte sur le cadrage du client**, et « ✕ attente » est la SEULE porte de
+   retour vers celui-ci. Sans elle, une mise de côté serait définitive.
+
+La taille personnalisée fait partie de l'entrée : rouvrir au format du catalogue un travail
+fait en 5,5 × 8 remettrait tous les cadres au centre, au mauvais rapport.
+
+**`AppServices.CommandesEnAttente` n'est PAS `AppServices.Attente`** : la seconde est la
+file des tirages que l'IMPRIMANTE fait attendre (`PendingPrintQueue`). Ici, c'est
+l'opérateur qui met de côté, et rien n'est encore commandé.
+
+---
+
+## Détourage du fond blanc : deux méthodes, et un réglage par poste
+
+`BiRefNetMatting.Actif` était un `bool` statique à faux **qu'aucune ligne du dépôt
+n'assignait** : le réseau ne s'exécutait jamais et tout ce code était mort. Il est posé
+depuis `config\detourage.json` (écran Paramètres), via `AppServices.AppliquerLeDetourage`.
+
+| | Poids | Sur la Quadro P2000 de l'atelier |
+|---|---|---|
+| méthode par couleur (`BackgroundRemoval`) | — | ~1,2 s, aucune exigence, marche toujours |
+| `birefnet-lite-fp16` | 109 Mio | 4,3 s aperçu · 9,5 s pleine résolution · tient photo après photo |
+| `birefnet-portrait-fp16` | 467 Mo | 1ʳᵉ photo passe, 2ᵉ échoue (`DmlFusedNode`, mémoire) |
+
+**Le défaut reste la méthode par couleur** — décision de l'exploitant, 03/08/2026 : dix
+secondes devant un client, c'est trop long. Le réglage ouvre la porte, il ne la franchit pas.
+
+**Trois BOUTONS RADIO, et rien de grisé.** La première version posait deux cases à cocher
+dont la seconde — le modèle puissant, celui qu'on vient justement chercher — restait
+désactivée tant que la première n'était pas cochée. Elle n'était donc « pas cochable », et
+rien à l'écran ne disait pourquoi. Un choix exclusif entre trois méthodes est ce qu'est
+réellement ce réglage ; il n'y a plus d'état intermédiaire à expliquer.
+
+Trois points à ne pas défaire :
+
+1. **`SaveDetourage` appelle `BiRefNetMatting.Reinitialiser()`.** La session ONNX est
+   gardée pour la vie du processus (recharger un demi-gigaoctet par photo bloquerait le
+   comptoir) : sans cette remise à zéro, changer de modèle dans Paramètres n'aurait d'effet
+   qu'au redémarrage suivant, et le réglage passerait pour inopérant.
+2. **`ModelePrefere` passe en tête de la recherche, il ne l'épuise pas.** Modèle absent, on
+   retombe sur l'autre — mais `Session()` l'écrit au journal. Un modèle silencieusement
+   remplacé ferait chercher le défaut ailleurs. `ModeleRetenu`, lui, est SANS effet de
+   bord : l'écran des réglages l'interroge à chaque frappe.
+3. **La mémoire vidéo se lit dans le REGISTRE, pas dans WMI.**
+   `Win32_VideoController.AdapterRAM` est un `uint32` en octets : il plafonne à 4 Go et
+   rend donc « 4 Go » sur toutes les cartes de 6, 8 ou 24 Go — l'avertissement se serait
+   déclenché à tort exactement dans le cas qu'on cherche à autoriser.
+   `HardwareInformation.qwMemorySize` donne la vraie valeur (la P2000 de ce poste : **5
+   Go**, et non les 4 qu'annoncent les commentaires plus anciens).
+
+Les modèles vivent **hors du dépôt**, dans `DataRoot\models\` : le dépôt est public, un
+demi-gigaoctet de poids n'y a rien à faire. L'écran Paramètres dit lesquels sont installés
+et où poser celui qui manque.
 
 ---
 
@@ -362,6 +502,64 @@ l'emporte toujours sur la lecture automatique. Celle-ci ne sert que sur un porta
 Sans réseau connu, la colonne WiFi de `PhoneUploadView` **disparaît** et le code d'envoi
 reprend toute la place. C'est voulu : un poste en Ethernet est un cas normal, et
 l'avertissement ne servirait à personne.
+
+---
+
+## DNP DS620 : son ÉTAT vient du spouleur, pas du SDK
+
+Le SDK DNP (`CPPCtrl32.dll`) ne peut pas ouvrir la DS620 tant que DiLand tourne — il tient
+le port USB en exclusif, et le SDK se bloque au lieu de le dire (voir `DiLandPresence`).
+Or **DiLand tourne pratiquement en permanence** en boutique : c'est lui qui reçoit les
+commandes des bornes.
+
+Faute de réponse du SDK, les écrans affichaient **« En veille » en continu** — machine
+allumée, prête, et même pendant qu'elle tirait. Signalé par l'exploitant le 04/08/2026.
+« Muet au SDK » et « endormie » ne sont pas la même chose, et c'est cette confusion qui
+faisait tout.
+
+**`DnpSpouleur` lit l'état dans le spouleur Windows** (WMI `Win32_Printer` +
+`Win32_PrintJob`) : c'est par lui que Studio imprime sur cette machine, il répond toujours,
+et il voit ce qu'un SDK bloqué ne peut pas voir.
+
+| | Ce qu'il donne |
+|---|---|
+| spouleur | état de la file, pannes du pilote, **photos restant à sortir** |
+| SDK (DiLand fermé) | rouleau restant, numéro de série, micrologiciel |
+
+Cinq points à ne pas défaire :
+
+1. **Une page = une photo.** `BitmapPrinter` envoie un travail d'UNE page par tirage, et
+   `PrintOrchestrator` le répète par exemplaire. `Σ(TotalPages − PagesPrinted)` est donc
+   exactement le nombre de photos qu'il reste à sortir — c'est ce que l'exploitant regarde
+   pour savoir s'il a le temps de servir quelqu'un d'autre. Compter les TRAVAUX ferait
+   stagner l'affichage sur celui qui est à moitié sorti.
+2. **`Win32_Printer.PrinterState` n'est PAS lu.** La DP-DS620 le laisse à 0, ce que la
+   documentation traduit par « Paused », alors qu'elle est prête et qu'elle imprime. S'y
+   fier remettrait le défaut qu'on vient de corriger. Relevé le 04/08/2026 :
+   `PrinterStatus = 3`, `WorkOffline = False`, `DetectedErrorState = 0`, `PrinterState = 0`.
+3. **`DetectedErrorState` 0 et 2 ne sont pas des pannes** (« inconnu » et « aucune
+   erreur »). La machine de la boutique rend 0 en marche normale : la traiter comme une
+   erreur repeindrait la tuile en rouge en permanence.
+4. **L'ordre de décision** : hors ligne → panne → file en pause → impression → prête. Une
+   panne reste une panne même avec des tirages qui patientent derrière, et une file en
+   pause n'est pas « en cours » alors que rien n'en sortira.
+5. **La pause d'une file VIDE n'est pas détectée**, et c'est assumé : elle se lirait dans
+   `PrinterState`, justement inutilisable ici. La pause se voit dès qu'un travail attend
+   (bit `0x0001` de `Win32_PrintJob.StatusMask`, non traduit — `JobStatus` est du texte
+   localisé et ne se compare pas).
+
+Les couleurs sont **les mêmes que celles du minilab**, DNP comprise : vert prête, bleu en
+train de tirer, orangé un geste à faire, rouge en panne, gris hors ligne, ardoise en
+veille. `MachineStatusView` porte désormais une pastille — tout y était du texte, et il
+fallait lire chaque ligne pour savoir laquelle des machines réclamait quelque chose.
+
+`MachineStatusView` se relit **toutes les dix secondes** : le nombre de photos restantes y
+serait resté figé pendant toute une commande, c'est-à-dire au moment précis où on le
+regarde. La relecture automatique est *discrète* — ni sablier ni liste vidée, sinon l'écran
+clignoterait et volerait le curseur.
+
+`Studio.PrintProbe dnp` montre ce que le spouleur dit, sans rien imprimer — le contrôle qui
+manquait.
 
 ---
 
@@ -567,3 +765,171 @@ Le SDK DE100 (`PModuleIF.dll`, chargé par le relais 32 bits) crée
 `HKLM\SOFTWARE\WOW6432Node\Fujifilm\Frontier\CurrentVersion\System\Debug` au démarrage. Cette
 clé n'accorde que la LECTURE au groupe Utilisateurs : hors élévation, l'appel échoue avec
 `RegCreateKeyEx` erreur 5 (accès refusé). Ce n'est pas un défaut de l'application.
+
+---
+
+## DE100 : une ENVELOPPE = une commande minilab
+
+`PIF_StartOrder` une fois, `PIF_Print` par photo, `PIF_EndOrder` une fois. La signature du
+SDK ne laisse pas le choix :
+
+```c
+PIF_Print(orderHandle, &imageData, params, n);          // le handle est un PARAMÈTRE
+PIF_GetPrintInfo(orderHandle, index, &printInfo);       // les tirages se relisent par INDICE
+```
+
+Une commande porte N images, et c'est ainsi que procède le pilote de DiLand sur les 9 336
+tirages de son journal.
+
+**Ce que coûtait l'inverse.** Studio ouvrait une commande PAR PHOTO. Commande 04-007 du
+04/08/2026 : quatre `StartOrder`/`EndOrder` en 1,2 s, quatre handles revenus `Ok` —
+**deux tirages sur quatre ne sont jamais sortis**, sans erreur, sans trace. Rien ne
+garantit ce va-et-vient, et c'est le seul candidat compatible avec les faits.
+
+Quatre points à ne pas défaire :
+
+1. **La commande part ENTIÈRE ou pas du tout.** Un `PIF_Print` refusé à la troisième photo
+   annule les deux premières (`PIF_CancelOrder`). Une demi-commande ouverte côté minilab
+   est exactement le genre d'ordre fantôme qui bloque sa file.
+2. **L'arrêt s'examine pendant la PRÉPARATION des images**, plus entre deux envois — il n'y
+   en a plus qu'un. Demandé pendant l'envoi, il reste rattrapable : un seul handle à
+   rappeler au lieu d'un par photo, mais le bouton d'arrêt garde le même pouvoir.
+3. **`De100JobTracker` porte plusieurs `JobId` sous un handle.** Le minilab notifie par
+   COMMANDE : `Report` rend donc une issue PAR PHOTO. En rendre une seule laisserait cinq
+   sur six sans verdict, et le compte des tirages restants ne descendrait jamais.
+   `PendingCount` compte les TIRAGES, pas les commandes.
+4. **`De100SubmitRequest` n'a QU'UN constructeur.** Un second — le confort « un tirage
+   seul » — laisse `System.Text.Json` sans règle pour choisir et fait échouer la
+   désérialisation : le relais refuserait toutes les demandes de tirage. Pour un tirage
+   seul, on passe une liste d'un élément.
+
+**Le verdict du minilab s'écrit au JOURNAL** (`AppServices`, sur `JobFinished`). Il ne
+l'était nulle part : le fichier de 04-007 s'arrête à l'envoi, et c'est ce qui a rendu
+l'enquête impossible. `De100BridgePrinter.EnsureConnected` vide aussi `_subscribed` : le
+relais redémarre (deux fois le 04/08/2026), et sans cela on ne se réabonnait jamais — plus
+aucun tirage ne recevait son verdict, en silence, pour toute la vie de l'application.
+
+---
+
+## Les PDF : une page = une photo, éclatée AVANT la planche
+
+`PdfPages.Developper` remplace chaque PDF par ses pages, **à sa place dans la liste**, au
+moment du scan de dossier. Rien en aval — rendu, minilab, DNP, commande — ne sait qu'un PDF
+existe.
+
+**PDFium, et non Ghostscript.** Magick.NET ne lit pas un PDF seul : il délègue à
+Ghostscript, qui n'est installé sur aucun poste de la boutique. `PDFtoImage` embarque
+PDFium en natif — rien à installer, et pas d'AGPL dans un dépôt public.
+
+| | |
+|---|---|
+| résolution | **200 ppp** — un A4 donne 1654 × 2339 px, de quoi tirer un 13×18 à 300 ppp sans interpoler. 300 quadruplerait la mémoire pour un gain que le papier ne rend pas |
+| plafond | **60 pages** — une notice de 400 pages posée par erreur remplirait la planche et le cache avant qu'on ait vu ce qui se passe |
+| où | `DataRoot\cache\pdf\<empreinte>\` — **jamais à côté du PDF** : le dossier ouvert est la clé du client, on n'y écrit rien |
+
+**Le témoin `pages.txt` n'est écrit qu'une fois TOUTES les pages posées.** Une extraction
+interrompue — coupure, clé retirée — se refait donc au lieu de rendre une commande
+incomplète.
+
+**`.pdf` est dans `PhotoScanner.Extensions`**, sans quoi un dossier de scans serait annoncé
+vide et disparaîtrait de l'écran de parcours. Mais un PDF **n'illustre jamais un dossier**
+(`FirstPhoto` l'écarte : la vignette est décodée telle quelle), et les deux écrans qui ne
+savent pas l'éclater le filtrent par `PhotoScanner.IsPdf` — l'identité (on ne fait pas une
+photo d'identité depuis un document) et la borne (libre-service, personne pour aider).
+
+---
+
+## Les photos se présentent de la plus RÉCENTE à la plus ancienne
+
+`PhotoScanner.TrierParDateDecroissante`, posé au chargement des trois écrans qui scannent.
+Ce que le client veut tirer est ce qu'il vient de prendre ; l'ordre alphabétique le
+renvoyait en bas de mille vignettes.
+
+Trois points :
+
+1. **`Scan` garde son tri ALPHABÉTIQUE.** Il est déterministe, testé, et c'est lui qui
+   décide de ce qui rentre sous le plafond de 1 200. Le classement par date est posé
+   après, à l'affichage seulement.
+2. **La date retenue est la plus ANCIENNE des deux** que Windows tient. Copier une carte
+   mémoire remet la création à l'instant de la copie et met toutes les photos du client à
+   la même seconde ; la modification, elle, survit à la copie.
+3. **À date égale, le nom départage.** Une rafale sort à la même seconde, et son ordre ne
+   doit pas changer d'une ouverture à l'autre.
+
+Le bouton « trier » de la grille bascule désormais vers le NOM et revient — il partait du
+nom pour aller vers la date.
+
+---
+
+## `ToucheFenetre` : un abonnement clavier qui ne se double pas
+
+Écouter le clavier de la FENÊTRE est obligatoire pour T (redressement) : un événement
+clavier remonte depuis ce qui a le focus, et le focus n'est pas sur la photo tant qu'on n'a
+pas cliqué dedans — le geste que l'opérateur ne fait pas.
+
+Le branchement se faisait ainsi, dans `CropSurface` et dans `IdPhotoView` :
+
+```csharp
+Loaded   += (_, _) => Window.GetWindow(this).PreviewKeyDown += OnPreviewKeyDown;
+Unloaded += (_, _) => Window.GetWindow(this).PreviewKeyDown -= OnPreviewKeyDown;
+```
+
+**WPF déclenche `Loaded` plusieurs fois** sur un même élément — reparentage, retemplatage —
+sans `Unloaded` entre les deux. Le gestionnaire se retrouvait abonné DEUX FOIS, et comme T
+est une bascule, un appui la jouait deux fois : le mode ne s'armait jamais et le bandeau
+n'apparaissait pas. Signalé le 04/08/2026 (« je ne peux pas redresser avec la molette en
+appuyant sur T »), visible au journal : `T=False (armé=False)` juste après l'appui.
+
+`ToucheFenetre` rend l'abonnement idempotent ET **retient la fenêtre** : se désabonner via
+`Window.GetWindow` au moment de l'`Unloaded` peut viser une autre fenêtre, ou aucune —
+l'élément est déjà détaché de l'arbre visuel.
+
+---
+
+## Les boutons du panneau de recadrage portent sur les photos VISÉES
+
+`OnToggleFit`, `OnRotateFrame`, `OnRotatePhoto`, `OnResetCrop` passent par
+`EditSelectionView.SurLesVisees`, comme les corrections et le contour de découpe. Ils
+écrivaient sur `_courante` et sur elle seule : **Ctrl+A puis « Remplir » ne changeait
+qu'une photo sur trente.**
+
+**Le mode est déduit de la photo COURANTE puis IMPOSÉ aux autres**, jamais basculé photo
+par photo : sur une planche à moitié en « remplir », basculer chacune de son côté les
+inverserait sans jamais les aligner, alors que le geste demandé est « mets-moi tout en
+remplir ».
+
+Chaque photo lit le défaut de SON produit (`FitOverride = voulu == sien.DefaultFit ? null :
+voulu`) : une planche peut mélanger deux formats, et le mode ne s'exprime que par rapport
+au défaut de son propre produit.
+
+La ligne de journal « … sur N photo(s) » n'est pas une politesse : aucun essai ne clique,
+c'est le seul moyen de vérifier après coup qu'un geste a porté sur la planche entière.
+
+---
+
+## Photo d'identité : impression en tâche de fond, et corrections
+
+**`IdPhotoView.OnPrint` ne rend plus la main après le tirage, mais après la CRÉATION de la
+commande** — comme la grille. Il attendait `PrintEnvelope` en entier puis affichait une
+boîte de dialogue : c'était le seul parcours qui retenait l'opérateur devant sa machine
+pendant que le client suivant attendait. Plus de boîte de succès : l'avancement, l'attente
+d'imprimante et les échecs se lisent tous dans le bandeau du haut.
+
+**Le module « Corriger »** ouvre `AdjustView` — le même écran que les tirages — sur la photo
+courante. Trois règles :
+
+1. **Noir et blanc et fond blanc n'y sont PAS passés** : ce sont des cases de l'écran
+   identité. Les mettre aussi dans le module donnerait deux commandes pour un même
+   réglage, dont l'une mentirait dès qu'on toucherait l'autre. `ReglagesRetenus()` les
+   réunit au dernier moment, à un seul endroit — il y a trois sorties (planche, courriel,
+   aperçu), et une quatrième oubliée tirerait autre chose que ce qu'on montre.
+2. **Les corrections appartiennent à la photo courante** et repartent à neutre quand on
+   change de photo dans la bande. Une planche d'identité ne porte qu'un visage.
+3. **L'aperçu suit l'ordre du RENDU** — fond blanc, corrections, noir et blanc — celui
+   d'`ImageAdjuster.Apply`. Le fond blanc raisonne sur les couleurs d'origine ; le noir et
+   blanc vient en dernier, sans quoi les réglages de couleur n'auraient plus de prise.
+
+**`IdPhotoFr.TargetCrownMarginMm` vaut 3,0 mm** (04/08/2026). Elle valait 4, puis 1,75 au
+calage sur DiLand du 03/08 — trop serré sur les tirages réels. La TAILLE de la tête ne
+bouge pas : seul le cadre remonte de 1,25 mm sur 45. Les bornes de conformité se calculent
+depuis la cible et suivent toutes seules.

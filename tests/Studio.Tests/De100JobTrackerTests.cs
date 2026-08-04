@@ -27,9 +27,8 @@ public class De100JobTrackerTests
     {
         var tracker = WithTrackedJob();
 
-        var result = tracker.Report("OH-1", De100OrderStatus.Complete, T0.AddMinutes(2));
+        var result = Assert.Single(tracker.Report("OH-1", De100OrderStatus.Complete, T0.AddMinutes(2)));
 
-        Assert.NotNull(result);
         Assert.Equal(De100JobOutcome.Printed, result.Outcome);
         Assert.Equal("J1", result.JobId);
         Assert.Equal(0, tracker.PendingCount);
@@ -40,9 +39,8 @@ public class De100JobTrackerTests
     {
         var tracker = WithTrackedJob();
 
-        var result = tracker.Report("OH-1", De100OrderStatus.Canceled, T0.AddMinutes(1));
+        var result = Assert.Single(tracker.Report("OH-1", De100OrderStatus.Canceled, T0.AddMinutes(1)));
 
-        Assert.NotNull(result);
         Assert.Equal(De100JobOutcome.Canceled, result.Outcome);
         Assert.Equal(0, tracker.PendingCount);
     }
@@ -53,9 +51,8 @@ public class De100JobTrackerTests
     {
         var tracker = WithTrackedJob();
 
-        var result = tracker.Report("OH-1", De100OrderStatus.Error, T0.AddMinutes(3));
+        var result = Assert.Single(tracker.Report("OH-1", De100OrderStatus.Error, T0.AddMinutes(3)));
 
-        Assert.NotNull(result);
         Assert.Equal(De100JobOutcome.Failed, result.Outcome);
         Assert.Contains("erreur", result.Reason, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, tracker.PendingCount);
@@ -72,9 +69,7 @@ public class De100JobTrackerTests
     {
         var tracker = WithTrackedJob();
 
-        var result = tracker.Report("OH-1", status, T0.AddMinutes(5));
-
-        Assert.Null(result);
+        Assert.Empty(tracker.Report("OH-1", status, T0.AddMinutes(5)));
         Assert.Equal(1, tracker.PendingCount);
     }
 
@@ -89,11 +84,10 @@ public class De100JobTrackerTests
         var tracker = WithTrackedJob();
 
         for (var minute = 1; minute <= 29; minute++)
-            Assert.Null(tracker.Report("OH-1", De100OrderStatus.Busy, T0.AddMinutes(minute)));
+            Assert.Empty(tracker.Report("OH-1", De100OrderStatus.Busy, T0.AddMinutes(minute)));
 
-        var result = tracker.Report("OH-1", De100OrderStatus.Busy, T0.AddMinutes(31));
+        var result = Assert.Single(tracker.Report("OH-1", De100OrderStatus.Busy, T0.AddMinutes(31)));
 
-        Assert.NotNull(result);
         Assert.Equal(De100JobOutcome.TimedOut, result.Outcome);
         Assert.Equal(0, tracker.PendingCount);
     }
@@ -132,9 +126,7 @@ public class De100JobTrackerTests
         var tracker = WithTrackedJob();
         tracker.Report("OH-1", De100OrderStatus.Complete, T0.AddMinutes(2));
 
-        var late = tracker.Report("OH-1", De100OrderStatus.Error, T0.AddMinutes(4));
-
-        Assert.Null(late);
+        Assert.Empty(tracker.Report("OH-1", De100OrderStatus.Error, T0.AddMinutes(4)));
         Assert.Equal(0, tracker.PendingCount);
     }
 
@@ -143,7 +135,7 @@ public class De100JobTrackerTests
     {
         var tracker = NewTracker();
 
-        Assert.Null(tracker.Report("jamais-vu", De100OrderStatus.Complete, T0));
+        Assert.Empty(tracker.Report("jamais-vu", De100OrderStatus.Complete, T0));
         Assert.Equal(0, tracker.PendingCount);
     }
 
@@ -152,11 +144,55 @@ public class De100JobTrackerTests
     {
         var tracker = WithTrackedJob();
 
-        var result = tracker.Report("OH-1", (De100OrderStatus)42, T0.AddMinutes(1));
+        var result = Assert.Single(tracker.Report("OH-1", (De100OrderStatus)42, T0.AddMinutes(1)));
 
-        Assert.NotNull(result);
         Assert.Equal(De100JobOutcome.Failed, result.Outcome);
         Assert.Equal(0, tracker.PendingCount);
+    }
+
+    /// <summary>
+    /// Une commande minilab porte TOUTES les photos d'une enveloppe depuis le 04/08/2026.
+    /// La machine notifie par commande : un seul callback doit donc rendre son verdict à
+    /// chacune des photos, sans quoi cinq sur six resteraient sans issue et le compte des
+    /// tirages restants ne descendrait jamais.
+    /// </summary>
+    [Fact]
+    public void Un_seul_verdict_de_commande_clot_toutes_ses_photos()
+    {
+        var tracker = NewTracker();
+        tracker.Track(["J1", "J2", "J3"], "OH-1", T0);
+
+        Assert.Equal(3, tracker.PendingCount);
+        Assert.Equal(["J1", "J2", "J3"], tracker.PendingJobIds);
+
+        var issues = tracker.Report("OH-1", De100OrderStatus.Complete, T0.AddMinutes(2));
+
+        Assert.Equal(3, issues.Count);
+        Assert.All(issues, i => Assert.Equal(De100JobOutcome.Printed, i.Outcome));
+        Assert.Equal(["J1", "J2", "J3"], issues.Select(i => i.JobId));
+        Assert.Equal(0, tracker.PendingCount);
+    }
+
+    /// <summary>Une commande muette expire ENTIÈRE : aucune photo ne reste suivie pour toujours.</summary>
+    [Fact]
+    public void Une_commande_muette_expire_avec_toutes_ses_photos()
+    {
+        var tracker = NewTracker();
+        tracker.Track(["J1", "J2", "J3"], "OH-1", T0);
+
+        var expirees = tracker.SweepTimeouts(T0 + Timeout);
+
+        Assert.Equal(3, expirees.Count);
+        Assert.All(expirees, e => Assert.Equal(De100JobOutcome.TimedOut, e.Outcome));
+        Assert.Equal(0, tracker.PendingCount);
+    }
+
+    [Fact]
+    public void Une_commande_sans_aucun_tirage_est_refusee()
+    {
+        var tracker = NewTracker();
+
+        Assert.Throws<ArgumentException>(() => tracker.Track([], "OH-1", T0));
     }
 
     [Fact]

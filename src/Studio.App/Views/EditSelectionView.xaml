@@ -212,6 +212,14 @@
                             ToolTip="Change le format du tirage pour cette photo"/>
                     <Button Style="{StaticResource FlatButton}" MinHeight="56" Padding="22,0"
                             FontSize="17" Margin="0,0,12,0" Click="OnBack">Retour à la sélection</Button>
+                    <!-- On s'interrompt le plus souvent ICI : c'est l'écran où l'on passe
+                         le plus de temps sur une commande. La commande part sur l'accueil,
+                         sous « En attente », et se rouvre telle qu'on la laisse. -->
+                    <Button x:Name="AttenteButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="22,0" FontSize="17" Margin="0,0,12,0" Click="OnMettreEnAttente"
+                            ToolTip="Mettre cette commande de côté pour servir quelqu'un d'autre. Vous la retrouverez sur l'accueil.">
+                        ⏸  Mettre en attente
+                    </Button>
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}" Click="OnPrint">
                         🖨  Imprimer
                     </Button>

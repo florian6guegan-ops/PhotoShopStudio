@@ -152,9 +152,20 @@
                                 </ItemsControl>
 
                                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="Ouvrir" Style="{StaticResource ActionLigne}"
+                                    <!-- Le travail mis de côté se voit sur la ligne : sans
+                                         cela, « Reprendre » serait la seule trace, et on ne
+                                         saurait pas de quand il date. -->
+                                    <TextBlock Text="{Binding DraftLabel}" FontSize="14" FontWeight="SemiBold"
+                                               VerticalAlignment="Center" Margin="0,0,12,0"
+                                               Visibility="{Binding DraftVisibility}"
+                                               Foreground="{StaticResource TitleBrush}"/>
+                                    <Button Content="✕ attente" Style="{StaticResource ActionLigne}"
+                                            Click="OnDiscardDraft" Tag="{Binding}"
+                                            Visibility="{Binding DraftVisibility}"
+                                            ToolTip="Abandonne le travail mis de côté et repart du cadrage que le client a validé à la borne."/>
+                                    <Button Content="{Binding OpenLabel}" Style="{StaticResource ActionLigne}"
                                             Click="OnOpen" Tag="{Binding}"
-                                            ToolTip="Ouvre les photos pour les recadrer et les corriger avant de tirer."/>
+                                            ToolTip="Ouvre les photos pour les recadrer et les corriger avant de tirer. Le cadrage validé par le client est conservé."/>
                                     <!-- Le client a commandé un format standard et veut autre
                                          chose au comptoir : on ouvre directement en taille libre. -->
                                     <Button Content="Personnalisé…" Style="{StaticResource ActionLigne}"

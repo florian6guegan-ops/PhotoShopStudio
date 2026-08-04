@@ -176,18 +176,45 @@ public sealed class De100Driver : IDisposable
         }
     }
 
-    /// <summary>
-    /// Envoie un tirage. Renvoie le handle de commande si le minilab l'a accepté ;
-    /// lève <see cref="De100Exception"/> sinon. Un tirage accepté est suivi jusqu'à
-    /// son issue, remontée par <see cref="JobFinished"/>.
-    /// </summary>
+    /// <summary>Envoie un tirage seul — une commande minilab d'une photo.</summary>
     public string Submit(De100PrintJob job, char machineId)
     {
         ArgumentNullException.ThrowIfNull(job);
-        if (!File.Exists(job.ImagePath))
-            throw new FileNotFoundException("Image à tirer introuvable.", job.ImagePath);
+        return Submit([job], machineId);
+    }
 
-        // PIF_StartOrder → PIF_Print → PIF_EndOrder forment une transaction non réentrante
+    /// <summary>
+    /// Envoie TOUS les tirages d'une enveloppe en UNE SEULE commande minilab. Renvoie le
+    /// handle si le minilab l'a acceptée ; lève <see cref="De100Exception"/> sinon. Chaque
+    /// tirage est suivi jusqu'à son issue, remontée par <see cref="JobFinished"/>.
+    ///
+    /// <b>Une commande porte N images, et ce n'est pas un raccourci.</b> La signature du
+    /// SDK le dit : <c>PIF_Print</c> prend le handle de commande EN PARAMÈTRE, et
+    /// <c>PIF_GetPrintInfo(handle, index, …)</c> relit les tirages d'une commande PAR
+    /// INDICE. C'est aussi ce que fait le pilote de DiLand, sur les 9 336 tirages de son
+    /// journal.
+    ///
+    /// Studio ouvrait au contraire une commande PAR PHOTO — <c>PIF_StartOrder</c> →
+    /// <c>PIF_Print</c> → <c>PIF_EndOrder</c>, quatre fois en une seconde sur la commande
+    /// 04-007 du 04/08/2026. Les quatre handles sont revenus <c>Ok</c> ; deux tirages sur
+    /// quatre ne sont jamais sortis, sans erreur ni trace. Rien ne garantit ce
+    /// va-et-vient, et c'est le seul candidat sérieux à une perte silencieuse.
+    ///
+    /// Conséquence à connaître : <b>une commande part entière ou pas du tout</b>. Un refus
+    /// sur la troisième photo annule les deux premières — c'est voulu, une demi-commande
+    /// ouverte côté minilab est exactement le genre d'ordre fantôme qui bloque sa file.
+    /// </summary>
+    public string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId)
+    {
+        ArgumentNullException.ThrowIfNull(jobs);
+        if (jobs.Count == 0)
+            throw new ArgumentException("Aucun tirage à envoyer.", nameof(jobs));
+
+        foreach (var job in jobs)
+            if (!File.Exists(job.ImagePath))
+                throw new FileNotFoundException("Image à tirer introuvable.", job.ImagePath);
+
+        // PIF_StartOrder → PIF_Print × N → PIF_EndOrder forment une transaction non réentrante
         lock (_sendSync)
         {
             var orderHandle = new StringBuilder(OrderHandleCapacity);
@@ -195,30 +222,43 @@ public sealed class De100Driver : IDisposable
             if (start != PifResult.Ok)
                 throw new De100Exception($"Ouverture de commande refusée par le minilab ({start}).", start);
 
-            var parameters = BuildParameters(job, machineId, NextOrderId());
-            var imageData = new ST_IMAGE_DATA
+            // un seul identifiant de commande pour toutes les images : c'est LA commande
+            // que le minilab suivra, et c'est sous lui qu'il rendra son verdict
+            var orderId = NextOrderId();
+
+            for (var i = 0; i < jobs.Count; i++)
             {
-                srcRGB = IntPtr.Zero,
-                pxImageWidth = 0,
-                pxImageHeight = 0,
-                imagePath = job.ImagePath,
-            };
+                var parameters = BuildParameters(jobs[i], machineId, orderId);
+                var imageData = new ST_IMAGE_DATA
+                {
+                    srcRGB = IntPtr.Zero,
+                    pxImageWidth = 0,
+                    pxImageHeight = 0,
+                    imagePath = jobs[i].ImagePath,
+                };
 
-            var print = (PifResult)De100Interop.PIF_Print(orderHandle, ref imageData, parameters, (uint)parameters.Length);
+                var print = (PifResult)De100Interop.PIF_Print(
+                    orderHandle, ref imageData, parameters, (uint)parameters.Length);
+                if (print == PifResult.Ok) continue;
+
+                De100Interop.PIF_CancelOrder(orderHandle);
+                throw new De100Exception(
+                    $"Envoi du tirage {i + 1}/{jobs.Count} refusé par le minilab (PIF_Print={print}). " +
+                    "La commande entière a été annulée.", print);
+            }
+
             var end = (PifResult)De100Interop.PIF_EndOrder(orderHandle);
-
-            if (print != PifResult.Ok || end != PifResult.Ok)
+            if (end != PifResult.Ok)
             {
                 // la commande est ouverte mais inexploitable : on l'annule pour ne pas
                 // laisser d'ordre fantôme dans la file du minilab
                 De100Interop.PIF_CancelOrder(orderHandle);
-                var failed = print != PifResult.Ok ? print : end;
                 throw new De100Exception(
-                    $"Envoi du tirage refusé par le minilab (PIF_Print={print}, PIF_EndOrder={end}).", failed);
+                    $"Clôture de la commande refusée par le minilab (PIF_EndOrder={end}).", end);
             }
 
             var ohnd = orderHandle.ToString();
-            _tracker.Track(job.JobId, ohnd, DateTimeOffset.Now);
+            _tracker.Track([.. jobs.Select(j => j.JobId)], ohnd, DateTimeOffset.Now);
             return ohnd;
         }
     }
@@ -271,8 +311,8 @@ public sealed class De100Driver : IDisposable
 
         var order = Marshal.PtrToStructure<ST_ORDER_INFO>(orderInfoPtr);
 
-        var result = _tracker.Report(order.ohnd, (De100OrderStatus)order.status, DateTimeOffset.Now);
-        if (result is not null)
+        // un callback vaut pour toute la commande, donc pour chacune de ses photos
+        foreach (var result in _tracker.Report(order.ohnd, (De100OrderStatus)order.status, DateTimeOffset.Now))
             JobFinished?.Invoke(this, result);
     }
 

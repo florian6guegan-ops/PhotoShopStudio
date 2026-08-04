@@ -275,8 +275,9 @@ De100Message Submit(De100Message request)
     var demande = De100Protocol.Payload<De100SubmitRequest>(request)
                   ?? throw new InvalidOperationException("Demande de tirage vide.");
 
-    var handle = Driver().Submit(demande.Job, demande.MachineId);
-    log($"Tirage « {demande.Job.JobId} » accepté par le minilab (handle {Tronque(handle)}).");
+    var handle = Driver().Submit(demande.Jobs, demande.MachineId);
+    log($"Commande de {demande.Jobs.Count} tirage(s) acceptée par le minilab " +
+        $"(handle {Tronque(handle)}) : {string.Join(", ", demande.Jobs.Select(j => j.JobId))}.");
     return De100Protocol.Success(request, handle);
 }
 

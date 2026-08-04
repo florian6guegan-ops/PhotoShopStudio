@@ -6,6 +6,11 @@ public static class PhotoScanner
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".heic", ".heif", ".bmp", ".tif", ".tiff", ".webp",
+
+        // Le PDF n'est pas une image : il entre ici parce qu'il faut le VOIR dans le
+        // dossier, mais il est éclaté en une image par page avant d'atteindre la planche
+        // (voir PdfPages.Developper). Rien en aval ne sait qu'un PDF existe.
+        ".pdf",
     };
 
     private static readonly string[] IgnoredDirectories =
@@ -86,8 +91,10 @@ public static class PhotoScanner
             ct.ThrowIfCancellationRequested();
             var dir = pending.Dequeue();
 
+            // pas de PDF : cette photo-ci sert à ILLUSTRER un dossier, et un PDF ne se
+            // décode pas en vignette sans passer par le rendu de ses pages
             var photo = SafeFiles(dir)
-                .Where(IsPhoto)
+                .Where(f => IsPhoto(f) && !IsPdf(f))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .FirstOrDefault();
             if (photo is not null) return photo;
@@ -101,6 +108,64 @@ public static class PhotoScanner
     }
 
     public static bool IsPhoto(string path) => Extensions.Contains(Path.GetExtension(path));
+
+    /// <summary>
+    /// Vrai pour un PDF. Il compte comme « photo » au recensement — sans quoi le dossier
+    /// serait annoncé vide alors qu'il porte les tirages du client — mais tout écran qui
+    /// ne sait PAS l'éclater en pages doit l'écarter avec ceci.
+    /// </summary>
+    public static bool IsPdf(string path) =>
+        Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Les photos de la plus RÉCENTE à la plus ancienne — l'ordre dans lequel les écrans
+    /// les présentent.
+    ///
+    /// C'est ce que demande le comptoir : le client tend sa carte, et ce qu'il veut tirer
+    /// est ce qu'il vient de prendre. L'ordre alphabétique le renvoyait en bas d'une liste
+    /// de mille vignettes. Demandé par l'exploitant le 04/08/2026.
+    ///
+    /// Le tri est posé APRÈS <see cref="Scan"/> et non dedans : c'est l'ordre alphabétique
+    /// qui décide de ce qui rentre sous le plafond de <see cref="MaxAffichable"/>, il est
+    /// déterministe et il ne doit pas bouger. Ici on ne fait que présenter.
+    ///
+    /// La date est lue UNE fois par fichier et gardée le temps du tri — un comparateur qui
+    /// la relirait la demanderait O(n log n) fois au disque. Un fichier dont la date est
+    /// illisible part en fin de liste plutôt qu'en exception : il s'agit d'un ordre
+    /// d'affichage, pas d'une opération qui ait le droit d'échouer.
+    /// </summary>
+    public static List<string> TrierParDateDecroissante(IEnumerable<string> photos)
+    {
+        ArgumentNullException.ThrowIfNull(photos);
+
+        return photos
+            .Select(chemin => (Chemin: chemin, Date: DateDeLaPhoto(chemin)))
+            .OrderByDescending(x => x.Date)
+            .ThenBy(x => x.Chemin, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Chemin)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Date retenue pour classer une photo : la plus ANCIENNE des deux que Windows tient.
+    ///
+    /// Copier une carte mémoire sur le disque remet la date de création à l'instant de la
+    /// copie, et toutes les photos du client se retrouvent alors à la même seconde ; la
+    /// date de modification, elle, survit à la copie et reste celle de la prise de vue.
+    /// Prendre la plus ancienne des deux revient à préférer celle qui n'a pas été
+    /// réécrite, sans avoir à ouvrir chaque fichier pour y lire l'EXIF.
+    /// </summary>
+    private static DateTime DateDeLaPhoto(string chemin)
+    {
+        try
+        {
+            var infos = new FileInfo(chemin);
+            if (!infos.Exists) return DateTime.MinValue;
+            return infos.LastWriteTime < infos.CreationTime ? infos.LastWriteTime : infos.CreationTime;
+        }
+        catch (IOException) { return DateTime.MinValue; }
+        catch (UnauthorizedAccessException) { return DateTime.MinValue; }
+    }
 
     /// <summary>
     /// Parcours ITÉRATIF, jamais récursif : une arborescence profonde — et il y en a sur

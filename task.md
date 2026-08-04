@@ -1,154 +1,115 @@
-# Exécution — 5ᵉ passe
+# Exécution — 7ᵉ passe
 
-Décisions de l'exploitant (03/08/2026) :
+Huit demandes de l'exploitant, 04/08/2026. Plan dans `implementation_plan.md`.
 
-- **L'envoi par courriel est facturé : 5,00 € de plus PAR PHOTO.**
-- **On ne remplace pas le logiciel des bornes.** Le chantier 6 se fait donc en lecture
-  disque : il rend Studio indépendant de DiLand pour tout ce qui suit l'arrivée de la
-  commande, mais l'arrivée elle-même reste tributaire de DiLand (voir constat A du plan).
-- **Les bugs B et C sont corrigés en premier.**
-- **L'historique garde les photos dans les données de Studio, 30 jours** — jamais dans les
-  dossiers de DiLand, qu'il purge sans prévenir.
+Cette passe contient AUSSI la 6ᵉ, qui n'avait pas été commitée (cadrage des bornes,
+réglage du détourage, « mettre en attente », état de la DNP par le spouleur).
 
----
+## 1. Commande 04-007 : une enveloppe = une commande DE100 ✅
 
-## 0. Bugs B et C — recadrages perdus, redressements ignorés ✅
+- [x] 1a `De100JobTracker` porte plusieurs `JobId` sous un handle ; `Report` rend une issue
+      PAR PHOTO — le minilab notifie par commande, en rendre une seule laisserait cinq sur
+      six sans verdict. `PendingCount` compte les TIRAGES
+- [x] 1b `De100Driver.Submit(jobs, machine)` : `PIF_StartOrder` → `PIF_Print` × N →
+      `PIF_EndOrder`, un seul `OrderId`. La commande part entière ou pas du tout
+- [x] 1c protocole du relais : `De100SubmitRequest.Jobs` au pluriel. **Un seul
+      constructeur** — un second laissait `System.Text.Json` sans règle et le relais aurait
+      refusé toutes les demandes (attrapé par les essais)
+- [x] 1d `PrintOrchestrator.SubmitToMinilab` : préparation de toutes les pages, puis un
+      envoi. L'arrêt s'examine pendant la préparation ; demandé pendant l'envoi, la
+      commande est rappelée (`PIF_CancelOrder`)
+- [x] 1e **le verdict du minilab écrit au journal** — il ne l'était nulle part, et c'est ce
+      qui a rendu l'enquête sur 04-007 impossible
+- [x] 1f **trouvé en route** : `De100BridgePrinter._subscribed` n'était jamais vidé. Le
+      relais redémarre (deux fois le 04/08) → on ne se réabonnait plus, et plus aucun
+      tirage ne recevait son verdict, en silence, pour toute la vie de l'application
+- [x] 1g essais : `De100JobTrackerTests` (+3), `De100ProtocolTests` (+1),
+      `PrintCancelTests` refaits sur les nouvelles règles
 
-- [x] 0a `DiLandOrderPhoto.EnFractions` + `FromRaw` : le recadrage de DiLand est en
-      **PIXELS**, ramené en fractions à la lecture. La conversion vit à UN seul endroit —
-      la base et `Order.xml` la réclament tous les deux
-- [x] 0b `DiLandRepository.ReadPhotos` lit `Width`, `Height` et `FineRotationAngle`
-- [x] 0c `DiLandOrderPhoto.FineRotationDegrees` + `DiLandImporter.Import` le transmet
-- [x] 0d `DiLandCropUnitsTests` (6), sur les valeurs RÉELLES de la boutique
-- [x] 0e schéma des essais existants complété
+⚠ **Cause non prouvée.** C'est la seule hypothèse compatible avec les faits ; la preuve
+viendra du journal des verdicts, à la prochaine commande multi-photos.
 
-## 1. Envoi par courriel des photos d'identité — 5 € par photo ✅
+## 2. Les PDF acceptés dans les tirages ✅
 
-- [x] 1a `ProductOutput.Email`, ajouté EN FIN d'énumération
-- [x] 1b `MailProduct` : produit `envoi-courriel` à 5,00 €, créé au catalogue à la première
-      utilisation. Jamais retarifé ensuite — le prix se règle au Catalogue
-- [x] 1c `PrintOrchestrator` : une enveloppe `Email` est close sur place, sans rendu ni
-      spouleur. La lui faire traverser le rendu la mettrait « en attente d'imprimante »
-      pour une prestation qui n'en demande aucune
-- [x] 1d `AppServices.Mail` / `SaveMail` / `ProduitEnvoiCourriel` + `PhotoMailer.Log`
-      branché sur `FileLog`
-- [x] 1e `MailSendView` : prix annoncé AVANT l'envoi, adresse, mot facultatif. Préparation
-      et envoi hors du fil d'interface
-- [x] 1f `IdPhotoView` : bouton **✉ Envoyer**, avec le cadrage en cours
-- [x] 1g les fichiers restent sous `DataRoot/courriel/<date>/` ; **rien n'est facturé si
-      l'envoi échoue**
-- [x] 1h `ProductEditView` : la sortie « Envoi par courriel » ajoutée à la liste — sans
-      elle, ouvrir la fiche du produit en aurait fait un produit imprimé
-- [x] 1i `MailBillingTests` (6)
+- [x] 2a `PDFtoImage` 5.3.0 (PDFium natif). Ghostscript n'est pas installé et Magick.NET
+      ne lit pas un PDF sans lui
+- [x] 2b `PdfPages.Extraire` / `Developper` : une page = une photo, à la place du PDF dans
+      la liste, dans `DataRoot\cache\pdf\<empreinte>\`. 200 ppp, 60 pages au plus
+- [x] 2c témoin `pages.txt` écrit en dernier : une extraction interrompue se refait au lieu
+      de rendre une commande incomplète
+- [x] 2d `.pdf` reconnu par `PhotoScanner` ; `IsPdf` pour les écrans qui l'écartent
+- [x] 2e `PhotoGridView` éclate les PDF au scan ; identité et borne les filtrent
+- [x] 2f `PdfPagesTests` (8), sur un PDF construit à la main — xref calculé pour de bon
+- [x] 2g `FolderBrowsingTests` : un dossier de PDF n'est plus « rien à imprimer »
 
-## 2. Écran Paramètres ✅
+## 3. Photo d'identité : de l'air au-dessus du crâne ✅
 
-- [x] 2a `SettingsView` : serveur, port, expéditeur, nom affiché, mot de passe
-      d'application (`PasswordBox`), Actif
-- [x] 2b bouton **« Envoyer un message d'essai »** (`PhotoMailer.EnvoyerUnEssai`), qui passe
-      par le MÊME client SMTP qu'un vrai envoi — deux chemins finiraient par différer
-- [x] 2c tuile ⚙ Paramètres sur l'accueil
-- [x] 2d `PhotoMailer` renvoie vers « Paramètres → Envoi par courriel »
+- [x] 3a `IdPhotoFr.TargetCrownMarginMm` 1,75 → 3,0. La tête ne change pas de taille
 
-## 3. Redressement : T ARME le mode, la molette règle ✅
+## 4. « Imprimer » rend la main tout de suite (identité) ✅
 
-- [x] 3a `IdPhotoView` + `CropSurface` : T bascule un mode armé, capté en `PreviewKeyDown`
-      **sur la fenêtre**. `Keyboard.IsKeyDown` dépendait du focus, et le focus part sur la
-      liste des papiers dès qu'on choisit son tirage — c'est ce qui faisait passer le
-      redressement pour cassé
-- [x] 3b T maintenue continue de fonctionner ; les champs de saisie sont épargnés
-- [x] 3c bandeau orangé visible tant que le mode est armé, Échap pour en sortir
-- [x] 3d **collision trouvée** : `CropEditorView` liait déjà T à « pivoter le cadre ». La
-      même touche faisait donc DEUX choses sur le même écran. T va au redressement ;
-      pivoter le cadre passe sur **F**, et reste à un clic droit
-- [x] 3e la bande de vignettes d'`EditSelectionView` suit le mode armé
-- [x] 3f libellé « Pivoter la photo (T + molette) » corrigé — ce bouton fait un quart de
-      tour, pas un redressement
+- [x] 4a `IdPhotoView.OnPrint` → `Impressions.Lancer` + `Navigator.Home`. Plus de boîte de
+      dialogue : tout se lit dans le bandeau, comme sur les tirages
 
-## 4. Commandes du jour : tirages / photos d'identité ✅
+## 5. T + molette ne redressait pas ✅
 
-- [x] 4a trois onglets — Tout, Tirages photo, Photos d'identité
-- [x] 4b une ligne est « identité » si son produit porte un `Sheet`, avec repli sur
-      `OrderItem.SheetCellWidthMm`
-- [x] 4c le tri se fait par ENVELOPPE, parce que c'est l'enveloppe qu'on réimprime : une
-      enveloppe mixte paraît dans les deux onglets, entière. Rien ne disparaît
-- [x] 4d compteur par onglet
-- [x] 4e boutons **⬇ Télécharger** et **✏ Modifier** sur chaque commande, tirages ET
-      planches d'identité — le même geste que sur une commande de borne. Les photos
-      d'origine sont toujours recopiées à la création de la commande, donc elles sont là
-      des jours plus tard même si le client a repris sa clé
-- [x] 4f « Modifier » ne touche PAS la commande d'origine : un tirage depuis cet écran
-      donne une nouvelle commande. Une commande déjà encaissée ne doit changer ni de
-      contenu ni de montant — l'infobulle le dit
+- [x] 5a `Infrastructure/ToucheFenetre.cs` : abonnement idempotent, fenêtre retenue
+- [x] 5b `CropSurface` — `Loaded` joué deux fois abonnait deux fois, et T bascule
+- [x] 5c `IdPhotoView` — même construction, même défaut
 
-## 5. Historique des bornes : les photos vivent chez nous ✅
+## 6. Module « Corriger » sur les photos d'identité ✅
 
-- [x] 5a `KioskOrderEntry.ArchiveDirectory` + `KioskOrderJournal.SetArchive`
-- [x] 5b `DiLandImporter.Archiver` : les photos sont recopiées dans
-      `DataRoot\diland\archive\<oid>` à la prise en charge, tant que les fichiers de DiLand
-      sont sûrement là. Attendre la clôture serait trop tard
-- [x] 5c **`Purge` efface l'archive AVEC l'entrée**, à 30 jours : sans cela le disque
-      grossirait d'un mois de photos de clients
-- [x] 5d boutons ⬇ Télécharger et ✏ Modifier dans l'historique, servis depuis NOTRE copie
-- [x] 5e `CopyFileTo(..., ecraser:)` : la recopie sautait les fichiers déjà présents, donc
-      un second téléchargement rouvrait un dossier périmé sans rien dire
-- [x] 5f `ArchiverDepuisDiLand` : rattrapage pour les entrées d'AVANT l'archivage. Seul cas
-      où l'historique redescend chez DiLand ; disparaîtra de lui-même en un mois
-- [x] 5g le dossier de travail `diland\travail` disparaît : une seule copie interne
-- [x] 5h `KioskArchiveTests` (6), dont « DiLand a tout effacé et l'historique sert quand
-      même »
+- [x] 6a bouton « 🎚 Corriger » → `AdjustView` sur la photo courante
+- [x] 6b aperçu dans l'ordre du rendu : fond blanc → corrections → noir et blanc
+- [x] 6c `ReglagesRetenus()` : un seul endroit pour les trois sorties (planche, courriel,
+      aperçu)
+- [x] 6d les corrections repartent à neutre en changeant de photo
 
-## 6. Lire les commandes des bornes sans DiLand ✅
+## 7. Tri par date décroissante par défaut ✅
 
-- [x] 6a `DiLandOrderXml` : `Order.xml` → commande, lignes, photos. Produit dans
-      `Sys_Product_Alias` ; **date prise sur le NOM DU DOSSIER**, l'attribut `Date` étant
-      écrit à l'américaine (`08/03/2026` = 3 août)
-- [x] 6b `ReadKioskOrdersFromDisk` balaie `IncomingOrders\*.COM` et `Orders\*.COM` ; les
-      `.TMP` sont écartés (réception en cours)
-- [x] 6c `Pending()` fusionne base et disque, dédoublonné sur `DirectoryName`, la base
-      l'emportant — elle porte le vrai Oid
-- [x] 6d clé de journal déterministe (FNV-1a) : `string.GetHashCode()` est randomisé par
-      processus, et une clé changeante ferait resurgir toutes les commandes traitées
-- [x] 6e `FenetreDuDisque` = 30 j : `Orders` garde des mois, tout y verser noierait la liste
-- [x] 6f `KioskOrdersView` avertit quand DiLand est fermé — les bornes ne peuvent alors
-      **plus déposer**, et l'opérateur doit le savoir
-- [x] 6g `Studio.DiLandProbe xml` : compare disque et base sur les vraies commandes
-- [x] 6h `DiLandOrderXmlTests` (8) + `KioskDiskFallbackTests` (6)
+- [x] 7a `PhotoScanner.TrierParDateDecroissante` — date la plus ANCIENNE des deux que
+      Windows tient (une copie de carte remet la création à l'instant de la copie)
+- [x] 7b `PhotoGridView` au chargement ; « trier » bascule désormais vers le NOM
+- [x] 7c `IdPhotoView`, `KioskGridView`
+- [x] 7d `PhotoScannerOrderTests` (6)
 
-## Vérification d'ensemble
+## 8. Ctrl+A puis « Remplir » ne changeait qu'une photo ✅
 
-- [x] `dotnet build` : 0 erreur, 0 avertissement
-- [x] `dotnet test` : **759 verts** (692 au départ, 67 nouveaux)
-- [x] toutes les clés `StaticResource` des vues se résolvent
-- [x] **application lancée** : fenêtre ouverte, relais DE100 connecté, serveur d'envoi sur
-      8123, aucune exception au journal
-- [x] **`DiLandProbe xml` sur les VRAIES commandes** : aucun écart entre disque et base
+- [x] 8a `SurLesVisees` : `OnToggleFit`, `OnRotateFrame`, `OnRotatePhoto`, `OnResetCrop`
+- [x] 8b le mode est déduit de la photo courante puis IMPOSÉ, jamais basculé une à une
+- [x] 8c ligne de journal « … sur N photo(s) » — aucun essai ne clique
+
+## Vérification
+
+- [x] `dotnet build` : 0 erreur, 0 avertissement (hors le CS9057 d'OpenCvSharp, antérieur)
+- [x] `dotnet test` : **825 verts**, 0 échec
+- [x] application lancée : fenêtre ouverte, relais DE100 connecté, serveur d'envoi sur
+      8123, aucune exception au démarrage
+- [x] natifs PDF déployés (`runtimes/win-x64/native/pdfium.dll`, `libSkiaSharp.dll`)
+- [x] `system_architecture.md` mis à jour
 
 ⚠ `Studio.App` et `Studio.De100Host` verrouillent les DLL : les fermer avant de bâtir.
-Fermés deux fois le 03/08/2026 avec l'accord de l'exploitant.
 
-## Ce que le contrôle sur la vraie boutique a trouvé
+## Ce qui n'est PAS couvert par les essais
 
-**Deux commandes de bornes absentes de la base de DiLand** — pas même supprimées :
-
-| | |
-|---|---|
-| #12360 (18-001) | 18/06 10:14 · 18 photos en 10x15 · 10,80 € · 18 recadrées |
-| #6830 (25-006) | 25/06 17:08 · 1 photo en 30x40 · 19,90 € · recadrée |
-
-DiLand ne les a jamais intégrées. Elles sont trop anciennes pour remonter dans la liste
-(fenêtre de 30 jours) ; `Studio.DiLandProbe xml` les montre. **À regarder par
-l'exploitant** : ont-elles été servies ?
+Tout ce qui se clique. `Studio.App` n'est pas référencé par la suite d'essais — y faire
+entrer WPF ferait entrer une dépendance d'interface dans des essais qui tournent sans
+écran. Sont donc à contrôler à l'œil : les quatre boutons du panneau de recadrage,
+l'abonnement clavier de T, le module « Corriger », et le retour à l'accueil de l'écran
+identité.
 
 ## Reste à faire par l'exploitant
 
-- [ ] **Contrôler à l'œil un tirage de borne recadré** : le bug B durait depuis le début, et
-      personne n'a jamais vu ce que le cadrage du client donnait réellement
-- [ ] Renseigner `Paramètres → Envoi par courriel` (mot de passe d'application Gmail), puis
-      **envoyer un message d'essai**
-- [ ] Vérifier le prix du produit « Envoi des photos par courriel » au Catalogue (5,00 €)
-- [ ] Parcourir les écrans : identité (T + molette), commandes du jour (trois onglets),
-      historique des bornes (Télécharger / Modifier)
-- [ ] Les deux commandes ci-dessus
-- [ ] Reste ouvert des passes précédentes : planche identité réellement imprimée sur la
-      DS620, tirage POLA réel, `config\wifi.json`
+- [ ] **Une commande de 4 photos ou plus sur le DE100**, et COMPTER ce qui sort. Le journal
+      dit désormais le verdict de la machine photo par photo (« Minilab : tirage 04-013-1-002
+      — SORTI »). C'est la seule preuve possible que la cause était bien celle-là
+- [ ] **T dans « Modifier » et dans identité** : le bandeau « Redressement 0° » doit
+      apparaître au PREMIER appui
+- [ ] **Ctrl+A puis « Remplir »** sur une planche : toutes les photos doivent basculer
+- [ ] **Un PDF de plusieurs pages** posé dans un dossier de tirages
+- [ ] **Une photo d'identité** : un cheveu d'air en haut, sans que la tête ait rétréci ; et
+      le bouton « Corriger » qui ouvre les curseurs
+- [ ] Reste ouvert des passes précédentes : `Paramètres → Envoi par courriel` (mot de passe
+      d'application Gmail) puis message d'essai ; tirage POLA réel ; `config\wifi.json` ;
+      les deux commandes de bornes absentes de la base de DiLand (#12360 du 18/06 et #6830
+      du 25/06)

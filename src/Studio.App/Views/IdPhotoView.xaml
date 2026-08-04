@@ -181,6 +181,14 @@
                               Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
                         <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="18"/>
                     </CheckBox>
+                    <!-- Les mêmes corrections que sur les tirages : une photo d'identité
+                         prise au comptoir est sous-exposée ou tire au jaune comme une
+                         autre, et rien ne permettait de la reprendre ici. -->
+                    <Button x:Name="CorrectButton" Style="{StaticResource FlatButton}" MinWidth="150"
+                            MinHeight="52" Margin="24,0,0,0" FontSize="16" Click="OnCorrect"
+                            ToolTip="Exposition, contraste, température… les mêmes réglages que sur les tirages.">🎚  Corriger</Button>
+                    <TextBlock x:Name="CorrectionsText" Style="{StaticResource Hint}" FontSize="15"
+                               VerticalAlignment="Center" Margin="10,0,0,0"/>
                 </WrapPanel>
 
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal"

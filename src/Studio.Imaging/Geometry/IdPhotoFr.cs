@@ -103,8 +103,15 @@ public static class IdPhotoFr
     /// l'écart entre le crâne estimé par la détection et le crâne réel absorbe la
     /// différence. Les bornes de conformité suivent automatiquement
     /// (<see cref="IdDocumentSpec.CrownMarginMinMm"/>), donc rien ne passe à l'orange.
+    ///
+    /// **Remontée à 3,0 le 04/08/2026**, à la demande de l'exploitant : sur les tirages
+    /// réels, 1,75 mm serre le crâne au bord haut. Le compromis se joue entre deux
+    /// reproches opposés — à 4 mm nos photos paraissaient « plus petites » que celles de
+    /// DiLand, à 1,75 elles sont trop serrées. La TAILLE de la tête ne bouge pas
+    /// (<see cref="TargetHeadMm"/> est inchangé) : seul le cadre remonte de 1,25 mm sur
+    /// 45, et c'est bien de l'air en haut qui manquait, pas un visage trop grand.
     /// </summary>
-    public const double TargetCrownMarginMm = 1.75;
+    public const double TargetCrownMarginMm = 3.0;
     public const double CenterToleranceMm = 2;
 
     /// <summary>

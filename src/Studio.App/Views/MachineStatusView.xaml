@@ -37,10 +37,21 @@
                         <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
                                 Margin="0,0,0,16">
                             <StackPanel>
-                                <TextBlock Text="{Binding Titre}" FontSize="20" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"/>
+                                <!-- La pastille dit l'état d'un coup d'œil, et les couleurs
+                                     sont les MÊMES pour toutes les machines : vert prête,
+                                     bleu en train de tirer, orangé un geste à faire, rouge
+                                     en panne, gris hors ligne, ardoise en veille. Il fallait
+                                     lire chaque ligne pour savoir laquelle réclamait quelque
+                                     chose. -->
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="14" Height="14" CornerRadius="7" Margin="0,0,10,0"
+                                            VerticalAlignment="Center"
+                                            Background="{Binding EtatCouleur}"/>
+                                    <TextBlock Text="{Binding Titre}" FontSize="20" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"/>
+                                </StackPanel>
                                 <TextBlock Text="{Binding SousTitre}" FontSize="14"
-                                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,14"/>
+                                           Foreground="{StaticResource MutedBrush}" Margin="24,4,0,14"/>
 
                                 <!-- alerte consommables -->
                                 <Border Background="#FFF3CD" CornerRadius="8" Padding="12,10" Margin="0,0,0,14"

@@ -187,7 +187,8 @@ public sealed record DnpPrinterInfo(
     DnpMediaClass MediaClass,
     int QueuedPrints,
     int LifetimePrints,
-    string? WindowsQueueName = null)
+    string? WindowsQueueName = null,
+    EtatSpouleurDnp? Spouleur = null)
 {
     /// <summary>Pourcentage de rouleau restant, ou <c>null</c> si la capacité initiale est inconnue.</summary>
     public double? MediaRemainingPercent =>
@@ -201,6 +202,17 @@ public sealed record DnpPrinterInfo(
     /// tous les rangs (constaté le 03/08/2026). Sans ce cas, l'imprimante disparaissait
     /// simplement du bandeau — l'opérateur ne pouvait pas distinguer « endormie » de
     /// « débranchée », ni savoir qu'un tirage la réveillerait.
+    ///
+    /// <b>Ce n'est PAS « en veille ».</b> Le SDK est aussi muet quand DiLand tient le port
+    /// USB — c'est-à-dire presque toujours en boutique. Ce que la machine fait vraiment se
+    /// lit alors dans <see cref="Spouleur"/> ; c'est lui qu'il faut afficher.
     /// </summary>
     public bool EndormieOuInjoignable => WindowsQueueName is not null;
+
+    /// <summary>
+    /// Vrai quand le spouleur affirme que la machine est là — prête, en train de tirer, ou
+    /// en panne. Dans ce cas, « en veille » est faux et ne doit pas être affiché.
+    /// </summary>
+    public bool VueParLeSpouleur =>
+        Spouleur is not null && Spouleur.Etat != EtatFileDnp.Inconnu;
 }

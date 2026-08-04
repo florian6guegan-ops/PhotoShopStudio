@@ -5,7 +5,7 @@ using OpenCvSharp;
 namespace Studio.Imaging;
 
 /// <summary>
-/// Détourage par le réseau BiRefNet (variante « portrait »), quand le modèle est installé.
+/// Détourage par le réseau BiRefNet, quand il est activé et qu'un modèle est installé.
 ///
 /// C'est l'état de l'art en 2026 pour séparer un sujet de son fond, et il tient les
 /// mèches de cheveux là où une règle de couleur laisse un halo. Il ne remplace pas
@@ -23,19 +23,31 @@ namespace Studio.Imaging;
 public static class BiRefNetMatting
 {
     /// <summary>
-    /// Modèles acceptés, du plus léger au plus lourd — c'est l'ordre dans lequel on les
-    /// cherche.
+    /// Modèles acceptés, du plus léger au plus lourd — l'ordre de recherche par défaut.
     ///
     /// La variante « lite » (109 Mo) passe d'abord parce qu'elle tient dans les 4 Go de la
     /// Quadro P2000 photo APRÈS photo, là où la « portrait » (467 Mo) réussit la première
-    /// et échoue la seconde faute de mémoire. Sur une machine mieux dotée, il suffit de
-    /// retirer le fichier « lite » pour que la « portrait », plus fine, reprenne la main.
+    /// et échoue la seconde faute de mémoire.
+    ///
+    /// Sur une machine mieux dotée, <see cref="ModelePrefere"/> renverse cet ordre : il
+    /// n'est plus nécessaire de retirer un fichier du disque pour changer de modèle.
     /// </summary>
     public static IReadOnlyList<string> ModelesAcceptes { get; } =
     [
         "birefnet-lite-fp16.onnx",
         "birefnet-portrait-fp16.onnx",
     ];
+
+    /// <summary>
+    /// Modèle demandé par les réglages du poste (Paramètres → Détourage du fond blanc),
+    /// ou null pour l'ordre par défaut.
+    ///
+    /// Il passe en TÊTE de la recherche, il ne l'épuise pas : absent du disque, on retombe
+    /// sur l'autre — mais <b>en le disant au journal</b>. Un modèle silencieusement
+    /// remplacé par un autre ferait conclure à un réglage sans effet, et on chercherait le
+    /// défaut ailleurs.
+    /// </summary>
+    public static string? ModelePrefere { get; set; }
 
     /// <summary>Journal optionnel, branché sur FileLog par l'application.</summary>
     public static Action<string>? Log { get; set; }
@@ -48,11 +60,29 @@ public static class BiRefNetMatting
     /// franchement meilleur — mèches de cheveux tenues, aucune ombre résiduelle — mais dix
     /// secondes devant un client, c'est trop long.
     ///
-    /// Le code reste en place et prêt : sur une machine plus rapide, il suffit de passer
-    /// ceci à vrai. La variante « portrait », elle, ne marche PAS ici (elle réussit la
-    /// première photo puis manque de mémoire) ; c'est la « lite » qui tient la distance.
+    /// <b>Posé par les réglages du poste</b> (<c>config\detourage.json</c>, écran
+    /// Paramètres) depuis la 6ᵉ passe. Il ne l'était par personne jusque-là : le réseau ne
+    /// s'exécutait donc jamais, et tout ce code était mort.
     /// </summary>
     public static bool Actif { get; set; }
+
+    /// <summary>
+    /// Oublie la session chargée, pour que le prochain détourage reprenne les réglages.
+    ///
+    /// La session est gardée pour la vie du processus — recharger un demi-gigaoctet à
+    /// chaque photo bloquerait le comptoir. Mais sans ce point d'entrée, changer de modèle
+    /// dans Paramètres ne se voyait qu'après un redémarrage de l'application, et le
+    /// réglage passait pour inopérant.
+    /// </summary>
+    public static void Reinitialiser()
+    {
+        lock (Verrou)
+        {
+            _session?.Dispose();
+            _session = null;
+            _tentative = false;
+        }
+    }
 
     /// <summary>
     /// Côté de l'image donnée au réseau.
@@ -89,17 +119,42 @@ public static class BiRefNetMatting
     /// <summary>Vrai si le modèle est présent sur ce poste.</summary>
     public static bool EstInstalle => TrouverLeModele() is not null;
 
-    private static string? TrouverLeModele()
+    /// <summary>
+    /// Le chemin d'un modèle donné sur ce poste, ou null s'il n'y est pas.
+    ///
+    /// Public parce que l'écran des réglages doit pouvoir dire lequel est installé et
+    /// lequel manque — sinon cocher « modèle puissant » n'a aucun effet visible, et rien
+    /// n'explique pourquoi.
+    /// </summary>
+    public static string? CheminDuModele(string nomDeFichier)
     {
-        foreach (var nom in ModelesAcceptes)
-            foreach (var dossier in DossiersCherches)
-            {
-                var chemin = Path.Combine(dossier, nom);
-                if (File.Exists(chemin)) return chemin;
-            }
+        foreach (var dossier in DossiersCherches)
+        {
+            var chemin = Path.Combine(dossier, nomDeFichier);
+            if (File.Exists(chemin)) return chemin;
+        }
 
         return null;
     }
+
+    /// <summary>L'ordre de recherche réel : le modèle demandé d'abord, puis les autres.</summary>
+    private static IEnumerable<string> OrdreDeRecherche() =>
+        ModelePrefere is { Length: > 0 } demande
+            ? new[] { demande }.Concat(ModelesAcceptes.Where(m =>
+                !m.Equals(demande, StringComparison.OrdinalIgnoreCase)))
+            : ModelesAcceptes;
+
+    /// <summary>
+    /// Le fichier de modèle qui sera réellement chargé, ou null si aucun n'est installé.
+    ///
+    /// Sans effet de bord : l'écran des réglages l'interroge à chaque frappe, et une
+    /// écriture au journal par affichage noierait le reste. La substitution est signalée
+    /// une fois, au chargement de la session.
+    /// </summary>
+    public static string? ModeleRetenu =>
+        OrdreDeRecherche().Select(CheminDuModele).FirstOrDefault(c => c is not null);
+
+    private static string? TrouverLeModele() => ModeleRetenu;
 
     /// <summary>
     /// Masque d'opacité du sujet, à la taille de l'image, ou null si le réseau n'a pas pu
@@ -144,6 +199,14 @@ public static class BiRefNetMatting
                             "— détourage par la méthode couleur.");
                 return null;
             }
+
+            // Le modèle demandé dans Paramètres n'est pas celui qu'on charge : c'est dit
+            // ICI, une fois. Sans cette ligne, cocher « modèle puissant » sans avoir posé
+            // le fichier n'avait aucun effet visible, et rien n'expliquait pourquoi.
+            if (ModelePrefere is { Length: > 0 } demande &&
+                !Path.GetFileName(chemin).Equals(demande, StringComparison.OrdinalIgnoreCase))
+                Log?.Invoke($"BiRefNet : « {demande} » demandé mais absent du poste — " +
+                            $"« {Path.GetFileName(chemin)} » utilisé à sa place.");
 
             // La carte graphique d'abord (DirectML : pas de CUDA à installer, marche sur
             // n'importe quelle carte DirectX 12). Sur processeur, ce réseau demande des

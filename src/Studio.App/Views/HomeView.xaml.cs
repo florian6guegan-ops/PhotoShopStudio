@@ -13,6 +13,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Store;
 using Studio.Store.DiLand;
 
 namespace Studio.App.Views;
@@ -49,6 +50,7 @@ public partial class HomeView : UserControl
         Loaded += (_, _) =>
         {
             MettreAJourAgrandissements();
+            RafraichirLAttente();
             RafraichirBornes();
             BrancherSuivi();
             _minuteur.Start();
@@ -119,6 +121,83 @@ public partial class HomeView : UserControl
                             produit.Name)),
                         $"{produit.Name} — choisir le support")),
             "Photos d'identité — choisir le document");
+
+    // ----- les commandes mises de côté -----
+
+    /// <summary>
+    /// Ce qui attend qu'on y revienne.
+    ///
+    /// <b>Sur l'accueil, et non derrière une tuile.</b> C'est ici qu'on revient après avoir
+    /// servi le client qui a fait patienter l'autre : une commande mise de côté qu'il
+    /// faudrait aller chercher dans un écran serait une commande oubliée.
+    ///
+    /// Le bandeau disparaît quand il n'y a rien — un titre suivi du vide ferait croire à un
+    /// écran cassé, et prendrait la place de la liste des bornes.
+    /// </summary>
+    private void RafraichirLAttente()
+    {
+        var attente = App.Services.CommandesEnAttente.Lister();
+
+        AttenteList.ItemsSource = attente;
+        AttentePanel.Visibility = attente.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        AttenteTitle.Text = attente.Count == 1
+            ? "En attente — 1 commande"
+            : $"En attente — {attente.Count} commandes";
+    }
+
+    /// <summary>
+    /// Rouvre une commande mise de côté, telle qu'elle a été laissée.
+    ///
+    /// L'entrée n'est PAS effacée en la reprenant : l'opérateur peut la remettre de côté
+    /// aussitôt, ou fermer l'écran sans rien décider. Elle part quand la commande est
+    /// imprimée, ou quand il l'abandonne.
+    /// </summary>
+    private void OnAttenteReprendre(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not TravailEnAttente travail) return;
+
+        if (!Directory.Exists(travail.PhotosDirectory))
+        {
+            MessageBox.Show(
+                "Les photos de cette commande ne sont plus là.\n\n" +
+                $"Elles étaient dans « {travail.PhotosDirectory} » — le support a pu être " +
+                "retiré, ou le dossier effacé.",
+                "En attente", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // en taille libre, le format du catalogue n'a plus cours : rouvrir sans elle
+        // remettrait tous les cadres au centre, au mauvais rapport
+        var taille = travail.EnTaillePersonnalisee
+            ? new CustomSize(travail.CustomWidthMm, travail.CustomHeightMm, travail.PaperCode)
+            : null;
+
+        Navigator.Go(
+            new PhotoGridView(
+                travail.PhotosDirectory,
+                taille is null ? travail.ProduitParDefaut : null,
+                travail.KioskOid,
+                travail.AvecSousDossiers,
+                taille,
+                enAttente: travail),
+            $"{travail.Titre} — reprise");
+    }
+
+    private void OnAttenteAbandonner(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not TravailEnAttente travail) return;
+
+        var reponse = MessageBox.Show(
+            $"Abandonner « {travail.Titre} » ({travail.Resume}) ?\n\n" +
+            "Le travail mis de côté est perdu. Les photos, elles, ne sont pas touchées.",
+            "En attente", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (reponse != MessageBoxResult.Yes) return;
+
+        App.Services.CommandesEnAttente.Effacer(travail.Id);
+        FileLog.Write($"Commande en attente abandonnée : {travail.Titre} — {travail.Resume}");
+        RafraichirLAttente();
+    }
 
     // ----- le récepteur des bornes -----
 
@@ -238,7 +317,21 @@ public partial class HomeView : UserControl
     /// </summary>
     private void OnKioskModify(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is CommandeBorne ligne) OuvrirLaBorne(ligne, taille: null);
+        if ((sender as FrameworkElement)?.Tag is CommandeBorne ligne)
+            OuvertureBorne.Ouvrir(ligne.Order, taille: null);
+    }
+
+    /// <summary>
+    /// Abandonne ce qui attend et repart du cadrage que le client a validé à la borne.
+    /// Doublé de l'écran des bornes : les deux listes doivent porter les mêmes actions.
+    /// </summary>
+    private void OnKioskDiscardDraft(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not CommandeBorne ligne) return;
+        if (!OuvertureBorne.RepartirDeZero(ligne.Order)) return;
+
+        RafraichirLAttente();
+        RafraichirBornes();
     }
 
     /// <summary>
@@ -252,45 +345,8 @@ public partial class HomeView : UserControl
     {
         if ((sender as FrameworkElement)?.Tag is not CommandeBorne ligne) return;
 
-        Navigator.Go(new CustomSizeView(taille => OuvrirLaBorne(ligne, taille)),
+        Navigator.Go(new CustomSizeView(taille => OuvertureBorne.Ouvrir(ligne.Order, taille)),
             "Taille personnalisée");
-    }
-
-    private void OuvrirLaBorne(CommandeBorne ligne, CustomSize? taille)
-    {
-        var importateur = App.Services.DiLandImport;
-
-        try
-        {
-            // les photos sont rangées chez NOUS, pour trente jours : l'écran travaille sur
-            // notre copie et non sur les dossiers de DiLand, qu'il purge quand il veut
-            var prete = importateur.Archiver(ligne.Order);
-            if (prete.PhotoCount == 0)
-            {
-                MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
-                    "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            importateur.MarkInProgress(ligne.Order);
-
-            // en taille libre, le format commandé n'a plus cours : c'est la taille saisie
-            // qui décide, et le papier sera choisi d'après la quantité
-            Navigator.Go(
-                new PhotoGridView(prete.PhotosDirectory,
-                    taille is null ? prete.ProductCode : null,
-                    ligne.Oid,
-                    taillePerso: taille),
-                taille is null
-                    ? $"Borne #{ligne.Order.Number} — {prete.PhotoCount} photo(s)"
-                    : $"Borne #{ligne.Order.Number} — {taille.Libelle} — {prete.PhotoCount} photo(s)");
-        }
-        catch (Exception ex)
-        {
-            FileLog.Write("Accueil : ouverture d'une commande de borne impossible", ex);
-            MessageBox.Show($"Ouverture impossible : {ex.Message}",
-                "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
     }
 
     /// <summary>
@@ -498,6 +554,23 @@ public partial class HomeView : UserControl
 
         /// <summary>Une commande qu'on tire déjà ne se modifie plus et ne se relance pas.</summary>
         public bool ActionsPossibles => !Imprime;
+
+        /// <summary>
+        /// Ce qui attend au nom de cette commande de borne, s'il y a quelque chose.
+        ///
+        /// Relu à chaque construction de ligne, et non gardé : la liste se rafraîchit
+        /// toutes les quinze secondes, et la commande a pu être mise de côté depuis l'écran
+        /// des photos entre-temps.
+        /// </summary>
+        private TravailEnAttente? EnAttente => App.Services.CommandesEnAttente.PourLaBorne(Oid);
+
+        /// <summary>« Modifier » d'ordinaire, « Reprendre » quand la commande attend.</summary>
+        public string ModifierLabel => EnAttente is null ? "Modifier" : "Reprendre";
+
+        public string AttenteLabel => EnAttente is { } travail ? travail.Depuis.ToUpperInvariant() : "";
+
+        public Visibility AttenteVisible =>
+            EnAttente is null ? Visibility.Collapsed : Visibility.Visible;
 
         public Visibility AvancementVisible => Imprime ? Visibility.Visible : Visibility.Collapsed;
 

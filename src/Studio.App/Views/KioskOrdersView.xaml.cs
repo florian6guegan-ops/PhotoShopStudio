@@ -28,6 +28,12 @@ namespace Studio.App.Views;
 public partial class KioskOrdersView : UserControl
 {
     /// <summary>Une commande à traiter, telle qu'affichée dans l'onglet Ordres.</summary>
+    /// <param name="OpenLabel">
+    /// Libellé du bouton d'ouverture : « Reprendre » quand la commande a été mise de côté.
+    /// C'est le geste que l'exploitant a décrit — on clique sur la commande qu'on était en
+    /// train de modifier, et on retrouve son travail.
+    /// </param>
+    /// <param name="DraftLabel">Depuis quand la commande attend, ou vide.</param>
     private sealed record Row(
         DiLandOrder Order,
         string Number,
@@ -40,7 +46,10 @@ public partial class KioskOrdersView : UserControl
         string StateLabel,
         Visibility StateVisibility,
         Brush StateBrush,
-        bool CanImport);
+        bool CanImport,
+        string OpenLabel,
+        string DraftLabel,
+        Visibility DraftVisibility);
 
     /// <summary>Une commande close, telle qu'affichée dans l'onglet Historique.</summary>
     private sealed record HistoryRow(
@@ -83,6 +92,7 @@ public partial class KioskOrdersView : UserControl
             var suivi = importateur.Journal.Find(commande.Oid);
             var enCours = suivi?.Stage == KioskOrderStage.InProgress;
             var resume = importateur.Summarize(commande);
+            var enAttente = OuvertureBorne.EnAttenteDe(commande);
 
             return new Row(
                 commande,
@@ -98,14 +108,17 @@ public partial class KioskOrdersView : UserControl
                 Brosse(enCours ? "TitleBrush" : "AccentBrush"),
                 // une commande déjà reprise a sa commande Studio : la reprendre encore
                 // ferait un doublon de tirage
-                suivi?.StudioOrderId is null);
+                suivi?.StudioOrderId is null,
+                enAttente is null ? "Ouvrir" : "Reprendre",
+                enAttente is { } t ? t.Depuis.ToUpperInvariant() : "",
+                enAttente is null ? Visibility.Collapsed : Visibility.Visible);
         }).ToList();
 
-        var enAttente = commandes.Count(c => importateur.StageOf(c) == KioskOrderStage.Waiting);
+        var pasEncoreOuvertes = commandes.Count(c => importateur.StageOf(c) == KioskOrderStage.Waiting);
 
         StatusText.Text = commandes.Count == 0
             ? "Rien à tirer. Les commandes du comptoir ne sont pas reprises : elles sont déjà saisies ici."
-            : $"{commandes.Count} commande(s) à traiter, dont {enAttente} pas encore ouverte(s). " +
+            : $"{commandes.Count} commande(s) à traiter, dont {pasEncoreOuvertes} pas encore ouverte(s). " +
               "Une commande reste ici tant que le tirage n'est pas sorti.";
 
         // DiLand fermé, les bornes ne peuvent plus déposer : c'est LUI qui écoute le
@@ -153,7 +166,20 @@ public partial class KioskOrdersView : UserControl
     /// </summary>
     private void OnOpen(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is Row ligne) Ouvrir(ligne, taille: null);
+        if ((sender as FrameworkElement)?.Tag is Row ligne)
+            OuvertureBorne.Ouvrir(ligne.Order, taille: null);
+    }
+
+    /// <summary>
+    /// Abandonne ce qui attend et repart du cadrage que le client a validé à la borne.
+    /// Sans cette porte, une commande mise de côté une fois serait reprise pour toujours.
+    /// </summary>
+    private void OnDiscardDraft(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not Row ligne) return;
+        if (!OuvertureBorne.RepartirDeZero(ligne.Order)) return;
+
+        Refresh();
     }
 
     /// <summary>
@@ -167,45 +193,8 @@ public partial class KioskOrdersView : UserControl
     {
         if ((sender as FrameworkElement)?.Tag is not Row ligne) return;
 
-        Navigator.Go(new CustomSizeView(taille => Ouvrir(ligne, taille)), "Taille personnalisée");
-    }
-
-    private void Ouvrir(Row ligne, CustomSize? taille)
-    {
-        var importateur = App.Services.DiLandImport;
-
-        try
-        {
-            // les photos sont rangées chez NOUS, pour trente jours : l'écran travaille sur
-            // notre copie et non sur les dossiers de DiLand, qu'il purge quand il veut
-            var prete = importateur.Archiver(ligne.Order);
-
-            if (prete.PhotoCount == 0)
-            {
-                MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
-                    "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            importateur.MarkInProgress(ligne.Order);
-
-            // en taille libre, le format commandé n'a plus cours : c'est la taille saisie
-            // qui décide, et le papier sera choisi d'après la quantité
-            Navigator.Go(
-                new PhotoGridView(prete.PhotosDirectory,
-                    taille is null ? prete.ProductCode : null,
-                    ligne.Order.Oid,
-                    taillePerso: taille),
-                taille is null
-                    ? $"Borne #{ligne.Order.Number} — {prete.PhotoCount} photo(s)"
-                    : $"Borne #{ligne.Order.Number} — {taille.Libelle} — {prete.PhotoCount} photo(s)");
-        }
-        catch (Exception ex)
-        {
-            FileLog.Write("Commandes des bornes : ouverture impossible", ex);
-            MessageBox.Show($"Ouverture impossible : {ex.Message}",
-                "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
+        Navigator.Go(new CustomSizeView(taille => OuvertureBorne.Ouvrir(ligne.Order, taille)),
+            "Taille personnalisée");
     }
 
     private void OnTabChanged(object sender, RoutedEventArgs e)
@@ -356,17 +345,7 @@ public partial class KioskOrdersView : UserControl
         if ((sender as FrameworkElement)?.Tag is not HistoryRow ligne) return;
         if (DossierDesPhotos(ligne) is not { } source) return;
 
-        var combien = Directory.EnumerateFiles(source).Count();
-        if (combien == 0)
-        {
-            MessageBox.Show("Aucune photo n'a pu être récupérée pour cette commande.",
-                "Commandes des bornes", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        Navigator.Go(
-            new PhotoGridView(source, produitParDefaut: null, ligne.Entry.Oid),
-            $"Borne #{ligne.Entry.Number} (historique) — {combien} photo(s)");
+        OuvertureBorne.OuvrirDepuisLHistorique(ligne.Entry, source);
     }
 
     private void Import(IReadOnlyList<DiLandOrder> commandes)

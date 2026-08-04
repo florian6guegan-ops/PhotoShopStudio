@@ -26,7 +26,7 @@ public class De100ProtocolTests
     {
         var job = new De100PrintJob("J1", @"D:\photos\une photo.jpg", 152, 102, "10x15");
         var encode = De100Protocol.Encode(De100Protocol.Request(De100Commands.Submit,
-            new De100SubmitRequest(job, 'A')));
+            new De100SubmitRequest([job], 'A')));
 
         Assert.DoesNotContain('\n', encode);
         Assert.DoesNotContain('\r', encode);
@@ -89,19 +89,47 @@ public class De100ProtocolTests
             HighQuality: true,
             ColorMode: "Standard");
 
-        var message = De100Protocol.Request(De100Commands.Submit, new De100SubmitRequest(job, 'B'));
+        var message = De100Protocol.Request(De100Commands.Submit, new De100SubmitRequest([job], 'B'));
         Assert.True(De100Protocol.TryDecode(De100Protocol.Encode(message), out var relu));
 
         var demande = De100Protocol.Payload<De100SubmitRequest>(relu);
 
         Assert.NotNull(demande);
         Assert.Equal('B', demande.MachineId);
-        Assert.Equal(job.JobId, demande.Job.JobId);
-        Assert.Equal(job.ImagePath, demande.Job.ImagePath);
-        Assert.Equal(De100Surface.Lustre, demande.Job.Surface);
-        Assert.Equal(3, demande.Job.Copies);
-        Assert.True(demande.Job.HighQuality);
-        Assert.Equal(152, demande.Job.WidthMm);
+
+        var recu = Assert.Single(demande.Jobs);
+        Assert.Equal(job.JobId, recu.JobId);
+        Assert.Equal(job.ImagePath, recu.ImagePath);
+        Assert.Equal(De100Surface.Lustre, recu.Surface);
+        Assert.Equal(3, recu.Copies);
+        Assert.True(recu.HighQuality);
+        Assert.Equal(152, recu.WidthMm);
+    }
+
+    /// <summary>
+    /// Toutes les photos d'une enveloppe voyagent dans UNE demande, et dans leur ordre.
+    /// Le champ était au singulier, et Studio ouvrait donc une commande minilab par photo —
+    /// c'est ce qui a fait perdre deux tirages sur quatre le 04/08/2026.
+    /// </summary>
+    [Fact]
+    public void Une_demande_porte_toutes_les_photos_de_l_enveloppe()
+    {
+        List<De100PrintJob> jobs =
+        [
+            new("04-007-1-001", @"D:\r\001.png", 152, 102, "152x102", Copies: 5),
+            new("04-007-1-002", @"D:\r\002.png", 152, 102, "152x102", Copies: 5),
+            new("04-007-1-003", @"D:\r\003.png", 152, 102, "152x102", Copies: 5),
+        ];
+
+        var message = De100Protocol.Request(De100Commands.Submit, new De100SubmitRequest(jobs, 'A'));
+        Assert.True(De100Protocol.TryDecode(De100Protocol.Encode(message), out var relu));
+
+        var demande = De100Protocol.Payload<De100SubmitRequest>(relu);
+
+        Assert.NotNull(demande);
+        Assert.Equal(3, demande.Jobs.Count);
+        Assert.Equal(jobs.Select(j => j.JobId), demande.Jobs.Select(j => j.JobId));
+        Assert.All(demande.Jobs, j => Assert.Equal(5, j.Copies));
     }
 
     /// <summary>L'issue d'un tirage remonte par événement : c'est elle qui clôt le suivi.</summary>

@@ -111,6 +111,16 @@ public sealed class KioskOrderJournal
 
     public KioskOrderJournal(string path) => _path = path;
 
+    /// <summary>
+    /// Les commandes mises en attente, quand l'application en tient — pour que celles
+    /// issues d'une borne meurent avec elle.
+    ///
+    /// Le journal est le seul à savoir qu'une commande est close ou périmée ; c'est donc
+    /// lui qui doit effacer ce qui attend en son nom. Le laisser à l'appelant reviendrait à
+    /// répéter la règle à chaque endroit qui clôt une commande — et à l'oublier au prochain.
+    /// </summary>
+    public AttenteStore? Attente { get; set; }
+
     /// <summary>Toutes les entrées connues, la plus récente d'abord.</summary>
     public IReadOnlyList<KioskOrderEntry> All() =>
         Entries().Values.OrderByDescending(e => e.OrderedAt).ToList();
@@ -204,6 +214,11 @@ public sealed class KioskOrderJournal
         entry.Stage = KioskOrderStage.Printed;
         entry.StartedAt ??= DateTimeOffset.Now;
         entry.ClosedAt ??= DateTimeOffset.Now;
+
+        // le travail est sorti sur le papier : le brouillon n'a plus d'objet, et le
+        // laisser ferait proposer « Reprendre le brouillon » sur une commande déjà servie
+        Attente?.EffacerPourBorne(oid);
+
         Save();
     }
 
@@ -216,6 +231,7 @@ public sealed class KioskOrderJournal
         var entry = GetOrCreate(oid);
         entry.Stage = KioskOrderStage.Dismissed;
         entry.ClosedAt ??= DateTimeOffset.Now;
+        Attente?.EffacerPourBorne(oid);
         Save();
     }
 
@@ -312,6 +328,10 @@ public sealed class KioskOrderJournal
                 try { Directory.Delete(entree.ArchiveDirectory, recursive: true); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             }
+
+            // même règle que les photos : le brouillon décrit un travail sur des fichiers
+            // qui viennent de disparaître, il n'a plus rien à reprendre
+            Attente?.EffacerPourBorne(entree.Oid);
 
             _entries.Remove(entree.Oid);
         }

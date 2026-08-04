@@ -38,7 +38,15 @@ public sealed record De100JobResult(string JobId, string OrderHandle, De100JobOu
 /// </summary>
 public sealed class De100JobTracker
 {
-    private sealed record Entry(string JobId, string OrderHandle, DateTimeOffset Deadline)
+    /// <summary>
+    /// Une commande DE100 et les tirages qu'elle porte.
+    ///
+    /// <b>Plusieurs tirages sous un seul handle</b> depuis le 04/08/2026 : une enveloppe
+    /// forme désormais UNE commande minilab (<c>PIF_StartOrder</c> une fois,
+    /// <c>PIF_Print</c> par photo), comme le fait le pilote de DiLand. Le minilab notifie
+    /// par COMMANDE : un seul callback vaut donc pour toutes ses photos.
+    /// </summary>
+    private sealed record Entry(IReadOnlyList<string> JobIds, string OrderHandle, DateTimeOffset Deadline)
     {
         public De100OrderStatus LastStatus { get; set; } = De100OrderStatus.PrintWaiting;
     }
@@ -59,42 +67,65 @@ public sealed class De100JobTracker
         _timeout = timeout;
     }
 
-    /// <summary>Nombre de tirages encore en attente d'une issue.</summary>
+    /// <summary>
+    /// Nombre de TIRAGES encore en attente d'une issue — pas de commandes. C'est ce que
+    /// l'opérateur compte : une commande de six photos qui patiente, ce sont six photos
+    /// qui ne sont pas sorties.
+    /// </summary>
     public int PendingCount
     {
-        get { lock (_sync) return _byHandle.Count; }
+        get { lock (_sync) return _byHandle.Values.Sum(e => e.JobIds.Count); }
     }
 
     /// <summary>Identifiants des tirages encore suivis.</summary>
     public IReadOnlyList<string> PendingJobIds
     {
-        get { lock (_sync) return _byHandle.Values.Select(e => e.JobId).ToList(); }
+        get { lock (_sync) return _byHandle.Values.SelectMany(e => e.JobIds).ToList(); }
     }
 
     /// <summary>Enregistre un tirage accepté par le minilab.</summary>
     public void Track(string jobId, string orderHandle, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
+        Track([jobId], orderHandle, now);
+    }
+
+    /// <summary>
+    /// Enregistre une commande minilab et tous les tirages qu'elle porte.
+    ///
+    /// L'échéance est prise à la SOUMISSION et vaut pour la commande entière : un minilab
+    /// qui répète « Busy » ne doit pas pouvoir la repousser photo par photo.
+    /// </summary>
+    public void Track(IReadOnlyList<string> jobIds, string orderHandle, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(jobIds);
         ArgumentException.ThrowIfNullOrEmpty(orderHandle);
+        if (jobIds.Count == 0)
+            throw new ArgumentException("Une commande minilab porte au moins un tirage.", nameof(jobIds));
 
         lock (_sync)
         {
-            _byHandle[orderHandle] = new Entry(jobId, orderHandle, now + _timeout);
+            _byHandle[orderHandle] = new Entry([.. jobIds], orderHandle, now + _timeout);
         }
     }
 
     /// <summary>
-    /// Traite une notification du minilab. Renvoie un résultat lorsque le statut est
-    /// définitif, <c>null</c> tant que le tirage progresse encore.
+    /// Traite une notification du minilab. Renvoie une issue PAR TIRAGE de la commande
+    /// lorsque le statut est définitif, une liste vide tant qu'elle progresse encore.
+    ///
+    /// Le minilab notifie par COMMANDE, et une commande porte maintenant toutes les photos
+    /// d'une enveloppe : un callback vaut donc pour toutes. Rendre une seule issue en
+    /// laisserait cinq sur six sans verdict, et le compte des photos restantes ne
+    /// descendrait jamais.
     /// </summary>
-    public De100JobResult? Report(string orderHandle, De100OrderStatus status, DateTimeOffset now)
+    public IReadOnlyList<De100JobResult> Report(string orderHandle, De100OrderStatus status, DateTimeOffset now)
     {
         lock (_sync)
         {
             // un handle inconnu = notification tardive après une issue déjà rendue :
             // on l'ignore, surtout on ne recrée pas de suivi
             if (!_byHandle.TryGetValue(orderHandle, out var entry))
-                return null;
+                return [];
 
             entry.LastStatus = status;
 
@@ -102,11 +133,12 @@ public sealed class De100JobTracker
             if (outcome is null)
             {
                 // statut de progression : on vérifie seulement que l'échéance tient toujours
-                return now >= entry.Deadline ? Expire(entry, status) : null;
+                return now >= entry.Deadline ? Expire(entry, status) : [];
             }
 
             _byHandle.Remove(orderHandle);
-            return new De100JobResult(entry.JobId, orderHandle, outcome.Value, Describe(status));
+            return [.. entry.JobIds.Select(jobId =>
+                new De100JobResult(jobId, orderHandle, outcome.Value, Describe(status)))];
         }
     }
 
@@ -119,13 +151,14 @@ public sealed class De100JobTracker
         lock (_sync)
         {
             var expired = _byHandle.Values.Where(e => now >= e.Deadline).ToList();
-            var results = new List<De100JobResult>(expired.Count);
+            var results = new List<De100JobResult>();
             foreach (var entry in expired)
             {
                 _byHandle.Remove(entry.OrderHandle);
-                results.Add(new De100JobResult(entry.JobId, entry.OrderHandle, De100JobOutcome.TimedOut,
-                    $"Aucune réponse définitive du minilab après {_timeout.TotalMinutes:0} min " +
-                    $"(dernier état connu : {Describe(entry.LastStatus)})."));
+                results.AddRange(entry.JobIds.Select(jobId =>
+                    new De100JobResult(jobId, entry.OrderHandle, De100JobOutcome.TimedOut,
+                        $"Aucune réponse définitive du minilab après {_timeout.TotalMinutes:0} min " +
+                        $"(dernier état connu : {Describe(entry.LastStatus)}).")));
             }
             return results;
         }
@@ -137,11 +170,12 @@ public sealed class De100JobTracker
         lock (_sync) return _byHandle.Remove(orderHandle);
     }
 
-    private De100JobResult Expire(Entry entry, De100OrderStatus status)
+    private IReadOnlyList<De100JobResult> Expire(Entry entry, De100OrderStatus status)
     {
         _byHandle.Remove(entry.OrderHandle);
-        return new De100JobResult(entry.JobId, entry.OrderHandle, De100JobOutcome.TimedOut,
-            $"Délai dépassé alors que la commande était encore « {Describe(status)} ».");
+        return [.. entry.JobIds.Select(jobId =>
+            new De100JobResult(jobId, entry.OrderHandle, De100JobOutcome.TimedOut,
+                $"Délai dépassé alors que la commande était encore « {Describe(status)} »."))];
     }
 
     /// <summary>

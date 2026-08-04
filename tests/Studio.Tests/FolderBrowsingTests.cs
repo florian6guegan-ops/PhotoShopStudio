@@ -140,9 +140,39 @@ public class FolderBrowsingTests : IDisposable
         // c'est ce zéro qui fait disparaître le dossier de l'écran de parcours
         var dossier = Dossier("documents");
         File.WriteAllText(Path.Combine(dossier, "notes.txt"), "rien à imprimer");
-        File.WriteAllText(Path.Combine(dossier, "catalogue.pdf"), "%PDF-1.4");
+        File.WriteAllText(Path.Combine(dossier, "budget.xlsx"), "rien à imprimer non plus");
 
         Assert.Equal(0, PhotoScanner.Count(dossier, recursive: true));
+    }
+
+    /// <summary>
+    /// Un PDF EST imprimable depuis le 04/08/2026 : il est éclaté en une image par page
+    /// (voir <c>PdfPages</c>). Un dossier qui n'en contient que doit donc rester visible —
+    /// il l'était pour les photos, et disparaissait pour les documents.
+    /// </summary>
+    [Fact]
+    public void Un_dossier_qui_ne_contient_qu_un_pdf_reste_visible()
+    {
+        var dossier = Dossier("scans");
+        File.WriteAllText(Path.Combine(dossier, "notes.txt"), "rien à imprimer");
+        File.WriteAllText(Path.Combine(dossier, "catalogue.pdf"), "%PDF-1.4");
+
+        Assert.Equal(1, PhotoScanner.Count(dossier, recursive: true));
+    }
+
+    /// <summary>
+    /// La vignette qui ILLUSTRE un dossier ne peut pas être un PDF : elle est décodée
+    /// telle quelle, sans passer par le rendu des pages.
+    /// </summary>
+    [Fact]
+    public void Un_pdf_n_illustre_jamais_un_dossier()
+    {
+        var dossier = Dossier("melange");
+        File.WriteAllText(Path.Combine(dossier, "aaa.pdf"), "%PDF-1.4");   // premier par ordre alphabétique
+        var photo = Path.Combine(dossier, "zzz.jpg");
+        File.WriteAllBytes(photo, [0xFF, 0xD8]);
+
+        Assert.Equal(photo, PhotoScanner.FirstPhoto(dossier));
     }
 
     [Fact]
