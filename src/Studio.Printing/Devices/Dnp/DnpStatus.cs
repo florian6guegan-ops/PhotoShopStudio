@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Studio.Printing.Devices.Dnp;
 
 /// <summary>Famille à laquelle appartient un code d'état DNP.</summary>
@@ -28,13 +30,22 @@ public sealed record DnpStatus(uint Raw)
     private const uint ErrorFlag = 0x80000000u;
     private const uint TimeoutCode = 0x80000001u;
 
+    // Tout ce qui suit se DÉDUIT de Raw, et ne traverse donc pas le tube du relais : le
+    // protocole transporte la donnée brute, jamais ses interprétations. Ce n'est pas
+    // qu'une question de taille de message — sérialiser « Group » obligeait le relais 32
+    // bits à construire un convertisseur d'énumération par réflexion, ce dont son moteur
+    // d'exécution mourait une fois sur deux (voir De100Protocol).
+
     /// <summary>La DLL n'a pas pu interroger l'imprimante (débranchée, éteinte, port occupé).</summary>
+    [JsonIgnore]
     public bool IsCommunicationFailure => (Raw & ErrorFlag) != 0;
 
     /// <summary>L'imprimante n'a pas répondu dans le délai imparti.</summary>
+    [JsonIgnore]
     public bool IsTimeout => Raw == TimeoutCode;
 
     /// <summary>Famille de l'état.</summary>
+    [JsonIgnore]
     public DnpStatusGroup Group => IsCommunicationFailure
         ? DnpStatusGroup.Unknown
         : (Raw & 0xFFFF0000u) switch
@@ -48,19 +59,24 @@ public sealed record DnpStatus(uint Raw)
         };
 
     /// <summary>Vrai si l'imprimante peut accepter un tirage maintenant.</summary>
+    [JsonIgnore]
     public bool IsReady => Raw is Codes.UsualIdle or Codes.UsualStandstill;
 
     /// <summary>Vrai si l'imprimante travaille (impression ou refroidissement) : elle repartira seule.</summary>
+    [JsonIgnore]
     public bool IsBusy => Raw is Codes.UsualPrinting or Codes.UsualCooling or Codes.UsualMotorCooling;
 
     /// <summary>Vrai si un opérateur doit intervenir sur la machine.</summary>
+    [JsonIgnore]
     public bool NeedsOperator => Raw is Codes.UsualPaperEnd or Codes.UsualRibbonEnd
         || Group is DnpStatusGroup.Setting;
 
     /// <summary>Vrai si la machine est en panne et relève du SAV.</summary>
+    [JsonIgnore]
     public bool IsFault => Group is DnpStatusGroup.Hardware or DnpStatusGroup.System;
 
     /// <summary>Message destiné à l'opérateur de la borne.</summary>
+    [JsonIgnore]
     public string Message => Raw switch
     {
         TimeoutCode => "L'imprimante ne répond pas (délai dépassé).",

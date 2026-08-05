@@ -1,0 +1,91 @@
+using System.Text.Json;
+
+namespace Studio.Core.Domain;
+
+/// <summary>
+/// Ce qui dépend du POSTE et non de la boutique : où sont les bornes, quelles imprimantes
+/// jouent quel rôle.
+///
+/// <b>Pourquoi ce fichier existe.</b> Ces valeurs étaient écrites en dur dans le code —
+/// le dossier de DiLand, le nom « SC-P800 » de l'imprimante des agrandissements. Elles sont
+/// justes sur le poste de la boutique et fausses partout ailleurs : c'est le premier
+/// obstacle à donner l'application à un collègue, dont l'installation ne sera jamais
+/// exactement la même.
+///
+/// <b>Tout est facultatif, et c'est le principe.</b> Vide, l'application se débrouille
+/// seule (<c>DiLandLocator</c>, <c>DetectionImprimantes</c>) ; renseigné, l'opérateur a le
+/// dernier mot. On ne demande donc rien à l'installation, et l'on garde de quoi rattraper
+/// un poste que la détection ne saurait pas lire.
+///
+/// Vit dans les DONNÉES du poste (<c>config\poste.json</c>), jamais dans le dépôt.
+/// </summary>
+/// <param name="DiLandRacine">
+/// Dossier d'installation de DiLand, ou son dépôt directement — les deux sont acceptés,
+/// on ne peut pas demander à quelqu'un de retenir
+/// « Data\AllUsersData\Repositories\Default ». Vide = détection automatique.
+/// </param>
+/// <param name="ImprimanteGrandFormat">
+/// File Windows des agrandissements. Vide = on reconnaît la machine à son modèle.
+/// </param>
+/// <param name="ImprimanteSublimation">
+/// File Windows de l'imprimante à sublimation (DNP DS620 et apparentées). Vide = détection.
+/// </param>
+/// <param name="AdresseRapport">
+/// À qui envoyer les journaux quand quelque chose ne va pas.
+///
+/// Retenue pour ne se saisir qu'UNE fois par poste : le jour où l'on en a besoin est
+/// justement celui où l'on ne veut pas la chercher.
+/// </param>
+public sealed record PosteSettings(
+    string DiLandRacine = "",
+    string ImprimanteGrandFormat = "",
+    string ImprimanteSublimation = "",
+    string AdresseRapport = "")
+{
+    public const string FileName = "poste.json";
+
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    /// <summary>
+    /// Charge les réglages. Un fichier absent ou abîmé rend les valeurs par défaut plutôt
+    /// que de lever : sans lui, l'application doit démarrer et se débrouiller.
+    /// </summary>
+    public static PosteSettings Load(string configDir)
+    {
+        var chemin = Path.Combine(configDir, FileName);
+        if (!File.Exists(chemin)) return new PosteSettings();
+
+        try
+        {
+            using var flux = File.OpenRead(chemin);
+            return JsonSerializer.Deserialize<PosteSettings>(flux, Options) ?? new PosteSettings();
+        }
+        catch (Exception)
+        {
+            return new PosteSettings();
+        }
+    }
+
+    /// <summary>Enregistre les réglages, en écrivant à côté puis en remplaçant.</summary>
+    public static void Save(string configDir, PosteSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        Directory.CreateDirectory(configDir);
+        var chemin = Path.Combine(configDir, FileName);
+        var json = JsonSerializer.Serialize(settings, Options);
+
+        var tmp = chemin + ".tmp";
+        File.WriteAllText(tmp, json);
+        if (File.Exists(chemin))
+            File.Replace(tmp, chemin, chemin + ".bak", ignoreMetadataErrors: true);
+        else
+            File.Move(tmp, chemin);
+    }
+}

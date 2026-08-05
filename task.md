@@ -1,3 +1,524 @@
+# Exécution — 14ᵉ passe (vitesse des rendus)
+
+## W. Le décodage lisait 24 Mpx pour en garder 0,2 ✅
+
+**Mesuré d'abord, optimisé ensuite.** Les journaux disaient qu'une planche d'identité met
+plusieurs secondes ; ils ne disaient pas dans quoi. La sonde `Studio.RenduProbe` le dit, sur
+la vraie photo de la commande 05-026 (6016 × 4000 pour une cellule de 413 × 531) :
+
+| Étape | Avant |
+| --- | --- |
+| décodage | 320 ms |
+| AutoOrient | 211 ms |
+| **réduction avant redressement** | **920 ms** |
+| **redressement 1,25°** | **1024 ms** |
+| recadrage + mise à l'échelle | 48 ms |
+| écriture PNG | 155 ms |
+
+Le décodeur JPEG sait rendre directement au demi, au quart ou au huitième — c'est du
+sous-échantillonnage exact, pas une réduction après coup. `ThumbnailService` s'en servait
+déjà pour les vignettes ; le rendu, non.
+
+- [x] W1 `LectureEconome` : le JPEG est décodé à la taille dont le TIRAGE a besoin. La
+      réduction qui suit n'a plus que six mégapixels à rééchantillonner au lieu de vingt-quatre
+- [x] W2 **On demande un CARRÉ, du plus grand des deux côtés** : l'indication porte sur le
+      fichier, dont l'orientation n'est connue qu'après lecture de l'EXIF. Demander
+      1194 × 1796 sur un fichier couché ferait décoder trop petit, et le tirage y perdrait
+- [x] W3 **Le sur-échantillonnage ne se justifie QUE devant un redressement.** Sans lui, la
+      source va directement à sa taille finale par un seul rééchantillonnage — c'est le cas
+      le plus fréquent de la boutique, et il gardait deux fois trop de pixels pour rien
+- [x] W4 Jamais à la hausse : le décodeur ne sait pas agrandir, et un agrandissement doit
+      lire la source entière
+
+**Résultat, sur la photo réelle :**
+
+| Rendu | Avant | Après |
+| --- | --- | --- |
+| planche d'identité (redressée) | 2587 ms | **1696 ms** (−34 %) |
+| 10×15 ordinaire | 1216 ms | **815 ms** (−33 %) |
+
+Sur une commande de trente 10×15, cela fait passer le rendu de 36 s à 24 s.
+
+## X. La qualité, vérifiée et FIGÉE ✅
+
+Un gain de temps qui abîmerait les tirages ne serait pas un gain.
+
+- [x] X1 Écart RMS mesuré sur la vraie photo : **0,00209** pour la cellule d'identité,
+      **0,00302** pour le 10×15. La 13ᵉ passe avait déjà accepté 0,0096 pour la réduction
+      avant redressement — on est cinq fois en dessous
+- [x] X2 essais : `RenduEconomeTests` (6), qui comparent le rendu économe au rendu pleine
+      résolution et refusent au-delà de 0,02
+- [x] X3 ⚠ **Les essais mesurent sur des formes PLEINES, pas sur une mire de traits fins.**
+      Une mire d'un ou deux pixels est un cas d'aliasing qu'aucune photo ne présente : elle
+      refusait une réduction que la vraie photo traverse à 0,002. On mesure ce qu'on imprime
+
+## Y. Ce qui a été mesuré et LAISSÉ tel quel
+
+- [x] Y1 **Le redressement (1017 ms sur 2 Mpx) est intrinsèque.** Quatre variantes essayées
+      — alpha désactivé, sans virtual pixels, `Distort ScaleRotateTranslate` — toutes à
+      1010-1020 ms. Ce Magick.NET est bâti sans OpenMP : seul le nombre de pixels compte,
+      et il est déjà au minimum
+- [x] Y2 **Le fil de l'interface ne bloque nulle part** : aucun `.Result`, `.Wait()`,
+      `GetAwaiter().GetResult()` ni `Thread.Sleep` dans `Studio.App`. La lenteur ressentie
+      venait des rendus, qui tournent déjà en tâche de fond
+- [x] Y3 Le sur-échantillonnage de 2 devant un redressement n'est PAS abaissé : la qualité
+      prime sur 300 ms, et c'est un tirage qu'on vend
+
+## Vérification
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1139 verts**
+
+---
+
+# Exécution — 14ᵉ passe (revue avant livraison)
+
+Relecture complète des 2 260 lignes changées, avant de livrer. Cinq défauts trouvés — dont
+un qui touchait les commandes de clients.
+
+## R. La sélection écrasait la QUANTITÉ du client ✅
+
+Le format avait été corrigé (H), pas la quantité. `SelectAll` et la sélection par plage
+posaient `photo.Quantity = _quantity` **sans condition** : une photo commandée en trois
+exemplaires à la borne repassait à un seul dès qu'on cochait « tout ».
+
+`Toggle` (le clic simple), lui, ne touchait à rien quand la photo avait déjà un produit —
+d'où un logiciel qui se comportait différemment selon qu'on cochait une photo ou toutes.
+
+- [x] R1 `Prendre()` : un seul point d'entrée pour faire entrer une photo dans la commande.
+      Le format et la quantité du bandeau ne s'appliquent qu'aux photos qui n'ont RIEN
+- [x] R2 Les trois chemins — clic, plage, tout sélectionner — passent par lui
+- [x] R3 ⚠ Non couvert par un essai : `Studio.App` n'est pas référencé par les tests, comme
+      l'ordre des affectations du cadrage de borne
+
+## S. Le débord négatif tronquait la photo ✅
+
+`RemplirLeDebord` n'appliquait le facteur d'échelle que s'il était supérieur à 1. Une
+machine réclamant MOINS que les cotes nues aurait vu sa photo rognée au centre au lieu
+d'être réduite — sortie amputée de ses bords, sans que rien ne le dise.
+
+- [x] S1 Le facteur s'applique dans les deux sens
+- [x] S2 essai : `Une_cible_plus_petite_fait_reduire_la_photo_et_non_la_tronquer`
+- [x] S3 Le cas ne se présente pas sur les machines de la boutique (débord toujours
+      positif, +35 px) — mais il serait sorti sans bruit
+
+## T. Les relevés du compteur pouvaient se chevaucher ✅
+
+Le battement de 10 s ne suspendait pas ses coups pendant l'attente de la machine : un
+relais lent — ou occupé à imprimer — laissait les lectures s'empiler.
+
+⚠ **C'est exactement ce qui tuait le relais 32 bits** (voir G) : on ne pouvait pas le lui
+redemander. Un verrou simple garantit un seul relevé à la fois.
+
+## U. Les doublons revenaient dans l'ordre inverse ✅
+
+`RecreerLesDoublonsEnAttente` insérait chaque doublon juste après l'originale : sur une
+photo tirée en 10×15, 13×18 puis 15×20, les deux derniers formats se croisaient à la
+reprise. La position d'insertion avance désormais.
+
+## V. Chargements de vignettes empilés ✅
+
+Changer d'onglet dans « Commandes du jour » relançait une lecture par onglet visité —
+quatre-vingt-treize commandes à quatre vignettes — sans arrêter les précédentes. Le
+chargement précédent est maintenant abandonné.
+
+## Ce que la revue a CONFIRMÉ comme sain
+
+- les options JSON du protocole ne sont mutées nulle part ailleurs : `MakeReadOnly` est sûr ;
+- `SelectionnerLaPlage` supporte l'ancre disparue et l'ordre inversé ;
+- `OnDupliquer` recalcule le rang à chaque tour : les insertions successives ne se décalent pas ;
+- les corrections du doublon sont bien une COPIE (`Clone`) et non l'instance partagée ;
+- `Choisir` d'une imprimante et la liste de l'écran puisent à la même source : la
+  présélection ne peut pas désigner un absent.
+
+## Le tirage identité aux couleurs fausses : ce n'est PAS le logiciel
+
+Planche sortie en franges vert/magenta le 05/08/2026 à 17:53, correcte à la relance.
+
+**Le fichier rendu par Studio pour la planche RATÉE est parfaitement correct** — vérifié en
+l'ouvrant. Les deux commandes (05-026 et 05-027) ont produit le même rendu, aux mêmes
+cotes, par le même code.
+
+Les franges de couleurs complémentaires décalées sont la signature d'un décalage entre les
+passes de la sublimation : la DS620 dépose le jaune, le magenta et le cyan en trois
+passages, et le papier a patiné entre deux d'entre eux. C'est mécanique.
+
+## Vérification
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1133 verts**
+
+---
+
+# Exécution — 14ᵉ passe (donner l'application aux collègues)
+
+## P. Signaler un problème depuis le poste ✅
+
+Les journaux ont permis de trouver le liseré blanc et le « Pipe is broken » — mais ils
+étaient sur le poste de la boutique, sous la main. Sur celui d'un collègue, personne ne va
+lire `D:\PhotoStudioData\logs`.
+
+- [x] P1 `RapportDiagnostic` : une archive avec les 7 derniers jours de journaux, les
+      réglages, le poste, la VERSION et le mot de l'opérateur
+- [x] P2 **Rien ne part tout seul** : c'est un bouton, dans les paramètres. Le poste
+      travaille sur les photos de clients, et l'on n'expédie rien sans qu'on l'ait demandé
+- [x] P3 **Aucun secret ne part.** `mail.json` porte le mot de passe de la boîte du magasin
+      et `dropbox.json` le jeton : ils sont écartés, ainsi que la clé WiFi. En cas de doute
+      sur un nom de fichier, on écarte
+- [x] P4 Aucune photo n'est jointe : les journaux NOMMENT des fichiers, ils n'en
+      transportent aucun
+- [x] P5 Les journaux sont tronqués à 2 Mo, en gardant la FIN : c'est là qu'est ce qui vient
+      de se passer, et un serveur refuse au-delà de 25 Mo
+- [x] P6 Le journal du JOUR est ouvert par l'application elle-même : ouvert en partage, sans
+      quoi le rapport échouerait sur le seul fichier qui compte
+- [x] P7 Un second bouton écrit le fichier SANS courriel — un poste dont l'envoi n'est pas
+      configuré est justement celui dont on a le plus besoin des journaux
+- [x] P8 Vérifié SUR LES VRAIES DONNÉES (`tools\Studio.RapportProbe`) : 6 jours repris,
+      115 Ko, et le mot de passe réel du poste ne se retrouve nulle part dans l'archive
+- [x] P9 essais : `RapportDiagnosticTests` (16)
+
+## Q. Mise à jour automatique et distribution ✅
+
+Le raccourci du bureau recompile depuis les sources : c'est le poste de celui qui
+développe. Un collègue n'a ni le SDK, ni le dépôt.
+
+- [x] Q1 `MiseAJour` : la dernière publication du dépôt, lue par l'API GitHub
+- [x] Q2 **On vérifie, on annonce, l'opérateur décide.** Une mise à jour qui s'installerait
+      seule fermerait l'application — peut-être au milieu d'une commande, devant un client
+- [x] Q3 Brouillons et préversions écartés : les envoyer ferait tirer sur du code qu'on n'a
+      pas fini d'écrire
+- [x] Q4 Une publication SANS archive n'est pas proposée : mieux vaut le dire que d'offrir
+      une mise à jour qui échouerait au téléchargement
+- [x] Q5 **Strictement plus récente** : republier la même version — pour corriger sa
+      description — ne doit pas proposer une réinstallation à tous les postes
+- [x] Q6 Ne lève JAMAIS pour une raison de réseau : hors ligne, quota dépassé, dépôt
+      injoignable sont des circonstances ordinaires, et aucune n'empêche de travailler
+- [x] Q7 **L'installation passe par un script**, parce que Windows verrouille les fichiers
+      d'un programme qui tourne : il attend la fermeture, recopie, relance. Il arrête aussi
+      le relais du minilab, qui tient les mêmes DLL
+- [x] Q8 `tools\Publier.ps1` : version autonome (aucun runtime à installer chez le
+      collègue), archive, publication GitHub. Il REFUSE de publier une version déjà parue —
+      sinon aucun poste ne verrait rien
+- [x] Q9 Le relais 32 bits est publié dans `de100\`, **là où l'application le cherche** :
+      ailleurs, elle ne le trouverait qu'en remontant vers une sortie de compilation qui
+      n'existe pas chez un collègue
+- [x] Q10 **Vérifié en vrai** : l'archive autonome (241 Mo) se fabrique, l'application
+      publiée démarre, trouve son relais, voit les commandes des bornes et les trois
+      machines du bandeau
+- [x] Q11 essais : `MiseAJourTests` (22)
+
+## Ce qu'il reste à faire à la main
+
+1. Monter `<Version>` dans `Directory.Build.props` avant chaque publication ;
+2. `gh auth login` une fois sur le poste qui publie ;
+3. `.\tools\Publier.ps1 -Notes "ce que ça corrige"`.
+
+## Vérification
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1132 verts**
+
+---
+
+# Exécution — 14ᵉ passe (poste et matériel)
+
+## L. Dupliquer une photo pour la tirer dans deux formats ✅
+
+- [x] L1 Bouton « ⧉ Dupliquer » dans « Modifier », sur les photos cochées
+- [x] L2 **C'est la GRILLE qui duplique**, jamais l'écran : elle seule tient la liste que
+      l'impression parcourt. Un doublon ajouté à la seule liste de « Modifier » se serait
+      affiché, se serait réglé, et ne serait jamais sorti
+- [x] L3 Le doublon se range JUSTE APRÈS son original, des deux côtés — sur soixante photos,
+      le retrouver en fin de planche demanderait de tout faire défiler
+- [x] L4 **Ce sont les doublons qui restent cochés**, et les originaux qui sont relâchés :
+      le geste suivant est toujours « et maintenant, en 15×20 »
+- [x] L5 Les corrections sont COPIÉES (`Clone`) et non partagées : retoucher le doublon
+      aurait sinon retouché l'original
+- [x] L6 **La mise en attente supporte les doublons** : deux entrées de même nom de fichier,
+      consommées À LA FILE à la reprise. Une simple recherche par nom donnait la première
+      aux deux vignettes, et le second format était perdu
+- [x] L7 Les doublons sont RECRÉÉS à la réouverture : le dossier ne porte qu'un fichier, le
+      balayage ne fabriquait donc qu'une vignette
+- [x] L8 essais : `AttenteDoublonsTests` (4)
+
+## M. Les bornes se trouvent toutes seules ✅
+
+Le dossier de DiLand était écrit en dur. Juste sur le poste de la boutique, faux partout
+ailleurs — c'était le premier obstacle à donner l'application à un collègue.
+
+- [x] M1 `DiLandLocator` : quatre pistes, de la plus sûre à la plus large — le réglage du
+      poste, le PROCESSUS DiLand s'il tourne (aucune supposition sur le dossier ni le
+      disque), les deux « Program Files », les racines des disques fixes
+- [x] M2 **On ne balaie pas les disques en profondeur** : des minutes au démarrage pour un
+      gain nul. Seules les racines, ce qui couvre « installé sur D: »
+- [x] M3 Le dossier d'INSTALLATION suffit — personne ne retient
+      « Data\AllUsersData\Repositories\Default »
+- [x] M4 La base OU les dossiers de commandes suffisent : DiLand purge sa base alors que
+      les dossiers restent, et Studio sait encore en tirer les photos
+- [x] M5 Un réglage périmé laisse la détection reprendre la main : un chemin devenu faux
+      rendrait sinon l'application aveugle
+- [x] M6 Vérifié SUR LE POSTE : la sonde retrouve le dépôt réel et lit les commandes du jour
+- [x] M7 essais : `DiLandLocatorTests` (10)
+
+## N. Les imprimantes se reconnaissent par FAMILLE ✅
+
+« SC-P800 » était cherché dans le nom. Windows nomme pourtant la machine de la boutique
+`EPSONFECE59 (SC-P800 Series)` : cela marchait par chance. Chez un collègue équipé d'une
+P700, d'une DS-RX1 ou d'une Citizen, plus rien n'était trouvé — et rien ne le disait.
+
+- [x] N1 `DetectionImprimantes` : trois rôles (agrandissements, sublimation, minilab),
+      reconnus sur la MARQUE et la GAMME. « SureColor », « DS », « CP » couvrent des
+      générations entières là où « SC-P800 » ne couvre qu'un exemplaire
+- [x] N2 **Le photocopieur de bureau n'est pas un traceur** : l'iR-ADV du magasin sort du A3
+      sur papier ordinaire, et proposer un agrandissement dessus ferait perdre un tirage.
+      On ne retient jamais une marque entière, seulement ses gammes photo
+- [x] N3 Les files virtuelles sont écartées d'abord : « Microsoft Print to PDF » contient
+      « Print », et « Send to Sawgrass Print Utility » ressemble à une vraie machine
+- [x] N4 **Un réglage qui ne désigne plus rien est ignoré** — machine débranchée, file
+      renommée : l'impression échouerait en nommant une machine absente
+- [x] N5 essais : `DetectionImprimantesTests` (27), sur les noms RELEVÉS du poste
+
+## O. Un onglet pour le matériel du poste ✅
+
+- [x] O1 Section « Matériel de ce poste » dans les paramètres : dossier des bornes, liste
+      des imprimantes reconnues avec CE QUI les a fait reconnaître, et un choix par rôle
+- [x] O2 **On affiche toujours ce que la détection a trouvé**, même quand un réglage
+      l'emporte : sans cela, on ne peut pas savoir si la case est vide parce que la
+      détection marche ou parce qu'elle a échoué
+- [x] O3 Les listes de rôle portent TOUTES les files, pas seulement les reconnues : une
+      machine que la détection n'a pas su lire est justement celle qu'on vient désigner
+- [x] O4 Le dossier choisi est vérifié TOUT DE SUITE : le découvrir au prochain démarrage,
+      c'est une journée sans commandes de bornes
+- [x] O5 `PosteSettings` (`config\poste.json`) — tout facultatif : vide, l'application se
+      débrouille seule ; renseigné, l'opérateur a le dernier mot
+- [x] O6 Contrôlé à l'écran : DiLand trouvé, les deux DE100 en minilab, l'Epson en
+      agrandissements, la DS620 en sublimation, le Canon écarté
+
+## Vérification
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1094 verts**
+
+---
+
+# Exécution — 14ᵉ passe (fin)
+
+## I. Le format et le rapport sur la vignette ✅
+
+- [x] I1 Badge de FORMAT sur la vignette de la planche, en haut à gauche : depuis qu'une
+      commande mélange les formats, c'est la seule chose qui distingue à l'œil une 10×15
+      d'une 15×20
+- [x] I2 Absent tant qu'aucun format n'est posé — un badge vide ne dit rien
+- [x] I3 Sans le PRIX, contrairement au bandeau : répété sur soixante vignettes il mange la
+      place, et le total est déjà dans la barre du bas
+- [x] I4 Dans « Modifier », la bande porte le format ET le rapport des côtés
+      (`RatioLabel`, déjà là dans la planche) : on voit du même coup ce que le format va
+      rogner
+
+## J. Textes noirs sur fond bleu ✅
+
+WPF donne aux `CheckBox`, `RadioButton`, `TextBox` et `PasswordBox` la couleur de texte du
+SYSTÈME — du noir — et un fond blanc aux deux derniers. Sur nos panneaux bleu-gris, une
+vingtaine de libellés étaient donc écrits en noir sur bleu.
+
+- [x] J1 Styles IMPLICITES dans `App.xaml` : ces types portent leur couleur eux-mêmes
+      (`Control.Foreground`), rien ne la leur transmet depuis le conteneur
+- [x] J2 Sans danger, contrairement à un style implicite de `TextBlock` : ils ne paraissent
+      jamais dans une liste au fond clair du système
+- [x] J3 `CaretBrush` et `SelectionTextBrush` : sans eux le curseur est noir sur fond sombre
+      — donc invisible — et le texte sélectionné reste noir sous le bleu de la sélection
+- [x] J4 Les styles NOMMÉS de `TextBox` reprennent l'implicite (`BasedOn`) : c'est le piège
+      déjà rencontré sur les listes déroulantes
+- [x] J5 Contrôlé À L'ÉCRAN, pas seulement au code : capture des paramètres, avant/après
+- [x] J6 essais : `ContrasteXamlTests` (4)
+
+## K. Aperçu des photos dans « Commandes du jour » ✅
+
+Un numéro et une heure ne disent rien d'une planche d'identité : quand un client revenait
+chercher la sienne, il fallait ouvrir les commandes une à une.
+
+- [x] K1 Les quatre premières photos de chaque commande, en vignettes de 76 px
+- [x] K2 « +12 » quand il y en a plus : l'opérateur doit savoir qu'il n'a pas tout sous
+      les yeux
+- [x] K3 Chargées APRÈS l'affichage, en tâche de fond : lire les vignettes de toutes les
+      commandes avant de montrer la liste la ferait attendre pour rien
+- [x] K4 **Aucune boîte de dialogue quand les fichiers manquent** — au-delà de trente jours
+      les photos partent à l'archive, et une alerte par commande archivée rendrait l'écran
+      inutilisable. La ligne garde son numéro, sa date et ses boutons
+- [x] K5 Contrôlé à l'écran : les planches d'identité se reconnaissent au premier coup d'œil
+
+## Vérification
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1053 verts**
+
+---
+
+# Exécution — 14ᵉ passe (suite)
+
+## G. « Pipe is broken » une impression sur deux ✅
+
+**Ce n'était pas l'impression qui cassait le relais : le relais était DÉJÀ MORT quand elle
+arrivait.** Trouvé dans les journaux du 05/08/2026 :
+
+```
+16:47:19  relais · Fatal error. Internal CLR error. (0x80131506)
+             at System.Text.Json...EnumConverter`1[[...DnpStatusGroup]]..ctor(...)
+16:47:39  Impression : commande 05-020 lancée
+16:47:40  Impression : commande 05-020 en échec | Pipe is broken
+```
+
+Le relais répond à chaque commande dans son propre `Task.Run`. Le bandeau demande l'état du
+minilab puis celui des DNP coup sur coup : les deux réponses faisaient construire le MÊME
+convertisseur d'énumération par réflexion, en même temps. En 32 bits, le moteur d'exécution
+n'y survit pas.
+
+- [x] G1 Tous les convertisseurs du protocole sont résolus au CHARGEMENT de la classe, sur
+      un seul fil, avant le premier message. `MakeReadOnly` ferme la porte derrière
+- [x] G2 Les propriétés CALCULÉES ne traversent plus le tube (`[JsonIgnore]` sur
+      `DnpStatus`) : le protocole transporte la donnée brute, jamais ses interprétations
+- [x] G3 ⚠ Tout nouveau type transporté doit être ajouté à la liste du préchauffage, sinon
+      il retombe sur la résolution paresseuse — donc sur la course
+
+## H. Le multi-format ne survivait pas à la sélection ✅
+
+Les clients commandent plusieurs formats dans une même commande — relevé sur la base :
+10x15+10x10, 10x15+13x18, 10x15+15x20, 8x10+10x15, 13x18+18x24. Le format par photo était
+bien posé à la réception, mais le seul fait de dérouler la liste « Produit » du bandeau
+ramenait toutes les photos cochées au même.
+
+- [x] H1 **La liste ne modifie plus rien à elle seule.** Le report est passé sur un bouton
+      « Appliquer aux photos cochées », où il se voit et ne part pas tout seul
+- [x] H2 Le bouton porte sur les photos COCHÉES : cinq photos en 15×20, les dix autres
+      restent en 10×15
+- [x] H3 Il reste éteint sans photo cochée — un bouton qui ne fait rien laisse croire que
+      le format n'a pas été pris
+- [x] H4 **Dans « Modifier », on vise à la CASE À COCHER.** Le Ctrl+clic faisait déjà cela
+      et personne ne l'a trouvé : rien ne l'annonçait. Il continue de fonctionner
+- [x] H5 La vignette de la bande affiche son FORMAT : sans lui, rien ne distingue une
+      10×15 d'une 15×20, et le multi-format se pilotait à l'aveugle
+
+## Vérification de la suite
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1049 verts**, dont les deux essais qui
+      contrôlent les gestionnaires et les ressources du XAML
+
+---
+
+# Exécution — 14ᵉ passe
+
+## A. Le liseré blanc sur TOUS les tirages ✅
+
+Signalé sur des 10×15, des 13×18 et des 15×20 — donc sur tout ce qui sortait, et absent
+auparavant. **La cause est la correction du 21×29,7 de la 13ᵉ passe.**
+
+Le DE100 réclame l'image AVEC les 3 mm de débord qu'il rognera. `FitPageToRoll` étendait
+donc le canevas à cette définition **en comblant de BLANC** : la photo se retrouvait cernée
+d'un liseré d'un millimètre et demi, que le rognage de la machine ne mangeait pas — il part
+du bord du PAPIER, pas du bord de l'image.
+
+Relevé dans les journaux de la boutique du 05/08/2026, sur trois formats différents :
+
+| Format demandé | Notre calcul | Ce que la machine réclame |
+| --- | --- | --- |
+| 152 × 102 mm | 1795 × 1205 px | **1830 × 1240 px** |
+| 152 × 80 mm | 1795 × 945 px | **1830 × 980 px** |
+| 152 × 180 mm | 1795 × 2126 px | **1830 × 2161 px** |
+
+Le débord vaut +35 px sur chaque axe, quel que soit le format : ~3 mm à 300 ppp, donc
+1,5 mm de blanc par bord.
+
+- [x] A1 `RemplirLeDebord` : l'image est AGRANDIE jusqu'à couvrir la définition réclamée,
+      puis rognée au centre. Le débord est rempli par la photo — c'est le sens du fond perdu
+- [x] A2 **Le calage en deux temps** : d'abord les cotes NUES du tirage (c'est là, et là
+      seulement, que du blanc entre — un 10×15 sur un rouleau de 210 laisse une bande de
+      chaque côté, et elle est voulue), puis le débord machine par-dessus
+- [x] A3 **Le facteur est le même sur les deux axes** : le débord vaut le même nombre de
+      pixels en largeur qu'en hauteur, donc pas la même proportion. Cadrer chaque axe
+      séparément étirerait la photo de quelques millièmes
+- [x] A4 Sans débord — machine muette, format inconnu, repli sur notre calcul — la méthode
+      ne touche à rien
+- [x] A5 essais : `DebordMinilabTests` (5), dont un qui vérifie que les bandes blanches
+      légitimes du rouleau SURVIVENT à la correction
+
+## B. Le cadrage des commandes de bornes, pour de bon ✅
+
+Le cadrage du client tombait toujours à côté, malgré les corrections des passes
+précédentes. **L'« Angle » de DiLand n'est pas la rotation du client : c'est la rotation
+TOTALE depuis le fichier brut, orientation EXIF comprise.**
+
+Studio applique toujours l'EXIF d'abord (`ImagePipeline.RenderInto` appelle `AutoOrient`),
+puis les quarts de tour. Reprendre l'angle tel quel les additionnait : une photo de
+téléphone en portrait — EXIF 8, donc Angle 270 — était redressée par l'EXIF puis tournée de
+270° DE PLUS. Elle partait couchée, et le recadrage du client, exprimé lui aussi dans le
+repère redressé, tombait à côté.
+
+Vérifié sur la base de la boutique, sur les 185 photos d'angle non nul :
+
+- **183** ont un Angle égal à leur orientation EXIF ;
+- **2** sont de vraies rotations faites à la borne — fichiers sans EXIF, tournés d'un quart.
+
+- [x] B1 `QuartsDeTourResiduels` = angle DiLand − orientation EXIF. On SOUSTRAIT au lieu
+      d'ignorer l'angle : ignorer ferait sortir de travers les deux photos vraiment tournées
+- [x] B2 `OrientationExif` : lecteur du seul tag 0x0112, écrit à la main. Faire entrer
+      Magick.NET dans `Studio.Store` pour six octets amènerait ONNX et OpenCV avec lui
+- [x] B3 **L'orientation se lit sur la COPIE**, jamais sur l'original : DiLand passe au XOR
+      les 1024 premiers octets des commandes traitées, c'est-à-dire l'en-tête EXIF lui-même
+- [x] B4 Toute anomalie rend « déjà droite » : un fichier tronqué ne doit pas empêcher une
+      commande de s'ouvrir, et c'est le comportement d'avant
+- [x] B5 Le recadrage, lui, n'est PAS transposé : DiLand l'exprime dans le repère redressé,
+      celui-là même où l'image se retrouve une fois la rotation juste appliquée
+- [x] B6 essais : `OrientationBorneTests` (16), sur les cotes réelles d'un téléphone
+
+## C. Le bandeau comptait les photos, pas les FEUILLES ✅
+
+Une photo demandée en deux exemplaires part en UN tirage de deux copies (`PrintNum`), et le
+bandeau annonçait « 1 / 1 » pendant que la machine en sortait deux.
+
+- [x] C1 `PrintProgress.Verdicts` : le total est en FEUILLES, le nombre de réponses
+      attendues voyage à part — le DE100 répond une fois par tirage, exemplaires compris
+- [x] C2 `TirageTermine` compte les VERDICTS : attendre autant de réponses que de feuilles
+      laisserait la commande affichée jusqu'au délai de garde
+
+## D. La barre de statut qui n'avançait pas ✅
+
+Elle n'avançait pas « parfois » : sur le minilab, elle **n'avançait jamais** en cours de
+route. `De100JobTracker.Report` ne rend une issue que sur un statut DÉFINITIF ; tant que la
+commande est `Printing`, aucun verdict n'arrive. L'affichage restait donc à « 0 / 30 »
+plusieurs minutes avant de sauter à « 30 / 30 ».
+
+- [x] D1 L'avancement se lit sur le COMPTEUR de la machine (`TotalPrintCount`), relevé au
+      début du tirage puis toutes les 10 s. Lui monte feuille par feuille
+- [x] D2 Deux fois moins souvent que le battement de la durée : chaque relevé traverse le
+      relais 32 bits pendant que la machine travaille, et une 10×15 met une dizaine de
+      secondes à sortir
+- [x] D3 Borné au total et jamais décroissant : le compteur est global à la machine, et une
+      commande lancée à côté depuis DiLand ne doit pas faire dépasser cent pour cent
+- [x] D4 **Dégradation propre** : sans compteur lisible, l'affichage retombe sur les
+      verdicts, comme avant. Un relais muet ne laisse jamais la barre plate
+
+## E. Le rouleau choisi ne tenait pas ✅
+
+`LoadMachinesAsync` remettait `PreferredMinilabMachine` à null et la liste sur
+« Automatique » à CHAQUE ouverture de l'écran : un aller-retour suffisait à perdre le
+rouleau qu'on venait de désigner.
+
+- [x] E1 Le choix explicite de l'opérateur SURVIT à la navigation
+- [x] E2 Une machine passée hors ligne entre-temps retombe sur « Automatique », préférence
+      comprise — imposer une machine absente ferait refuser la commande en la nommant
+- [x] E3 La règle de la 13ᵉ passe tient toujours : rien n'est imposé sans geste explicite
+
+## F. Gestes de la grille ✅
+
+- [x] F1 **Maj+clic prend toute la PLAGE** depuis la dernière photo touchée. Elle COCHE,
+      elle ne bascule pas : basculer décocherait celles qui étaient déjà prises
+- [x] F2 **« − » à un exemplaire RETIRE la photo** de la commande, au bouton comme au
+      clavier. Il s'arrêtait à 1 sans rien faire, et il fallait deviner qu'on décochait la
+      case pour retirer une photo
+
+## Vérification de la 14ᵉ passe
+
+- [x] `dotnet build` : 0 erreur — `dotnet test` : **1049 verts** (955 à la 13ᵉ passe)
+- [x] Le débord et l'orientation vérifiés sur les DONNÉES RÉELLES de la boutique : journaux
+      d'impression du jour, et les 1216 images de la base DiLand
+
+---
+
 # Exécution — 13ᵉ passe
 
 ## Q. L'estimation, c'était le TEMPS ✅

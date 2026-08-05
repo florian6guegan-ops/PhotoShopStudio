@@ -37,6 +37,7 @@ internal partial class EditSelectionView : UserControl
     private readonly Action _imprimer;
     private readonly Action? _personnalise;
     private readonly Action? _mettreEnAttente;
+    private readonly Func<PhotoGridView.PhotoItem, PhotoGridView.PhotoItem>? _dupliquer;
     private PhotoGridView.PhotoItem _courante;
 
     private Point _dernierPoint;
@@ -56,8 +57,17 @@ internal partial class EditSelectionView : UserControl
     /// COCHÉES, et mettre de côté la moitié d'une commande serait pire que de ne rien
     /// mettre de côté du tout.
     /// </param>
+    /// <param name="dupliquer">
+    /// Reproduit une photo dans la commande, et rend le doublon.
+    ///
+    /// Fourni par la GRILLE, qui seule tient la liste que l'impression parcourt : un
+    /// doublon ajouté à la seule liste de cet écran se serait affiché, se serait réglé, et
+    /// ne serait jamais sorti. Null quand l'appelant ne sait pas dupliquer — le bouton
+    /// disparaît alors.
+    /// </param>
     public EditSelectionView(List<PhotoGridView.PhotoItem> photos, Action imprimer,
-        Action? personnalise = null, Action? mettreEnAttente = null)
+        Action? personnalise = null, Action? mettreEnAttente = null,
+        Func<PhotoGridView.PhotoItem, PhotoGridView.PhotoItem>? dupliquer = null)
     {
         ArgumentNullException.ThrowIfNull(photos);
 
@@ -65,6 +75,7 @@ internal partial class EditSelectionView : UserControl
         _imprimer = imprimer;
         _personnalise = personnalise;
         _mettreEnAttente = mettreEnAttente;
+        _dupliquer = dupliquer;
         _courante = photos[0];
 
         // rien n'est visé en entrant : on travaille la photo affichée, et l'on vise
@@ -76,6 +87,9 @@ internal partial class EditSelectionView : UserControl
         // l'écran peut être ouvert par un appelant qui ne sait pas mettre de côté :
         // un bouton qui ne fait rien vaut moins que pas de bouton
         AttenteButton.Visibility = mettreEnAttente is null ? Visibility.Collapsed : Visibility.Visible;
+
+        // même règle que ci-dessus : un bouton qui ne fait rien vaut moins que pas de bouton
+        DupliquerButton.Visibility = dupliquer is null ? Visibility.Collapsed : Visibility.Visible;
 
         Strip.ItemsSource = _photos;
         Sliders.ItemsSource = ConstruireReglages();
@@ -1043,4 +1057,47 @@ internal partial class EditSelectionView : UserControl
     private void OnPrint(object sender, RoutedEventArgs e) => _imprimer();
 
     private void OnMettreEnAttente(object sender, RoutedEventArgs e) => _mettreEnAttente?.Invoke();
+
+    /// <summary>
+    /// Reproduit les photos visées, pour les tirer dans un second format.
+    ///
+    /// <b>Ce sont les DOUBLONS qui restent visés</b>, et les originaux qui sont relâchés :
+    /// le geste suivant est toujours « et maintenant, en 15×20 ». Viser les deux ferait
+    /// changer le format des originaux du même coup, et l'on n'aurait rien gagné.
+    ///
+    /// La duplication passe par la GRILLE (voir <c>PhotoGridView.DupliquerPhoto</c>) : elle
+    /// seule tient la liste que l'impression parcourt.
+    /// </summary>
+    private void OnDupliquer(object sender, RoutedEventArgs e)
+    {
+        if (_dupliquer is null) return;
+
+        var visees = Visees();
+        if (visees.Count == 0) return;
+
+        var doublons = new List<PhotoGridView.PhotoItem>(visees.Count);
+
+        foreach (var photo in visees)
+        {
+            var copie = _dupliquer(photo);
+
+            // le doublon se range juste après son original, ici aussi : la bande doit
+            // montrer le même ordre que la planche
+            var rang = _photos.IndexOf(photo);
+            if (rang < 0) _photos.Add(copie);
+            else _photos.Insert(rang + 1, copie);
+
+            photo.Ciblee = false;
+            copie.Ciblee = true;
+            doublons.Add(copie);
+        }
+
+        // _photos est une List : sans cette remise en place, les doublons n'apparaîtraient
+        // pas dans la bande
+        Strip.ItemsSource = null;
+        Strip.ItemsSource = _photos;
+
+        SetCurrent(doublons[0]);
+        Refresh();
+    }
 }

@@ -404,8 +404,12 @@ public static class PhotoMailer
     /// Une seule voie, pour que l'essai valide EXACTEMENT ce que fera l'envoi : deux
     /// clients SMTP configurés séparément finiraient par différer, et l'essai passerait
     /// pendant que l'envoi échouerait.
+    ///
+    /// <b>Le rapport de diagnostic passe par ici aussi</b> (<see cref="RapportDiagnostic"/>),
+    /// et pour la même raison : un poste qui sait envoyer les photos d'un client sait
+    /// envoyer son rapport, sans rien de plus à régler.
     /// </summary>
-    private static void Expedier(
+    internal static void Expedier(
         MailSettings reglages, MailMessage message, string destinataire, int fichiers)
     {
         using var client = new SmtpClient(reglages.Serveur, reglages.Port)

@@ -372,7 +372,9 @@ public sealed class DiLandImporter
                     Product: produit,
                     Quantity: Math.Max(1, photo.Quantity),
                     Crop: CropOf(photo),
-                    RotationQuarterTurns: QuarterTurns(photo.Angle),
+                    // l'EXIF est déjà appliqué au rendu : reprendre l'angle de DiLand tel
+                    // quel le compterait deux fois (voir QuartsDeTourResiduels)
+                    RotationQuarterTurns: QuartsDeTourResiduels(photo, chemin),
                     // Les bornes redressent : le contraire était écrit ici, et 113 photos
                     // de la base de la boutique portent un redressement qui partait à la
                     // poubelle. Le tirage sortait de travers sans que rien ne le dise.
@@ -500,9 +502,12 @@ public sealed class DiLandImporter
 
                 // première occurrence gagne, comme la recopie : la photo n'apparaît qu'une
                 // fois dans la grille, elle ne peut donc porter qu'un cadrage
+                //
+                // la rotation se lit sur la COPIE, qui vient d'être écrite en clair : c'est
+                // la seule à porter un en-tête EXIF lisible (voir QuartsDeTourResiduels)
                 cadrages.TryAdd(photo.FileName, new CadrageBorne(
                     CropOf(photo),
-                    QuarterTurns(photo.Angle),
+                    QuartsDeTourResiduels(photo, Path.Combine(destination, photo.FileName)),
                     photo.FineRotationDegrees,
                     Math.Max(1, photo.Quantity),
                     produit?.Code));
@@ -691,6 +696,43 @@ public sealed class DiLandImporter
     {
         var quarts = (int)Math.Round(angle / 90.0) % 4;
         return quarts < 0 ? quarts + 4 : quarts;
+    }
+
+    /// <summary>
+    /// La rotation qu'il RESTE à appliquer après <c>AutoOrient</c>, en quarts de tour
+    /// horaires.
+    ///
+    /// <b>L'« Angle » de DiLand n'est pas la rotation du client : c'est la rotation TOTALE
+    /// depuis le fichier brut, orientation EXIF comprise.</b> Studio, lui, applique
+    /// toujours l'EXIF d'abord (<c>ImagePipeline.RenderInto</c> appelle <c>AutoOrient</c>),
+    /// puis les quarts de tour. Reprendre l'angle de DiLand tel quel les additionnait :
+    /// une photo de téléphone en portrait — EXIF 8, donc Angle 270 — était redressée par
+    /// l'EXIF puis tournée de 270° DE PLUS. Elle partait couchée, et le recadrage du
+    /// client, exprimé lui aussi dans le repère redressé, tombait à côté.
+    ///
+    /// Relevé sur la base de la boutique le 05/08/2026 : sur 185 photos d'angle non nul,
+    /// 183 ont un Angle égal à leur orientation EXIF au degré près. Les deux autres sont
+    /// de VRAIES rotations faites à la borne — fichiers sans EXIF, tournés d'un quart —
+    /// et c'est pourquoi on soustrait au lieu d'ignorer l'angle : les ignorer ferait
+    /// sortir ces deux-là de travers.
+    ///
+    /// L'invariant qui le vérifie : après cette rotation, les côtés de l'image doivent
+    /// tomber sur les <c>Width</c> × <c>Height</c> notés par DiLand — c'est le repère dans
+    /// lequel son recadrage est exprimé.
+    /// </summary>
+    /// <param name="cheminEnClair">
+    /// La photo DÉJÀ RECOPIÉE, donc débrouillée. Lire l'original ne donnerait rien : DiLand
+    /// passe au XOR les 1024 premiers octets des commandes traitées, c'est-à-dire l'en-tête
+    /// EXIF lui-même.
+    /// </param>
+    internal static int QuartsDeTourResiduels(DiLandOrderPhoto photo, string cheminEnClair)
+    {
+        ArgumentNullException.ThrowIfNull(photo);
+
+        var total = QuarterTurns(photo.Angle);
+        var dejaFaits = OrientationExif.QuartsDeTour(cheminEnClair);
+
+        return ((total - dejaFaits) % 4 + 4) % 4;
     }
 
 }
