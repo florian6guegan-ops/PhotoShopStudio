@@ -11,5 +11,17 @@
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CS9057</WarningsNotAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
     <NeutralLanguage>fr-FR</NeutralLanguage>
+    <!--
+      La version de l'application. Elle sert à DEUX choses, et c'est pourquoi elle vit ici
+      plutôt que dans un seul projet :
+
+      - la mise à jour automatique la compare à celle publiée sur GitHub (voir MiseAJour) ;
+      - le rapport de diagnostic la porte en en-tête — la première question devant un
+        défaut est toujours « sur quelle version ? ».
+
+      À MONTER avant de publier une version, sinon les postes ne verront rien à installer.
+      Le script tools\Publier.ps1 la lit et refuse de publier une version déjà parue.
+    -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 </Project>

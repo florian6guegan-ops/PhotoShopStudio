@@ -384,6 +384,140 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Le référentiel compte 274 documents ; la boutique en tire deux toute la journée. Les raccourcis sont les tuiles mises devant, avant le reste du référentiel."/>
 
+                <!-- Ce qui dépend du POSTE et non de la boutique. Tout se détecte seul ;
+                     ces réglages ne servent qu'à rattraper une installation que la
+                     détection ne sait pas lire. C'est ce qui permet de donner
+                     l'application à un collègue sans rien recompiler. -->
+                <TextBlock Text="Matériel de ce poste" Style="{StaticResource Texte}"
+                           FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="Studio trouve seul les bornes et les imprimantes. Ne remplissez ces cases que si ce qu'il a trouvé est faux : ce que vous mettez ici l'emporte."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Bornes (dossier de DiLand)" Style="{StaticResource Hint}"/>
+                        <TextBlock x:Name="DiLandTrouveText" Style="{StaticResource Hint}"
+                                   FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="DiLandBox" Grid.Column="0" FontSize="18" Padding="12,10"/>
+                            <Button Grid.Column="1" Style="{StaticResource FlatButton}" MinHeight="48"
+                                    MinWidth="120" Margin="10,0,0,0" Click="OnParcourirDiLand"
+                                    ToolTip="Choisir le dossier où DiLand est installé.">Parcourir…</Button>
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" TextWrapping="Wrap"
+                                   Margin="0,6,0,0"
+                                   Text="Le dossier d'installation de DiLand suffit — inutile de descendre jusqu'à « Data\AllUsersData\Repositories\Default »."/>
+
+                        <TextBlock Text="Imprimantes reconnues" Style="{StaticResource Hint}"
+                                   Margin="0,20,0,0"/>
+                        <ItemsControl x:Name="ImprimantesList" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,3">
+                                        <Border DockPanel.Dock="Left" CornerRadius="6" Padding="10,3"
+                                                Margin="0,0,10,0" MinWidth="120"
+                                                Background="{Binding RoleBrush}">
+                                            <TextBlock Text="{Binding RoleTexte}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="White"
+                                                       HorizontalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding Detail}" FontSize="15"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="Imprimante des agrandissements" Style="{StaticResource Hint}"
+                                   Margin="0,20,0,0"/>
+                        <ComboBox x:Name="GrandFormatCombo" FontSize="17" Margin="0,6,0,0"/>
+
+                        <TextBlock Text="Imprimante à sublimation" Style="{StaticResource Hint}"
+                                   Margin="0,16,0,0"/>
+                        <ComboBox x:Name="SublimationCombo" FontSize="17" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- La mise à jour. On vérifie et on annonce ; on n'installe JAMAIS sans
+                     que l'opérateur l'ait demandé — l'installation ferme l'application,
+                     peut-être au milieu d'une commande. -->
+                <TextBlock Text="Version et mises à jour" Style="{StaticResource Texte}"
+                           FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,8,0,20">
+                    <StackPanel>
+                        <TextBlock x:Name="VersionText" Style="{StaticResource Texte}" FontSize="18"/>
+                        <TextBlock x:Name="MajEtatText" Style="{StaticResource Hint}"
+                                   TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Button x:Name="MajChercherButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="52" MinWidth="240" FontSize="17"
+                                    Click="OnChercherUneMaj"
+                                    ToolTip="Demande au dépôt s'il existe une version plus récente. Rien n'est installé.">
+                                🔄  Chercher une mise à jour
+                            </Button>
+                            <Button x:Name="MajInstallerButton" Style="{StaticResource BigButton}"
+                                    MinHeight="52" MinWidth="260" Margin="12,0,0,0"
+                                    Click="OnInstallerLaMaj" Visibility="Collapsed"
+                                    ToolTip="Télécharge et installe. L'application se ferme et se rouvre toute seule.">
+                                ⬇  Installer et redémarrer
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Quand ça ne va pas. Rien ne part tout seul : c'est un geste, et le
+                     rapport dit ce qu'il contient avant de partir. -->
+                <TextBlock Text="Signaler un problème" Style="{StaticResource Texte}"
+                           FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Text="Envoie les journaux de ce poste à celui qui suit le logiciel, pour qu'il puisse comprendre la panne. Aucune photo de client n'est jointe, et les mots de passe ne le sont jamais."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Adresse où envoyer le rapport" Style="{StaticResource Hint}"/>
+                        <TextBox x:Name="RapportAdresseBox" FontSize="18" Padding="12,10"
+                                 Margin="0,6,0,0"/>
+
+                        <TextBlock Text="Que s'est-il passé ?" Style="{StaticResource Hint}"
+                                   Margin="0,16,0,0"/>
+                        <TextBox x:Name="RapportNoteBox" FontSize="17" Padding="12,10"
+                                 Margin="0,6,0,0" MinHeight="90"
+                                 AcceptsReturn="True" TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"/>
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" TextWrapping="Wrap"
+                                   Margin="0,6,0,0"
+                                   Text="En une phrase : ce que vous faisiez, et ce qui s'est passé. C'est ce qui se lit en premier."/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                            <Button x:Name="RapportEnvoyerButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="52" MinWidth="240" FontSize="17"
+                                    Click="OnEnvoyerLeRapport"
+                                    ToolTip="Fabrique le rapport et l'envoie par courriel.">
+                                📤  Envoyer le rapport
+                            </Button>
+                            <Button x:Name="RapportEnregistrerButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="52" MinWidth="240" FontSize="17" Margin="12,0,0,0"
+                                    Click="OnEnregistrerLeRapport"
+                                    ToolTip="Écrit le rapport dans un fichier, à transmettre comme vous voulez. Utile quand le courriel ne marche pas.">
+                                💾  Enregistrer le fichier…
+                            </Button>
+                        </StackPanel>
+
+                        <TextBlock x:Name="RapportEtatText" Style="{StaticResource Hint}"
+                                   TextWrapping="Wrap" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+
                 <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
                         <Button Style="{StaticResource FlatButton}" MinHeight="56" MinWidth="300"

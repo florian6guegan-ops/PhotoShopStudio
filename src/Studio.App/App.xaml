@@ -310,5 +310,68 @@
             </Setter>
         </Style>
 
+        <!--
+            Cases à cocher, boutons radio et champs de saisie : WPF leur donne la couleur
+            de TEXTE DU SYSTÈME, c'est-à-dire du NOIR, et un fond blanc aux seconds. Sur nos
+            panneaux bleu-gris (CardBrush #1E2731, PanelBrush #2A3440), une vingtaine de
+            libellés étaient donc écrits en noir sur bleu : « Noir et blanc », « Actif »,
+            « Contour de découpe », les trois choix de détourage des paramètres…
+
+            C'est le même défaut que le noir sur noir des TextBlock, et il se corrige ici
+            plutôt qu'à chaque écran : ces trois types portent leur couleur EUX-MÊMES
+            (Control.Foreground), et rien ne la leur transmet depuis le conteneur.
+
+            Sans danger, contrairement à un style implicite de TextBlock : ces contrôles ne
+            paraissent jamais dans une liste au fond clair du système.
+        -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <!-- Le champ de mot de passe des paramètres restait BLANC au milieu de champs
+             sombres : il n'est pas un TextBox et n'héritait donc de rien. -->
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="#3A4653"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="#3A4653"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <!-- Sans ces deux-là, le curseur est noir sur fond sombre — donc invisible —
+                 et le texte sélectionné reste noir sous le bleu de la sélection. -->
+            <Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="SelectionTextBrush" Value="White"/>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </Application.Resources>
 </Application>

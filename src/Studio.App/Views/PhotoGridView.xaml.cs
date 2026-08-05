@@ -272,6 +272,9 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
                 _photos.Add(photo);
             }
+
+            RecreerLesDoublonsEnAttente();
+
             PhotosGrid.ItemsSource = _photos;
             AfficherEtatDuDossier();
             UpdateSummary();
@@ -345,13 +348,70 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// l'attente absente du dossier est simplement ignorée : les deux listes n'ont aucune
     /// raison de coïncider un mois plus tard.
     /// </summary>
+    /// <summary>
+    /// Les entrées de l'attente qui n'ont pas encore trouvé leur vignette, par nom de
+    /// fichier.
+    ///
+    /// <b>Une file, et non une simple recherche</b> : depuis le bouton « Dupliquer », une
+    /// même photo peut figurer DEUX fois dans la commande — en 10×15 et en 15×20. Les deux
+    /// entrées portent le même nom de fichier, et un <c>FirstOrDefault</c> aurait donné la
+    /// première aux deux vignettes : le second format était perdu à la reprise.
+    /// </summary>
+    private Dictionary<string, Queue<PhotoEnAttente>>? _attentesARendre;
+
+    private Dictionary<string, Queue<PhotoEnAttente>> AttentesARendre =>
+        _attentesARendre ??= _enAttente is null
+            ? new Dictionary<string, Queue<PhotoEnAttente>>(StringComparer.OrdinalIgnoreCase)
+            : _enAttente.Photos
+                .GroupBy(p => p.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => new Queue<PhotoEnAttente>(g),
+                    StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Recrée les photos dupliquées d'une commande mise de côté.
+    ///
+    /// Le dossier ne porte qu'UN fichier par photo : le balayage ne fabrique donc qu'une
+    /// vignette, alors que l'attente peut en compter deux — la même photo en 10×15 et en
+    /// 15×20. Sans cette reprise, le doublon disparaissait à la réouverture, et avec lui
+    /// la moitié de la commande.
+    ///
+    /// Les entrées restantes sont celles qu'<see cref="AppliquerLAttente"/> n'a pas
+    /// consommées : chacune reçoit sa vignette, posée juste après l'originale.
+    /// </summary>
+    private void RecreerLesDoublonsEnAttente()
+    {
+        if (_enAttente is null) return;
+
+        foreach (var (nom, file) in AttentesARendre.Where(e => e.Value.Count > 0).ToList())
+        {
+            var originale = _photos.FirstOrDefault(
+                p => p.Name.Equals(nom, StringComparison.OrdinalIgnoreCase));
+
+            // le fichier a disparu du dossier : rien à dupliquer, et la commande s'ouvre
+            // quand même avec ce qu'il en reste
+            if (originale is null) continue;
+
+            // La position AVANCE d'un doublon à l'autre. Insérer chaque fois juste après
+            // l'originale les remettrait dans l'ordre inverse : sur une photo tirée en
+            // 10×15, 13×18 puis 15×20, les deux derniers formats se seraient croisés.
+            var rang = _photos.IndexOf(originale);
+
+            while (file.Count > 0)
+            {
+                var copie = new PhotoItem(originale.Path, OnCartChanged);
+                AppliquerLAttente(copie);   // consomme l'entrée suivante de ce nom
+
+                _photos.Insert(++rang, copie);
+            }
+        }
+    }
+
     private void AppliquerLAttente(PhotoItem photo)
     {
         if (_enAttente is null) return;
 
-        var enregistree = _enAttente.Photos
-            .FirstOrDefault(p => p.FileName.Equals(photo.Name, StringComparison.OrdinalIgnoreCase));
-        if (enregistree is null) return;
+        if (!AttentesARendre.TryGetValue(photo.Name, out var file) || file.Count == 0) return;
+        var enregistree = file.Dequeue();
 
         photo.Product = EnTaillePersonnalisee
             ? _produitPerso
@@ -728,10 +788,77 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     {
         if ((sender as Border)?.Tag is not PhotoItem photo) return;
 
+        // Maj+clic prend toute la PLAGE depuis la dernière photo touchée : sur une carte de
+        // soixante photos dont le client en veut quarante d'affilée, c'est quarante clics
+        // en moins. Le geste est celui de l'explorateur Windows, donc il n'a pas à
+        // s'apprendre.
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && _ancreSelection is not null)
+        {
+            SelectionnerLaPlage(_ancreSelection, photo);
+            return;
+        }
+
         // un clic coche ou décoche, comme le SelectionMode.Multiple de DiLand : ici on
         // compose la commande, il n'y a rien à restreindre. Le tri à la touche Ctrl est
         // dans l'écran Modifier, là où il sert à viser quelques photos d'un réglage.
         Toggle(photo);
+
+        // l'ancre suit le dernier clic SIMPLE, coché ou décoché : c'est de là que partira
+        // la prochaine plage
+        _ancreSelection = photo;
+    }
+
+    /// <summary>
+    /// D'où part la prochaine sélection par plage. Nulle tant que rien n'a été cliqué : un
+    /// Maj+clic isolé ne doit pas prendre toutes les photos depuis le début du dossier.
+    /// </summary>
+    private PhotoItem? _ancreSelection;
+
+    /// <summary>
+    /// Coche toutes les photos entre deux vignettes, bornes comprises.
+    ///
+    /// <b>Elle COCHE, elle ne bascule pas.</b> Basculer chaque photo de la plage
+    /// décocherait celles qui étaient déjà prises — sur une plage qui en recouvre une autre,
+    /// l'opérateur perdrait son travail au lieu de l'étendre.
+    ///
+    /// L'ordre est celui de la GRILLE, qui n'est pas celui du disque : les photos se
+    /// présentent de la plus récente à la plus ancienne, ou par nom si l'opérateur a trié.
+    /// On travaille donc sur <c>_photos</c>, qui porte l'ordre affiché.
+    /// </summary>
+    private void SelectionnerLaPlage(PhotoItem depuis, PhotoItem jusqua)
+    {
+        var debut = _photos.IndexOf(depuis);
+        var fin = _photos.IndexOf(jusqua);
+        if (debut < 0 || fin < 0) return;
+
+        if (debut > fin) (debut, fin) = (fin, debut);
+
+        for (var i = debut; i <= fin; i++) Prendre(_photos[i]);
+
+        _photoCourante = jusqua;
+        UpdateSummary();
+    }
+
+    /// <summary>
+    /// Fait entrer une photo dans la commande.
+    ///
+    /// <b>Le format et la quantité du bandeau ne s'appliquent qu'aux photos qui n'ont
+    /// RIEN.</b> Une photo venue d'une borne arrive avec le format et le nombre
+    /// d'exemplaires choisis par le client : les écraser en la cochant lui ferait tirer
+    /// autre chose que ce qu'il a commandé. C'est la même règle que pour le format seul —
+    /// la sélection ne décide de rien, elle prend.
+    /// </summary>
+    private void Prendre(PhotoItem photo)
+    {
+        if (photo.Selected) return;
+
+        if (photo.Product is null)
+        {
+            photo.Product = DefaultProduct;
+            photo.Quantity = _quantity;
+        }
+
+        photo.Selected = true;
     }
 
     /// <summary>Ajoute une photo à la commande, ou l'en retire.</summary>
@@ -838,10 +965,9 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 continue;
             }
 
-            if (photo.Selected) continue;
-            photo.Product ??= DefaultProduct;
-            photo.Quantity = _quantity;
-            photo.Selected = true;
+            // même règle qu'au clic : on ne touche ni au format ni à la quantité d'une
+            // photo qui les tient déjà de la borne
+            Prendre(photo);
         }
 
         if (toutPris) _photoCourante = null;
@@ -881,8 +1007,9 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// </summary>
     private async Task LoadMachinesAsync()
     {
-        // rien d'imposé tant que l'opérateur n'a pas choisi lui-même
-        App.Services.Printer.PreferredMinilabMachine = null;
+        // Ce que l'opérateur avait imposé, s'il l'avait fait. Relevé AVANT de toucher à la
+        // liste : reposer les lignes déclenche OnMachineChanged, qui l'écraserait.
+        var imposeeAvant = App.Services.Printer.PreferredMinilabMachine;
 
         try
         {
@@ -895,6 +1022,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
             if (machines.Count == 0)
             {
+                App.Services.Printer.PreferredMinilabMachine = null;
                 MachineCombo.ItemsSource = new[]
                 {
                     new MachineChoice(MachineChoice.Aucune, "aucune machine en ligne"),
@@ -911,12 +1039,25 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             choix.AddRange(machines);
 
             MachineCombo.ItemsSource = choix;
-            MachineCombo.SelectedIndex = 0;
             MachineCombo.IsEnabled = true;
+
+            // Le choix de l'opérateur SURVIT à la navigation. C'est un geste explicite, et
+            // il le reste quand on revient sur l'écran : l'effacer obligeait à redésigner
+            // la machine à chaque aller-retour, alors qu'on vient justement d'y monter un
+            // rouleau. Une machine passée hors ligne entre-temps retombe sur
+            // « Automatique », préférence comprise — imposer une machine absente ferait
+            // refuser la commande en nommant une machine éteinte.
+            var rang = imposeeAvant is null
+                ? 0
+                : choix.FindIndex(c => !c.Automatique && c.Id.ToString() == imposeeAvant);
+
+            MachineCombo.SelectedIndex = rang >= 0 ? rang : 0;
+            if (rang < 0) App.Services.Printer.PreferredMinilabMachine = null;
         }
         catch (Exception ex)
         {
             FileLog.Write("Liste des machines du minilab indisponible", ex);
+            App.Services.Printer.PreferredMinilabMachine = null;
             MachineCombo.ItemsSource = new[]
             {
                 new MachineChoice(MachineChoice.Aucune, "minilab injoignable"),
@@ -954,6 +1095,8 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         CountText.Text = selected.Count == 0
             ? $"{_photos.Count} photos trouvées"
             : $"{selected.Count} sélectionnée{(selected.Count > 1 ? "s" : "")} sur {_photos.Count}";
+
+        RafraichirLeBoutonProduit();
         if (EnTaillePersonnalisee)
         {
             ResumerLaPlanche(selected);
@@ -1243,6 +1386,58 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// Ouvre l'écran de travail sur la sélection : recadrage et corrections, la planche
     /// restant sous les yeux. L'impression part de là, une fois tout réglé.
     /// </summary>
+    /// <summary>
+    /// Reproduit une photo dans la commande, avec tous ses réglages, pour qu'on puisse la
+    /// tirer une seconde fois dans un AUTRE format.
+    ///
+    /// <b>C'est la GRILLE qui duplique, et pas l'écran « Modifier »</b> : elle seule tient
+    /// la liste que l'impression parcourt. Un doublon ajouté à la seule liste de « Modifier »
+    /// se serait affiché, se serait réglé, et ne serait jamais sorti.
+    ///
+    /// Le doublon est posé JUSTE APRÈS son original : sur soixante photos, le retrouver en
+    /// fin de planche demanderait de faire défiler toute la grille.
+    ///
+    /// Il est coché d'office — on ne duplique une photo que pour la tirer — et garde le
+    /// même fichier source : rien n'est recopié sur le disque, seule la ligne de commande
+    /// est doublée.
+    /// </summary>
+    /// <returns>Le doublon, à insérer dans la bande de l'écran appelant.</returns>
+    private PhotoItem DupliquerPhoto(PhotoItem origine)
+    {
+        var copie = new PhotoItem(origine.Path, OnCartChanged)
+        {
+            Product = origine.Product,
+            Finish = origine.Finish,
+            RotationQuarterTurns = origine.RotationQuarterTurns,
+            FineRotationDegrees = origine.FineRotationDegrees,
+            FitOverride = origine.FitOverride,
+            CutBorder = origine.CutBorder,
+            // une COPIE des corrections, jamais la même instance : corriger le doublon
+            // retoucherait sinon l'original du même coup
+            Adjustments = origine.Adjustments.Clone(),
+            Quantity = origine.Quantity,
+        };
+
+        // le cadrage en DERNIER, comme partout : les mutateurs ci-dessus le remettent à zéro
+        copie.PoserLeCadrageDOrigine(origine.Crop);
+        copie.Selected = true;
+
+        var rang = _photos.IndexOf(origine);
+        if (rang < 0) _photos.Add(copie);
+        else _photos.Insert(rang + 1, copie);
+
+        // _photos est une List : sans cette remise en place, le doublon n'apparaîtrait
+        // nulle part (voir les notes d'architecture)
+        PhotosGrid.ItemsSource = null;
+        PhotosGrid.ItemsSource = _photos;
+
+        copie.RefreshThumbnail();
+        UpdateSummary();
+
+        FileLog.Write($"Photo « {origine.Name} » dupliquée dans la commande");
+        return copie;
+    }
+
     private void OnModify(object sender, RoutedEventArgs e)
     {
         var choisies = _photos.Where(p => p.Selected).ToList();
@@ -1260,7 +1455,10 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 // temps, donc celui où un client peut demander à revenir plus tard.
                 // C'est la GRILLE qui enregistre — elle seule connaît les photos non
                 // cochées, et les perdre reviendrait à ne mettre de côté qu'une moitié.
-                mettreEnAttente: MettreEnAttente),
+                mettreEnAttente: MettreEnAttente,
+                // et c'est encore elle qui duplique : elle seule tient la liste que
+                // l'impression parcourt
+                dupliquer: DupliquerPhoto),
             $"Modifier — {choisies.Count} photo(s)");
     }
 
@@ -1278,10 +1476,43 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             return;
         }
 
-        if (DefaultProduct is null) return;
-        foreach (var photo in _photos.Where(p => p.Selected))
-            photo.Product = DefaultProduct;
+        // <b>La liste ne touche plus aux photos déjà cochées.</b> Une commande de borne
+        // arrive avec un format PAR PHOTO — le client en a choisi plusieurs — et le seul
+        // fait de dérouler la liste les ramenait toutes au même : le multi-format ne
+        // survivait pas à la sélection. Le report est passé sur un bouton, où il se voit et
+        // ne se déclenche pas tout seul (décision de l'exploitant, 05/08/2026).
         UpdateSummary();
+    }
+
+    /// <summary>
+    /// Donne le format de la liste à toutes les photos cochées — le geste explicite qui a
+    /// remplacé le report automatique.
+    ///
+    /// Il s'applique aux photos COCHÉES et non à toutes : c'est ainsi qu'on passe cinq
+    /// photos d'une commande en 15×20 en laissant les dix autres en 10×15.
+    /// </summary>
+    private void OnAppliquerLeProduit(object sender, RoutedEventArgs e)
+    {
+        if (DefaultProduct is null || EnTaillePersonnalisee) return;
+
+        var cochees = _photos.Where(p => p.Selected).ToList();
+        if (cochees.Count == 0) return;
+
+        foreach (var photo in cochees) photo.Product = DefaultProduct;
+
+        FileLog.Write($"Format « {DefaultProduct.Name} » appliqué à {cochees.Count} photo(s) cochée(s)");
+        UpdateSummary();
+    }
+
+    /// <summary>
+    /// Le bouton de report ne s'allume que s'il a de quoi travailler : sans photo cochée,
+    /// il ne ferait rien et laisserait croire que le format n'a pas été pris.
+    /// </summary>
+    private void RafraichirLeBoutonProduit()
+    {
+        if (AppliquerProduitButton is null) return;
+
+        AppliquerProduitButton.IsEnabled = !EnTaillePersonnalisee && _photos.Any(p => p.Selected);
     }
 
     /// <summary>
@@ -1346,10 +1577,27 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
     // ----- bandeau de la vignette : produit et quantité de cette photo -----
 
+    /// <summary>
+    /// Un cran de moins — et à un exemplaire, la photo SORT de la commande.
+    ///
+    /// Le bouton s'arrêtait à 1 sans rien faire de plus : pour retirer une photo, il fallait
+    /// deviner qu'il fallait décocher la case. Descendre la quantité jusqu'à zéro est le
+    /// geste naturel, et c'est déjà celui de la touche 0 (voir
+    /// <see cref="SetQuantityOnTargets"/>). La quantité est laissée à 1 : si l'opérateur la
+    /// recoche, elle revient à un exemplaire et non à zéro.
+    /// </summary>
     private void OnTileMinus(object sender, RoutedEventArgs e)
     {
-        if ((sender as Button)?.Tag is PhotoItem photo)
-            photo.Quantity = Math.Clamp(photo.Quantity - 1, 1, 99);
+        if ((sender as Button)?.Tag is not PhotoItem photo) return;
+
+        if (photo.Quantity <= 1)
+        {
+            photo.Quantity = 1;
+            photo.Selected = false;
+            return;
+        }
+
+        photo.Quantity = Math.Clamp(photo.Quantity - 1, 1, 99);
     }
 
     private void OnTilePlus(object sender, RoutedEventArgs e)
@@ -1400,12 +1648,25 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         }
     }
 
+    /// <summary>
+    /// Un cran de plus ou de moins au clavier. Comme le bouton de la vignette, descendre
+    /// sous un exemplaire RETIRE la photo — les deux gestes doivent faire la même chose,
+    /// sans quoi la touche et le bouton ne se comporteraient pas pareil.
+    /// </summary>
     private void ChangeQuantityOnTargets(int delta)
     {
         foreach (var photo in Cibles())
         {
             if (!photo.Selected) continue;
-            photo.Quantity = Math.Max(1, photo.Quantity + delta);
+
+            if (delta < 0 && photo.Quantity + delta < 1)
+            {
+                photo.Quantity = 1;
+                photo.Selected = false;
+                continue;
+            }
+
+            photo.Quantity = Math.Clamp(photo.Quantity + delta, 1, 99);
         }
     }
 
@@ -2232,6 +2493,8 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 RefreshThumbnail();
 
                 OnPropertyChanged(nameof(ProductLabel));
+                OnPropertyChanged(nameof(FormatLabel));
+                OnPropertyChanged(nameof(FormatVisibility));
                 _cartChanged();
             }
         }
@@ -2244,6 +2507,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             {
                 if (!Set(ref _finish, value)) return;
                 OnPropertyChanged(nameof(ProductLabel));
+                OnPropertyChanged(nameof(FormatLabel));
             }
         }
 
@@ -2267,6 +2531,23 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             ? "Produit…"
             : $"{_product.Name}{(_finish is null ? "" : $" · {_finish}")}" +
               (_product.Price > 0 ? $" · {_product.Price:0.00} €" : "");
+
+        /// <summary>
+        /// Le FORMAT du tirage, sans le prix — le badge de la vignette.
+        ///
+        /// Depuis qu'une commande peut mélanger les formats, c'est la seule chose qui
+        /// distingue à l'œil une 10×15 d'une 15×20 dans la planche. Le prix, lui, n'a rien
+        /// à faire sur une vignette : il est déjà au total de la barre du bas, et répété
+        /// sur soixante photos il mange la place du reste.
+        /// </summary>
+        public string FormatLabel => _product is null
+            ? ""
+            : $"{_product.Name}{(_finish is null ? "" : $" · {_finish}")}";
+
+        /// <summary>Le badge de format n'apparaît que sur les photos qui en ont un.</summary>
+        public Visibility FormatVisibility =>
+            _product is null ? Visibility.Collapsed : Visibility.Visible;
+
         public string QuantityLabel => _quantity.ToString();
 
         public Brush BorderBrush => Selected

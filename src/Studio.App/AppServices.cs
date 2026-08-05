@@ -75,7 +75,13 @@ public sealed class AppServices
     /// rechargé, et le dépôt DiLand peut être absent sur un poste de développement.
     /// </summary>
     public DiLandImporter DiLandImport => _diland ??= new DiLandImporter(
-        new DiLandRepository(DiLandRepository.DefaultRoot, Path.Combine(DataRoot, "diland")),
+        // Le dépôt est CHERCHÉ, il n'est plus écrit en dur : le chemin de la boutique est
+        // faux sur tout autre poste (autre disque, autre version, Windows 64 bits), et
+        // Studio n'y ouvrait plus une seule commande de borne. Le réglage des paramètres
+        // l'emporte quand il est renseigné (voir DiLandLocator).
+        new DiLandRepository(
+            DiLandLocator.TrouverOuDefaut(Poste.DiLandRacine),
+            Path.Combine(DataRoot, "diland")),
         Orders,
         Catalog.All.ToList(),
         Path.Combine(DataRoot, "diland", "reprises.json"),
@@ -179,6 +185,32 @@ public sealed class AppServices
     /// graphique et il se compte en secondes. Voir <see cref="DetourageSettings"/>.
     /// </summary>
     public DetourageSettings Detourage => _detourage ??= DetourageSettings.Load(ConfigDir);
+
+    private PosteSettings? _poste;
+
+    /// <summary>
+    /// Ce qui dépend du POSTE : où est DiLand, quelle imprimante joue quel rôle.
+    ///
+    /// Vide sur une installation neuve, et c'est voulu : tout se détecte seul. Le réglage
+    /// n'existe que pour rattraper un poste que la détection ne saurait pas lire — voir
+    /// <see cref="PosteSettings"/>.
+    /// </summary>
+    public PosteSettings Poste => _poste ??= PosteSettings.Load(ConfigDir);
+
+    /// <summary>
+    /// Enregistre les réglages du poste.
+    ///
+    /// <b>Le dépôt DiLand est relâché</b> : il est construit au premier usage à partir du
+    /// chemin réglé, et le garder ferait travailler l'application sur l'ancien jusqu'au
+    /// prochain démarrage — c'est-à-dire exactement au moment où l'opérateur vient de
+    /// corriger un chemin qui ne marchait pas.
+    /// </summary>
+    public void SavePoste(PosteSettings reglages)
+    {
+        PosteSettings.Save(ConfigDir, reglages);
+        _poste = reglages;
+        _diland = null;
+    }
 
     /// <summary>Enregistre les réglages de détourage et les applique sans redémarrer.</summary>
     public void SaveDetourage(DetourageSettings reglages)

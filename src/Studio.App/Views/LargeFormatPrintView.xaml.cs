@@ -158,11 +158,15 @@ public partial class LargeFormatPrintView : UserControl
         foreach (var imprimante in imprimantes)
             PrinterCombo.Items.Add(imprimante);
 
-        // l'Epson est la machine des agrandissements : on la présélectionne si elle est là
-        var epson = imprimantes.FirstOrDefault(p =>
-            p.Contains("SC-P800", StringComparison.OrdinalIgnoreCase));
+        // La machine des agrandissements. Elle était cherchée sur « SC-P800 », c'est-à-dire
+        // sur l'exemplaire de la boutique : une P700, une imagePROGRAF ou une DesignJet
+        // n'était pas reconnue, et l'écran s'ouvrait sur la première file venue — le
+        // télécopieur, dans l'ordre alphabétique. On reconnaît maintenant par FAMILLE, et
+        // le réglage du poste l'emporte s'il est renseigné.
+        var choisie = DetectionImprimantes.Choisir(
+            RoleImprimante.GrandFormat, App.Services.Poste.ImprimanteGrandFormat);
 
-        PrinterCombo.SelectedItem = epson ?? imprimantes.FirstOrDefault();
+        PrinterCombo.SelectedItem = choisie ?? imprimantes.FirstOrDefault();
         _settings.PrinterName = PrinterCombo.SelectedItem as string ?? "";
 
         await RefreshPageSizeAsync();

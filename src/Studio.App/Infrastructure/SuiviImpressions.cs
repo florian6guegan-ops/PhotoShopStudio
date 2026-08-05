@@ -91,6 +91,26 @@ public sealed class TravailImpression : ObservableObject
     private int _attendus;
 
     /// <summary>
+    /// Verdicts que la machine doit encore rendre, et ceux déjà reçus.
+    ///
+    /// <b>Distincts des feuilles</b> : le DE100 répond une fois par TIRAGE, exemplaires
+    /// compris. Une commande de trois photos dont l'une est en double, c'est quatre
+    /// feuilles et trois verdicts. Compter les uns pour les autres faisait, au choix,
+    /// annoncer un total faux ou déclarer l'enveloppe finie avant l'heure.
+    /// </summary>
+    private int _verdictsAttendus;
+    private int _verdictsRecus;
+
+    /// <summary>
+    /// Vrai dès qu'un relevé du compteur de la machine a abouti.
+    ///
+    /// Tant qu'il est faux, l'avancement retombe sur les verdicts — c'est-à-dire sur un
+    /// affichage qui saute à la fin, comme avant. Un relais muet ne doit pas laisser la
+    /// barre à zéro sans jamais la remplir.
+    /// </summary>
+    private bool _compteurSuivi;
+
+    /// <summary>
     /// Photos effectivement tirées, telles que le minilab les confirme.
     ///
     /// À ne pas confondre avec l'envoi : envoyer trente tirages au DE100 prend quelques
@@ -115,22 +135,58 @@ public sealed class TravailImpression : ObservableObject
         private set => Set(ref _rates, value);
     }
 
-    /// <summary>Vrai quand la machine a rendu son verdict sur tous les tirages envoyés.</summary>
-    public bool TirageTermine => _attendus > 0 && Sortis + Rates >= _attendus;
+    /// <summary>
+    /// Vrai quand la machine a rendu son verdict sur tous les tirages envoyés.
+    ///
+    /// Compté en VERDICTS et non en feuilles : attendre autant de réponses que de feuilles
+    /// laisserait une commande à exemplaires multiples affichée jusqu'au délai de garde.
+    /// </summary>
+    public bool TirageTermine => _verdictsAttendus > 0 && _verdictsRecus >= _verdictsAttendus;
 
     /// <summary>
     /// Passe de l'envoi au tirage : tout est parti, la machine travaille. C'est ici que
     /// commence l'attente qui compte pour l'opérateur — celle du papier qui sort.
     /// </summary>
-    internal void CommencerLeTirage(int photosEnvoyees)
+    /// <param name="feuilles">Feuilles que la machine doit sortir, exemplaires compris.</param>
+    /// <param name="verdicts">
+    /// Réponses attendues de la machine ; à défaut, autant que de feuilles — c'est le cas
+    /// des circuits où un tirage vaut une réponse.
+    /// </param>
+    internal void CommencerLeTirage(int feuilles, int verdicts = 0)
     {
-        _attendus = photosEnvoyees;
+        _attendus = feuilles;
+        _verdictsAttendus = verdicts > 0 ? verdicts : feuilles;
+        _verdictsRecus = 0;
         Sortis = 0;
         Rates = 0;
-        Total = photosEnvoyees;
+        Total = feuilles;
         Faits = 0;
         Etape = "Tirage en cours";
         DebutDuTirage = DateTimeOffset.Now;
+    }
+
+    /// <summary>
+    /// Ce que le COMPTEUR de la machine dit être sorti depuis le début de la commande.
+    ///
+    /// <b>C'est la seule façon de voir la barre avancer pendant le tirage.</b> Le DE100 ne
+    /// notifie qu'une fois la commande entière terminée (<c>De100JobTracker.Report</c> ne
+    /// rend une issue que sur un statut définitif) : jusque-là, aucun verdict n'arrive et
+    /// l'affichage restait figé à « 0 / 30 » plusieurs minutes avant de sauter à « 30 / 30 ».
+    /// Son compteur de tirages, lui, monte feuille par feuille.
+    ///
+    /// Borné au total et jamais décroissant : le compteur est global à la machine, et une
+    /// commande lancée à côté depuis DiLand ne doit pas faire dépasser cent pour cent ni
+    /// reculer l'affichage.
+    /// </summary>
+    internal void NoterFeuillesSorties(int feuilles)
+    {
+        _compteurSuivi = true;
+
+        var borne = Math.Clamp(feuilles, 0, Math.Max(0, _attendus));
+        if (borne <= Sortis) return;
+
+        Sortis = borne;
+        Faits = borne;
     }
 
     /// <summary>
@@ -159,8 +215,9 @@ public sealed class TravailImpression : ObservableObject
     {
         get
         {
-            var restants = _attendus - Sortis - Rates;
-            if (restants <= 0 || DebutDuTirage == default) return null;
+            // en FEUILLES, comme le reste du bandeau : c'est du papier qu'on attend
+            var restants = _attendus - Sortis;
+            if (restants <= 0 || TirageTermine || DebutDuTirage == default) return null;
 
             if (Sortis >= 3)
             {
@@ -202,13 +259,24 @@ public sealed class TravailImpression : ObservableObject
     /// <param name="motif">Ce que la machine dit du refus, ou vide.</param>
     internal void NoterTirage(bool reussi, string motif = "")
     {
-        if (reussi) Sortis++;
-        else Rates++;
+        _verdictsRecus++;
+        if (!reussi) Rates++;
 
         if (!reussi && MotifDEchec.Length == 0 && !string.IsNullOrWhiteSpace(motif))
             MotifDEchec = motif.Trim();
 
-        Faits = Sortis + Rates;
+        // Le verdict porte sur un TIRAGE, qui peut valoir plusieurs feuilles : il ne dit
+        // donc pas à lui seul combien de papier est sorti. Deux cas, et deux seulement :
+        //
+        // - tout est rentré sans échec : ce qui était attendu est sorti, on cale le compte
+        //   sur le total. Le compteur de la machine peut avoir une lecture de retard, et
+        //   terminer sur « 29 / 30 » ferait douter d'une commande pourtant complète ;
+        // - sans compteur disponible, on avance quand même d'un cran par verdict pour que
+        //   la barre ne reste pas plate — c'est le comportement d'avant, faute de mieux.
+        if (TirageTermine && Rates == 0) Sortis = _attendus;
+        else if (!_compteurSuivi && reussi) Sortis++;
+
+        Faits = Sortis;
         Etape = Rates == 0
             ? "Tirage en cours"
             : $"Tirage en cours — {Rates} en échec";
@@ -227,8 +295,11 @@ public sealed class TravailImpression : ObservableObject
         _arret.Cancel();
     }
 
-    /// <summary>Nombre de photos parties au minilab, retenu pour attendre leur sortie.</summary>
+    /// <summary>Nombre de FEUILLES parties au minilab, retenu pour attendre leur sortie.</summary>
     internal int PhotosEnvoyees { get; private set; }
+
+    /// <summary>Réponses que la machine rendra sur cet envoi — voir <see cref="TirageTermine"/>.</summary>
+    internal int VerdictsAttendus { get; private set; }
 
     internal void Avancer(PrintProgress avancement)
     {
@@ -237,7 +308,10 @@ public sealed class TravailImpression : ObservableObject
         Faits = avancement.Faits;
         if (avancement.Machine is not null) Machine = avancement.Machine;
 
-        if (avancement.Etape == PrintProgress.Envoi) PhotosEnvoyees = avancement.Faits;
+        if (avancement.Etape != PrintProgress.Envoi) return;
+
+        PhotosEnvoyees = avancement.Faits;
+        VerdictsAttendus = avancement.Verdicts;
     }
 
     internal void Liberer() => _arret.Dispose();
@@ -465,13 +539,49 @@ public sealed class SuiviImpressions : ObservableObject
         travail.LongueurMm = App.Services.Printer.DerniereLongueurMinilabMm;
         travail.Debit = App.Services.Debits.TryGetValue(travail.Format, out var debit) ? debit : null;
 
-        travail.CommencerLeTirage(travail.PhotosEnvoyees);
+        travail.CommencerLeTirage(travail.PhotosEnvoyees, travail.VerdictsAttendus);
+
+        // Le compteur de la machine AVANT que cette commande ne sorte : tout ce qui
+        // s'ajoutera dessus, c'est elle. Relevé après CommencerLeTirage, donc au plus près
+        // du premier tirage.
+        var compteurDepart = await LireLeCompteur(travail.Machine);
 
         // le bandeau montre une DURÉE qui s'écoule : sans battement, elle resterait figée
         // entre deux photos, et une commande d'A4 ne bouge que toutes les vingt secondes
         var battement = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         battement.Tick += (_, _) => travail.RafraichirLaDuree();
         battement.Start();
+
+        // …et l'avancement, lui, se lit sur la machine. Deux fois moins souvent que le
+        // battement : chaque relevé traverse le relais 32 bits pendant que la machine
+        // travaille, et une photo 10×15 met une dizaine de secondes à sortir — interroger
+        // plus vite ne montrerait rien de plus.
+        // <b>Un seul relevé à la fois.</b> Le battement ne suspend pas ses coups pendant
+        // qu'on attend la machine : un relais lent — ou occupé à imprimer — laisserait les
+        // lectures se chevaucher et empiler les requêtes. C'est exactement ce qui tuait le
+        // relais 32 bits (voir De100Protocol), et il ne faut pas le lui redemander.
+        var lectureEnCours = false;
+
+        var releve = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        releve.Tick += async (_, _) =>
+        {
+            if (compteurDepart is not { } depart) return;
+            if (lectureEnCours) return;
+
+            lectureEnCours = true;
+            try
+            {
+                if (await LireLeCompteur(travail.Machine) is not { } maintenant) return;
+
+                travail.NoterFeuillesSorties((int)(maintenant - depart));
+                Prevenir();
+            }
+            finally
+            {
+                lectureEnCours = false;
+            }
+        };
+        releve.Start();
 
         var attente = new TaskCompletionSource();
         _attentes[travail.Numero] = attente;
@@ -492,6 +602,7 @@ public sealed class SuiviImpressions : ObservableObject
         }
 
         battement.Stop();
+        releve.Stop();
 
         // Ce qu'on vient de mesurer sert aux commandes suivantes. Seulement quand tout est
         // sorti : une commande interrompue en cours de route a passé du temps à attendre
@@ -505,6 +616,32 @@ public sealed class SuiviImpressions : ObservableObject
         if (travail.Rates > 0)
             _note = $"Commande {travail.Numero} : {travail.Sortis} photo(s) sorties, " +
                     $"{travail.Rates} en échec. Réimpression depuis « Commandes du jour ».";
+    }
+
+    /// <summary>
+    /// Le compteur de tirages d'une machine, ou null si elle ne l'a pas donné.
+    ///
+    /// Jamais fatal : ce relevé ne sert qu'à faire avancer une barre. Une machine qui ne
+    /// répond pas laisse simplement l'affichage retomber sur les verdicts, et la commande
+    /// s'imprime exactement pareil.
+    /// </summary>
+    private static async Task<long?> LireLeCompteur(string? machine)
+    {
+        if (string.IsNullOrEmpty(machine)) return null;
+
+        try
+        {
+            var etats = await App.Services.Minilab.SnapshotAsync();
+            return etats
+                .FirstOrDefault(e => e.MachineId.ToString()
+                    .Equals(machine, StringComparison.OrdinalIgnoreCase))
+                ?.TotalPrintCount;
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Suivi : compteur de la machine {machine} illisible", ex);
+            return null;
+        }
     }
 
     /// <summary>

@@ -75,7 +75,19 @@ public sealed class PrinterNotReadyException(string message) : Exception(message
 /// destination n'est pas une machine identifiable — l'avancement se lit alors au centre
 /// du bandeau plutôt que dans une tuile.
 /// </param>
-public sealed record PrintProgress(string Etape, int Faits, int Total, string? Machine = null)
+/// <param name="Verdicts">
+/// Nombre de réponses que la machine rendra sur cet envoi, quand il diffère du nombre de
+/// FEUILLES.
+///
+/// <b>Les deux comptes ne coïncident pas sur le minilab</b> : une photo demandée en deux
+/// exemplaires part en UN tirage de deux copies (<c>PrintNum</c>), et le DE100 rendra donc
+/// un seul verdict pour deux feuilles. <see cref="Total"/> compte ce que l'opérateur
+/// attend — les feuilles — et celui-ci ce qu'il faut avoir reçu pour déclarer l'enveloppe
+/// finie. Les confondre faisait annoncer « 1 / 1 » sur une commande qui sortait deux
+/// photos. Zéro quand la question ne se pose pas.
+/// </param>
+public sealed record PrintProgress(
+    string Etape, int Faits, int Total, string? Machine = null, int Verdicts = 0)
 {
     public const string Rendu = "Préparation des photos";
     public const string Envoi = "Envoi au minilab";
@@ -424,6 +436,12 @@ public sealed class PrintOrchestrator
         var cible = machine.ToString();
         var jobs = new List<De100PrintJob>(pages.Count);
 
+        // Ce que l'opérateur va voir tomber dans le bac : des FEUILLES, pas des photos
+        // distinctes. Une photo en double exemplaire en fait deux, et le bandeau annonçait
+        // « 1 / 1 » pendant que la machine en sortait deux.
+        var feuilles = pages.Sum(p => p.Copies);
+        var feuillesEnvoyees = 0;
+
         // le format de CETTE enveloppe : le bandeau estimera ce qui reste dessus plutôt
         // que sur le premier format du rouleau, et la DURÉE d'après sa longueur
         var formatDeLEnveloppe = pages
@@ -467,8 +485,12 @@ public sealed class PrintOrchestrator
                 Surface: surface,
                 Copies: page.Copies));
 
+            feuillesEnvoyees += page.Copies;
+
+            // Faits et Total en FEUILLES ; le nombre de verdicts attendus voyage à part,
+            // car le minilab répond une fois par tirage, exemplaires compris.
             progression?.Report(new PrintProgress(
-                PrintProgress.Envoi, i + 1, pages.Count, cible));
+                PrintProgress.Envoi, feuillesEnvoyees, feuilles, cible, pages.Count));
         }
 
         // ENVOI — UNE commande minilab pour toute l'enveloppe. Studio en ouvrait une par
@@ -939,6 +961,10 @@ public sealed class PrintOrchestrator
 
         var (cibleW, cibleH) = DefinitionAttendue(machine, rollWidthMm, lengthMm, dpi);
 
+        // Les cotes NUES du tirage — sans le débord de la machine. C'est la taille à
+        // laquelle le tirage doit PARAÎTRE, bandes blanches du rouleau comprises.
+        var (nueW, nueH) = (MmPx.ToPixels(rollWidthMm, dpi), MmPx.ToPixels(lengthMm, dpi));
+
         using var image = new MagickImage(page.Path);
 
         var pivote = image.Width > image.Height != cibleW > cibleH && image.Width != image.Height;
@@ -953,7 +979,16 @@ public sealed class PrintOrchestrator
             return page.Path;
 
         image.BackgroundColor = MagickColors.White;
-        image.Extent((uint)cibleW, (uint)cibleH, Gravity.Center, MagickColors.White);
+
+        // 1. le tirage aux cotes nues : c'est ICI, et seulement ici, que du blanc a le
+        //    droit d'entrer — un 10×15 posé sur un rouleau de 210 laisse une bande de
+        //    chaque côté, et elle est voulue (voir MinilabPrintSize).
+        image.Extent((uint)nueW, (uint)nueH, Gravity.Center, MagickColors.White);
+        image.ResetPage();
+
+        // 2. le DÉBORD de la machine, qu'on lui donne en IMAGE et non en blanc.
+        RemplirLeDebord(image, cibleW, cibleH);
+
         EnTroisCanaux(image);
 
         var sortie = Path.Combine(
@@ -964,6 +999,59 @@ public sealed class PrintOrchestrator
         // le prix de la compression rapide, sur des images que rien ne conserve
         MagickInit.Write(image, sortie);
         return sortie;
+    }
+
+    /// <summary>
+    /// Agrandit le tirage jusqu'à COUVRIR la définition que la machine réclame, puis rogne
+    /// au centre ce qui dépasse.
+    ///
+    /// <b>C'est la correction du liseré blanc</b> (constaté en boutique le 05/08/2026, sur
+    /// des 10×15, des 13×18 et des 15×20 — donc sur tous les tirages). Le DE100 réclame
+    /// l'image AVEC les 3 mm de débord qu'il rognera : pour un 210 × 297 il veut
+    /// 2515 × 3543 px là où les cotes nues en font 2480 × 3508. On se contentait d'étendre
+    /// le canevas à cette définition en comblant de BLANC — la photo se retrouvait donc
+    /// entourée d'un liseré d'un millimètre et demi, que le rognage de la machine ne
+    /// mangeait pas entièrement puisqu'il part du bord du papier.
+    ///
+    /// Le débord doit être rempli par la PHOTO : c'est tout le sens du fond perdu. On
+    /// agrandit donc l'image de ce qu'il faut, et la machine rogne dans l'image au lieu de
+    /// rogner dans du blanc.
+    ///
+    /// <b>Le facteur est le même sur les deux axes.</b> Le débord vaut le même nombre de
+    /// pixels en largeur qu'en hauteur, donc pas la même PROPORTION : cadrer chaque axe
+    /// séparément étirerait la photo de quelques millièmes. On prend le plus exigeant des
+    /// deux et l'on rogne l'excédent de l'autre — quelques pixels sur un bord, contre une
+    /// déformation sur toute l'image.
+    ///
+    /// Sans débord — machine muette, format inconnu, repli sur notre calcul — la cible
+    /// vaut les cotes nues et cette méthode ne touche à rien.
+    /// </summary>
+    internal static void RemplirLeDebord(MagickImage image, int cibleW, int cibleH)
+    {
+        if (cibleW <= 0 || cibleH <= 0) return;
+        if (image.Width == (uint)cibleW && image.Height == (uint)cibleH) return;
+
+        // Le facteur qui COUVRE la cible : le plus exigeant des deux axes. Appliqué dans
+        // les deux sens — agrandir quand la machine demande plus, RÉDUIRE quand elle
+        // demande moins. Ne réduire qu'en rognant tronquerait la photo au lieu de la
+        // mettre à l'échelle : le cas ne s'est jamais présenté, mais il sortirait sans
+        // que rien ne le dise.
+        var facteur = Math.Max(cibleW / (double)image.Width, cibleH / (double)image.Height);
+
+        image.Resize(new MagickGeometry(
+            (uint)Math.Max(1, Math.Ceiling(image.Width * facteur)),
+            (uint)Math.Max(1, Math.Ceiling(image.Height * facteur)))
+        { IgnoreAspectRatio = true });
+        image.ResetPage();
+
+        image.Crop(new MagickGeometry((uint)cibleW, (uint)cibleH) { IgnoreAspectRatio = true },
+            Gravity.Center);
+        image.ResetPage();
+
+        // le rognage peut rendre un pixel de moins sur un arrondi : la machine, elle, veut
+        // la définition au pixel près
+        if (image.Width != (uint)cibleW || image.Height != (uint)cibleH)
+            image.Extent((uint)cibleW, (uint)cibleH, Gravity.Center, MagickColors.White);
     }
 
     /// <summary>

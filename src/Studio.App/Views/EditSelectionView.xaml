@@ -52,11 +52,36 @@
                                         Tag="{Binding}">
                                     <Grid Height="200">
                                         <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                                        <!-- Case à cocher VISIBLE : le Ctrl+clic faisait la
+                                             même chose, mais rien ne l'annonçait et personne
+                                             ne l'a trouvé. C'est par elle qu'on désigne les
+                                             photos dont on va changer le format. -->
+                                        <CheckBox HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                  Margin="6" IsChecked="{Binding Ciblee, Mode=TwoWay}"
+                                                  Background="White" Focusable="False"
+                                                  ToolTip="Cocher pour changer le format de cette photo"/>
                                         <Border Background="#CC000000" Padding="5,2"
                                                 HorizontalAlignment="Left" VerticalAlignment="Bottom">
                                             <TextBlock Text="{Binding Name}" FontSize="11" Foreground="White"
                                                        TextTrimming="CharacterEllipsis" MaxWidth="150"/>
                                         </Border>
+                                        <!-- Le format de CETTE photo, et le rapport de ses
+                                             côtés. Sans eux, rien ne distingue à l'œil une
+                                             10×15 d'une 15×20 dans la bande, et l'on ne voit
+                                             pas non plus ce que le format va rogner. -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top" Margin="0,2,2,0">
+                                            <Border Background="#CC7E57C2" Padding="5,2" CornerRadius="4"
+                                                    Margin="0,0,3,0" Visibility="{Binding BadgeVisibility}">
+                                                <TextBlock Text="{Binding RatioLabel}" FontSize="11"
+                                                           Foreground="White"/>
+                                            </Border>
+                                            <Border Background="#CC00897B" Padding="6,2" CornerRadius="4"
+                                                    Visibility="{Binding FormatVisibility}">
+                                                <TextBlock Text="{Binding FormatLabel}" FontSize="12"
+                                                           FontWeight="Bold" Foreground="White"/>
+                                            </Border>
+                                        </StackPanel>
                                         <Border Background="#CC000000" Padding="6,2"
                                                 HorizontalAlignment="Right" VerticalAlignment="Bottom">
                                             <TextBlock Text="{Binding QuantityLabel}" FontSize="15"
@@ -209,7 +234,15 @@
                     <Button x:Name="FormatButton" Style="{StaticResource FlatButton}"
                             MinHeight="56" Padding="22,0" FontSize="17" Margin="0,0,12,0"
                             Click="OnPickFormat"
-                            ToolTip="Change le format du tirage pour cette photo"/>
+                            ToolTip="Change le format du tirage pour les photos cochées"/>
+                    <!-- Tirer la même photo dans DEUX formats : on la reproduit, et le
+                         doublon reste coché pour qu'on lui donne son format aussitôt. -->
+                    <Button x:Name="DupliquerButton" Style="{StaticResource FlatButton}"
+                            MinHeight="56" Padding="22,0" FontSize="17" Margin="0,0,12,0"
+                            Click="OnDupliquer"
+                            ToolTip="Reproduit les photos cochées dans la commande, pour les tirer aussi dans un autre format.">
+                        ⧉  Dupliquer
+                    </Button>
                     <Button Style="{StaticResource FlatButton}" MinHeight="56" Padding="22,0"
                             FontSize="17" Margin="0,0,12,0" Click="OnBack">Retour à la sélection</Button>
                     <!-- On s'interrompt le plus souvent ICI : c'est l'écran où l'on passe

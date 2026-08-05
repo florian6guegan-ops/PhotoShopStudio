@@ -118,6 +118,61 @@ public static class De100Protocol
         Converters = { new JsonStringEnumConverter() },
     };
 
+    /// <summary>
+    /// Résout TOUS les convertisseurs du protocole avant que le tube ne serve, puis fige
+    /// les options.
+    ///
+    /// <b>C'est la correction du « Pipe is broken » d'une impression sur deux</b>
+    /// (05/08/2026). Le relais répond à chaque commande dans son propre
+    /// <c>Task.Run</c> : deux commandes simultanées — l'état des machines et celui des DNP,
+    /// que le bandeau demande coup sur coup — faisaient construire le MÊME convertisseur
+    /// d'énumération par réflexion en même temps. En 32 bits, le moteur d'exécution n'y
+    /// survit pas :
+    ///
+    /// <code>
+    /// Fatal error. Internal CLR error. (0x80131506)
+    ///    at System.Text.Json...EnumConverter`1[[...DnpStatusGroup]]..ctor(...)
+    ///    at System.Activator.CreateInstance(Type, Object[])
+    /// </code>
+    ///
+    /// Le relais mourait donc en pleine séance, le tube se rompait, et l'impression
+    /// échouait — il fallait rouvrir l'application pour repartir. Ce n'était pas
+    /// l'impression qui cassait le relais : c'est le relais qui était déjà mort quand elle
+    /// arrivait.
+    ///
+    /// Résolus ICI, au chargement de la classe, donc une seule fois et sur un seul fil : le
+    /// cache est déjà chaud quand le trafic commence, et plus personne ne construit de
+    /// convertisseur en pleine course. <c>MakeReadOnly</c> ferme la porte derrière — toute
+    /// mutation ultérieure des options lèverait au lieu de rouvrir la course en silence.
+    ///
+    /// Un type qui échapperait à cette liste ne casse rien : il retomberait sur la
+    /// résolution paresseuse d'avant. C'est pourquoi l'échec est avalé — un protocole ne
+    /// doit pas refuser de démarrer parce qu'un préchauffage a échoué.
+    /// </summary>
+    static De100Protocol()
+    {
+        Type[] transportes =
+        [
+            typeof(De100Message),
+            typeof(De100SubmitRequest), typeof(De100PrintJob), typeof(List<De100PrintJob>),
+            typeof(De100PixelCountRequest), typeof(De100PixelCountResponse),
+            typeof(De100PrinterInfo), typeof(List<De100PrinterInfo>),
+            typeof(Dnp.DnpPrinterInfo), typeof(List<Dnp.DnpPrinterInfo>),
+            typeof(Dnp.DnpStatus),
+            typeof(De100JobResult), typeof(De100MachineEvent),
+            typeof(List<string>), typeof(string), typeof(bool),
+        ];
+
+        foreach (var type in transportes)
+        {
+            try { Json.GetTypeInfo(type); }
+            catch (Exception) { /* ce type retombera sur la résolution paresseuse */ }
+        }
+
+        try { Json.MakeReadOnly(); }
+        catch (Exception) { /* rien à figer : les options restent utilisables */ }
+    }
+
     /// <summary>Sérialise un message en une ligne, sans retour à la ligne interne.</summary>
     public static string Encode(De100Message message)
     {

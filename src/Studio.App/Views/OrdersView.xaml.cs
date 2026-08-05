@@ -1,3 +1,8 @@
+using System.Threading;
+using System.ComponentModel;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -111,6 +116,94 @@ public partial class OrdersView : UserControl
             _ => "Aucune commande ces derniers jours.",
         };
         EmptyText.Visibility = lignes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        // Les vignettes arrivent APRÈS : la liste s'affiche tout de suite.
+        //
+        // Le chargement précédent est abandonné : passer d'un onglet à l'autre relançait
+        // sinon une lecture par onglet visité — quatre-vingt-treize commandes à quatre
+        // vignettes — qui continuaient toutes de tourner pour des lignes qu'on ne regarde
+        // plus.
+        _apercusCts?.Cancel();
+        _apercusCts = new CancellationTokenSource();
+        _ = ChargerLesApercusAsync(lignes, _apercusCts.Token);
+    }
+
+    private CancellationTokenSource? _apercusCts;
+
+    /// <summary>Ce qu'on montre d'une commande : assez pour la reconnaître, pas plus.</summary>
+    private const int ApercusParCommande = 4;
+
+    /// <summary>Côté de la vignette, en pixels. Elles sont petites et nombreuses.</summary>
+    private const int ApercuPx = 120;
+
+    /// <summary>
+    /// Charge les vignettes des commandes affichées, sans bloquer l'écran.
+    ///
+    /// <b>Les fichiers manquants ne sont pas une anomalie</b> : au-delà de trente jours les
+    /// photos partent à l'archive, et la commande reste affichée. On saute la vignette et
+    /// la ligne garde son numéro, sa date et ses boutons — c'est déjà ce qu'elle avait.
+    ///
+    /// Aucune boîte de dialogue ici, contrairement à <see cref="DossierDesPhotos"/> : elle
+    /// prévient l'opérateur qui a DEMANDÉ quelque chose. Un aperçu, personne ne l'a
+    /// demandé, et une alerte par commande archivée rendrait l'écran inutilisable.
+    /// </summary>
+    private static async Task ChargerLesApercusAsync(
+        IReadOnlyList<OrderRow> lignes, CancellationToken ct)
+    {
+        foreach (var ligne in lignes)
+        {
+            if (ct.IsCancellationRequested) return;
+
+            var dossier = App.Services.Store.GetPhotosFolder(ligne.Order);
+            if (!Directory.Exists(dossier)) continue;
+
+            var fichiers = ligne.Retenues
+                .SelectMany(env => env.Lines)
+                .SelectMany(l => l.Items)
+                .Select(item => Path.Combine(dossier, item.FileName))
+                .Where(File.Exists)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (fichiers.Count == 0) continue;
+
+            ligne.PoserLeReste(fichiers.Count - Math.Min(fichiers.Count, ApercusParCommande));
+
+            foreach (var chemin in fichiers.Take(ApercusParCommande))
+            {
+                if (ct.IsCancellationRequested) return;
+
+                try
+                {
+                    var jpeg = await Task.Run(
+                        () => App.Services.Thumbnails.GetJpeg(chemin, ApercuPx), ct);
+
+                    ligne.Apercus.Add(EnImage(jpeg));
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    // fichier illisible : la ligne se passe de cette vignette
+                    FileLog.Write($"Aperçu indisponible pour {Path.GetFileName(chemin)}", ex);
+                }
+            }
+        }
+    }
+
+    /// <summary>Une vignette JPEG en image WPF, figée pour traverser les fils.</summary>
+    private static BitmapImage EnImage(byte[] jpeg)
+    {
+        using var flux = new MemoryStream(jpeg);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = flux;
+        image.EndInit();
+        image.Freeze();
+        return image;
     }
 
     /// <summary>
@@ -482,8 +575,50 @@ public partial class OrdersView : UserControl
     /// Les seules enveloppes que l'onglet laisse voir. Elles ne sont PAS recalculées ici :
     /// c'est l'affichage qui décide de ce qu'il montre, la ligne ne fait que le porter.
     /// </param>
+    /// <summary>
+    /// Une ligne de la liste. Notifie elle-même, sans passer par <c>ObservableObject</c> :
+    /// un <c>record</c> ne peut hériter que d'un autre <c>record</c>, et il n'y a ici
+    /// qu'une seule propriété à annoncer.
+    /// </summary>
     private sealed record OrderRow(Order Order, IReadOnlyList<Envelope> Retenues)
+        : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged(string nom) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nom));
+
+        /// <summary>
+        /// Les premières photos de la commande, pour la reconnaître d'un coup d'œil.
+        ///
+        /// <b>Un numéro et une heure ne disent rien d'une planche d'identité</b> : quand un
+        /// client revient chercher la sienne, l'opérateur cherchait la bonne ligne en
+        /// ouvrant les commandes une à une. Une vignette la désigne immédiatement.
+        ///
+        /// Remplie APRÈS l'affichage, par <see cref="ChargerLesApercusAsync"/> : lire les
+        /// vignettes de toutes les commandes du jour avant de montrer la liste la ferait
+        /// attendre pour rien.
+        /// </summary>
+        public ObservableCollection<BitmapImage> Apercus { get; } = [];
+
+        /// <summary>
+        /// Combien de photos la commande porte EN PLUS de celles qu'on montre — « +12 ».
+        /// Vide quand tout est montré.
+        /// </summary>
+        public string ResteTexte => _reste > 0 ? $"+{_reste}" : "";
+
+        public Visibility ResteVisibility =>
+            _reste > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        private int _reste;
+
+        internal void PoserLeReste(int combien)
+        {
+            _reste = combien;
+            OnPropertyChanged(nameof(ResteTexte));
+            OnPropertyChanged(nameof(ResteVisibility));
+        }
+
         public string Header =>
             $"N° {Order.DisplayNumber} — {Order.CreatedAt:ddd dd/MM HH:mm} — {Order.Total:0.00} €";
 

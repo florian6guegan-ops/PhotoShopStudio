@@ -26,9 +26,10 @@ if (args.Length > 1 && args[0].Equals("sql", StringComparison.OrdinalIgnoreCase)
 var combien = args.Length > 0 && int.TryParse(args[0], out var n) ? n : 5;
 
 var travail = Path.Combine(Path.GetTempPath(), "studio-diland-probe");
-var depot = new DiLandRepository(DiLandRepository.DefaultRoot, travail);
+var racine = DiLandLocator.TrouverOuDefaut();
+var depot = new DiLandRepository(racine, travail);
 
-Console.WriteLine($"Dépôt DiLand : {DiLandRepository.DefaultRoot}");
+Console.WriteLine($"Dépôt DiLand : {racine}");
 if (!depot.IsAvailable)
 {
     Console.WriteLine("Dépôt introuvable — DiLand est-il installé à cet emplacement ?");
@@ -146,9 +147,10 @@ static string Empreinte(string chemin)
 static int ComparerDisqueEtBase(int combien)
 {
     var travail = Path.Combine(Path.GetTempPath(), "studio-diland-probe");
-    var depot = new DiLandRepository(DiLandRepository.DefaultRoot, travail);
+    var racine = DiLandLocator.TrouverOuDefaut();
+    var depot = new DiLandRepository(racine, travail);
 
-    Console.WriteLine($"Dépôt DiLand : {DiLandRepository.DefaultRoot}");
+    Console.WriteLine($"Dépôt DiLand : {racine}");
     Console.WriteLine($"  intégrées : {depot.OrdersDirectory}");
     Console.WriteLine($"  en attente : {depot.IncomingOrdersDirectory}");
     Console.WriteLine();

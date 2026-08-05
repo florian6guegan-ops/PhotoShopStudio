@@ -71,6 +71,17 @@
                                     </Border>
                                 </StackPanel>
 
+                                <!-- Le FORMAT du tirage, en haut à gauche. Depuis qu'une
+                                     commande mélange les formats, c'est la seule chose qui
+                                     distingue à l'œil une 10×15 d'une 15×20 dans la
+                                     planche. Absent tant qu'aucun format n'est posé. -->
+                                <Border Background="#CC00897B" Padding="6,2" CornerRadius="4"
+                                        Margin="4" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                        Visibility="{Binding FormatVisibility}">
+                                    <TextBlock Text="{Binding FormatLabel}" FontSize="12"
+                                               FontWeight="Bold" Foreground="White"/>
+                                </Border>
+
                                 <Border Background="#CC000000" Padding="5,2"
                                         HorizontalAlignment="Left" VerticalAlignment="Bottom">
                                     <TextBlock Text="{Binding Name}" FontSize="11" Foreground="White"
@@ -136,8 +147,19 @@
                     <TextBlock x:Name="ProductLabelText" Text="Produit :" Style="{StaticResource Hint}"
                                VerticalAlignment="Center" Margin="0,0,8,6"/>
                     <ComboBox x:Name="ProductCombo" MinWidth="280" FontSize="20" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,20,6"
+                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,8,6"
                               SelectionChanged="OnDefaultProductChanged"/>
+                    <!-- Changer la liste ne touche PLUS aux photos déjà cochées : une
+                         commande de borne arrive avec un format par photo — 10x15 pour
+                         celles-ci, 13x18 pour celles-là — et le seul fait de dérouler la
+                         liste les ramenait toutes au même. Le report est donc un geste
+                         explicite, et il se voit. -->
+                    <Button x:Name="AppliquerProduitButton" Style="{StaticResource FlatButton}"
+                            MinHeight="52" Padding="16,0" FontSize="16" Margin="0,0,20,6"
+                            Click="OnAppliquerLeProduit" IsEnabled="False"
+                            ToolTip="Donne ce format à toutes les photos cochées. Sans ce bouton, elles gardent le leur.">
+                        Appliquer aux photos cochées
+                    </Button>
                     <!-- Format personnalisé : la taille remplace le choix de produit, le
                          papier n'étant décidé qu'à la validation, d'après la quantité. -->
                     <TextBlock x:Name="TaillePersoText" FontSize="20" FontWeight="SemiBold"

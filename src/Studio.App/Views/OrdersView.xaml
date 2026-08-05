@@ -126,6 +126,40 @@
                                                        Text="{Binding StatusText}"/>
                                         </StackPanel>
                                     </DockPanel>
+
+                                    <!-- Les premières photos de la commande. Un numéro et
+                                         une heure ne disent rien d'une planche d'identité :
+                                         quand un client revient chercher la sienne, il
+                                         fallait ouvrir les commandes une à une pour la
+                                         retrouver. -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <ItemsControl ItemsSource="{Binding Apercus}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Width="76" Height="76" Margin="0,0,6,0"
+                                                            CornerRadius="6" ClipToBounds="True"
+                                                            Background="{StaticResource PanelBrush}">
+                                                        <Image Source="{Binding}" Stretch="UniformToFill"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- « +12 » : on ne montre que les premières, et
+                                             l'opérateur doit savoir qu'il en manque. -->
+                                        <Border CornerRadius="6" Padding="10,0" Height="76"
+                                                Background="{StaticResource PanelBrush}"
+                                                Visibility="{Binding ResteVisibility}">
+                                            <TextBlock Text="{Binding ResteTexte}" FontSize="17"
+                                                       FontWeight="SemiBold" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource MutedBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+
                                     <ItemsControl ItemsSource="{Binding Envelopes}" Margin="0,10,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
