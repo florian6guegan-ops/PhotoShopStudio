@@ -16,26 +16,35 @@
              redisait ce que l'en-tête de la fenêtre affiche déjà juste au-dessus
              (« 10x15 — choisir les photos ») : soixante-dix pixels de hauteur pour une
              redite, pris sur la seule chose que cet écran doit montrer — les photos. -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center"
-                    Margin="0,0,0,8">
-            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
-                    FontSize="15" Margin="4,0" Click="OnSmaller"
-                    ToolTip="Vignettes plus petites — plus de photos à l'écran">réduire</Button>
-            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
-                    FontSize="15" Margin="4,0" Click="OnBigger"
-                    ToolTip="Vignettes plus grandes">agrandir</Button>
-            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
-                    FontSize="15" Margin="4,0" Click="OnSelectAll"
-                    ToolTip="Tout choisir (Ctrl+A)">tout</Button>
-            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
-                    FontSize="15" Margin="4,0" Click="OnSelectNone"
-                    ToolTip="Ne rien choisir">aucun</Button>
-            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
-                    FontSize="15" Margin="4,0" Click="OnSort"
-                    ToolTip="Trier par nom ou par date">trier</Button>
+        <!-- Les boutons sont centrés sur l'ÉCRAN, pas sur le groupe « boutons + compteur ».
+             Posé dans la même pile, le compteur poussait toute la barre vers la gauche, et
+             elle paraissait de travers — d'autant plus que son texte change de longueur.
+             La grille le pose donc par-dessus, aligné à droite : il ne déplace plus rien. -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                        FontSize="15" Margin="4,0" Click="OnSmaller"
+                        ToolTip="Vignettes plus petites — plus de photos à l'écran">réduire</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                        FontSize="15" Margin="4,0" Click="OnBigger"
+                        ToolTip="Vignettes plus grandes">agrandir</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                        FontSize="15" Margin="4,0" Click="OnSelectAll"
+                        ToolTip="Tout choisir (Ctrl+A)">tout</Button>
+                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                        FontSize="15" Margin="4,0" Click="OnSelectNone"
+                        ToolTip="Ne rien choisir">aucun</Button>
+                <!-- Un MENU, et non plus une bascule aveugle entre deux ordres : le bouton
+                     porte le classement en cours, et le menu montre les cinq habituels. -->
+                <Button x:Name="SortButton" Style="{StaticResource FlatButton}" MinWidth="0"
+                        MinHeight="38" Padding="16,0" FontSize="15" Margin="4,0" Click="OnSort"
+                        ToolTip="Choisir le classement des photos : date, nom, poids du fichier."
+                        Content="⇅  trier"/>
+            </StackPanel>
+
             <TextBlock x:Name="CountText" Style="{StaticResource Hint}" FontSize="16"
-                       VerticalAlignment="Center" Margin="20,0,0,0"/>
-        </StackPanel>
+                       VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+        </Grid>
 
         <Grid Grid.Row="1">
             <!-- La planche ne fabrique QUE les tuiles visibles (voir PlancheVirtualisee) :

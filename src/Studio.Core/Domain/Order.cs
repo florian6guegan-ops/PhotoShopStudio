@@ -81,8 +81,22 @@ public sealed class ImageAdjustments
     /// <summary>Netteté, 0..100.</summary>
     public double Sharpness { get; set; }
 
+    /// <summary>
+    /// Enlève les yeux rouges du flash.
+    ///
+    /// C'est le seul défaut d'une photo de comptoir qu'aucun curseur ne rattrape : il ne
+    /// tient ni à l'exposition ni à la balance des blancs, mais à quelques dizaines de
+    /// pixels au fond de l'œil. DiLand en fait un onglet à part entière, et la boutique s'en
+    /// servait chez lui faute de l'avoir ici.
+    ///
+    /// La correction ne touche QUE les yeux : les pupilles sont trouvées par le détecteur de
+    /// visages, et le rouge n'y est neutralisé que là où il domine vraiment. Une écharpe
+    /// rouge ou une joue rosée ne risquent donc rien. Voir <c>YeuxRouges</c>.
+    /// </summary>
+    public bool RedEye { get; set; }
+
     public bool IsNeutral =>
-        !Grayscale && !WhiteBackground && !AutoLevels && !AutoContrast && !AutoColor &&
+        !Grayscale && !WhiteBackground && !AutoLevels && !AutoContrast && !AutoColor && !RedEye &&
         Exposure == 0 && Brightness == 0 && Contrast == 0 &&
         Highlights == 0 && Shadows == 0 && Whites == 0 && Blacks == 0 &&
         Temperature == 0 && Tint == 0 && Saturation == 0 && Vibrance == 0 &&

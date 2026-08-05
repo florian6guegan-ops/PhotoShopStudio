@@ -47,6 +47,12 @@ public partial class IdSheetRecapView : UserControl
         public int Quantite { get; set; } = Quantite;
     }
 
+    /// <summary>
+    /// Prix d'UNE planche, décidé par le pays du document : 10 € pour un document français,
+    /// 15 € pour un étranger (réglable dans Paramètres). Voir <see cref="TarifsIdentite"/>.
+    /// </summary>
+    private decimal PrixDeLaPlanche => App.Services.TarifsIdentite.Pour(_document.Country);
+
     private readonly List<Planche> _planches;
     private readonly IdDocumentSpec _document;
     private readonly Action<int>? _surModifier;
@@ -271,9 +277,14 @@ public partial class IdSheetRecapView : UserControl
             (string.IsNullOrWhiteSpace(planche.Finition) ? "" : $" ({planche.Finition})");
 
         var feuilles = _planches.Sum(p => p.Quantite);
-        var total = _planches.Sum(p => p.Produit.UnitPriceFor(p.Quantite) * p.Quantite);
 
-        TotalText.Text = $"{feuilles} planche{(feuilles > 1 ? "s" : "")} · {total:0.00} €";
+        // Le prix vient du DOCUMENT, pas du papier : 10 € pour un document français, 15 €
+        // pour un étranger. C'est le même produit du catalogue dans les deux cas — voir
+        // TarifsIdentite.
+        var total = PrixDeLaPlanche * feuilles;
+
+        TotalText.Text = $"{feuilles} planche{(feuilles > 1 ? "s" : "")} · {total:0.00} €" +
+                         (feuilles > 1 ? $"  ({PrixDeLaPlanche:0.00} € la planche)" : "");
         ImprimerButton.IsEnabled = !_impressionLancee && feuilles > 0;
     }
 
@@ -365,7 +376,9 @@ public partial class IdSheetRecapView : UserControl
                 p.SourcePath, p.Produit, p.Quantite, p.Crop, 0, p.RedressementDegres,
                 null, p.Reglages, p.Copies, p.Finition,
                 // la case suit le DOCUMENT, jamais celle inscrite au produit
-                SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm)))
+                SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm),
+                // et le PRIX aussi : c'est le document qui le fixe, pas le papier
+                UnitPriceOverride: PrixDeLaPlanche))
             .ToList();
 
         _impressionLancee = true;

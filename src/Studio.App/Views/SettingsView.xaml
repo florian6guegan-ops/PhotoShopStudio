@@ -384,6 +384,37 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Le référentiel compte 274 documents ; la boutique en tire deux toute la journée. Les raccourcis sont les tuiles mises devant, avant le reste du référentiel."/>
 
+                <!-- ===== Tarif des photos d'identité =====
+                     Le prix d'une planche dépend du DOCUMENT et non du papier : c'est le
+                     même produit du catalogue dans les deux cas. Voir TarifsIdentite. -->
+
+                <TextBlock Text="Photos d'identité — tarif" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                           Text="Prix d'une planche, quel que soit le papier. Une norme étrangère demande de retrouver le gabarit du pays et de vérifier une hauteur de visage qu'on ne connaît pas par cœur : la boutique la facture plus cher."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel Margin="0,0,32,0">
+                            <TextBlock Text="Document français" Style="{StaticResource Hint}"/>
+                            <TextBox x:Name="TarifIdFranceBox" FontSize="20" Padding="12,10"
+                                     Margin="0,6,0,0" MinWidth="140"
+                                     TextChanged="OnTarifIdentiteChange"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Document étranger" Style="{StaticResource Hint}"/>
+                            <TextBox x:Name="TarifIdEtrangerBox" FontSize="20" Padding="12,10"
+                                     Margin="0,6,0,0" MinWidth="140"
+                                     TextChanged="OnTarifIdentiteChange"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TarifIdEtatText" Style="{StaticResource Hint}" FontSize="15"
+                                   VerticalAlignment="Bottom" Margin="24,0,0,14" TextWrapping="Wrap"
+                                   MaxWidth="420"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- ===== Dossiers favoris =====
                      Les photos d'un client arrivent par des chemins qui ne changent jamais :
                      le Bureau, les Téléchargements du navigateur, le dossier où l'on range

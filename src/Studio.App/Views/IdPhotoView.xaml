@@ -72,6 +72,8 @@
                      90 px repris vont à la scène de cadrage. -->
                 <ColumnDefinition x:Name="BandeColonne" Width="160"/>
                 <ColumnDefinition Width="*"/>
+                <!-- Le panneau des corrections, replié. Il s'ouvre SUR PLACE : voir plus bas. -->
+                <ColumnDefinition x:Name="CorrectionsColonne" Width="0"/>
             </Grid.ColumnDefinitions>
 
             <!-- Bande de choix de la photo -->
@@ -168,6 +170,91 @@
                                    Text="Redressement 0° — molette pour régler · T ou Échap pour sortir"/>
                     </Border>
                 </Grid>
+            </Border>
+
+            <!-- ===== Corrections, SUR PLACE =====
+
+                 « Corriger » ouvrait un ÉCRAN : la photo disparaissait, un aperçu se
+                 recalculait, on réglait à l'aveugle de ce qu'on venait de cadrer, puis on
+                 revenait. Deux chargements pour bouger un curseur, et le cadrage — la seule
+                 chose que cet écran sert à faire — hors de vue pendant tout ce temps.
+
+                 Ici le panneau se déplie à droite et la photo reste où elle est, corrigée en
+                 direct. C'est la barre d'outils de DiLand (recadrer · correction · yeux
+                 rouges), qui ne quitte jamais l'image.
+
+                 L'aperçu part de la vignette DÉJÀ EN MÉMOIRE : rien à charger, ni à
+                 l'ouverture ni à la fermeture. -->
+            <Border x:Name="CorrectionsPanel" Grid.Column="2" Visibility="Collapsed"
+                    Background="{StaticResource CardBrush}" CornerRadius="12"
+                    Padding="14" Margin="10,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,12">
+                            <TextBlock DockPanel.Dock="Left" Text="Corriger" FontSize="18"
+                                       FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TitleBrush}"/>
+                            <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                    Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="32"
+                                    Padding="12,0" FontSize="14" Click="OnFermerLesCorrections"
+                                    ToolTip="Refermer le panneau (Échap)">✕</Button>
+                        </DockPanel>
+
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" TextWrapping="Wrap"
+                                   Margin="0,0,0,12"
+                                   Text="La photo se corrige sous vos yeux. Le tirage reprendra exactement ces réglages."/>
+
+                        <ToggleButton x:Name="IdRedEyeToggle" Style="{StaticResource ToggleTile}"
+                                      Margin="0,0,0,12" Click="OnIdCorrectionChanged"
+                                      Content="Enlever les yeux rouges"
+                                      ToolTip="Neutralise le rouge du flash au fond de l'œil. Ne touche qu'aux pupilles."/>
+
+                        <TextBlock Text="Automatiques" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" Margin="0,0,0,8"/>
+                        <ToggleButton x:Name="IdAutoLevelsToggle" Style="{StaticResource ToggleTile}"
+                                      Margin="0,0,0,5" Click="OnIdCorrectionChanged" Content="Niveaux"/>
+                        <ToggleButton x:Name="IdAutoContrastToggle" Style="{StaticResource ToggleTile}"
+                                      Margin="0,0,0,5" Click="OnIdCorrectionChanged" Content="Contraste"/>
+                        <ToggleButton x:Name="IdAutoColorToggle" Style="{StaticResource ToggleTile}"
+                                      Margin="0,0,0,12" Click="OnIdCorrectionChanged" Content="Couleur"/>
+
+                        <TextBlock Text="Réglages" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" Margin="0,0,0,8"/>
+
+                        <TextBlock x:Name="IdExposureLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdExposureSlider" Minimum="-2" Maximum="2" TickFrequency="0.05"
+                                IsSnapToTickEnabled="True" Margin="0,0,0,8"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <TextBlock x:Name="IdContrastLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdContrastSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <TextBlock x:Name="IdHighlightsLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdHighlightsSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <TextBlock x:Name="IdShadowsLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdShadowsSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <TextBlock x:Name="IdTemperatureLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdTemperatureSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <TextBlock x:Name="IdSaturationLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdSaturationSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <TextBlock x:Name="IdSharpnessLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="IdSharpnessSlider" Minimum="0" Maximum="100" Margin="0,0,0,12"
+                                ValueChanged="OnIdCorrectionChanged"/>
+
+                        <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="40"
+                                FontSize="14" Padding="12,0" Click="OnIdCorrectionsReset"
+                                Content="Tout remettre à zéro"/>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
 

@@ -37,6 +37,36 @@ public class OrderServiceTests : IDisposable
     private static DraftItem Draft(string path, Product product, int qty = 1) =>
         new(path, product, qty, CropSpec.Full, 0, 0, null, new ImageAdjustments());
 
+    /// <summary>
+    /// Une planche d'identité est facturée d'après le DOCUMENT et non d'après le papier :
+    /// 10 € pour un document français, 15 € pour un étranger, sur le même produit du
+    /// catalogue. Voir <see cref="TarifsIdentite"/>.
+    /// </summary>
+    [Fact]
+    public void CreateOrder_UnPrixImpose_lEmporteSurLeCatalogue()
+    {
+        var photo = MakePhoto("identite.jpg");
+
+        var order = _service.CreateOrder("Operateur",
+        [
+            Draft(photo, P10x15) with { UnitPriceOverride = 15m },
+        ]);
+
+        var ligne = order.Envelopes.Single().Lines.Single();
+        Assert.Equal(15m, ligne.UnitPrice);
+        Assert.Equal(15m, order.Total);
+    }
+
+    [Fact]
+    public void CreateOrder_SansPrixImpose_leCatalogueDecide()
+    {
+        var photo = MakePhoto("tirage.jpg");
+
+        var order = _service.CreateOrder("Operateur", [Draft(photo, P10x15, 2)]);
+
+        Assert.Equal(0.25m, order.Envelopes.Single().Lines.Single().UnitPrice);
+    }
+
     [Fact]
     public void CreateOrder_GroupsEnvelopesByPrinterChannel()
     {

@@ -46,8 +46,15 @@ public partial class FolderBrowserView : UserControl
         _dossier = PremierDossierValide(depart);
         InitializeComponent();
 
-        ShortcutsList.ItemsSource = FolderTree.Shortcuts()
-            .Select(r => new RaccourciRow(r))
+        // Les FAVORIS d'abord, les disques ensuite.
+        //
+        // Le volet ne montrait que les disques et les dossiers connus de Windows : le
+        // dossier WeTransfer de la boutique n'y était pas, et le Bureau se retrouvait après
+        // quatre lecteurs. Ce sont pourtant les trois endroits d'où les photos arrivent
+        // (voir DossiersFavoris), et l'écran des favoris sert précisément à les nommer.
+        ShortcutsList.ItemsSource = DossiersFavoris.Actifs()
+            .Select(f => new RaccourciRow(new FolderShortcut(f.Chemin, f.Libelle, "★")))
+            .Concat(FolderTree.Shortcuts().Select(r => new RaccourciRow(r)))
             .ToList();
 
         Loaded += (_, _) => Naviguer(_dossier);

@@ -191,6 +191,7 @@ internal partial class EditSelectionView : UserControl
         };
 
         GrayscaleToggle.IsChecked = _courante.Adjustments.Grayscale;
+        RedEyeToggle.IsChecked = _courante.Adjustments.RedEye;
         AutoLevelsToggle.IsChecked = _courante.Adjustments.AutoLevels;
         AutoContrastToggle.IsChecked = _courante.Adjustments.AutoContrast;
         AutoColorToggle.IsChecked = _courante.Adjustments.AutoColor;
@@ -905,6 +906,12 @@ internal partial class EditSelectionView : UserControl
     {
         var actif = GrayscaleToggle.IsChecked == true;
         Regler($"noir et blanc {(actif ? "activé" : "annulé")}", a => a.Grayscale = actif);
+    }
+
+    private void OnRedEyeChanged(object sender, RoutedEventArgs e)
+    {
+        var actif = RedEyeToggle.IsChecked == true;
+        Regler($"yeux rouges {(actif ? "enlevés" : "conservés")}", a => a.RedEye = actif);
     }
 
     private void OnAutoChanged(object sender, RoutedEventArgs e)

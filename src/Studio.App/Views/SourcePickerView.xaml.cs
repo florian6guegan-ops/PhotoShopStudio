@@ -67,14 +67,24 @@ public partial class SourcePickerView : UserControl
     }
 
     /// <summary>
-    /// Un dossier de l'ordinateur : sans sous-dossiers, comme un dossier désigné à la
-    /// main. Téléchargements contient tout ce que le navigateur a rapporté, et descendre
-    /// dedans ramènerait des dizaines de milliers de fichiers.
+    /// Un favori ouvre l'ARBORESCENCE à cet endroit, il n'y saute plus directement.
+    ///
+    /// Il menait droit aux photos posées à la racine du dossier, sans sous-dossiers — et
+    /// c'est presque toujours faux : ce qui arrive par WeTransfer ou par courriel se range
+    /// dans un sous-dossier au nom du client, et « Téléchargements » n'est qu'un point de
+    /// départ. On tombait donc sur un dossier vide sans aucun moyen de descendre, sinon
+    /// revenir en arrière et repasser par « Parcourir ».
+    ///
+    /// <see cref="FolderBrowserView"/> montre ce que chaque sous-dossier contient avant
+    /// qu'on l'ouvre, et laisse remonter : c'est exactement ce qu'on veut d'un favori.
     /// </summary>
     private void OnRaccourciClicked(object sender, RoutedEventArgs e)
     {
-        if ((sender as Button)?.Tag is string chemin)
-            _onFolderChosen(chemin, false);
+        if ((sender as Button)?.Tag is not string chemin) return;
+
+        Navigator.Go(
+            new FolderBrowserView(chemin, choix => _onFolderChosen(choix.Path, choix.AvecSousDossiers)),
+            "Parcourir les dossiers");
     }
 
     private void Refresh(IReadOnlyList<RemovableDrive> drives)

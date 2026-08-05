@@ -737,6 +737,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// écran-ci, et les laisser aussi dans le module donnerait deux commandes pour un même
     /// réglage, dont l'une mentirait dès qu'on toucherait l'autre.
     /// </summary>
+    /// <summary>
+    /// Déplie ou replie le panneau des corrections. <b>Rien ne se charge.</b>
+    ///
+    /// Le bouton ouvrait un ÉCRAN : la photo disparaissait, un aperçu se recalculait depuis
+    /// le fichier, on réglait sans voir le cadrage qu'on venait de poser, puis on revenait
+    /// — deux attentes pour bouger un curseur, devant le client. L'aperçu corrigé part
+    /// désormais de la vignette DÉJÀ en mémoire, celle que la scène affiche : ouvrir et
+    /// fermer ne coûtent qu'un changement de visibilité.
+    /// </summary>
     private void OnCorrect(object sender, RoutedEventArgs e)
     {
         if (_current is null)
@@ -746,25 +755,114 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             return;
         }
 
-        var photo = _current.Path;
-        Navigator.Go(
-            new AdjustView([photo], _corrections, reglages =>
-            {
-                // un exemplaire à nous : l'écran des corrections garde le sien, et un objet
-                // partagé se ferait modifier sous nos pieds à la prochaine ouverture
-                _corrections = reglages.Clone();
+        MontrerLePanneauDeCorrection(CorrectionsPanel.Visibility != Visibility.Visible);
+    }
 
-                // les deux cases de cet écran restent maîtresses de leur réglage
-                _corrections.Grayscale = false;
-                _corrections.WhiteBackground = false;
+    private void OnFermerLesCorrections(object sender, RoutedEventArgs e) =>
+        MontrerLePanneauDeCorrection(false);
 
-                // les corrections appartiennent à la photo : sans ce report, revenir
-                // dessus après en avoir vu une autre les retrouverait à neutre
-                if (_current is not null) _current.Corrections = _corrections.Clone();
+    private void MontrerLePanneauDeCorrection(bool ouvert)
+    {
+        CorrectionsPanel.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
+        CorrectionsColonne.Width = ouvert ? new GridLength(300) : new GridLength(0);
 
-                _ = RecalculerLApercuCorrigeAsync();
-            }),
-            "Corrections");
+        if (ouvert) RelireLesCorrections();
+    }
+
+    /// <summary>
+    /// Vrai pendant qu'on repose les contrôles depuis <see cref="_corrections"/> : sans ce
+    /// drapeau, chaque affectation déclencherait son propre <c>ValueChanged</c> et
+    /// recalculerait l'aperçu sept fois pour un changement de photo.
+    /// </summary>
+    private bool _relectureDesCorrections;
+
+    /// <summary>Repose les contrôles du panneau d'après les réglages de la photo courante.</summary>
+    private void RelireLesCorrections()
+    {
+        _relectureDesCorrections = true;
+        try
+        {
+            IdRedEyeToggle.IsChecked = _corrections.RedEye;
+            IdAutoLevelsToggle.IsChecked = _corrections.AutoLevels;
+            IdAutoContrastToggle.IsChecked = _corrections.AutoContrast;
+            IdAutoColorToggle.IsChecked = _corrections.AutoColor;
+
+            IdExposureSlider.Value = _corrections.Exposure;
+            IdContrastSlider.Value = _corrections.Contrast;
+            IdHighlightsSlider.Value = _corrections.Highlights;
+            IdShadowsSlider.Value = _corrections.Shadows;
+            IdTemperatureSlider.Value = _corrections.Temperature;
+            IdSaturationSlider.Value = _corrections.Saturation;
+            IdSharpnessSlider.Value = _corrections.Sharpness;
+        }
+        finally
+        {
+            _relectureDesCorrections = false;
+        }
+
+        MettreLesEtiquettesDeCorrection();
+    }
+
+    private void MettreLesEtiquettesDeCorrection()
+    {
+        IdExposureLabel.Text = $"Exposition   {_corrections.Exposure:+0.00;-0.00;0} IL";
+        IdContrastLabel.Text = $"Contraste   {_corrections.Contrast:+0;-0;0}";
+        IdHighlightsLabel.Text = $"Hautes lumières   {_corrections.Highlights:+0;-0;0}";
+        IdShadowsLabel.Text = $"Ombres   {_corrections.Shadows:+0;-0;0}";
+        IdTemperatureLabel.Text = $"Température   {_corrections.Temperature:+0;-0;0}";
+        IdSaturationLabel.Text = $"Saturation   {_corrections.Saturation:+0;-0;0}";
+        IdSharpnessLabel.Text = $"Netteté   {_corrections.Sharpness:0}";
+    }
+
+    /// <summary>
+    /// Un réglage a bougé : on le pose, on met à jour la photo, et rien de plus.
+    ///
+    /// Le noir et blanc et le fond blanc n'y figurent PAS : ce sont les deux cases de la
+    /// barre du bas, et elles restent maîtresses de leur réglage.
+    /// </summary>
+    private void OnIdCorrectionChanged(object sender, RoutedEventArgs e)
+    {
+        if (_relectureDesCorrections || !IsLoaded) return;
+
+        _corrections.RedEye = IdRedEyeToggle.IsChecked == true;
+        _corrections.AutoLevels = IdAutoLevelsToggle.IsChecked == true;
+        _corrections.AutoContrast = IdAutoContrastToggle.IsChecked == true;
+        _corrections.AutoColor = IdAutoColorToggle.IsChecked == true;
+
+        _corrections.Exposure = IdExposureSlider.Value;
+        _corrections.Contrast = IdContrastSlider.Value;
+        _corrections.Highlights = IdHighlightsSlider.Value;
+        _corrections.Shadows = IdShadowsSlider.Value;
+        _corrections.Temperature = IdTemperatureSlider.Value;
+        _corrections.Saturation = IdSaturationSlider.Value;
+        _corrections.Sharpness = IdSharpnessSlider.Value;
+
+        MettreLesEtiquettesDeCorrection();
+
+        // les corrections appartiennent à la photo : sans ce report, revenir dessus après
+        // en avoir vu une autre les retrouverait à neutre
+        if (_current is not null) _current.Corrections = _corrections.Clone();
+
+        _ = RecalculerLApercuCorrigeAsync();
+    }
+
+    private void OnIdCorrectionChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+        OnIdCorrectionChanged(sender, (RoutedEventArgs)e);
+
+    private void OnIdCorrectionsReset(object sender, RoutedEventArgs e)
+    {
+        // le noir et blanc et le fond blanc appartiennent à la barre du bas : on les
+        // préserve, sans quoi « tout remettre à zéro » décocherait deux cases qui ne sont
+        // pas dans ce panneau
+        var noirEtBlanc = _corrections.Grayscale;
+        var fondBlanc = _corrections.WhiteBackground;
+
+        _corrections = new ImageAdjustments { Grayscale = noirEtBlanc, WhiteBackground = fondBlanc };
+
+        if (_current is not null) _current.Corrections = _corrections.Clone();
+
+        RelireLesCorrections();
+        _ = RecalculerLApercuCorrigeAsync();
     }
 
     /// <summary>
@@ -825,8 +923,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     /// <summary>Dit à l'opérateur que des corrections sont posées — sinon rien ne le montre.</summary>
-    private void MontrerLesCorrections() =>
+    private void MontrerLesCorrections()
+    {
         CorrectionsText.Text = _corrections.IsNeutral ? "" : "corrections posées";
+
+        // Changer de photo change les réglages : le panneau doit suivre. Sans cela, il
+        // montrerait ceux de la photo précédente, et le premier curseur touché les
+        // reposerait sur la nouvelle.
+        if (CorrectionsPanel.Visibility == Visibility.Visible) RelireLesCorrections();
+    }
 
     // ----- gabarit et dessin -----
 

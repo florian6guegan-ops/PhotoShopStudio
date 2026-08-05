@@ -40,6 +40,13 @@ public static class ImageAdjuster
         if (a.WhiteBackground && image is MagickImage photo)
             BackgroundRemoval.PoserUnFondBlanc(photo);
 
+        // Les yeux rouges AVANT le noir et blanc, et avant tout réglage de couleur : la
+        // correction reconnaît une pupille au ROUGE qui y domine, et une image désaturée ou
+        // recontrastée ne la lui montrerait plus. Après le fond blanc, en revanche, qui ne
+        // touche jamais au visage.
+        if (a.RedEye)
+            YeuxRouges.Appliquer(image);
+
         // le noir et blanc ensuite : les réglages de couleur qui suivent n'auraient
         // plus de sens une fois l'image désaturée.
         //

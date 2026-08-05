@@ -138,6 +138,42 @@ public class GrilleVirtuelleTests
     }
 
     /// <summary>
+    /// La planche est centrée dans sa fenêtre : un nombre entier de tuiles tombe rarement
+    /// juste sur la largeur, et tout le blanc restant s'accumulait du même côté.
+    /// </summary>
+    [Fact]
+    public void La_planche_est_centree_dans_sa_fenetre()
+    {
+        // 1870 px de large, tuiles de 216 : huit colonnes en occupent 1728
+        var marge = GrilleVirtuelle.MargeDeCentrage(1870, 8, LargeurTuile);
+
+        Assert.Equal((1870 - 8 * LargeurTuile) / 2, marge, precision: 3);
+        Assert.True(marge > 0);
+    }
+
+    [Fact]
+    public void Une_planche_plus_large_que_sa_fenetre_ne_deborde_pas_a_gauche()
+    {
+        // la fenêtre est plus étroite qu'une tuile : le retrait ne doit jamais être négatif
+        Assert.Equal(0, GrilleVirtuelle.MargeDeCentrage(100, 1, LargeurTuile));
+        Assert.Equal(0, GrilleVirtuelle.MargeDeCentrage(double.NaN, 8, LargeurTuile));
+        Assert.Equal(0, GrilleVirtuelle.MargeDeCentrage(double.PositiveInfinity, 8, LargeurTuile));
+    }
+
+    /// <summary>
+    /// La marge porte sur le BLOC : centrer chaque rangée décalerait la dernière, incomplète,
+    /// de ses voisines — et la grille paraîtrait de travers.
+    /// </summary>
+    [Fact]
+    public void Le_centrage_ne_depend_pas_du_nombre_de_photos()
+    {
+        var pleine = GrilleVirtuelle.MargeDeCentrage(1870, 8, LargeurTuile);
+        var partielle = GrilleVirtuelle.MargeDeCentrage(1870, 8, LargeurTuile);
+
+        Assert.Equal(pleine, partielle);
+    }
+
+    /// <summary>
     /// La marge est ce qui rend le défilement lisse : sans elle, la rangée qui entre à
     /// l'écran serait construite pendant qu'on la regarde arriver.
     /// </summary>

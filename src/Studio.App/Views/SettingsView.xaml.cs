@@ -45,10 +45,62 @@ public partial class SettingsView : UserControl
             MontrerLaMarque(App.Services.Marque);
             MontrerLeDetourage(App.Services.Detourage);
             MontrerLeWifi(App.Services.Wifi);
+            MontrerLesTarifsIdentite(App.Services.TarifsIdentite);
             MontrerLesFavoris(App.Services.Favoris);
             MontrerLePoste(App.Services.Poste);
             MontrerLaVersion();
         };
+    }
+
+    // ===== Tarif des photos d'identité =====
+
+    private void MontrerLesTarifsIdentite(TarifsIdentite tarifs)
+    {
+        TarifIdFranceBox.Text = tarifs.FranceEur.ToString("0.00");
+        TarifIdEtrangerBox.Text = tarifs.EtrangerEur.ToString("0.00");
+        DireOuEnEstLeTarifIdentite(tarifs);
+    }
+
+    /// <summary>
+    /// Enregistre à chaque frappe, comme le reste de cet écran — mais uniquement si les
+    /// DEUX cases contiennent un prix lisible. Un montant à moitié tapé ne doit pas se
+    /// retrouver dans la configuration.
+    /// </summary>
+    private void OnTarifIdentiteChange(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+
+        if (LirePrix(TarifIdFranceBox.Text) is not { } france ||
+            LirePrix(TarifIdEtrangerBox.Text) is not { } etranger)
+        {
+            TarifIdEtatText.Text = "Saisissez un montant, par exemple 10 ou 12,50. " +
+                                   "Tant qu'il n'est pas lisible, l'ancien tarif s'applique.";
+            return;
+        }
+
+        var tarifs = new TarifsIdentite { FranceEur = france, EtrangerEur = etranger };
+        App.Services.SaveTarifsIdentite(tarifs);
+        DireOuEnEstLeTarifIdentite(tarifs);
+    }
+
+    private void DireOuEnEstLeTarifIdentite(TarifsIdentite tarifs) =>
+        TarifIdEtatText.Text =
+            $"Une planche française est facturée {tarifs.FranceEur:0.00} €, " +
+            $"une étrangère {tarifs.EtrangerEur:0.00} €.";
+
+    /// <summary>
+    /// Un montant saisi à la main. La virgule ET le point sont acceptés : le pavé numérique
+    /// d'un clavier français produit un point, et l'opérateur écrit une virgule.
+    /// </summary>
+    private static decimal? LirePrix(string saisie)
+    {
+        var texte = saisie.Trim().Replace(',', '.').Replace("€", "").Trim();
+
+        return decimal.TryParse(texte, System.Globalization.NumberStyles.Number,
+                   System.Globalization.CultureInfo.InvariantCulture, out var prix)
+               && prix >= 0
+            ? prix
+            : null;
     }
 
     // ===== Dossiers favoris =====

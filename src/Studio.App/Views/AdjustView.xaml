@@ -91,6 +91,11 @@
                 <CheckBox x:Name="GrayscaleCheck" Content="Noir et blanc" Margin="0,10,0,0"
                           FontSize="14" Foreground="{StaticResource TextBrush}"
                           Checked="OnChanged" Unchecked="OnChanged"/>
+
+                <CheckBox x:Name="RedEyeCheck" Content="Enlever les yeux rouges" Margin="0,8,0,0"
+                          FontSize="14" Foreground="{StaticResource TextBrush}"
+                          ToolTip="Neutralise le rouge du flash au fond de l'œil. Ne touche qu'aux pupilles, trouvées par le détecteur de visages."
+                          Checked="OnChanged" Unchecked="OnChanged"/>
             </StackPanel>
         </ScrollViewer>
 

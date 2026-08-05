@@ -49,7 +49,16 @@ public sealed record DraftItem(
     /// Posée en DERNIER paramètre à dessein : les appelants passent les précédents par
     /// position, et intercaler un paramètre les déplacerait tous.
     /// </summary>
-    SheetCellSize? SheetCell = null);
+    SheetCellSize? SheetCell = null,
+    /// <summary>
+    /// Prix unitaire imposé, qui l'emporte sur celui du catalogue. Null = le catalogue
+    /// décide, ce qui est le cas de tous les tirages.
+    ///
+    /// Il existe pour les planches d'IDENTITÉ, dont le prix dépend du DOCUMENT et non du
+    /// papier : 10 € pour un document français, 15 € pour un étranger, sur le même produit.
+    /// Voir <see cref="TarifsIdentite"/>.
+    /// </summary>
+    decimal? UnitPriceOverride = null);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -118,7 +127,10 @@ public sealed class OrderService
                 var line = new OrderLine
                 {
                     ProductCode = product.Code,
-                    UnitPrice = product.UnitPriceFor(Math.Max(factureSur, 1)),
+                    // Le prix imposé l'emporte : c'est celui des planches d'identité, qui
+                    // dépend du document. Sans lui, tout vient du catalogue, comme avant.
+                    UnitPrice = productGroup.Select(i => i.UnitPriceOverride).FirstOrDefault(p => p is not null)
+                                ?? product.UnitPriceFor(Math.Max(factureSur, 1)),
                     CustomCellWidthMm = planche?.CellWidthMm,
                     CustomCellHeightMm = planche?.CellHeightMm,
                     SheetCount = planche?.SheetCount ?? 0,

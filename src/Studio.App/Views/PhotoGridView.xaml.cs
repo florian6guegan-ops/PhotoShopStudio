@@ -913,22 +913,21 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     }
 
     /// <summary>
-    /// Vrai quand la planche est dans son ordre d'ARRIVÉE : la plus récente d'abord.
-    ///
-    /// C'est l'état de départ depuis le 04/08/2026 — il valait faux, et la planche
-    /// s'ouvrait par ordre alphabétique. Le bouton bascule donc désormais vers le NOM et
-    /// revient, au lieu de partir du nom pour aller vers la date.
+    /// Le classement en vigueur. La planche arrive dans l'ordre du chargement — la plus
+    /// récente d'abord, c'est-à-dire ce que le client vient de prendre.
     /// </summary>
-    private bool _triParDate = true;
+    private CritereDeTri _tri = CritereDeTri.DateRecente;
 
-    /// <summary>Bascule entre tri par date (la plus récente d'abord) et tri par nom, comme « trier » chez DiLand.</summary>
-    private void OnSort(object sender, RoutedEventArgs e)
+    /// <summary>Déroule les classements. Voir <see cref="MenuDeTri"/>.</summary>
+    private void OnSort(object sender, RoutedEventArgs e) =>
+        MenuDeTri.Ouvrir(SortButton, _tri, Trier);
+
+    private void Trier(CritereDeTri critere)
     {
-        _triParDate = !_triParDate;
+        _tri = critere;
+        SortButton.Content = "⇅  " + MenuDeTri.Libelle(critere);
 
-        var triees = _triParDate
-            ? TrierParDate(_photos)
-            : _photos.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var triees = MenuDeTri.Appliquer(_photos, critere, p => p.Path, p => p.Name);
 
         _photos.Clear();
         _photos.AddRange(triees);
@@ -936,27 +935,6 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         PhotosGrid.ItemsSource = null;
         PhotosGrid.ItemsSource = _photos;
         UpdateSummary();
-    }
-
-    /// <summary>
-    /// Reclasse les photos DÉJÀ chargées de la plus récente à la plus ancienne, en passant
-    /// par la même règle que le chargement (<see cref="PhotoScanner.TrierParDateDecroissante"/>).
-    /// Deux règles de date finiraient par diverger, et l'écart se verrait au premier appui
-    /// sur « trier ».
-    /// </summary>
-    private static List<PhotoItem> TrierParDate(IEnumerable<PhotoItem> photos)
-    {
-        var liste = photos.ToList();
-
-        // le rang que le tri de référence donne à chaque chemin ; les planches d'index
-        // ajoutées à la planche peuvent partager un chemin, d'où un regroupement plutôt
-        // qu'un dictionnaire — un doublon ferait échouer « trier », pas se tromper d'ordre
-        var rangs = PhotoScanner.TrierParDateDecroissante(
-                liste.Select(p => p.Path).Distinct(StringComparer.OrdinalIgnoreCase))
-            .Select((chemin, rang) => (chemin, rang))
-            .ToDictionary(x => x.chemin, x => x.rang, StringComparer.OrdinalIgnoreCase);
-
-        return liste.OrderBy(p => rangs.TryGetValue(p.Path, out var rang) ? rang : int.MaxValue).ToList();
     }
 
     /// <summary>Ctrl+A : toute la planche d'un coup, comme chez DiLand.</summary>

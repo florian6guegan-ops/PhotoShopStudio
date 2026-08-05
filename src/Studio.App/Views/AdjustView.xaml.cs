@@ -120,6 +120,7 @@ public partial class AdjustView : UserControl
         ClaritySlider.Value = _reglages.Clarity;
         SharpnessSlider.Value = _reglages.Sharpness;
         GrayscaleCheck.IsChecked = _reglages.Grayscale;
+        RedEyeCheck.IsChecked = _reglages.RedEye;
 
         _initialise = true;
         MettreLesEtiquettesAJour();
@@ -140,6 +141,7 @@ public partial class AdjustView : UserControl
         _reglages.Clarity = ClaritySlider.Value;
         _reglages.Sharpness = SharpnessSlider.Value;
         _reglages.Grayscale = GrayscaleCheck.IsChecked == true;
+        _reglages.RedEye = RedEyeCheck.IsChecked == true;
     }
 
     /// <summary>La valeur est affichée à côté du nom : un curseur seul ne dit pas où il en est.</summary>
@@ -251,6 +253,7 @@ public partial class AdjustView : UserControl
             curseur.Value = 0;
 
         GrayscaleCheck.IsChecked = false;
+        RedEyeCheck.IsChecked = false;
 
         _initialise = true;
         LireCurseurs();

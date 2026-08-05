@@ -175,6 +175,17 @@
                                           Content="Noir et blanc"
                                           ToolTip="Convertit la photo en noir et blanc (Ctrl+W)"/>
 
+                            <!-- Les yeux rouges sont à part, et pas au milieu des curseurs :
+                                 aucun réglage ne les rattrape — c'est la rétine renvoyée par
+                                 le flash — et la correction ne touche QUE les pupilles,
+                                 trouvées par le détecteur de visages. -->
+                            <TextBlock Text="Yeux rouges" FontSize="17" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" Margin="0,0,0,10"/>
+                            <ToggleButton x:Name="RedEyeToggle" Style="{StaticResource ToggleTile}"
+                                          Margin="0,0,0,14" Click="OnRedEyeChanged"
+                                          Content="Enlever les yeux rouges"
+                                          ToolTip="Neutralise le rouge du flash au fond de l'œil. Ne touche qu'aux pupilles : une écharpe rouge ou une joue rosée ne risquent rien."/>
+
                             <TextBlock Text="Corrections automatiques" FontSize="17" FontWeight="SemiBold"
                                        Foreground="{StaticResource TitleBrush}" Margin="0,0,0,10"/>
                             <ToggleButton x:Name="AutoLevelsToggle" Style="{StaticResource ToggleTile}"

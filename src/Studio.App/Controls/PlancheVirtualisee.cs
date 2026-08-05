@@ -176,6 +176,9 @@ public sealed class PlancheVirtualisee : VirtualizingPanel, IScrollInfo
 
         var generateur = ItemContainerGenerator;
 
+        // la planche est centrée dans sa fenêtre : voir GrilleVirtuelle.MargeDeCentrage
+        var marge = GrilleVirtuelle.MargeDeCentrage(finalSize.Width, _colonnes, _tailleTuile.Width);
+
         for (var i = 0; i < InternalChildren.Count; i++)
         {
             var enfant = InternalChildren[i];
@@ -187,7 +190,8 @@ public sealed class PlancheVirtualisee : VirtualizingPanel, IScrollInfo
 
             // le décalage est retranché ici, et nulle part ailleurs : les tuiles vivent dans
             // le repère de la planche entière, l'écran n'en montre qu'une fenêtre glissante
-            enfant.Arrange(new Rect(x, y - _decalage, _tailleTuile.Width, _tailleTuile.Height));
+            enfant.Arrange(new Rect(
+                marge + x, y - _decalage, _tailleTuile.Width, _tailleTuile.Height));
         }
 
         return finalSize;

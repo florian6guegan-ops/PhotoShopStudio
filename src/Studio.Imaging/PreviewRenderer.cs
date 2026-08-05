@@ -112,14 +112,21 @@ public sealed class PreviewRenderer : IDisposable
     /// </summary>
     private byte[] Depart(ImageAdjustments a)
     {
-        if (!a.Grayscale && !a.AutoLevels && !a.AutoContrast && !a.AutoColor) return _octets;
+        if (!a.Grayscale && !a.AutoLevels && !a.AutoContrast && !a.AutoColor && !a.RedEye)
+            return _octets;
 
         if (_apresAutomatismes is { } cache && _automatismesEnCache is { } faits &&
             faits.Grayscale == a.Grayscale && faits.AutoLevels == a.AutoLevels &&
-            faits.AutoContrast == a.AutoContrast && faits.AutoColor == a.AutoColor)
+            faits.AutoContrast == a.AutoContrast && faits.AutoColor == a.AutoColor &&
+            faits.RedEye == a.RedEye)
             return cache;
 
         using var copie = (MagickImage)_reduite.Clone();
+
+        // Les yeux rouges comptent parmi les réglages « qui ne bougent pas » : c'est une
+        // case, pas un curseur, et la détection de visage coûte une centaine de
+        // millisecondes qu'il serait absurde de repayer à chaque mouvement de souris.
+        if (a.RedEye) YeuxRouges.Appliquer(copie);
 
         if (a.Grayscale) copie.Grayscale(PixelIntensityMethod.Rec709Luma);
         if (a.AutoColor && !a.Grayscale) copie.WhiteBalance();

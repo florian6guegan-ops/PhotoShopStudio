@@ -67,6 +67,25 @@ public static class GrilleVirtuelle
     }
 
     /// <summary>
+    /// Le retrait qui CENTRE la planche dans sa fenêtre.
+    ///
+    /// Un nombre entier de tuiles tombe rarement juste sur la largeur disponible : il reste
+    /// de quoi loger une demi-tuile, et tout collait à gauche pendant que ce vide s'accumulait
+    /// à droite. Sur une fenêtre de 1870 px et des tuiles de 216, huit colonnes en occupent
+    /// 1728 : cent quarante pixels de blanc, tous du même côté.
+    ///
+    /// Le retrait porte sur le BLOC entier, pas sur chaque rangée : centrer une dernière
+    /// rangée incomplète la décalerait de ses voisines, et la grille paraîtrait de travers.
+    /// </summary>
+    public static double MargeDeCentrage(double largeurVisible, int colonnes, double largeurTuile)
+    {
+        if (double.IsNaN(largeurVisible) || double.IsInfinity(largeurVisible)) return 0;
+
+        var occupe = Math.Max(1, colonnes) * largeurTuile;
+        return Math.Max(0, (largeurVisible - occupe) / 2);
+    }
+
+    /// <summary>
     /// Les tuiles à fabriquer pour l'écran tel qu'il est.
     ///
     /// <paramref name="rangeesDeMarge"/> en fabrique quelques-unes au-delà, de part et

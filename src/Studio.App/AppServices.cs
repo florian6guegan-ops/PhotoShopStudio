@@ -197,6 +197,24 @@ public sealed class AppServices
         DossiersFavoris.Reglage = reglages;
     }
 
+    /// <summary>
+    /// Le prix d'une planche d'identité, qui dépend du DOCUMENT et non du papier :
+    /// 10 € pour un document français, 15 € pour un étranger. Voir <see cref="TarifsIdentite"/>.
+    /// </summary>
+    public TarifsIdentite TarifsIdentite { get; private set; } = new();
+
+    /// <summary>Enregistre les tarifs d'identité et les applique sans redémarrer.</summary>
+    public void SaveTarifsIdentite(TarifsIdentite tarifs)
+    {
+        ArgumentNullException.ThrowIfNull(tarifs);
+
+        File.WriteAllText(
+            Path.Combine(ConfigDir, "tarifs-identite.json"),
+            JsonSerializer.Serialize(tarifs, ProductCatalog.JsonOptions));
+
+        TarifsIdentite = tarifs;
+    }
+
     private DetourageSettings? _detourage;
 
     /// <summary>
@@ -489,6 +507,11 @@ public sealed class AppServices
         BackgroundRemoval.Log = message => FileLog.Write(message);
         PdfPages.Log = message => FileLog.Write(message);
 
+        // La correction des yeux rouges est demandée depuis le PIPELINE, qui reçoit une
+        // image et des réglages : il n'a aucun moyen de connaître le chemin du modèle ONNX.
+        // Le détecteur lui est donc posé ici, comme le reste des points d'entrée statiques.
+        YeuxRouges.Log = message => FileLog.Write(message);
+
         // L'état de la DNP passe par le spouleur dès que DiLand tient son port USB : c'est
         // la seule trace quand cette lecture-là échoue à son tour.
         Studio.Printing.Devices.Dnp.DnpSpouleur.Log = message => FileLog.Write(message);
@@ -512,6 +535,8 @@ public sealed class AppServices
             Backup = LoadConfig<BackupConfig>(Path.Combine(dataRoot, "config", "backup.json")),
             Wifi = LoadConfig<WifiConfig>(Path.Combine(dataRoot, "config", "wifi.json")),
             Favoris = LoadConfig<FavorisSettings>(Path.Combine(dataRoot, "config", "favoris.json")),
+            TarifsIdentite = LoadConfig<TarifsIdentite>(
+                Path.Combine(dataRoot, "config", "tarifs-identite.json")),
         };
 
         // Les boîtes de fichiers de Windows n'ont pas de service à qui demander : elles
@@ -525,6 +550,20 @@ public sealed class AppServices
             Path.Combine(dataRoot, "models"),
             Path.Combine(AppContext.BaseDirectory, "models"),
         ];
+
+        // Le détecteur de visages sert aussi aux YEUX ROUGES, demandés depuis le pipeline.
+        // Construire l'objet ne charge pas le réseau — il vérifie seulement que le fichier
+        // ONNX est là. Sans modèle sur le poste, la case reste simplement sans effet : un
+        // tirage ne doit pas échouer parce qu'elle a été cochée.
+        try
+        {
+            YeuxRouges.Detecteur = services.Faces;
+        }
+        catch (FileNotFoundException ex)
+        {
+            FileLog.Write($"Yeux rouges : modèle de détection absent ({ex.Message}) — " +
+                          "la correction restera sans effet.");
+        }
 
         AppliquerLeDetourage(services.Detourage);
 

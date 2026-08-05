@@ -30,8 +30,11 @@ public partial class IdPhotoPickerView : UserControl
     private readonly List<Vignette> _photos = [];
     private CancellationTokenSource? _chargement;
 
-    /// <summary>Faux = classement par date (le défaut), vrai = par nom.</summary>
-    private bool _parNom;
+    /// <summary>
+    /// Le classement en vigueur. La planche arrive dans l'ordre du chargement — la plus
+    /// récente d'abord, c'est-à-dire la photo d'identité qu'on vient de prendre.
+    /// </summary>
+    private CritereDeTri _tri = CritereDeTri.DateRecente;
 
     /// <param name="rootPath">Dossier des photos.</param>
     /// <param name="document">Norme visée ; null = norme française.</param>
@@ -80,20 +83,57 @@ public partial class IdPhotoPickerView : UserControl
         }
 
         MettreAJourLeCompte();
+        await ChargerLesVignettesAsync(ct);
+    }
 
+    /// <summary>
+    /// Remplit la planche de ses vignettes, PAR TRANCHES ET EN PARALLÈLE.
+    ///
+    /// Elles étaient lues une par une, chacune attendue avant la suivante : un seul cœur sur
+    /// huit, et sur les quatre-vingts photos d'une carte l'opérateur regardait une planche
+    /// grise se remplir ligne à ligne. C'est la même mécanique que la planche des tirages
+    /// (voir <c>PhotoGridView.ChargerLesVignettesAsync</c>), qui l'avait déjà.
+    ///
+    /// Par tranches et non d'un seul lot : la planche se remplit de haut en bas sous les
+    /// yeux, au lieu d'apparaître d'un bloc à la fin.
+    /// </summary>
+    private async Task ChargerLesVignettesAsync(CancellationToken ct)
+    {
         var vignettes = App.Services.Thumbnails;
-        foreach (var photo in _photos)
+        var aLire = _photos.Where(p => p.Thumbnail is null).ToList();
+        if (aLire.Count == 0) return;
+
+        var tranche = Math.Max(8, Environment.ProcessorCount * 2);
+
+        for (var debut = 0; debut < aLire.Count; debut += tranche)
         {
             if (ct.IsCancellationRequested) return;
-            if (photo.Thumbnail is not null) continue;
+
+            var lot = aLire.GetRange(debut, Math.Min(tranche, aLire.Count - debut));
+            var lues = new byte[lot.Count][];
 
             try
             {
-                var octets = await Task.Run(() => vignettes.GetJpeg(photo.Path, 360), ct);
-                photo.Thumbnail = ToBitmap(octets);
+                await Task.Run(() => Parallel.For(0, lot.Count,
+                    new ParallelOptions { CancellationToken = ct }, i =>
+                    {
+                        try
+                        {
+                            lues[i] = vignettes.GetJpeg(lot[i].Path, 360);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // une vignette illisible laisse la tuile vide, le nom reste
+                            FileLog.Write($"Identité : vignette illisible — {lot[i].Path}", ex);
+                        }
+                    }), ct);
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception) { /* une vignette illisible laisse la tuile vide, le nom reste */ }
+
+            if (ct.IsCancellationRequested) return;
+
+            for (var i = 0; i < lot.Count; i++)
+                if (lues[i] is { } octets) lot[i].Thumbnail = ToBitmap(octets);
         }
     }
 
@@ -130,18 +170,18 @@ public partial class IdPhotoPickerView : UserControl
     }
 
     /// <summary>
-    /// Bascule entre le classement par date et par nom, comme la grille des tirages.
+    /// Déroule les classements, comme la grille des tirages — c'est le même menu.
     /// La SÉLECTION survit au tri : elle porte sur des photos, pas sur des rangs.
     /// </summary>
-    private void OnTrier(object sender, RoutedEventArgs e)
-    {
-        _parNom = !_parNom;
+    private void OnTrier(object sender, RoutedEventArgs e) =>
+        MenuDeTri.Ouvrir(SortButton, _tri, Trier);
 
-        var ordonnees = _parNom
-            ? _photos.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList()
-            : PhotoScanner.TrierParDateDecroissante(_photos.Select(p => p.Path))
-                .Select(chemin => _photos.First(p => p.Path == chemin))
-                .ToList();
+    private void Trier(CritereDeTri critere)
+    {
+        _tri = critere;
+        SortButton.Content = "⇅  " + MenuDeTri.Libelle(critere);
+
+        var ordonnees = MenuDeTri.Appliquer(_photos, critere, p => p.Path, p => p.Name);
 
         _photos.Clear();
         _photos.AddRange(ordonnees);
