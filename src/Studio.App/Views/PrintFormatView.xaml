@@ -15,7 +15,12 @@
             <ItemsControl x:Name="FormatsList">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal"/>
+                        <!-- CENTRÉ, comme toutes les autres grilles de tuiles de
+                             l'application (taille personnalisée, agrandissement, documents
+                             d'identité). Aligné à gauche, la dernière rangée pendait dans le
+                             vide et l'écran paraissait de travers dès que le nombre de
+                             formats ne tombait pas juste. -->
+                        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
@@ -47,9 +52,20 @@
                             </Button.Template>
 
                             <StackPanel>
-                                <TextBlock Text="{Binding Nom}" FontSize="34" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
-                                           HorizontalAlignment="Center"/>
+                                <!-- Le nom tient TOUJOURS dans la tuile.
+                                     « 10x15 » y entrait large ; « Photos d'identité — planche
+                                     10×15 » et « Envoi des photos par courriel », non — le
+                                     texte débordait des deux côtés du cadre. La Viewbox ne
+                                     réduit QUE ce qui dépasse (StretchDirection=DownOnly) :
+                                     les noms courts gardent leurs 34 px, les longs se
+                                     renvoient à la ligne puis rapetissent juste assez. -->
+                                <Viewbox MaxHeight="72" Margin="12,0" StretchDirection="DownOnly"
+                                         HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding Nom}" FontSize="34" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               MaxWidth="264" TextWrapping="Wrap"
+                                               TextAlignment="Center" HorizontalAlignment="Center"/>
+                                </Viewbox>
 
                                 <!-- La MACHINE en pastille, et non plus en petit texte gris
                                      au milieu des cotes. Le catalogue porte deux produits

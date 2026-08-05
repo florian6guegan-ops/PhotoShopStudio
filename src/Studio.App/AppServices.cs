@@ -175,6 +175,28 @@ public sealed class AppServices
         Printer.Marque = reglages;
     }
 
+    /// <summary>
+    /// Les dossiers épinglés dans les boîtes de fichiers et dans le choix du support.
+    ///
+    /// Ils vivent dans les données du poste : le Bureau et les Téléchargements n'ont pas le
+    /// même chemin d'une session à l'autre, et le dossier WeTransfer est celui que
+    /// l'exploitant a créé chez lui. Voir <see cref="DossiersFavoris"/>.
+    /// </summary>
+    public FavorisSettings Favoris { get; private set; } = new();
+
+    /// <summary>Enregistre les favoris et les applique sans redémarrer.</summary>
+    public void SaveFavoris(FavorisSettings reglages)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+
+        File.WriteAllText(
+            Path.Combine(ConfigDir, "favoris.json"),
+            JsonSerializer.Serialize(reglages, ProductCatalog.JsonOptions));
+
+        Favoris = reglages;
+        DossiersFavoris.Reglage = reglages;
+    }
+
     private DetourageSettings? _detourage;
 
     /// <summary>
@@ -489,7 +511,12 @@ public sealed class AppServices
             Ticket = LoadConfig<TicketConfig>(Path.Combine(dataRoot, "config", "ticket.json")),
             Backup = LoadConfig<BackupConfig>(Path.Combine(dataRoot, "config", "backup.json")),
             Wifi = LoadConfig<WifiConfig>(Path.Combine(dataRoot, "config", "wifi.json")),
+            Favoris = LoadConfig<FavorisSettings>(Path.Combine(dataRoot, "config", "favoris.json")),
         };
+
+        // Les boîtes de fichiers de Windows n'ont pas de service à qui demander : elles
+        // s'ouvrent depuis n'importe quel écran. Le réglage leur est donc posé ici, une fois.
+        DossiersFavoris.Reglage = services.Favoris;
 
         // Le modèle de détourage se cherche dans les données du poste, et non à un chemin
         // écrit en dur : un second poste opérateur n'a aucune raison d'avoir le même.

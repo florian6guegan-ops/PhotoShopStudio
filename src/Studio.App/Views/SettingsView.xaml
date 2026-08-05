@@ -384,6 +384,77 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Le référentiel compte 274 documents ; la boutique en tire deux toute la journée. Les raccourcis sont les tuiles mises devant, avant le reste du référentiel."/>
 
+                <!-- ===== Dossiers favoris =====
+                     Les photos d'un client arrivent par des chemins qui ne changent jamais :
+                     le Bureau, les Téléchargements du navigateur, le dossier où l'on range
+                     les envois WeTransfer. Les boîtes de Windows s'ouvraient sur « Ce PC »,
+                     et il fallait redescendre l'arborescence à chaque fois devant le client. -->
+
+                <TextBlock Text="Dossiers favoris" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                           Text="Ces dossiers sont épinglés dans TOUTES les boîtes « ouvrir un fichier » de Windows, et proposés en tuile sur l'écran « d'où viennent les photos ? ». Le Bureau et Téléchargements se trouvent tout seuls, où que Windows les range. Un dossier introuvable n'est simplement pas proposé."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <ItemsControl x:Name="FavorisList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="220"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding Actif}"
+                                                  VerticalAlignment="Center" Margin="0,0,12,0"
+                                                  Click="OnFavoriChange"
+                                                  ToolTip="Décochez pour le garder dans la liste sans le proposer."/>
+
+                                        <TextBox Grid.Column="1" Text="{Binding Libelle, UpdateSourceTrigger=PropertyChanged}"
+                                                 FontSize="17" Padding="10,7" Margin="0,0,12,0"
+                                                 VerticalAlignment="Center" TextChanged="OnFavoriChange"/>
+
+                                        <!-- Où il mène VRAIMENT : un favori dont le chemin
+                                             se devine (Bureau, Téléchargements) n'a rien à
+                                             saisir, mais l'opérateur doit voir sur quoi il
+                                             tombe — et lire « introuvable » plutôt que de le
+                                             découvrir en cliquant. -->
+                                        <TextBlock Grid.Column="2" Text="{Binding Etat}"
+                                                   Foreground="{Binding EtatCouleur}" FontSize="15"
+                                                   VerticalAlignment="Center" Margin="0,0,12,0"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <Button Grid.Column="3" Style="{StaticResource FlatButton}"
+                                                MinWidth="0" MinHeight="38" Padding="14,0" FontSize="14"
+                                                Margin="0,0,8,0" Tag="{Binding}" Click="OnFavoriParcourir"
+                                                ToolTip="Désigner le dossier à la main.">Parcourir…</Button>
+
+                                        <Button Grid.Column="4" Style="{StaticResource FlatButton}"
+                                                MinWidth="0" MinHeight="38" Padding="14,0" FontSize="14"
+                                                Tag="{Binding}" Click="OnFavoriRetirer"
+                                                ToolTip="Retirer ce favori de la liste.">Retirer</Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="40"
+                                    Padding="16,0" FontSize="15" Margin="0,0,10,0"
+                                    Click="OnFavoriAjouter">+  Ajouter un dossier</Button>
+                            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="40"
+                                    Padding="16,0" FontSize="15" Click="OnFavorisParDefaut"
+                                    ToolTip="Revenir à Bureau, Téléchargements et WeTransfer.">Remettre les trois par défaut</Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- Ce qui dépend du POSTE et non de la boutique. Tout se détecte seul ;
                      ces réglages ne servent qu'à rattraper une installation que la
                      détection ne sait pas lire. C'est ce qui permet de donner

@@ -53,6 +53,7 @@ public partial class FinishesView : UserControl
             Filter = "Profils couleur (*.icc;*.icm)|*.icc;*.icm",
             InitialDirectory = IccProfiles.WindowsColorDir,
         };
+        DossiersFavoris.Epingler(dialog);
         if (dialog.ShowDialog() != true) return;
 
         try

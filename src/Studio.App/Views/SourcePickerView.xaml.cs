@@ -24,16 +24,21 @@ public partial class SourcePickerView : UserControl
 
     /// <param name="onFolderChosen">Suite du parcours ; par défaut la grille d'impression.</param>
     /// <param name="raccourcis">
-    /// Dossiers de l'ordinateur à proposer en plus des supports. Null = aucun.
+    /// Dossiers de l'ordinateur à proposer en plus des supports. Null = les FAVORIS du poste
+    /// (voir <see cref="DossiersFavoris"/>).
     ///
-    /// Ils ne sont pas mis partout : sur un tirage ordinaire, les photos viennent d'une
-    /// carte, et une tuile de plus ne ferait qu'allonger l'écran. C'est l'E-Photo qui en a
-    /// besoin — sa photo arrive par courriel ou par téléphone, donc dans Téléchargements.
+    /// Ils n'étaient proposés qu'au parcours E-Photo, au motif qu'un tirage ordinaire vient
+    /// d'une carte. C'est de moins en moins vrai : les photos arrivent par WeTransfer, par
+    /// courriel ou par téléphone, et l'opérateur devait alors passer par « Parcourir » puis
+    /// redescendre l'arborescence devant le client. Ils sont donc partout, et la liste se
+    /// règle dans Paramètres.
     /// </param>
     public SourcePickerView(
         Action<string, bool>? onFolderChosen = null,
         IReadOnlyList<DossierRaccourci>? raccourcis = null)
     {
+        raccourcis ??= DossiersFavoris.Raccourcis();
+
         _onFolderChosen = onFolderChosen
             ?? ((root, profond) => Navigator.Go(
                 new PhotoGridView(root, avecSousDossiers: profond), "Choisir les photos"));
@@ -49,8 +54,11 @@ public partial class SourcePickerView : UserControl
     }
 
     /// <summary>
-    /// Le raccourci « Téléchargements », ou rien si le dossier n'existe pas. À passer en
-    /// <c>raccourcis</c> depuis les parcours où la photo vient du web.
+    /// Le raccourci « Téléchargements » seul.
+    ///
+    /// Il n'a plus lieu d'être appelé : les favoris du poste le contiennent, et ils sont
+    /// désormais proposés partout. Conservé pour un parcours qui voudrait n'afficher que
+    /// celui-là, sans les autres.
     /// </summary>
     public static IReadOnlyList<DossierRaccourci> RaccourciTelechargements()
     {
@@ -98,6 +106,7 @@ public partial class SourcePickerView : UserControl
         {
             Title = "Où commencer la recherche des photos ?",
         };
+        DossiersFavoris.Epingler(dialog);
 
         if (dialog.ShowDialog() != true) return;
 

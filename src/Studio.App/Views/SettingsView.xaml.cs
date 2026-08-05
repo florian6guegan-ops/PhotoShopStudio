@@ -45,9 +45,171 @@ public partial class SettingsView : UserControl
             MontrerLaMarque(App.Services.Marque);
             MontrerLeDetourage(App.Services.Detourage);
             MontrerLeWifi(App.Services.Wifi);
+            MontrerLesFavoris(App.Services.Favoris);
             MontrerLePoste(App.Services.Poste);
             MontrerLaVersion();
         };
+    }
+
+    // ===== Dossiers favoris =====
+
+    /// <summary>
+    /// Un favori tel que l'écran le manipule.
+    ///
+    /// <b>Le chemin peut rester vide</b>, et c'est le cas des trois par défaut : « Bureau »
+    /// et « Téléchargements » ne sont pas au même endroit d'un poste à l'autre, et les figer
+    /// dans le fichier de configuration ferait un réglage qui ne survit pas au premier
+    /// changement de session. On montre donc où le favori MÈNE plutôt que ce qu'il contient,
+    /// et « Parcourir » ne sert qu'à rattraper ce que Windows ne sait pas trouver seul.
+    /// </summary>
+    private sealed class LigneFavori : ObservableObject
+    {
+        private string _libelle = "";
+        private string _chemin = "";
+        private bool _actif = true;
+
+        public LigneFavori(DossierFavori favori)
+        {
+            _libelle = favori.Libelle;
+            _chemin = favori.Chemin;
+            _actif = favori.Actif;
+            Cle = favori.Cle;
+        }
+
+        /// <summary>Ce que Windows sait trouver seul ; vide pour un dossier désigné à la main.</summary>
+        public string Cle { get; }
+
+        public string Libelle
+        {
+            get => _libelle;
+            set => Set(ref _libelle, value);
+        }
+
+        public string Chemin
+        {
+            get => _chemin;
+            set { if (Set(ref _chemin, value)) Rafraichir(); }
+        }
+
+        public bool Actif
+        {
+            get => _actif;
+            set => Set(ref _actif, value);
+        }
+
+        public DossierFavori Vers() => new(Libelle.Trim(), Chemin.Trim(), Cle, Actif);
+
+        /// <summary>Où ce favori mène vraiment, ou pourquoi il ne mène nulle part.</summary>
+        public string Etat => DossiersUtilisateur.Resoudre(Vers()) is { } chemin
+            ? "→  " + chemin
+            : Cle.Length > 0
+                ? "introuvable sur ce poste — cliquez sur « Parcourir » pour le désigner"
+                : "dossier introuvable";
+
+        public Brush EtatCouleur => DossiersUtilisateur.Resoudre(Vers()) is not null
+            ? (Brush)Application.Current.Resources["MutedBrush"]
+            : (Brush)Application.Current.Resources["DangerBrush"];
+
+        public void Rafraichir()
+        {
+            OnPropertyChanged(nameof(Etat));
+            OnPropertyChanged(nameof(EtatCouleur));
+        }
+    }
+
+    private readonly List<LigneFavori> _favoris = [];
+
+    private void MontrerLesFavoris(FavorisSettings reglage)
+    {
+        _favoris.Clear();
+        foreach (var favori in reglage.Effectifs) _favoris.Add(new LigneFavori(favori));
+        ReafficherLesFavoris();
+    }
+
+    private void ReafficherLesFavoris()
+    {
+        foreach (var ligne in _favoris) ligne.Rafraichir();
+
+        // la liste n'est pas observable : on la repose pour que les ajouts et les retraits
+        // se voient
+        FavorisList.ItemsSource = null;
+        FavorisList.ItemsSource = _favoris;
+    }
+
+    /// <summary>
+    /// Enregistre les favoris tels qu'ils sont à l'écran.
+    ///
+    /// À chaque frappe, comme le reste de cet écran : un bouton « enregistrer » de plus
+    /// serait un bouton de plus à oublier, et la liste est courte.
+    /// </summary>
+    private void EnregistrerLesFavoris()
+    {
+        App.Services.SaveFavoris(new FavorisSettings
+        {
+            Dossiers = _favoris.Where(f => f.Libelle.Trim().Length > 0).Select(f => f.Vers()).ToList(),
+        });
+    }
+
+    private void OnFavoriChange(object sender, RoutedEventArgs e)
+    {
+        // pendant la construction du gabarit, les contrôles lèvent leur événement avant que
+        // la liste ne soit à nous
+        if (!IsLoaded) return;
+
+        foreach (var ligne in _favoris) ligne.Rafraichir();
+        EnregistrerLesFavoris();
+    }
+
+    private void OnFavoriParcourir(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not LigneFavori ligne) return;
+
+        var boite = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = $"Quel dossier pour « {ligne.Libelle} » ?",
+            InitialDirectory = DossiersUtilisateur.Resoudre(ligne.Vers()) ?? "",
+        };
+        DossiersFavoris.Epingler(boite);
+
+        if (boite.ShowDialog() != true) return;
+
+        ligne.Chemin = boite.FolderName;
+        EnregistrerLesFavoris();
+        ReafficherLesFavoris();
+    }
+
+    private void OnFavoriRetirer(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not LigneFavori ligne) return;
+
+        _favoris.Remove(ligne);
+        EnregistrerLesFavoris();
+        ReafficherLesFavoris();
+    }
+
+    private void OnFavoriAjouter(object sender, RoutedEventArgs e)
+    {
+        var boite = new Microsoft.Win32.OpenFolderDialog { Title = "Quel dossier épingler ?" };
+        DossiersFavoris.Epingler(boite);
+
+        if (boite.ShowDialog() != true) return;
+
+        // le nom du dossier fait un libellé tout trouvé ; il se réécrit sur place
+        var nom = Path.GetFileName(boite.FolderName.TrimEnd('\\', '/'));
+        _favoris.Add(new LigneFavori(
+            new DossierFavori(nom.Length > 0 ? nom : boite.FolderName, boite.FolderName)));
+
+        EnregistrerLesFavoris();
+        ReafficherLesFavoris();
+    }
+
+    private void OnFavorisParDefaut(object sender, RoutedEventArgs e)
+    {
+        _favoris.Clear();
+        foreach (var favori in FavorisSettings.ParDefaut()) _favoris.Add(new LigneFavori(favori));
+
+        EnregistrerLesFavoris();
+        ReafficherLesFavoris();
     }
 
     /// <summary>Une file Windows telle que l'écran des paramètres la présente.</summary>
@@ -147,6 +309,7 @@ public partial class SettingsView : UserControl
                 ? depart
                 : Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
         };
+        DossiersFavoris.Epingler(boite);
 
         if (boite.ShowDialog() != true) return;
 
@@ -383,6 +546,7 @@ public partial class SettingsView : UserControl
             Filter = "Archive ZIP|*.zip",
             Title = "Où enregistrer le rapport ?",
         };
+        DossiersFavoris.Epingler(boite);
 
         if (boite.ShowDialog() != true) return;
 
@@ -716,6 +880,7 @@ public partial class SettingsView : UserControl
             Filter = "Images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|Tous les fichiers|*.*",
             CheckFileExists = true,
         };
+        DossiersFavoris.Epingler(boite);
 
         if (boite.ShowDialog() != true) return;
 

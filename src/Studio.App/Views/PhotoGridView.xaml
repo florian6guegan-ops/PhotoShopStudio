@@ -9,32 +9,32 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Titre centré et barre d'outils, comme l'écran « Sélectionnez les photos »
-             de DiLand : les opérateurs cherchent « tout » et « aucun » à cet endroit. -->
-        <StackPanel Grid.Row="0">
-            <TextBlock Text="Sélectionnez les photos" FontSize="40"
-                       Foreground="{StaticResource TitleBrush}"
-                       HorizontalAlignment="Center" Margin="0,0,0,10"/>
+        <!-- Barre d'outils seule, sur UNE ligne : les opérateurs cherchent « tout » et
+             « aucun » à cet endroit, comme chez DiLand.
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
-                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
-                        FontSize="16" Margin="6,0" Click="OnSmaller"
-                        ToolTip="Vignettes plus petites">réduire</Button>
-                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
-                        FontSize="16" Margin="6,0" Click="OnBigger"
-                        ToolTip="Vignettes plus grandes">agrandir</Button>
-                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
-                        FontSize="16" Margin="6,0" Click="OnSelectAll"
-                        ToolTip="Tout choisir (Ctrl+A)">tout</Button>
-                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
-                        FontSize="16" Margin="6,0" Click="OnSelectNone"
-                        ToolTip="Ne rien choisir">aucun</Button>
-                <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44" Padding="18,0"
-                        FontSize="16" Margin="6,0" Click="OnSort"
-                        ToolTip="Trier par nom ou par date">trier</Button>
-                <TextBlock x:Name="CountText" Style="{StaticResource Hint}" FontSize="17"
-                           VerticalAlignment="Center" Margin="24,0,0,0"/>
-            </StackPanel>
+             <b>Le titre a disparu, et c'est voulu.</b> « Sélectionnez les photos » en 40 px
+             redisait ce que l'en-tête de la fenêtre affiche déjà juste au-dessus
+             (« 10x15 — choisir les photos ») : soixante-dix pixels de hauteur pour une
+             redite, pris sur la seule chose que cet écran doit montrer — les photos. -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center"
+                    Margin="0,0,0,8">
+            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                    FontSize="15" Margin="4,0" Click="OnSmaller"
+                    ToolTip="Vignettes plus petites — plus de photos à l'écran">réduire</Button>
+            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                    FontSize="15" Margin="4,0" Click="OnBigger"
+                    ToolTip="Vignettes plus grandes">agrandir</Button>
+            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                    FontSize="15" Margin="4,0" Click="OnSelectAll"
+                    ToolTip="Tout choisir (Ctrl+A)">tout</Button>
+            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                    FontSize="15" Margin="4,0" Click="OnSelectNone"
+                    ToolTip="Ne rien choisir">aucun</Button>
+            <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="38" Padding="16,0"
+                    FontSize="15" Margin="4,0" Click="OnSort"
+                    ToolTip="Trier par nom ou par date">trier</Button>
+            <TextBlock x:Name="CountText" Style="{StaticResource Hint}" FontSize="16"
+                       VerticalAlignment="Center" Margin="20,0,0,0"/>
         </StackPanel>
 
         <Grid Grid.Row="1">
@@ -148,8 +148,15 @@
         <!-- Barre d'action.
              Grille et non DockPanel : dans un DockPanel le groupe de gauche se sert en
              premier, et « Imprimer » finissait hors écran sur une fenêtre étroite. C'est
-             ce défaut qui empêchait de conclure une commande le 01/08/2026. -->
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+             ce défaut qui empêchait de conclure une commande le 01/08/2026.
+
+             <b>Tout y est plus compact qu'avant.</b> Ces réglages tenaient sur TROIS lignes
+             de 52 px, et la barre entière mangeait trois cents pixels — plus que la planche
+             elle-même, qui n'en gardait qu'une rangée et demie. Rien n'a été retiré : les
+             hauteurs et les corps de texte ont été ramenés à ce qu'un écran de comptoir
+             demande, et l'ensemble tient maintenant sur deux lignes. -->
+        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12"
+                Padding="12,10" Margin="0,10,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -158,9 +165,9 @@
 
                 <WrapPanel Grid.Column="0" VerticalAlignment="Center">
                     <TextBlock x:Name="ProductLabelText" Text="Produit :" Style="{StaticResource Hint}"
-                               VerticalAlignment="Center" Margin="0,0,8,6"/>
-                    <ComboBox x:Name="ProductCombo" MinWidth="280" FontSize="20" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,8,6"
+                               FontSize="15" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                    <ComboBox x:Name="ProductCombo" MinWidth="230" FontSize="15" Padding="8,5"
+                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,8,4"
                               SelectionChanged="OnDefaultProductChanged"/>
                     <!-- Changer la liste ne touche PLUS aux photos déjà cochées : une
                          commande de borne arrive avec un format par photo — 10x15 pour
@@ -168,78 +175,83 @@
                          liste les ramenait toutes au même. Le report est donc un geste
                          explicite, et il se voit. -->
                     <Button x:Name="AppliquerProduitButton" Style="{StaticResource FlatButton}"
-                            MinHeight="52" Padding="16,0" FontSize="16" Margin="0,0,20,6"
+                            MinHeight="40" Padding="12,0" FontSize="14" Margin="0,0,16,4"
                             Click="OnAppliquerLeProduit" IsEnabled="False"
                             ToolTip="Donne ce format à toutes les photos cochées. Sans ce bouton, elles gardent le leur.">
-                        Appliquer aux photos cochées
+                        Appliquer aux cochées
                     </Button>
                     <!-- Format personnalisé : la taille remplace le choix de produit, le
                          papier n'étant décidé qu'à la validation, d'après la quantité. -->
-                    <TextBlock x:Name="TaillePersoText" FontSize="20" FontWeight="SemiBold"
+                    <TextBlock x:Name="TaillePersoText" FontSize="16" FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}" Visibility="Collapsed"
-                               VerticalAlignment="Center" Margin="0,0,20,6"/>
+                               VerticalAlignment="Center" Margin="0,0,16,4"/>
                     <TextBlock Text="Quantité :" Style="{StaticResource Hint}"
-                               VerticalAlignment="Center" Margin="0,0,8,6"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
-                            FontSize="24" Click="OnQuantityMinus" Margin="0,0,0,6">−</Button>
+                               FontSize="15" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="40" MinHeight="40" Padding="0"
+                            FontSize="20" Click="OnQuantityMinus" Margin="0,0,0,4">−</Button>
                     <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}"
-                               MinWidth="44" Margin="0,0,0,6"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="52" MinHeight="52" Padding="0"
-                            FontSize="24" Click="OnQuantityPlus" Margin="0,0,20,6">+</Button>
+                               FontSize="19" MinWidth="38" Margin="0,0,0,4"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="40" MinHeight="40" Padding="0"
+                            FontSize="20" Click="OnQuantityPlus" Margin="0,0,16,4">+</Button>
                     <!-- SUR QUELLE MACHINE ça va sortir, en toutes lettres et en couleur.
                          Le catalogue porte deux produits nommés « 10x15 » — l'un au
                          minilab, l'autre à la DS620 — et rien ici ne disait lequel était
                          choisi : la commande 04-024 du 04/08/2026 est partie sur la
                          mauvaise machine, onze tirages, sans que personne ne puisse s'en
                          apercevoir avant le papier. -->
-                    <Border x:Name="SortieBadge" CornerRadius="8" Padding="12,6" Margin="0,0,20,6"
+                    <Border x:Name="SortieBadge" CornerRadius="6" Padding="9,4" Margin="0,0,16,4"
                             VerticalAlignment="Center" Background="{StaticResource AccentDarkBrush}">
-                        <TextBlock x:Name="SortieText" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock x:Name="SortieText" FontSize="13" FontWeight="SemiBold"
                                    Foreground="White"/>
                     </Border>
 
                     <!-- Le choix de machine ne vaut QUE pour le minilab : sur un produit
                          DNP, la liste ne commandait rien et laissait croire le contraire. -->
                     <TextBlock x:Name="MachineLabel" Text="Minilab :" Style="{StaticResource Hint}"
-                               VerticalAlignment="Center" Margin="0,0,8,6"/>
-                    <ComboBox x:Name="MachineCombo" MinWidth="260" FontSize="15" Padding="10,8"
-                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,0,6"
+                               FontSize="15" VerticalAlignment="Center" Margin="0,0,6,4"/>
+                    <ComboBox x:Name="MachineCombo" MinWidth="210" FontSize="14" Padding="8,5"
+                              DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,0,4"
                               ToolTip="Machine du minilab et papier qui y est chargé. « Automatique » envoie sur celle dont le rouleau porte le format."
                               SelectionChanged="OnMachineChanged"/>
                 </WrapPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
-                            VerticalAlignment="Center" Margin="16,0,0,0">
-                    <Button x:Name="IndexButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="20,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
+                            VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Button x:Name="IndexButton" Style="{StaticResource FlatButton}" MinHeight="44"
+                            MinWidth="0" Padding="14,0" FontSize="15" Margin="0,0,8,0" IsEnabled="False"
                             ToolTip="Une planche avec les vignettes NUMÉROTÉES — de la sélection ou de tout le dossier, au choix. Le client coche, on tire ensuite."
                             Click="OnIndexSheet">Planche index</Button>
-                    <Button x:Name="ModifyButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="26,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
+                    <Button x:Name="ModifyButton" Style="{StaticResource FlatButton}" MinHeight="44"
+                            MinWidth="0" Padding="18,0" FontSize="15" Margin="0,0,8,0" IsEnabled="False"
                             ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"
                             Click="OnModify">Modifier</Button>
                     <!-- Envoyer plutôt que tirer : le client repart avec un lien. Toujours
                          actif, parce qu'il sert aussi à envoyer le DOSSIER ENTIER, sans
                          qu'aucune photo ait à être cochée. -->
-                    <Button x:Name="DropboxButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="20,0" FontSize="18" Margin="0,0,12,0"
+                    <Button x:Name="DropboxButton" Style="{StaticResource FlatButton}" MinHeight="44"
+                            MinWidth="0" Padding="14,0" FontSize="15" Margin="0,0,8,0"
                             ToolTip="Envoyer les photos au client par Dropbox : la sélection ou le dossier entier, au choix. Il reçoit un lien de téléchargement, sans avoir de compte à créer."
                             Click="OnDropbox">☁  Envoyer au client</Button>
                     <!-- Le geste du comptoir : un client s'absente, un autre attend. La
                          commande part sur l'accueil, sous « En attente ». -->
-                    <Button x:Name="AttenteButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="20,0" FontSize="18" Margin="0,0,20,0"
+                    <Button x:Name="AttenteButton" Style="{StaticResource FlatButton}" MinHeight="44"
+                            MinWidth="0" Padding="14,0" FontSize="15" Margin="0,0,8,0"
                             ToolTip="Mettre cette commande de côté pour servir quelqu'un d'autre. Elle vous attend sur l'accueil et se rouvre telle que vous la laissez."
-                            Click="OnMettreEnAttente">⏸  Mettre en attente</Button>
+                            Click="OnMettreEnAttente">⏸  En attente</Button>
                     <!-- Prévenir le client SANS avoir à y penser plus tard : l'adresse se
                          prend maintenant, pendant qu'il est là, et le message part tout
                          seul quand la machine a fini de sortir la commande. -->
-                    <Button x:Name="PrevenirButton" Style="{StaticResource FlatButton}" MinHeight="56"
-                            Padding="20,0" FontSize="18" Margin="0,0,20,0"
+                    <Button x:Name="PrevenirButton" Style="{StaticResource FlatButton}" MinHeight="44"
+                            MinWidth="0" Padding="14,0" FontSize="15" Margin="0,0,14,0"
                             ToolTip="Saisir l'adresse du client : dès que la commande sera sortie, un courriel lui dira qu'elle l'attend en magasin."
                             Click="OnPrevenirALaFin">🔔  Prévenir à la fin</Button>
-                    <TextBlock x:Name="TotalText" Style="{StaticResource Valeur}" Margin="0,0,16,0"/>
+                    <TextBlock x:Name="TotalText" Style="{StaticResource Valeur}" FontSize="20"
+                               Margin="0,0,12,0"/>
+                    <!-- « Imprimer » reste le plus gros bouton de l'écran — c'est le geste
+                         qui engage du papier — mais 76 px de haut imposaient leur hauteur à
+                         toute la barre. -->
                     <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
+                            MinHeight="52" MinWidth="170" FontSize="20" Padding="18,8"
                             Click="OnPrint" IsEnabled="False">
                         🖨  Imprimer
                     </Button>
