@@ -53,8 +53,18 @@ Write-Host ""
 # ---------------------------------------------------------------------------
 
 if (-not $Essai) {
-    $existante = & gh release view $etiquette --json tagName 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    # gh ecrit « release not found » sur sa sortie d'erreur quand la version n'existe pas
+    # — c'est le cas NORMAL, et c'est justement celui qu'on cherche. Sous
+    # $ErrorActionPreference = 'Stop', PowerShell transforme cette ligne en erreur
+    # terminante et le script s'arretait avant meme de compiler. On desarme donc le temps
+    # de l'appel, et l'on ne juge que sur le code de sortie.
+    $avant = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & gh release view $etiquette --json tagName *> $null
+    $dejaPubliee = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $avant
+
+    if ($dejaPubliee) {
         throw "La version $version est deja publiee. Montez <Version> dans Directory.Build.props avant de publier."
     }
 }
