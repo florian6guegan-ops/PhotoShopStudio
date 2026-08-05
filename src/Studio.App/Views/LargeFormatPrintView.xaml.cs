@@ -259,7 +259,15 @@ public partial class LargeFormatPrintView : UserControl
 
         _settings.Units = SelectedUnits;
         _settings.Center = CenterCheck.IsChecked == true;
-        _settings.FitToMedia = FitCheck.IsChecked == true;
+
+        // les deux cases s'excluent : elles répondent à l'opposé à la même question, et
+        // OnFitChanged/OnFillChanged décochent déjà l'autre. La lecture le refait pour que
+        // l'état des réglages ne dépende pas de l'ordre des événements.
+        _settings.Scaling =
+            FillCheck.IsChecked == true ? MediaScaling.FillMedia
+            : FitCheck.IsChecked == true ? MediaScaling.FitToMedia
+            : MediaScaling.Manual;
+
         _settings.ScalePercent = Math.Max(0.01, ParseDouble(ScaleBox.Text, 100));
         _settings.TopMm = PrintLayout.ToMm(ParseDouble(TopBox.Text, 0), _settings.Units);
         _settings.LeftMm = PrintLayout.ToMm(ParseDouble(LeftBox.Text, 0), _settings.Units);
@@ -317,8 +325,21 @@ public partial class LargeFormatPrintView : UserControl
         ResolutionText.Text = $"Résolution d'impr. : {placement.EffectiveDpi:0} PPP";
 
         var problems = _settings.Validate().ToList();
+
+        // En remplissage, déborder est le but : ce qui dépasse est coupé net au bord du
+        // papier, et l'aperçu le montre ainsi. On annonce donc ce qui sera perdu — un
+        // chiffre sur lequel l'opérateur peut décider — au lieu d'un avertissement qui
+        // demanderait de corriger ce qu'il vient de choisir.
         if (placement.OverflowsPaper(_pageWidthMm, _pageHeightMm))
-            problems.Add("Le tirage déborde de la feuille : réduisez l'échelle ou cochez « Ajuster au support ».");
+        {
+            var coupe = placement.CroppedShare(_pageWidthMm, _pageHeightMm);
+            problems.Add(_settings.Scaling == MediaScaling.FillMedia
+                ? $"Remplissage : {coupe:P0} de la photo sort de la feuille et sera coupé aux bords."
+                : $"Le tirage déborde de la feuille et sera coupé ({coupe:P0} perdu) : réduisez " +
+                  "l'échelle, ou cochez « Ajuster au support » pour tout garder, ou « Remplir " +
+                  "le support » pour un plein papier cadré.");
+        }
+
         if (placement.EffectiveDpi < 150)
             problems.Add($"Résolution faible ({placement.EffectiveDpi:0} PPP) : le tirage risque d'être flou.");
 
@@ -332,7 +353,7 @@ public partial class LargeFormatPrintView : UserControl
         _syncing = true;
         WidthBox.Text = PrintLayout.FromMm(placement.WidthMm, _settings.Units).ToString("0.##", CultureInfo.CurrentCulture);
         HeightBox.Text = PrintLayout.FromMm(placement.HeightMm, _settings.Units).ToString("0.##", CultureInfo.CurrentCulture);
-        if (_settings.FitToMedia)
+        if (_settings.Scaling != MediaScaling.Manual)
             ScaleBox.Text = placement.ScalePercent.ToString("0.##", CultureInfo.CurrentCulture);
         _syncing = false;
     }
@@ -363,6 +384,24 @@ public partial class LargeFormatPrintView : UserControl
         Canvas.SetTop(sheet, originY);
         PreviewCanvas.Children.Add(sheet);
 
+        // Le tirage est dessiné DANS la feuille, et rogné par elle.
+        //
+        // Il était posé sur le canevas, qui est plus grand : une photo trop grande pour le
+        // papier s'affichait donc à cheval, débordant sur le fond de l'écran — l'inverse de
+        // ce qui sort de l'imprimante, qui ne peut rien poser hors du papier. On voyait
+        // « la feuille dans la photo » là où le tirage montre « la photo dans la feuille »
+        // (signalé le 04/08/2026). Le pilote reçoit le même rognage, voir
+        // <c>LargeFormatPrinter.Imprimer</c>.
+        var feuille = new Canvas
+        {
+            Width = pageW,
+            Height = pageH,
+            Clip = new System.Windows.Media.RectangleGeometry(new Rect(0, 0, pageW, pageH)),
+        };
+        Canvas.SetLeft(feuille, originX);
+        Canvas.SetTop(feuille, originY);
+        PreviewCanvas.Children.Add(feuille);
+
         var photo = new System.Windows.Shapes.Rectangle
         {
             Width = Math.Max(1, placement.WidthMm * scale),
@@ -380,9 +419,29 @@ public partial class LargeFormatPrintView : UserControl
                     System.Windows.Media.Color.FromRgb(0x33, 0x33, 0x33)),
             StrokeThickness = _settings.CutBorder ? 2 : 1,
         };
-        Canvas.SetLeft(photo, originX + placement.LeftMm * scale);
-        Canvas.SetTop(photo, originY + placement.TopMm * scale);
-        PreviewCanvas.Children.Add(photo);
+        // coordonnées RELATIVES à la feuille, qui porte désormais le rognage
+        Canvas.SetLeft(photo, placement.LeftMm * scale);
+        Canvas.SetTop(photo, placement.TopMm * scale);
+        feuille.Children.Add(photo);
+
+        // Ce qui est coupé se voit quand même : un liseré tireté dessine le tirage ENTIER,
+        // par-dessus le canevas et non dans la feuille. Sans lui, un débordement subi ne se
+        // lirait plus que dans le texte d'avertissement, et l'opérateur ne saurait pas de
+        // quel côté ça sort.
+        if (!placement.OverflowsPaper(_pageWidthMm, _pageHeightMm)) return;
+
+        var entier = new System.Windows.Shapes.Rectangle
+        {
+            Width = Math.Max(1, placement.WidthMm * scale),
+            Height = Math.Max(1, placement.HeightMm * scale),
+            Stroke = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(0xE0, 0x8A, 0x2E)),
+            StrokeThickness = 1,
+            StrokeDashArray = [4, 3],
+        };
+        Canvas.SetLeft(entier, originX + placement.LeftMm * scale);
+        Canvas.SetTop(entier, originY + placement.TopMm * scale);
+        PreviewCanvas.Children.Add(entier);
     }
 
     // — événements —
@@ -438,12 +497,36 @@ public partial class LargeFormatPrintView : UserControl
     /// <summary>« Ajuster au support » : une vraie bascule, aller ET retour.</summary>
     private void OnFitChanged(object sender, RoutedEventArgs e)
     {
-        var ajuste = FitCheck.IsChecked == true;
+        // les deux cases s'excluent : ajuster laisse du blanc, remplir coupe les bords, et
+        // les cocher ensemble ne veut rien dire
+        if (FitCheck.IsChecked == true) FillCheck.IsChecked = false;
+        CalageChange();
+    }
 
-        if (ajuste)
+    /// <summary>« Remplir le support » : la bascule opposée. Voir <see cref="OnFitChanged"/>.</summary>
+    private void OnFillChanged(object sender, RoutedEventArgs e)
+    {
+        if (FillCheck.IsChecked == true) FitCheck.IsChecked = false;
+        CalageChange();
+    }
+
+    /// <summary>Vrai quand l'échelle est CALCULÉE — ajustement ou remplissage — et non saisie.</summary>
+    private bool CalageAutomatique => FitCheck.IsChecked == true || FillCheck.IsChecked == true;
+
+    /// <summary>
+    /// Suites communes aux deux bascules : l'échelle de l'opérateur est mise de côté tant
+    /// que la feuille la commande, et lui revient dès qu'il reprend la main.
+    /// </summary>
+    private void CalageChange()
+    {
+        var automatique = CalageAutomatique;
+
+        if (automatique)
         {
-            // on met de côté l'échelle de l'opérateur AVANT que l'ajustement n'écrive la sienne
-            _echelleAvantAjustement = ScaleBox.Text;
+            // on met de côté l'échelle de l'opérateur AVANT que le calage n'écrive la sienne.
+            // Rien à sauvegarder si l'on passe d'une bascule à l'autre : ce qui est dans la
+            // case est alors l'échelle CALCULÉE, et l'écraser perdrait la sienne pour de bon.
+            if (!_calageAutomatiqueActif) _echelleAvantAjustement = ScaleBox.Text;
         }
         else
         {
@@ -452,11 +535,16 @@ public partial class LargeFormatPrintView : UserControl
             _syncing = false;
         }
 
-        ScaleBox.IsEnabled = !ajuste;
-        WidthBox.IsEnabled = !ajuste;
-        HeightBox.IsEnabled = !ajuste;
+        _calageAutomatiqueActif = automatique;
+
+        ScaleBox.IsEnabled = !automatique;
+        WidthBox.IsEnabled = !automatique;
+        HeightBox.IsEnabled = !automatique;
         UpdateAll();
     }
+
+    /// <summary>L'état du calage au dernier passage, pour ne sauvegarder l'échelle qu'une fois.</summary>
+    private bool _calageAutomatiqueActif;
 
     private void OnUnitsChanged(object sender, RoutedEventArgs e) => UpdateAll();
 
@@ -468,7 +556,7 @@ public partial class LargeFormatPrintView : UserControl
 
     private void OnWidthTyped(object sender, RoutedEventArgs e)
     {
-        if (_syncing || _loading || FitCheck.IsChecked == true) return;
+        if (_syncing || _loading || CalageAutomatique) return;
         var voulueMm = PrintLayout.ToMm(ParseDouble(WidthBox.Text, 0), SelectedUnits);
         if (voulueMm <= 0) return;
 
@@ -481,7 +569,7 @@ public partial class LargeFormatPrintView : UserControl
 
     private void OnHeightTyped(object sender, RoutedEventArgs e)
     {
-        if (_syncing || _loading || FitCheck.IsChecked == true) return;
+        if (_syncing || _loading || CalageAutomatique) return;
         var voulueMm = PrintLayout.ToMm(ParseDouble(HeightBox.Text, 0), SelectedUnits);
         if (voulueMm <= 0) return;
 

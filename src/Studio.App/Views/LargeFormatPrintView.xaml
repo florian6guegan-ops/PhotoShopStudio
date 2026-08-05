@@ -191,7 +191,13 @@
 
                             <CheckBox x:Name="FitCheck" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                                       Style="{StaticResource Chk}" Content="Ajuster au support"
+                                      ToolTip="La photo entière tient dans la feuille : rien n'est coupé, du blanc comble le grand côté."
                                       Click="OnFitChanged"/>
+                            <CheckBox x:Name="FillCheck" Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2"
+                                      Style="{StaticResource Chk}" Margin="12,0,0,8"
+                                      Content="Remplir le support"
+                                      ToolTip="La photo couvre toute la feuille : pas de blanc, mais les bords du petit côté sont coupés."
+                                      Click="OnFillChanged"/>
 
                             <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource Lbl}" Text="Échelle"/>
                             <TextBox x:Name="ScaleBox" Grid.Row="3" Grid.Column="1" Style="{StaticResource Fld}"

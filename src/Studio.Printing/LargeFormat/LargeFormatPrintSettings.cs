@@ -54,8 +54,27 @@ public sealed class LargeFormatPrintSettings
 
     public double ScalePercent { get; set; } = 100;
 
-    /// <summary>« Ajuster au support » : l'échelle est alors calculée, pas saisie.</summary>
-    public bool FitToMedia { get; set; }
+    /// <summary>
+    /// Calage sur la feuille. Hors de <see cref="MediaScaling.Manual"/>, l'échelle est
+    /// calculée et non saisie.
+    /// </summary>
+    public MediaScaling Scaling { get; set; } = MediaScaling.Manual;
+
+    /// <summary>« Ajuster au support » : la photo entière tient dans la feuille.</summary>
+    public bool FitToMedia
+    {
+        get => Scaling == MediaScaling.FitToMedia;
+        set => Scaling = value ? MediaScaling.FitToMedia
+            : Scaling == MediaScaling.FitToMedia ? MediaScaling.Manual : Scaling;
+    }
+
+    /// <summary>« Remplir le support » : la photo couvre la feuille, les bords sont coupés.</summary>
+    public bool FillMedia
+    {
+        get => Scaling == MediaScaling.FillMedia;
+        set => Scaling = value ? MediaScaling.FillMedia
+            : Scaling == MediaScaling.FillMedia ? MediaScaling.Manual : Scaling;
+    }
 
     public bool Center { get; set; } = true;
 
@@ -88,7 +107,7 @@ public sealed class LargeFormatPrintSettings
         if (Copies < 1)
             problems.Add("Le nombre de copies doit être d'au moins 1.");
 
-        if (!FitToMedia && ScalePercent <= 0)
+        if (Scaling == MediaScaling.Manual && ScalePercent <= 0)
             problems.Add("L'échelle doit être supérieure à 0 %.");
 
         // le piège classique : l'imprimante convertit ET l'application convertit,
@@ -105,7 +124,7 @@ public sealed class LargeFormatPrintSettings
     public PrintPlacement ComputePlacement(int widthPx, int heightPx, double sourceDpi,
         double paperWidthMm, double paperHeightMm) =>
         PrintLayout.Compute(widthPx, heightPx, sourceDpi, paperWidthMm, paperHeightMm,
-            ScalePercent, FitToMedia, Center, TopMm, LeftMm);
+            ScalePercent, Scaling, Center, TopMm, LeftMm);
 
     /// <summary>Copie indépendante, pour pouvoir annuler les modifications de la boîte de dialogue.</summary>
     public LargeFormatPrintSettings Clone() => new()
@@ -122,7 +141,7 @@ public sealed class LargeFormatPrintSettings
         BlackPointCompensation = BlackPointCompensation,
         Units = Units,
         ScalePercent = ScalePercent,
-        FitToMedia = FitToMedia,
+        Scaling = Scaling,
         Center = Center,
         TopMm = TopMm,
         LeftMm = LeftMm,

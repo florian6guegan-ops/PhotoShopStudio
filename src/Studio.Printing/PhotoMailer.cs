@@ -233,6 +233,131 @@ public static class PhotoMailer
     }
 
     /// <summary>
+    /// Envoie au client le lien de téléchargement de ses photos (voir <c>DropboxTransfer</c>).
+    ///
+    /// Sans pièce jointe, et c'est tout l'intérêt : un dossier de séance pèse des centaines
+    /// de mégaoctets, qu'aucun serveur de courriel n'accepte. Le client reçoit une adresse,
+    /// télécharge ce qu'il veut, et n'a pas de compte à créer.
+    ///
+    /// <b>Le mot de passe du lien n'est PAS dans le message</b>, et ce n'est pas un oubli :
+    /// mettre la serrure et la clé dans la même enveloppe ne protège de rien. Il se donne
+    /// de vive voix au comptoir, ou par un autre canal.
+    /// </summary>
+    /// <param name="destinataires">Adresses du client. Aucun ne voit celles des autres.</param>
+    /// <param name="lien">L'adresse de téléchargement.</param>
+    /// <param name="photos">Nombre de photos déposées, pour que le client sache quoi attendre.</param>
+    /// <param name="joursDeValidite">
+    /// Jours pendant lesquels le client pourra réellement télécharger. Null = on ne promet
+    /// rien. Voir <see cref="CorpsDuLien"/> : ce n'est pas la seule expiration du lien, mais
+    /// la première des deux échéances qui le rendra inutilisable.
+    /// </param>
+    /// <param name="protege">Vrai si le lien demande un mot de passe.</param>
+    public static void EnvoyerLeLien(
+        MailSettings reglages,
+        IReadOnlyList<string> destinataires,
+        string lien,
+        int photos,
+        string? nomClient = null,
+        string? mot = null,
+        int? joursDeValidite = null,
+        bool protege = false)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+        ArgumentNullException.ThrowIfNull(destinataires);
+        ArgumentException.ThrowIfNullOrWhiteSpace(lien);
+
+        if (destinataires.Count == 0)
+            throw new InvalidOperationException("Aucune adresse de destinataire.");
+
+        if (!reglages.EstUtilisable)
+            throw new InvalidOperationException(
+                "L'envoi par courriel n'est pas configuré : " + reglages.CeQuiManque() +
+                ".\n\nOuvrez Paramètres → Envoi par courriel pour le renseigner.");
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(reglages.Expediteur, reglages.NomExpediteur),
+            Subject = "Vos photos sont prêtes à télécharger",
+            Body = CorpsDuLien(lien, photos, nomClient, mot, joursDeValidite, protege,
+                reglages.NomExpediteur),
+            IsBodyHtml = false,
+        };
+
+        // Le premier en destinataire, les autres en copie CACHÉE : deux clients d'une même
+        // séance n'ont pas à voir l'adresse l'un de l'autre. Même règle que l'envoi des
+        // photos elles-mêmes.
+        message.To.Add(destinataires[0].Trim());
+        foreach (var autre in destinataires.Skip(1))
+            message.Bcc.Add(autre.Trim());
+
+        Expedier(reglages, message, string.Join(", ", destinataires), fichiers: 0);
+    }
+
+    /// <summary>
+    /// Le message tel que le client le lira, pour le montrer AVANT de l'envoyer.
+    /// Voir <see cref="ApercuCommandePrete"/> pour la raison.
+    /// </summary>
+    public static string ApercuDuLien(
+        string lien, int photos, string? nomClient, string? mot,
+        int? joursDeValidite, bool protege, string magasin) =>
+        CorpsDuLien(lien, photos, nomClient, mot, joursDeValidite, protege, magasin);
+
+    /// <summary>
+    /// Le message qui porte le lien.
+    ///
+    /// Il dit les trois choses qu'on cherche dans ce genre de courriel : où télécharger,
+    /// combien de photos, et jusqu'à quand. Le reste ferait du remplissage.
+    ///
+    /// <b>La date limite est celle qui arrive EN PREMIER</b>, et c'est tout l'enjeu : deux
+    /// échéances courent en parallèle, l'expiration du lien Dropbox — qui demande un compte
+    /// payant — et le ménage automatique, qui supprime le dossier au bout de quelques jours
+    /// sur toutes les offres. Annoncer la première en oubliant la seconde ferait perdre
+    /// leurs photos aux clients qui attendent, et c'est le magasin qu'ils rappelleraient.
+    /// Le calcul est fait par l'appelant, qui seul connaît les deux réglages.
+    /// </summary>
+    private static string CorpsDuLien(
+        string lien, int photos, string? nomClient, string? mot,
+        int? joursDeValidite, bool protege, string magasin)
+    {
+        var lignes = new List<string>
+        {
+            string.IsNullOrWhiteSpace(nomClient) ? "Bonjour," : $"Bonjour {nomClient.Trim()},",
+            "",
+            photos == 1
+                ? "Votre photo est prête à télécharger :"
+                : $"Vos {photos} photos sont prêtes à télécharger :",
+            "",
+            lien.Trim(),
+            "",
+        };
+
+        if (joursDeValidite is > 0)
+            lignes.Add(
+                (joursDeValidite == 1
+                    ? "Ce lien restera valable 1 jour"
+                    : $"Ce lien restera valable {joursDeValidite} jours") +
+                $" (jusqu'au {DateTime.Now.AddDays(joursDeValidite.Value):dd/MM/yyyy}). " +
+                "Pensez à enregistrer vos photos avant cette date.");
+        else
+            lignes.Add("Pensez à enregistrer vos photos sur votre ordinateur ou votre téléphone.");
+
+        if (protege)
+            lignes.Add("Le téléchargement demande le mot de passe qui vous a été communiqué.");
+
+        if (!string.IsNullOrWhiteSpace(mot))
+        {
+            lignes.Add("");
+            lignes.Add(mot.Trim());
+        }
+
+        lignes.Add("");
+        lignes.Add("À bientôt,");
+        lignes.Add(string.IsNullOrWhiteSpace(magasin) ? "Le magasin" : magasin);
+
+        return string.Join("\n", lignes);
+    }
+
+    /// <summary>
     /// Le message tel que le client le lira, pour le montrer AVANT de l'envoyer.
     ///
     /// La même méthode que l'envoi, et non une copie : deux textes entretenus séparément

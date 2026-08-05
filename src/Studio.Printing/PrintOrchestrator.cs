@@ -118,6 +118,17 @@ public sealed class PrintOrchestrator
     /// </summary>
     public Action<string>? Log { get; set; }
 
+    /// <summary>
+    /// La marque portée sur la bande basse des planches identité — mention, logo, code QR.
+    ///
+    /// Elle est posée par l'application au démarrage, et non lue ici : l'atelier
+    /// d'impression ne connaît pas le dossier de configuration, et une lecture de fichier
+    /// par planche coûterait un accès disque au milieu d'un rendu.
+    ///
+    /// Null = date seule dans la marge, la planche d'avant.
+    /// </summary>
+    public MarqueSettings? Marque { get; set; }
+
     /// <param name="catalogDir">Dossier catalog/ contenant les DEVMODE et profils ICC.</param>
     /// <param name="minilab">
     /// Accès au minilab Fuji. Null = les produits qui en dépendent seront refusés
@@ -1305,7 +1316,10 @@ public sealed class PrintOrchestrator
                                 sheet.CutBorder,
                                 // la date de la commande, pas l'heure du rendu : une planche
                                 // rejouée après un incident doit porter la même mention
-                                sheet.DateStamp ? order.CreatedAt.DateTime : null);
+                                sheet.DateStamp
+                                    ? SheetFooter.Pour(order.CreatedAt.DateTime, Marque)
+                                    : null,
+                                sheet.FullBleed);
                         }
                         else
                         {

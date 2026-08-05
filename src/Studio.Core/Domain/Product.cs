@@ -5,12 +5,42 @@ public sealed class SheetSpec
 {
     public const double DefaultGapMm = 2;
 
+    /// <summary>
+    /// Épaisseur du trait de découpe, en millimètres. C'est aussi l'écart entre deux cases
+    /// d'une planche à fond perdu : le trait y tient tout entier, sans mordre sur les photos.
+    /// Voir <c>ImagePipeline.DrawCutBorders</c>.
+    /// </summary>
+    public const double CutLineMm = 0.2;
+
     public int Copies { get; set; } = 6;
     public double CellWidthMm { get; set; } = 35;
     public double CellHeightMm { get; set; } = 45;
     /// <summary>Espace minimal entre cellules (les traits de coupe y sont dessinés).</summary>
     public double GapMm { get; set; } = DefaultGapMm;
     public bool CutMarks { get; set; } = true;
+
+    /// <summary>
+    /// Planche « à fond perdu » : photos JOINTIVES, séparées du seul trait de découpe, et
+    /// pas de repères dans les marges — la bande basse prend leur place.
+    ///
+    /// C'est la planche que la boutique sort depuis le 04/08/2026, sur le modèle des tirages
+    /// de borne. L'écart de 2 mm et les repères en marge dispersaient les photos au milieu
+    /// du blanc ; jointives, elles se coupent d'un trait de massicot d'un bord à l'autre.
+    ///
+    /// L'écart réellement appliqué est <see cref="LayoutGapMm"/> : <see cref="GapMm"/> ne
+    /// sert plus quand le fond perdu est actif.
+    /// </summary>
+    public bool FullBleed { get; set; } = true;
+
+    /// <summary>
+    /// L'écart réellement laissé entre deux cases, en millimètres.
+    ///
+    /// C'est LUI qu'il faut passer aux calculs de capacité, et pas <see cref="GapMm"/> :
+    /// compter les places avec un écart de 2 mm puis les poser avec un écart de 0,2 mm
+    /// annoncerait moins de photos que la planche n'en porte, et le client paierait un
+    /// papier à moitié vide.
+    /// </summary>
+    public double LayoutGapMm => FullBleed ? CutLineMm : GapMm;
 
     /// <summary>
     /// Contour noir tracé autour de chaque photo. C'est le repère sur lequel on coupe :

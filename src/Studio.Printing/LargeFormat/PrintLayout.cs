@@ -31,6 +31,34 @@ public enum RenderingIntent
 }
 
 /// <summary>
+/// Comment le tirage se cale sur la feuille.
+///
+/// Les deux modes automatiques répondent à la même question — « la photo n'est pas au
+/// format du papier » — et y répondent à l'opposé l'un de l'autre : l'un préserve la photo
+/// entière et laisse du blanc, l'autre remplit le papier et coupe ce qui dépasse. Un
+/// agrandissement mural se commande presque toujours en remplissage, et c'est ce qui
+/// manquait : la seule case disponible étant « Ajuster au support », l'opérateur qui
+/// voulait du plein papier montait l'échelle à la main et le tirage débordait.
+/// </summary>
+public enum MediaScaling
+{
+    /// <summary>L'échelle saisie s'applique telle quelle.</summary>
+    Manual,
+
+    /// <summary>
+    /// « Ajuster au support » : la photo ENTIÈRE tient dans la feuille, du blanc comble
+    /// le grand côté. Rien n'est perdu de l'image, le tirage n'est pas au format du papier.
+    /// </summary>
+    FitToMedia,
+
+    /// <summary>
+    /// « Remplir le support » : la photo COUVRE la feuille, et ce qui déborde est coupé au
+    /// bord du papier. Pas de blanc, mais on perd les bords du petit côté.
+    /// </summary>
+    FillMedia,
+}
+
+/// <summary>
 /// Emplacement calculé de l'image sur la feuille, en millimètres depuis le coin
 /// supérieur gauche de la zone imprimable.
 /// </summary>
@@ -54,6 +82,21 @@ public sealed record PrintPlacement(
         || TopMm < -toleranceMm
         || LeftMm + WidthMm > paperWidthMm + toleranceMm
         || TopMm + HeightMm > paperHeightMm + toleranceMm;
+
+    /// <summary>
+    /// Part de la SURFACE du tirage qui tombe hors de la feuille, de 0 à 1 — donc ce que les
+    /// bords perdent. Sert à l'annoncer avant d'engager le papier : « 25 % coupé » se décide,
+    /// « ça déborde » ne se décide pas.
+    /// </summary>
+    public double CroppedShare(double paperWidthMm, double paperHeightMm)
+    {
+        if (WidthMm <= 0 || HeightMm <= 0) return 0;
+
+        var visibleW = Math.Max(0, Math.Min(LeftMm + WidthMm, paperWidthMm) - Math.Max(LeftMm, 0));
+        var visibleH = Math.Max(0, Math.Min(TopMm + HeightMm, paperHeightMm) - Math.Max(TopMm, 0));
+
+        return 1 - visibleW * visibleH / (WidthMm * HeightMm);
+    }
 }
 
 /// <summary>
@@ -84,8 +127,8 @@ public static class PrintLayout
     /// <param name="sourceDpi">Résolution d'origine de l'image.</param>
     /// <param name="paperWidthMm">Largeur de la zone imprimable.</param>
     /// <param name="paperHeightMm">Hauteur de la zone imprimable.</param>
-    /// <param name="scalePercent">Échelle demandée ; ignorée si <paramref name="fitToMedia"/>.</param>
-    /// <param name="fitToMedia">« Ajuster au support » : agrandit ou réduit pour tenir dans la feuille.</param>
+    /// <param name="scalePercent">Échelle demandée ; ignorée hors de <see cref="MediaScaling.Manual"/>.</param>
+    /// <param name="scaling">Calage sur la feuille : échelle libre, ajustement ou remplissage.</param>
     /// <param name="center">« Centre » : ignore <paramref name="topMm"/> et <paramref name="leftMm"/>.</param>
     /// <param name="topMm">Décalage depuis le haut, si non centré.</param>
     /// <param name="leftMm">Décalage depuis la gauche, si non centré.</param>
@@ -96,21 +139,24 @@ public static class PrintLayout
         double paperWidthMm,
         double paperHeightMm,
         double scalePercent = 100,
-        bool fitToMedia = false,
+        MediaScaling scaling = MediaScaling.Manual,
         bool center = true,
         double topMm = 0,
         double leftMm = 0)
     {
         if (paperWidthMm <= 0 || paperHeightMm <= 0)
             throw new ArgumentOutOfRangeException(nameof(paperWidthMm), "Le format papier doit être positif.");
-        if (!fitToMedia && scalePercent <= 0)
+        if (scaling == MediaScaling.Manual && scalePercent <= 0)
             throw new ArgumentOutOfRangeException(nameof(scalePercent), "L'échelle doit être strictement positive.");
 
         var (naturalW, naturalH) = NaturalSizeMm(widthPx, heightPx, sourceDpi);
 
-        var appliedScale = fitToMedia
-            ? 100 * Math.Min(paperWidthMm / naturalW, paperHeightMm / naturalH)
-            : scalePercent;
+        var appliedScale = scaling switch
+        {
+            MediaScaling.FitToMedia => 100 * Math.Min(paperWidthMm / naturalW, paperHeightMm / naturalH),
+            MediaScaling.FillMedia => 100 * Math.Max(paperWidthMm / naturalW, paperHeightMm / naturalH),
+            _ => scalePercent,
+        };
 
         var printedW = naturalW * appliedScale / 100;
         var printedH = naturalH * appliedScale / 100;
@@ -130,6 +176,14 @@ public static class PrintLayout
     {
         var (naturalW, naturalH) = NaturalSizeMm(widthPx, heightPx, sourceDpi);
         return 100 * Math.Min(paperWidthMm / naturalW, paperHeightMm / naturalH);
+    }
+
+    /// <summary>Échelle qui fait couvrir toute la feuille par l'image, en pourcentage.</summary>
+    public static double ScaleToFill(int widthPx, int heightPx, double sourceDpi,
+        double paperWidthMm, double paperHeightMm)
+    {
+        var (naturalW, naturalH) = NaturalSizeMm(widthPx, heightPx, sourceDpi);
+        return 100 * Math.Max(paperWidthMm / naturalW, paperHeightMm / naturalH);
     }
 
     /// <summary>Échelle nécessaire pour obtenir une largeur de tirage donnée.</summary>

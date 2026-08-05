@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- CPPCtrl32.dll est en 32 bits, comme pour Studio.De100Host -->
+    <PlatformTarget>x86</PlatformTarget>
+    <AssemblyName>SondeDnp</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Studio.Printing\Studio.Printing.csproj" />
+  </ItemGroup>
+
+</Project>

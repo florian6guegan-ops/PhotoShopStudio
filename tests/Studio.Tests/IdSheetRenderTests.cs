@@ -39,8 +39,13 @@ public class IdSheetRenderTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { /* au mieux */ }
     }
 
-    private string Rendre(int copies = 8, bool cutBorder = true, DateTime? stamp = null,
-        double gapMm = SheetSpec.DefaultGapMm, int? cellHeightPx = null)
+    /// <param name="fullBleed">
+    /// Faux par défaut : ces mesures portent sur la planche à marges — écart réglable et
+    /// repères de coupe — qui reste ce que produit un produit dont <c>FullBleed</c> est
+    /// désactivé. Le fond perdu a ses propres épreuves, plus bas.
+    /// </param>
+    private string Rendre(int copies = 8, bool cutBorder = true, SheetFooter? footer = null,
+        double gapMm = SheetSpec.DefaultGapMm, int? cellHeightPx = null, bool fullBleed = false)
     {
         var sortie = Path.Combine(_root, $"planche-{Guid.NewGuid():N}.png");
         var hauteur = cellHeightPx ?? CellH;
@@ -50,10 +55,13 @@ public class IdSheetRenderTests : IDisposable
                 new ImageAdjustments()),
             copies, gapMm, cutMarks: true,
             SheetW, SheetH, sortie, Dpi,
-            cutBorder, stamp);
+            cutBorder, footer, fullBleed);
 
         return sortie;
     }
+
+    /// <summary>La bande d'avant : la date, et rien d'autre.</summary>
+    private static SheetFooter DateSeule(DateTime moment) => new(moment);
 
     private static SheetLayoutResult Disposition(int copies = 8, double gapMm = SheetSpec.DefaultGapMm,
         int? cellHeightPx = null) =>
@@ -178,7 +186,7 @@ public class IdSheetRenderTests : IDisposable
     public void La_date_et_l_heure_sont_imprimees_dans_la_marge()
     {
         var moment = new DateTime(2026, 7, 31, 19, 42, 0);
-        using var planche = new MagickImage(Rendre(stamp: moment));
+        using var planche = new MagickImage(Rendre(footer: DateSeule(moment)));
         using var pixels = planche.GetPixels();
 
         var basPhotos = DispositionRendue().Cells.Max(c => c.Bottom);
@@ -198,7 +206,7 @@ public class IdSheetRenderTests : IDisposable
     [Fact]
     public void La_mention_est_ecrite_assez_grand_pour_etre_lue()
     {
-        using var planche = new MagickImage(Rendre(stamp: new DateTime(2026, 7, 31, 19, 42, 0)));
+        using var planche = new MagickImage(Rendre(footer: DateSeule(new DateTime(2026, 7, 31, 19, 42, 0))));
         using var pixels = planche.GetPixels();
 
         var haut = int.MaxValue;
@@ -229,7 +237,7 @@ public class IdSheetRenderTests : IDisposable
     [Fact]
     public void Sans_horodatage_la_marge_reste_vierge()
     {
-        using var planche = new MagickImage(Rendre(stamp: null));
+        using var planche = new MagickImage(Rendre(footer: null));
         using var pixels = planche.GetPixels();
 
         var basPhotos = Disposition().Cells.Max(c => c.Bottom);
@@ -248,7 +256,7 @@ public class IdSheetRenderTests : IDisposable
         // des cellules plus hautes : la grille occupe presque toute la planche et ne
         // laisse plus de quoi écrire dessous
         var hautes = MmPx.ToPixels(49, Dpi);
-        var sortie = Rendre(stamp: new DateTime(2026, 7, 31, 19, 42, 0), cellHeightPx: hautes);
+        var sortie = Rendre(footer: DateSeule(new DateTime(2026, 7, 31, 19, 42, 0)), cellHeightPx: hautes);
 
         using var planche = new MagickImage(sortie);
         var disposition = DispositionRendue(cellHeightPx: hautes);
@@ -260,6 +268,167 @@ public class IdSheetRenderTests : IDisposable
         using var pixels = planche.GetPixels();
         Assert.True(CompterPixelsSombres(pixels, basPhotos, SheetH) < 50,
             "rien ne doit être écrit faute de place");
+    }
+
+    // ----- planche à fond perdu (04/08/2026) -----
+
+    /// <summary>
+    /// La disposition d'une planche à fond perdu : les cases ne sont plus séparées que par
+    /// le trait de découpe, et rien n'est réservé dans les marges.
+    /// </summary>
+    private static SheetLayoutResult DispositionFondPerdu(int copies = 8, int reservePx = 0) =>
+        IdSheetLayout.Layout(SheetW, SheetH, CellW, CellH,
+            ImagePipeline.TraitDeDecoupePx(Dpi), copies, tickLength: 0, bottomReserve: reservePx);
+
+    /// <summary>
+    /// À fond perdu, les photos sont JOINTIVES : l'écart se réduit à l'épaisseur du trait
+    /// de découpe, qui y tient tout entier. C'est ce qui permet de couper la planche d'un
+    /// trait de massicot d'un bord à l'autre.
+    /// </summary>
+    [Fact]
+    public void A_fond_perdu_les_photos_sont_jointives()
+    {
+        var disposition = DispositionFondPerdu();
+
+        var ecart = disposition.Cells[1].X - disposition.Cells[0].Right;
+
+        Assert.Equal(ImagePipeline.TraitDeDecoupePx(Dpi), ecart);
+        Assert.True(ecart < MmPx.ToPixels(0.5, Dpi), "les photos doivent se toucher");
+    }
+
+    /// <summary>
+    /// Les cases gardent leurs 35 × 45 mm PLEINS malgré le resserrement : une photo
+    /// d'identité sous-cotée se fait refuser au guichet, et c'est justement pour cela que
+    /// le trait vit dans l'écart plutôt que sur la photo.
+    /// </summary>
+    [Fact]
+    public void A_fond_perdu_les_cases_gardent_leurs_cotes()
+    {
+        var disposition = DispositionFondPerdu();
+
+        Assert.All(disposition.Cells, c =>
+        {
+            Assert.Equal(MmPx.ToPixels(35, Dpi), c.Width);
+            Assert.Equal(MmPx.ToPixels(45, Dpi), c.Height);
+        });
+    }
+
+    /// <summary>
+    /// Le contour noir reste : c'est le choix de la boutique (04/08/2026), et c'est sur lui
+    /// qu'on coupe. Deux cases voisines n'en partagent qu'un seul, sur lequel passent les
+    /// ciseaux, et la photo n'en garde rien.
+    /// </summary>
+    [Fact]
+    public void A_fond_perdu_le_contour_noir_reste_hors_de_la_photo()
+    {
+        using var planche = new MagickImage(Rendre(fullBleed: true, cutBorder: true));
+        using var pixels = planche.GetPixels();
+        var cellule = DispositionFondPerdu().Cells[0];
+        var y = cellule.Y + cellule.Height / 2;
+
+        Assert.True(Niveau(pixels, cellule.X - 1, y) < 60, "le trait doit border la photo");
+        Assert.True(Niveau(pixels, cellule.X, y) > 100, "le premier pixel de la case est de la photo");
+    }
+
+    /// <summary>
+    /// Le fond perdu ne trace PLUS de repères dans les marges : ils n'ont plus de marge où
+    /// vivre, et la bande basse prend leur place.
+    /// </summary>
+    [Fact]
+    public void A_fond_perdu_les_reperes_de_marge_disparaissent()
+    {
+        Assert.Empty(DispositionFondPerdu().CutTicks);
+    }
+
+    /// <summary>
+    /// Resserrer les cases ne doit RIEN coûter en nombre de photos : c'est le contraire, et
+    /// c'est bien pourquoi la capacité doit se compter avec l'écart réel.
+    /// </summary>
+    [Fact]
+    public void Le_fond_perdu_ne_fait_jamais_perdre_de_photos()
+    {
+        var aMarges = IdSheetLayout.MaxCopies(SheetW, SheetH, CellW, CellH,
+            MmPx.ToPixels(SheetSpec.DefaultGapMm, Dpi));
+        var aFondPerdu = IdSheetLayout.MaxCopies(SheetW, SheetH, CellW, CellH,
+            MmPx.ToPixels(SheetSpec.CutLineMm, Dpi));
+
+        Assert.True(aFondPerdu >= aMarges,
+            $"le fond perdu doit porter au moins autant de photos ({aFondPerdu} contre {aMarges})");
+    }
+
+    /// <summary>
+    /// La bande complète — mention et code QR — s'imprime bel et bien, et elle porte plus
+    /// d'encre que la date seule. C'est la planche demandée le 04/08/2026.
+    /// </summary>
+    [Fact]
+    public void La_bande_porte_la_mention_et_le_code_qr()
+    {
+        var moment = new DateTime(2026, 8, 4, 16, 30, 0);
+        var complete = SheetFooter.Pour(moment, new MarqueSettings(QrTexte: "https://exemple.test"));
+
+        // Chaque planche est mesurée sous SES photos, et non sous celles de l'autre : les
+        // deux bandes ne réservent pas la même hauteur, donc les grilles ne tombent pas au
+        // même endroit. Compter dans une zone commune ferait entrer des pixels de photo —
+        // gris moyen, donc « sombres » au seuil retenu — et les deux comptes seraient
+        // dominés par la photo au lieu de la bande.
+        var encreAvec = EncreSousLesPhotos(complete);
+        var encreSans = EncreSousLesPhotos(DateSeule(moment));
+
+        Assert.True(encreAvec > encreSans * 2,
+            $"la bande complète doit porter bien plus que la date ({encreAvec} contre {encreSans})");
+    }
+
+    /// <summary>
+    /// Encre déposée sous la dernière rangée d'une planche à fond perdu portant
+    /// <paramref name="footer"/> — c'est-à-dire dans SA bande, la réserve étant celle que
+    /// cette bande-là demande.
+    /// </summary>
+    private int EncreSousLesPhotos(SheetFooter footer)
+    {
+        using var planche = new MagickImage(Rendre(footer: footer, fullBleed: true));
+        using var pixels = planche.GetPixels();
+
+        var basPhotos = DispositionFondPerdu(
+            reservePx: SheetFooterLayout.ReservePx(footer, Dpi)).Cells.Max(c => c.Bottom);
+
+        return CompterPixelsSombres(pixels, basPhotos, SheetH);
+    }
+
+    /// <summary>
+    /// Un logo introuvable ne doit PAS empêcher la planche de sortir : le fichier vit hors
+    /// du dépôt et peut avoir été déplacé, alors que le client, lui, attend ses photos.
+    /// </summary>
+    [Fact]
+    public void Un_logo_absent_n_empeche_pas_la_planche()
+    {
+        var footer = SheetFooter.Pour(
+            new DateTime(2026, 8, 4, 16, 30, 0),
+            new MarqueSettings(LogoPath: Path.Combine(_root, "logo-qui-n-existe-pas.png")));
+
+        using var planche = new MagickImage(Rendre(footer: footer, fullBleed: true));
+
+        Assert.Equal((uint)SheetW, planche.Width);
+        Assert.Equal((uint)SheetH, planche.Height);
+    }
+
+    /// <summary>
+    /// La bande ne mord JAMAIS sur une case : elle commence sous la dernière rangée. Une
+    /// photo d'identité rognée est une photo refusée au guichet.
+    /// </summary>
+    [Fact]
+    public void La_bande_ne_mord_pas_sur_les_photos()
+    {
+        var footer = SheetFooter.Pour(
+            new DateTime(2026, 8, 4, 16, 30, 0),
+            new MarqueSettings(QrTexte: "https://exemple.test"));
+
+        var basPhotos = DispositionFondPerdu(
+            reservePx: SheetFooterLayout.ReservePx(footer, Dpi)).Cells.Max(c => c.Bottom);
+        var pose = SheetFooterLayout.Place(footer, SheetW, SheetH, basPhotos, Dpi);
+
+        Assert.NotNull(pose);
+        Assert.True(pose.Band.Y >= basPhotos);
+        Assert.Equal(SheetH, pose.Band.Bottom);
     }
 
     /// <summary>

@@ -127,7 +127,7 @@ public partial class IdSheetRecapView : UserControl
             MmPx.ToPixels(planche.Produit.HeightMm, PppApercuVoulu),
             MmPx.ToPixels(_document.WidthMm, PppApercuVoulu),
             MmPx.ToPixels(_document.HeightMm, PppApercuVoulu),
-            MmPx.ToPixels(planche.Produit.Sheet?.GapMm ?? SheetSpec.DefaultGapMm, PppApercuVoulu));
+            MmPx.ToPixels(planche.Produit.Sheet?.LayoutGapMm ?? SheetSpec.DefaultGapMm, PppApercuVoulu));
 
         return capacite >= planche.Copies ? PppApercuVoulu : planche.Produit.Dpi;
     }
@@ -200,7 +200,11 @@ public partial class IdSheetRecapView : UserControl
             MmPx.ToPixels(planche.Produit.HeightMm, ppp),
             feuille, ppp,
             sheet.CutBorder,
-            sheet.DateStamp ? DateTime.Now : null);
+            // la MÊME bande que le tirage, marque comprise : l'aperçu existe pour montrer
+            // ce qui sortira, et une bande qui n'apparaîtrait qu'au tirage serait
+            // exactement la mauvaise surprise que cet écran est là pour éviter
+            sheet.DateStamp ? SheetFooter.Pour(DateTime.Now, App.Services.Marque) : null,
+            sheet.FullBleed);
 
         return File.ReadAllBytes(feuille);
     }

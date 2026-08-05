@@ -211,7 +211,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             MmPx.ToPixels(product.HeightMm, product.Dpi),
             MmPx.ToPixels(document.WidthMm, product.Dpi),
             MmPx.ToPixels(document.HeightMm, product.Dpi),
-            MmPx.ToPixels(sheet.GapMm, product.Dpi));
+            // l'écart RÉEL, celui que le rendu appliquera : à fond perdu il se réduit au
+            // trait de découpe, et compter avec 2 mm annoncerait moins de photos que la
+            // planche n'en porte (voir SheetSpec.LayoutGapMm)
+            MmPx.ToPixels(sheet.LayoutGapMm, product.Dpi));
     }
 
     private async Task LoadStripAsync()
@@ -1096,14 +1099,22 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private double TargetAspect => _document.WidthMm / _document.HeightMm;
 
     /// <summary>
-    /// La photo suit le doigt, donc la fenêtre de recadrage part à l'inverse — même sens
-    /// que sur les deux autres écrans qui recadrent (01/08/2026).
+    /// Le CADRE suit le doigt.
+    ///
+    /// Cet écran-ci ne bouge pas la photo : <c>Photo</c> reste posée telle quelle et c'est
+    /// l'<c>Overlay</c> — le voile et le rectangle de cadrage — qui se redessine. Le geste
+    /// était pourtant inversé (<c>-dx</c>), copié des deux autres écrans de recadrage où
+    /// c'est bien la PHOTO qui glisse sous un cadre fixe : là-bas, pousser la photo à droite
+    /// revient à reculer la fenêtre de cadrage, ici cela l'envoie à l'opposé du curseur.
+    ///
+    /// Signalé le 04/08/2026 : « lorsqu'on déplace le cadre, les mouvements sont inversés ».
+    /// Voir <c>CropSurface.OnMouseMove</c>, qui garde son signe pour la raison inverse.
     /// </summary>
     private void Pan(double dxPx, double dyPx)
     {
         var display = DisplayRect();
         if (display.IsEmpty) return;
-        _crop = CropMath.Pan(_crop, -dxPx / display.Width, -dyPx / display.Height);
+        _crop = CropMath.Pan(_crop, dxPx / display.Width, dyPx / display.Height);
         Redraw();
     }
 

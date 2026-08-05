@@ -76,7 +76,7 @@ public class PrintLayoutTests
     [Fact]
     public void Ajuster_au_support_fait_tenir_l_image_dans_la_feuille()
     {
-        var p = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm, fitToMedia: true);
+        var p = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm, scaling: MediaScaling.FitToMedia);
 
         Assert.False(p.OverflowsPaper(A3PlusWidthMm, A3PlusHeightMm));
         // l'image est plus haute que large par rapport à la feuille : c'est la hauteur qui limite
@@ -89,7 +89,7 @@ public class PrintLayoutTests
     public void Ajuster_au_support_agrandit_une_image_trop_petite()
     {
         // 1000 × 1500 px à 300 ppp = 84,7 × 127 mm, bien plus petit que l'A3+
-        var p = PrintLayout.Compute(1000, 1500, SourceDpi, A3PlusWidthMm, A3PlusHeightMm, fitToMedia: true);
+        var p = PrintLayout.Compute(1000, 1500, SourceDpi, A3PlusWidthMm, A3PlusHeightMm, scaling: MediaScaling.FitToMedia);
 
         Assert.True(p.ScalePercent > 100, "l'image devait être agrandie pour remplir le support");
         Assert.False(p.OverflowsPaper(A3PlusWidthMm, A3PlusHeightMm));
@@ -99,11 +99,81 @@ public class PrintLayoutTests
     public void Ajuster_au_support_ignore_l_echelle_saisie()
     {
         var ajuste = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
-            scalePercent: 500, fitToMedia: true);
+            scalePercent: 500, scaling: MediaScaling.FitToMedia);
         var reference = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
-            scalePercent: 10, fitToMedia: true);
+            scalePercent: 10, scaling: MediaScaling.FitToMedia);
 
         Assert.Equal(reference.ScalePercent, ajuste.ScalePercent, 6);
+    }
+
+    /// <summary>
+    /// « Remplir le support » : la photo COUVRE la feuille — aucun bord blanc — et déborde
+    /// donc du côté le moins contraignant. C'est l'inverse exact de l'ajustement.
+    /// </summary>
+    [Fact]
+    public void Remplir_le_support_couvre_toute_la_feuille()
+    {
+        var p = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
+            scaling: MediaScaling.FillMedia);
+
+        Assert.True(p.WidthMm >= A3PlusWidthMm - 0.01, "la largeur devait couvrir la feuille");
+        Assert.True(p.HeightMm >= A3PlusHeightMm - 0.01, "la hauteur devait couvrir la feuille");
+    }
+
+    /// <summary>
+    /// Une image PLUS LARGE que la feuille en proportion : c'est alors la largeur qui
+    /// déborde, et la hauteur qui touche pile. L'autre sens du même calcul.
+    /// </summary>
+    [Fact]
+    public void Remplir_le_support_deborde_du_cote_le_moins_contraignant()
+    {
+        // 6000 × 4000 px : image couchée sur une feuille debout
+        var p = PrintLayout.Compute(HeightPx, WidthPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
+            scaling: MediaScaling.FillMedia);
+
+        Assert.Equal(A3PlusHeightMm, p.HeightMm, 2);
+        Assert.True(p.WidthMm > A3PlusWidthMm, "la largeur devait déborder");
+    }
+
+    /// <summary>Remplir centre le débordement : autant coupé à gauche qu'à droite.</summary>
+    [Fact]
+    public void Remplir_le_support_coupe_symetriquement()
+    {
+        var p = PrintLayout.Compute(HeightPx, WidthPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
+            scaling: MediaScaling.FillMedia);
+
+        Assert.Equal(p.LeftMm, A3PlusWidthMm - (p.LeftMm + p.WidthMm), 3);
+    }
+
+    /// <summary>
+    /// Ajuster ne perd rien, remplir perd les bords : c'est le choix que l'écran propose,
+    /// et le chiffre qu'il annonce.
+    /// </summary>
+    [Fact]
+    public void La_part_coupee_distingue_ajuster_de_remplir()
+    {
+        var ajuste = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
+            scaling: MediaScaling.FitToMedia);
+        var rempli = PrintLayout.Compute(WidthPx, HeightPx, SourceDpi, A3PlusWidthMm, A3PlusHeightMm,
+            scaling: MediaScaling.FillMedia);
+
+        Assert.Equal(0, ajuste.CroppedShare(A3PlusWidthMm, A3PlusHeightMm), 6);
+        Assert.True(rempli.CroppedShare(A3PlusWidthMm, A3PlusHeightMm) > 0.01,
+            "le remplissage devait couper quelque chose");
+    }
+
+    /// <summary>
+    /// La part coupée se calcule sur des surfaces : une image deux fois trop haute qui
+    /// touche la largeur pile en perd la moitié.
+    /// </summary>
+    [Fact]
+    public void La_part_coupee_vaut_la_surface_perdue()
+    {
+        // 100 mm de large sur 200 de haut, posée centrée sur une feuille de 100 × 100
+        var p = new PrintPlacement(LeftMm: 0, TopMm: -50, WidthMm: 100, HeightMm: 200,
+            ScalePercent: 100, EffectiveDpi: 300);
+
+        Assert.Equal(0.5, p.CroppedShare(100, 100), 6);
     }
 
     /// <summary>Un tirage trop grand doit être signalé, pas imprimé en silence à moitié.</summary>

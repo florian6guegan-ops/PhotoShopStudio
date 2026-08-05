@@ -183,6 +183,13 @@
                             Padding="26,0" FontSize="18" Margin="0,0,12,0" IsEnabled="False"
                             ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"
                             Click="OnModify">Modifier</Button>
+                    <!-- Envoyer plutôt que tirer : le client repart avec un lien. Toujours
+                         actif, parce qu'il sert aussi à envoyer le DOSSIER ENTIER, sans
+                         qu'aucune photo ait à être cochée. -->
+                    <Button x:Name="DropboxButton" Style="{StaticResource FlatButton}" MinHeight="56"
+                            Padding="20,0" FontSize="18" Margin="0,0,12,0"
+                            ToolTip="Envoyer les photos au client par Dropbox : la sélection ou le dossier entier, au choix. Il reçoit un lien de téléchargement, sans avoir de compte à créer."
+                            Click="OnDropbox">☁  Envoyer au client</Button>
                     <!-- Le geste du comptoir : un client s'absente, un autre attend. La
                          commande part sur l'accueil, sous « En attente ». -->
                     <Button x:Name="AttenteButton" Style="{StaticResource FlatButton}" MinHeight="56"

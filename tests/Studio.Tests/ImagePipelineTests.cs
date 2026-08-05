@@ -97,7 +97,10 @@ public class ImagePipelineTests : IDisposable
         var cellH = Studio.Imaging.Geometry.MmPx.ToPixels(45, 300);
         ImagePipeline.RenderIdSheetToFile(
             Request(source, cellW, cellH), copies: 6, gapMm: 2, cutMarks: true,
-            sheetWidthPx: 1205, sheetHeightPx: 1795, outputPath: output);
+            sheetWidthPx: 1205, sheetHeightPx: 1795, outputPath: output,
+            // planche à marges : les coordonnées mesurées plus bas sont celles de l'écart
+            // de 2 mm. À fond perdu les cases se resserrent et tomberaient ailleurs.
+            fullBleed: false);
 
         using var result = new MagickImage(output);
         Assert.Equal(1205u, result.Width);

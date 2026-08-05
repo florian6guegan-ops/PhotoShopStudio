@@ -5,11 +5,14 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
+using Studio.Core.Cloud;
+using Studio.Core.Domain;
 using Studio.Core.Imaging;
 using Studio.Core.Mail;
 using Studio.Imaging;
 using Studio.Printing;
 using Studio.Web;
+using Studio.Web.Dropbox;
 
 namespace Studio.App.Views;
 
@@ -37,6 +40,8 @@ public partial class SettingsView : UserControl
         Loaded += (_, _) =>
         {
             Montrer(App.Services.Mail);
+            MontrerDropbox(App.Services.Dropbox);
+            MontrerLaMarque(App.Services.Marque);
             MontrerLeDetourage(App.Services.Detourage);
             MontrerLeWifi(App.Services.Wifi);
         };
@@ -121,9 +126,244 @@ public partial class SettingsView : UserControl
 
         App.Services.SaveWifi(SaisieWifi());
 
+        // Le jeton n'est PAS pris à l'écran : il n'y est pas. Il vient de l'autorisation,
+        // qui l'a déjà enregistré — le relire ici l'effacerait à chaque « Enregistrer ».
+        App.Services.SaveDropbox(SaisieDropbox());
+
+        // la marque s'applique sans redémarrage : SaveMarque la repose sur l'orchestrateur,
+        // sans quoi les planches sortiraient avec l'ancienne jusqu'au prochain lancement
+        App.Services.SaveMarque(SaisieMarque());
+
         MessageBox.Show("Réglages enregistrés.", "Paramètres",
             MessageBoxButton.OK, MessageBoxImage.Information);
         Navigator.Back();
+    }
+
+    // ----- envoi par Dropbox -----
+
+    /// <summary>
+    /// L'aléa PKCE de l'autorisation en cours.
+    ///
+    /// Il naît avec l'adresse ouverte dans le navigateur et meurt avec l'échange du code :
+    /// les deux vont ensemble, et un code validé avec le mauvais aléa serait refusé. Voir
+    /// <see cref="DropboxAuth"/>.
+    /// </summary>
+    private string? _dropboxCodeVerifier;
+
+    private void MontrerDropbox(DropboxSettings reglages)
+    {
+        DropboxAppKeyBox.Text = reglages.AppKey;
+        DropboxDossierBox.Text = reglages.DossierRacine;
+        DropboxExpirationBox.Text = reglages.ExpirationJours.ToString();
+        DropboxRetentionBox.Text = reglages.RetentionJours.ToString();
+        DropboxMotDePasseBox.Text = reglages.MotDePasse;
+        DropboxActifCheck.IsChecked = reglages.Actif;
+
+        DireOuEnEstDropbox(reglages);
+    }
+
+    /// <summary>
+    /// Les réglages tels qu'ils sont saisis, SANS le jeton : celui-ci ne s'affiche pas et
+    /// ne se saisit pas, il vient de l'autorisation. On reprend donc celui qui est en place.
+    /// </summary>
+    private DropboxSettings SaisieDropbox() => new(
+        AppKey: DropboxAppKeyBox.Text.Trim(),
+        RefreshToken: App.Services.Dropbox.RefreshToken,
+        DossierRacine: DropboxDossierBox.Text.Trim(),
+        // une saisie illisible vaut 0, c'est-à-dire « pas d'expiration » : plus sûr que de
+        // lever au milieu d'une frappe
+        ExpirationJours: int.TryParse(DropboxExpirationBox.Text.Trim(), out var jours) && jours > 0
+            ? jours
+            : 0,
+        MotDePasse: DropboxMotDePasseBox.Text,
+        Actif: DropboxActifCheck.IsChecked == true,
+        // une saisie illisible vaut 0, c'est-à-dire « ne jamais supprimer » : entre deux
+        // interprétations d'une frappe en cours, on choisit celle qui n'efface rien
+        RetentionJours: int.TryParse(DropboxRetentionBox.Text.Trim(), out var retenus) && retenus > 0
+            ? retenus
+            : 0);
+
+    private void DireOuEnEstDropbox(DropboxSettings reglages)
+    {
+        if (reglages.EstUtilisable)
+        {
+            DropboxEtatText.Foreground = (Brush)Application.Current.Resources["OkBrush"];
+            DropboxEtatText.Text = "Le compte Dropbox est connecté.";
+            return;
+        }
+
+        DropboxEtatText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+        DropboxEtatText.Text = "Envoi impossible pour l'instant : il manque " + reglages.CeQuiManque() + ".";
+    }
+
+    private void OnDropboxActifChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        DireOuEnEstDropbox(SaisieDropbox());
+    }
+
+    private void OnDropboxAppKeyChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        DireOuEnEstDropbox(SaisieDropbox());
+    }
+
+    private void OnDropboxConsole(object sender, RoutedEventArgs e) =>
+        Ouvrir("https://www.dropbox.com/developers/apps");
+
+    /// <summary>
+    /// Première moitié de l'autorisation : ouvrir Dropbox dans le navigateur.
+    ///
+    /// La clé est ENREGISTRÉE au passage. Sans cela, un opérateur qui la colle, connecte le
+    /// compte puis quitte sans « Enregistrer » perdrait la clé tout en gardant le jeton —
+    /// des réglages à moitié posés, et un envoi qui échoue sans qu'on comprenne pourquoi.
+    /// </summary>
+    private void OnDropboxConnecter(object sender, RoutedEventArgs e)
+    {
+        var cle = DropboxAppKeyBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(cle))
+        {
+            MessageBox.Show(
+                "Saisissez d'abord la clé de l'application Dropbox.\n\n" +
+                "Elle se crée sur dropbox.com/developers/apps — bouton « Console Dropbox » " +
+                "juste à côté.",
+                "Paramètres", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        App.Services.SaveDropbox(SaisieDropbox());
+
+        var demande = DropboxAuth.Preparer(cle);
+        _dropboxCodeVerifier = demande.CodeVerifier;
+
+        DropboxCodePanel.Visibility = Visibility.Visible;
+        DropboxCodeBox.Text = "";
+        DropboxCodeBox.Focus();
+
+        Ouvrir(demande.Url);
+    }
+
+    /// <summary>Seconde moitié : échanger le code recopié contre un jeton durable.</summary>
+    private async void OnDropboxValiderLeCode(object sender, RoutedEventArgs e)
+    {
+        if (_dropboxCodeVerifier is null)
+        {
+            MessageBox.Show("Reprenez au bouton « Connecter le compte ».", "Paramètres",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        DropboxValiderButton.IsEnabled = false;
+        Mouse.OverrideCursor = Cursors.Wait;
+
+        try
+        {
+            var jeton = await DropboxAuth.EchangerAsync(
+                DropboxAppKeyBox.Text.Trim(), DropboxCodeBox.Text, _dropboxCodeVerifier);
+
+            // le jeton est enregistré AVANT toute autre chose : il ne sert qu'une fois et
+            // le perdre imposerait de tout recommencer
+            App.Services.SaveDropbox(SaisieDropbox() with { RefreshToken = jeton, Actif = true });
+
+            DropboxActifCheck.IsChecked = true;
+            DropboxCodePanel.Visibility = Visibility.Collapsed;
+            _dropboxCodeVerifier = null;
+
+            // on nomme le compte : « connecté » sans dire À QUOI laisserait passer une
+            // connexion au compte personnel plutôt qu'à celui du studio
+            using var client = new DropboxClient(
+                await DropboxAuth.JetonDAccesAsync(DropboxAppKeyBox.Text.Trim(), jeton));
+
+            var compte = await client.NomDuCompteAsync();
+
+            DropboxEtatText.Foreground = (Brush)Application.Current.Resources["OkBrush"];
+            DropboxEtatText.Text = $"Compte Dropbox connecté : {compte}.";
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Autorisation Dropbox impossible", ex);
+            DropboxEtatText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+            DropboxEtatText.Text = ex.Message;
+        }
+        finally
+        {
+            Mouse.OverrideCursor = null;
+            DropboxValiderButton.IsEnabled = true;
+        }
+    }
+
+    private static void Ouvrir(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Ouverture de {url} impossible", ex);
+            MessageBox.Show($"Impossible d'ouvrir le navigateur. Adresse à saisir à la main :\n\n{url}",
+                "Paramètres", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // ----- marque sur les planches identité -----
+
+    private void MontrerLaMarque(MarqueSettings reglages)
+    {
+        MarqueMentionBox.Text = reglages.Mention;
+        MarqueLogoBox.Text = reglages.LogoPath;
+        MarqueQrBox.Text = reglages.QrTexte;
+        MarqueActiveCheck.IsChecked = reglages.BandeActive;
+
+        DireOuEnEstLaMarque(reglages);
+    }
+
+    private MarqueSettings SaisieMarque() => new(
+        Mention: MarqueMentionBox.Text.Trim(),
+        LogoPath: MarqueLogoBox.Text.Trim(),
+        QrTexte: MarqueQrBox.Text.Trim(),
+        BandeActive: MarqueActiveCheck.IsChecked == true);
+
+    /// <summary>
+    /// Un logo introuvable est DIT, et non découvert sur le tirage : le fichier vit hors du
+    /// dépôt, il peut avoir été déplacé, et la planche sortirait alors sans lui en silence.
+    /// </summary>
+    private void DireOuEnEstLaMarque(MarqueSettings reglages)
+    {
+        if (!string.IsNullOrWhiteSpace(reglages.LogoPath) && !File.Exists(reglages.LogoPath))
+        {
+            MarqueEtatText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+            MarqueEtatText.Text =
+                "Le fichier du logo est introuvable : les planches sortiront sans lui.";
+            return;
+        }
+
+        MarqueEtatText.Foreground = (Brush)Application.Current.Resources["OkBrush"];
+        MarqueEtatText.Text = reglages.BandeActive
+            ? "La bande sera imprimée en bas des planches."
+            : "Les planches porteront la date seule, comme avant.";
+    }
+
+    private void OnMarqueChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        DireOuEnEstLaMarque(SaisieMarque());
+    }
+
+    private void OnChoisirLeLogo(object sender, RoutedEventArgs e)
+    {
+        var boite = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Logo de la boutique",
+            Filter = "Images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|Tous les fichiers|*.*",
+            CheckFileExists = true,
+        };
+
+        if (boite.ShowDialog() != true) return;
+
+        MarqueLogoBox.Text = boite.FileName;
+        DireOuEnEstLaMarque(SaisieMarque());
     }
 
     // ----- détourage du fond blanc -----

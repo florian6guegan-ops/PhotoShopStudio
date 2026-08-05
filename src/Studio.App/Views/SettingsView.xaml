@@ -85,6 +85,148 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,14,0,0"
                            Text="Le tarif de l'envoi se règle au Catalogue, sur le produit « Envoi des photos par courriel »."/>
 
+                <!-- ===== Envoi par Dropbox ===== -->
+
+                <TextBlock Text="Envoi des photos au client par Dropbox" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,28,0,10"/>
+
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                           Text="Dropbox Transfer n'a pas d'API : rien ne permet d'en créer un depuis un programme. On passe donc par l'API Dropbox — gratuite, elle aussi — qui téléverse les photos dans un dossier daté et en crée un lien de partage. Le client reçoit un lien, sans avoir de compte à créer."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+
+                        <CheckBox x:Name="DropboxActifCheck" Margin="0,0,0,18"
+                                  Checked="OnDropboxActifChanged" Unchecked="OnDropboxActifChanged">
+                            <TextBlock Text="Activer l'envoi par Dropbox" Style="{StaticResource Texte}"
+                                       FontSize="19"/>
+                        </CheckBox>
+
+                        <TextBlock Text="Clé de l'application (App key)" Style="{StaticResource Hint}"/>
+                        <TextBox x:Name="DropboxAppKeyBox" FontSize="20" Padding="12,10" Margin="0,6,0,0"
+                                 TextChanged="OnDropboxAppKeyChanged"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="Elle se crée une seule fois sur dropbox.com/developers/apps : « Create app », accès « Scoped access », puis « App folder » (l'app n'aura accès qu'à son propre dossier). Dans l'onglet Permissions, cochez account_info.read, files.metadata.read, files.content.write, sharing.read et sharing.write, puis Submit AVANT de connecter le compte — une permission ajoutée après coup oblige à se reconnecter. Ce n'est pas un secret : il n'y a pas d'« app secret » à saisir ici."/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                            <Button x:Name="DropboxConsoleButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="48" MinWidth="240" Click="OnDropboxConsole">🌐  Console Dropbox</Button>
+                            <Button x:Name="DropboxConnecterButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="48" MinWidth="240" Margin="12,0,0,0"
+                                    Click="OnDropboxConnecter">🔗  Connecter le compte</Button>
+                        </StackPanel>
+
+                        <!-- La recopie du code n'apparaît QU'APRÈS l'ouverture du navigateur :
+                             une case à coller visible d'emblée ferait chercher un code que
+                             personne n'a encore demandé. -->
+                        <StackPanel x:Name="DropboxCodePanel" Visibility="Collapsed" Margin="0,16,0,0">
+                            <TextBlock Text="Code d'autorisation donné par Dropbox"
+                                       Style="{StaticResource Hint}"/>
+                            <TextBox x:Name="DropboxCodeBox" FontSize="20" Padding="12,10" Margin="0,6,0,0"/>
+                            <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Text="Autorisez dans le navigateur, puis recopiez ici le code affiché. Il ne sert qu'une fois et n'est bon que quelques minutes."/>
+                            <Button x:Name="DropboxValiderButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="48" MinWidth="240" HorizontalAlignment="Left"
+                                    Margin="0,12,0,0" Click="OnDropboxValiderLeCode">Valider le code</Button>
+                        </StackPanel>
+
+                        <TextBlock Text="Dossier de dépôt dans le Dropbox du studio"
+                                   Style="{StaticResource Hint}" Margin="0,18,0,0"/>
+                        <TextBox x:Name="DropboxDossierBox" FontSize="20" Padding="12,10" Margin="0,6,0,0"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   Text="Chaque envoi y crée un sous-dossier daté."/>
+
+                        <Grid Margin="0,18,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                <TextBlock Text="Expiration (jours)" Style="{StaticResource Hint}"/>
+                                <TextBox x:Name="DropboxExpirationBox" FontSize="20" Padding="12,10"
+                                         Margin="0,6,0,0"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Mot de passe du lien (facultatif)"
+                                           Style="{StaticResource Hint}"/>
+                                <TextBox x:Name="DropboxMotDePasseBox" FontSize="20" Padding="12,10"
+                                         Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="0 jour = lien permanent. Attention : Dropbox réserve l'expiration ET le mot de passe aux comptes payants. Sur un compte gratuit il les refuse — l'envoi marche quand même, mais le lien sort permanent et ouvert."/>
+
+                        <TextBlock Text="Supprimer les envois au bout de (jours)"
+                                   Style="{StaticResource Hint}" Margin="0,18,0,0"/>
+                        <TextBox x:Name="DropboxRetentionBox" FontSize="20" Padding="12,10"
+                                 Margin="0,6,0,0" MaxWidth="180" HorizontalAlignment="Left"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="Là, c'est une vraie suppression des fichiers, et elle marche sur un compte gratuit — c'est elle qui empêche le Dropbox de se remplir. Le ménage passe au démarrage de l'application et après chaque envoi ; il ne touche QUE les dossiers datés créés par Studio Photo, jamais ce que vous avez rangé à la main. Ce qui est supprimé reste 30 jours dans la corbeille Dropbox. 0 = ne jamais supprimer."/>
+
+                        <TextBlock x:Name="DropboxEtatText" Style="{StaticResource Texte}" FontSize="17"
+                                   Margin="0,18,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Marque sur les planches identité ===== -->
+
+                <TextBlock Text="Marque sur les planches d'identité" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,28,0,10"/>
+
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                           Text="Ce que porte la bande, en bas de la planche : la date du tirage à gauche, la mention au centre, le code QR et le logo à droite."/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+
+                        <CheckBox x:Name="MarqueActiveCheck" Margin="0,0,0,18"
+                                  Checked="OnMarqueChanged" Unchecked="OnMarqueChanged">
+                            <TextBlock Text="Imprimer la bande sur les planches"
+                                       Style="{StaticResource Texte}" FontSize="19"/>
+                        </CheckBox>
+
+                        <TextBlock Text="Mention (deux lignes au plus)" Style="{StaticResource Hint}"/>
+                        <TextBox x:Name="MarqueMentionBox" FontSize="18" Padding="12,10" Margin="0,6,0,0"
+                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="La première ligne est mise en avant, la seconde la précise. N'y mettez pas la Marianne ni le nom d'un prestataire agréé : le premier est l'emblème de l'État, le second appartient à qui l'a déposé."/>
+
+                        <TextBlock Text="Logo (PNG à fond transparent)" Style="{StaticResource Hint}"
+                                   Margin="0,18,0,0"/>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="MarqueLogoBox" Grid.Column="0" FontSize="18" Padding="12,10"/>
+                            <Button Grid.Column="1" Style="{StaticResource FlatButton}" MinHeight="48"
+                                    MinWidth="140" Margin="12,0,0,0"
+                                    Click="OnChoisirLeLogo">Parcourir…</Button>
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="Laissez vide pour ne rien poser. Un fond blanc se verrait sur le papier : préférez un PNG transparent."/>
+
+                        <TextBlock Text="Code QR — ce qu'il encode" Style="{StaticResource Hint}"
+                                   Margin="0,18,0,0"/>
+                        <TextBox x:Name="MarqueQrBox" FontSize="18" Padding="12,10" Margin="0,6,0,0"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="L'adresse du site de la boutique, une page d'avis, un contact. Laissez vide pour ne pas imprimer de code QR."/>
+
+                        <TextBlock x:Name="MarqueEtatText" Style="{StaticResource Texte}" FontSize="17"
+                                   Margin="0,18,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- ===== Détourage du fond blanc ===== -->
 
                 <TextBlock Text="Détourage du fond blanc (photos d'identité)"

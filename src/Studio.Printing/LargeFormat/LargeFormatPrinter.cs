@@ -280,7 +280,7 @@ public static class LargeFormatPrinter
                 $"tirage {placement.WidthMm:0.0}×{placement.HeightMm:0.0} mm à {placement.ScalePercent:0.#} % " +
                 $"({placement.EffectiveDpi:0} ppp), position {placement.LeftMm:0.0};{placement.TopMm:0.0} mm" +
                 couleurs +
-                (placement.OverflowsPaper(pageWidthMm, pageHeightMm) ? "  ⚠ le tirage déborde de la feuille" : ""));
+                Debordement(placement, settings.Scaling, pageWidthMm, pageHeightMm));
 
             // Interpolation par DÉFAUT, et surtout pas HighQualityBicubic.
             //
@@ -292,14 +292,49 @@ public static class LargeFormatPrinter
             // mémoire, dans MettreALEchelleDEnvoi.
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Default;
             g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Default;
+
+            // La photo est COUPÉE au bord de la feuille, jamais posée en travers.
+            //
+            // Sans ce rognage, un tirage plus grand que le papier partait quand même au
+            // pilote dans sa taille demandée : ce qui dépassait était perdu sans qu'on ait
+            // choisi OÙ, et l'aperçu montrait la photo à cheval sur le vide. C'est le sens
+            // du mode « Remplir le support » (MediaScaling.FillMedia), qui déborde
+            // VOLONTAIREMENT pour ne pas laisser de blanc ; le rognage vaut aussi pour un
+            // débordement subi, où couper proprement reste mieux que de laisser faire.
+            g.SetClip(new RectangleF(0, 0,
+                (float)(pageWidthMm / MmPerInch * 100), (float)(pageHeightMm / MmPerInch * 100)));
+
             g.DrawImage(bitmap, rect);
 
+            // le contour suit le bord du tirage, donc lui aussi disparaît là où la photo est
+            // coupée : en remplissage il n'en reste rien, et c'est juste — il n'y a plus de
+            // blanc à recouper
             if (settings.CutBorder) DessinerContourDeDecoupe(g, rect);
+
+            g.ResetClip();
 
             e.HasMorePages = false;
         };
 
         doc.Print();
+    }
+
+    /// <summary>
+    /// Ce que le journal dit du débordement.
+    ///
+    /// En remplissage il est VOULU : l'annoncer comme une anomalie ferait chercher une panne
+    /// là où il n'y en a pas. On note alors ce qui est coupé, qui est l'information utile
+    /// quand un client trouve son tirage trop serré.
+    /// </summary>
+    private static string Debordement(PrintPlacement placement, MediaScaling scaling,
+        double pageWidthMm, double pageHeightMm)
+    {
+        if (!placement.OverflowsPaper(pageWidthMm, pageHeightMm)) return "";
+
+        var coupe = placement.CroppedShare(pageWidthMm, pageHeightMm);
+        return scaling == MediaScaling.FillMedia
+            ? $", remplissage du support ({coupe:P0} coupé aux bords)"
+            : $"  ⚠ le tirage déborde de la feuille, {coupe:P0} coupé";
     }
 
     /// <summary>Épaisseur du trait de découpe, en millimètres.</summary>

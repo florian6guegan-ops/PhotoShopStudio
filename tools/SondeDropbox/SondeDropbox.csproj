@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>SondeDropbox</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Studio.Web\Studio.Web.csproj" />
+  </ItemGroup>
+
+</Project>

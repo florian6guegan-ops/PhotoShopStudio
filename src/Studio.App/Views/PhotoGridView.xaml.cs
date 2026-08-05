@@ -1074,6 +1074,23 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// aucune photo. Et sa grille étant fixe, vingt-sept photos sortaient sur deux 10×15
     /// dont le second à trois vignettes.
     /// </summary>
+    /// <summary>
+    /// Envoyer les photos au client par Dropbox plutôt que de les tirer.
+    ///
+    /// Le CHOIX du lot — la sélection ou le dossier entier — se fait à l'écran suivant et
+    /// non ici : c'est là que les deux comptes s'affichent côte à côte, et « tout envoyer »
+    /// sur un dossier de mariage ne se décide pas sans voir le nombre. Le bouton reste donc
+    /// actif même sans photo cochée.
+    /// </summary>
+    private void OnDropbox(object sender, RoutedEventArgs e)
+    {
+        var choisies = _photos.Where(p => p.Selected).Select(p => p.Path).ToList();
+
+        Navigator.Go(
+            new DropboxSendView(choisies, _rootPath, _avecSousDossiers),
+            "Envoyer les photos au client");
+    }
+
     private void OnIndexSheet(object sender, RoutedEventArgs e)
     {
         // deuxième appui : on défait. Voir UpdateSummary.

@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Studio.App.Infrastructure;
+using Studio.Core;
 using Studio.Web;
 
 namespace Studio.App.Views;

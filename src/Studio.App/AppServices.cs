@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using Studio.Core.Catalog;
+using Studio.Core.Cloud;
 using Studio.Core.Domain;
 using Studio.Core.Imaging;
 using Studio.Core.Mail;
@@ -129,6 +130,43 @@ public sealed class AppServices
     {
         MailSettings.Save(ConfigDir, reglages);
         _mail = reglages;
+    }
+
+    private DropboxSettings? _dropbox;
+
+    /// <summary>
+    /// Réglages de l'envoi des photos au client par Dropbox.
+    ///
+    /// Ils vivent dans les DONNÉES du poste (<c>config\dropbox.json</c>) et non dans le
+    /// dépôt, qui est public : ils portent le jeton du compte, lequel vaut mot de passe.
+    /// Voir <see cref="DropboxSettings"/>.
+    /// </summary>
+    public DropboxSettings Dropbox => _dropbox ??= DropboxSettings.Load(ConfigDir);
+
+    /// <summary>Enregistre les réglages Dropbox et les reprend aussitôt.</summary>
+    public void SaveDropbox(DropboxSettings reglages)
+    {
+        DropboxSettings.Save(ConfigDir, reglages);
+        _dropbox = reglages;
+    }
+
+    private MarqueSettings? _marque;
+
+    /// <summary>
+    /// La marque de la boutique sur la bande basse des planches identité.
+    ///
+    /// Elle vit dans les données du poste (<c>config\marque.json</c>) et non dans le dépôt :
+    /// le logo est un fichier propre à la boutique, et la mention se réécrit sans
+    /// recompiler. Voir <see cref="MarqueSettings"/>.
+    /// </summary>
+    public MarqueSettings Marque => _marque ??= MarqueSettings.Load(ConfigDir);
+
+    /// <summary>Enregistre la marque et l'applique sans redémarrer.</summary>
+    public void SaveMarque(MarqueSettings reglages)
+    {
+        MarqueSettings.Save(ConfigDir, reglages);
+        _marque = reglages;
+        Printer.Marque = reglages;
     }
 
     private DetourageSettings? _detourage;
@@ -383,6 +421,13 @@ public sealed class AppServices
         // croyant avoir ses photos, et on n'avait rien à relire le lendemain.
         PhotoMailer.Log = message => FileLog.Write(message);
 
+        // Même raison pour Dropbox : un lien créé sans expiration parce que le compte est
+        // gratuit, ou un envoi coupé en route, ne se relisent nulle part ailleurs.
+        Studio.Web.Dropbox.DropboxAuth.Log = message => FileLog.Write(message);
+        Studio.Web.Dropbox.DropboxClient.Log = message => FileLog.Write(message);
+        Studio.Web.Dropbox.DropboxTransfer.Log = message => FileLog.Write(message);
+        Studio.Web.Dropbox.DropboxMenage.Log = message => FileLog.Write(message);
+
         // Le détourage disait dans le vide quel modèle il chargeait, et pourquoi il
         // retombait sur la méthode par couleur — même défaut que LargeFormatPrinter.Log.
         // C'est la seule trace qui permette de comprendre un réglage sans effet.
@@ -423,6 +468,10 @@ public sealed class AppServices
         ];
 
         AppliquerLeDetourage(services.Detourage);
+
+        // la marque suit l'orchestrateur, qui compose les planches sans connaître le dossier
+        // de configuration
+        services.Printer.Marque = services.Marque;
 
         services.Consommables = EstimationConsommables.Charger(
             Path.Combine(dataRoot, "config", "consommables.json"));
@@ -506,7 +555,13 @@ public sealed class AppServices
     public void ReloadCatalog()
     {
         Catalog = ProductCatalog.Load(ProductsJson);
-        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir) { Log = message => FileLog.Write(message) };
+        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir)
+        {
+            Log = message => FileLog.Write(message),
+            // le nouvel orchestrateur repart nu : sans ce report, les planches perdraient
+            // leur bande dès qu'on touche au catalogue
+            Marque = Marque,
+        };
 
         // la file tient l'ancien orchestrateur : la laisser en place ferait imprimer sur
         // un catalogue périmé

@@ -1,4 +1,3 @@
-using System.Globalization;
 using ImageMagick;
 using ImageMagick.Drawing;
 using Studio.Core.Domain;
@@ -39,27 +38,42 @@ public static class ImagePipeline
     /// selon la disposition IdSheetLayout, traits de coupe dans les marges.
     /// Le RenderRequest décrit la cellule (TargetWidth/HeightPx = dimensions de la cellule).
     /// </summary>
+    /// <param name="fullBleed">
+    /// Planche « à fond perdu » : les photos sont JOINTIVES — l'écart se réduit à
+    /// l'épaisseur du trait de découpe, qui y tient tout entier — et les repères de coupe
+    /// des marges disparaissent, la bande basse prenant leur place.
+    ///
+    /// C'est la planche que la boutique sort désormais (demandée le 04/08/2026, sur modèle
+    /// d'un tirage de borne). L'écart de 2 mm et les repères en marge dispersaient les
+    /// photos au milieu du blanc ; jointives, elles se coupent d'un trait de massicot d'un
+    /// bord à l'autre. Le contour noir de chaque case, lui, reste : c'est sur lui qu'on coupe.
+    /// </param>
+    /// <param name="footer">Ce que porte la bande basse. Null = pas de bande.</param>
     public static void RenderIdSheetToFile(
         RenderRequest cellRequest, int copies, double gapMm, bool cutMarks,
         int sheetWidthPx, int sheetHeightPx, string outputPath, int dpi = 300,
-        bool cutBorder = true, DateTime? stamp = null)
+        bool cutBorder = true, SheetFooter? footer = null, bool fullBleed = true)
     {
-        var gapPx = MmPx.ToPixels(gapMm, dpi);
-        var tickPx = cutMarks ? MmPx.ToPixels(3, dpi) : 0;
+        // À fond perdu, l'écart n'est plus réglable : il vaut EXACTEMENT l'épaisseur du
+        // trait de découpe, qui doit y tenir sans mordre sur les photos (voir
+        // DrawCutBorders). Les repères de marge tombent avec lui — ils n'ont plus de marge
+        // où vivre.
+        var gapPx = fullBleed ? TraitDeDecoupePx(dpi) : MmPx.ToPixels(gapMm, dpi);
+        var tickPx = !fullBleed && cutMarks ? MmPx.ToPixels(3, dpi) : 0;
 
         var layout = IdSheetLayout.Layout(
             sheetWidthPx, sheetHeightPx,
             cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
             gapPx, copies, tickPx);
 
-        // la date demande de la place : on refait la disposition en réservant le bas,
+        // la bande demande de la place : on refait la disposition en réservant le bas,
         // sans quoi elle devrait tenir dans la marge résiduelle et sortirait illisible
-        if (stamp is not null)
+        if (footer is not null)
             layout = IdSheetLayout.Layout(
                 sheetWidthPx, sheetHeightPx,
                 cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
                 gapPx, copies, tickPx,
-                bottomReserve: StampBandPx(dpi));
+                bottomReserve: SheetFooterLayout.ReservePx(footer, dpi));
 
         using var cell = Render(cellRequest, dpi);
         using var sheet = new MagickImage(MagickColors.White, (uint)sheetWidthPx, (uint)sheetHeightPx);
@@ -83,8 +97,8 @@ public static class ImagePipeline
         if (cutBorder)
             DrawCutBorders(sheet, layout, dpi);
 
-        if (stamp is { } moment)
-            DrawStamp(sheet, layout, moment, dpi);
+        if (footer is not null)
+            SheetFooterPainter.Draw(sheet, footer, layout.Cells.Max(c => c.Bottom), dpi);
 
         MagickInit.Write(sheet, outputPath);
     }
@@ -221,8 +235,14 @@ public static class ImagePipeline
     /// </summary>
     public static int TraitDeDecoupePx(int dpi) => Math.Max(1, MmPx.ToPixels(TraitDeDecoupeMm, dpi));
 
-    /// <summary>Épaisseur du trait de découpe, en millimètres. Voir <see cref="DrawCutBorders"/>.</summary>
-    private const double TraitDeDecoupeMm = 0.2;
+    /// <summary>
+    /// Épaisseur du trait de découpe, en millimètres. Voir <see cref="DrawCutBorders"/>.
+    ///
+    /// Elle vit dans le domaine parce que la CAPACITÉ d'une planche à fond perdu en dépend :
+    /// c'est cette épaisseur qui sépare deux cases, et donc elle qui décide combien de
+    /// photos tiennent sur le papier. Voir <see cref="SheetSpec.LayoutGapMm"/>.
+    /// </summary>
+    private const double TraitDeDecoupeMm = SheetSpec.CutLineMm;
 
     /// <summary>
     /// Contour noir sur le bord de la photo, quand du blanc l'entoure.
@@ -246,49 +266,6 @@ public static class ImagePipeline
 
         image.Draw(drawables);
     }
-
-    /// <summary>
-    /// Date et heure du tirage dans la marge basse de la planche — l'administration exige
-    /// une photo récente, et c'est ce qui le prouve.
-    ///
-    /// Rien n'est écrit si la marge est trop courte : mordre sur les photos les rendrait
-    /// non conformes, ce qui serait pire que l'absence de mention.
-    /// </summary>
-    /// <summary>
-    /// Corps de la mention, en millimètres. DiLand écrit la sienne en 5 mm — relevé dans
-    /// son code : <c>new Font("Arial", 5 * unMillimetreEnPixels, GraphicsUnit.Pixel)</c>.
-    /// On s'aligne dessus : en dessous, la date est illisible sur le tirage.
-    /// </summary>
-    private const double StampHeightMm = 5;
-
-    /// <summary>Hauteur à réserver en bas de la planche : la mention et son air autour.</summary>
-    private static int StampBandPx(int dpi) => MmPx.ToPixels(StampHeightMm + 2, dpi);
-
-    private static void DrawStamp(MagickImage sheet, SheetLayoutResult layout, DateTime moment, int dpi)
-    {
-        var basPhotos = layout.Cells.Max(c => c.Bottom);
-        var marge = (int)sheet.Height - basPhotos;
-
-        var hauteurTexte = MmPx.ToPixels(StampHeightMm, dpi);
-        if (marge < hauteurTexte + MmPx.ToPixels(1, dpi)) return;
-
-        // la taille est donnée en pixels : ImageMagick dessine à 72 points par pouce quelle
-        // que soit la densité de l'image, donc un point vaut ici un pixel. La convertir
-        // comme un vrai corps typographique la divisait par quatre — mention illisible.
-        var drawables = new Drawables()
-            .Font(StampFont())
-            .FontPointSize(hauteurTexte)
-            .FillColor(MagickColors.Black)
-            .StrokeColor(MagickColors.Transparent)
-            .TextAlignment(TextAlignment.Center)
-            .Text(sheet.Width / 2.0, basPhotos + (marge + hauteurTexte) / 2.0,
-                moment.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture));
-
-        sheet.Draw(drawables);
-    }
-
-    /// <summary>Police de l'horodatage — voir <see cref="Fonts.SansEmpattement"/>.</summary>
-    private static string StampFont() => Fonts.SansEmpattement();
 
     /// <param name="dpi">Résolution du produit : c'est elle qui donne l'épaisseur du trait de
     /// découpe, la densité du fichier n'étant posée qu'à l'écriture.</param>
@@ -424,6 +401,8 @@ public static class ImagePipeline
         // et l'écran les montre pour qu'on puisse le faire en connaissance de cause.
         if (Math.Abs(request.FineRotationDegrees) > 0.01)
         {
+            ReduireAvantRedressement(image, request);
+
             image.BackgroundColor = MagickColors.White;
             image.Rotate(request.FineRotationDegrees);
             image.ResetPage();
@@ -516,6 +495,65 @@ public static class ImagePipeline
         if (rotationQuarterTurns % 2 != 0)
             (w, h) = (h, w);
         return (w, h);
+    }
+
+    /// <summary>
+    /// Nombre de pixels gardés par pixel de tirage avant le redressement.
+    ///
+    /// Deux fois la définition finale sur chaque axe, soit quatre fois les pixels : de quoi
+    /// que le rééchantillonnage final ait de la matière, et bien au-delà de ce qu'un
+    /// tirage à 300 ppp peut restituer. En dessous de 2, le redressement travaillerait
+    /// sur une image à peine plus grande que le tirage et ses interpolations
+    /// successives se verraient sur les contours.
+    /// </summary>
+    private const double SurEchantillonnage = 2.0;
+
+    /// <summary>
+    /// Réduit la source à ce que le redressement a besoin de faire tourner, et pas plus.
+    ///
+    /// <b>C'est LE coût du rendu quand l'opérateur redresse.</b> Mesuré le 05/08/2026 sur
+    /// une planche d'identité : 11 937 ms sur 13 044, soit 92 % du temps, passés à faire
+    /// tourner 24 Mpx de reflex pour n'en garder ensuite que 0,2 — la cellule 35 × 45 fait
+    /// 413 × 531 px. Ce Magick.NET est bâti sans OpenMP : monter les threads ne change
+    /// rien (11 824 ms sur 8 cœurs contre 12 325 sur un seul), seul le nombre de pixels
+    /// compte.
+    ///
+    /// <b>Pourquoi réduire AVANT est géométriquement exact.</b> Le cadrage est stocké en
+    /// coordonnées RELATIVES (voir <see cref="CropSpec"/>) : il tombe au même endroit
+    /// quelle que soit la définition. Et une rotation suivie d'une homothétie donne le même
+    /// résultat que l'homothétie suivie de la rotation — l'ordre est indifférent pour une
+    /// mise à l'échelle uniforme. On ne déplace donc rien, on calcule seulement sur moins
+    /// de pixels.
+    ///
+    /// <b>Ce qu'on ne fait jamais</b> : agrandir. Une source déjà plus petite que le besoin
+    /// est laissée telle quelle — inventer des pixels pour les faire tourner coûterait le
+    /// prix fort pour rien.
+    /// </summary>
+    private static void ReduireAvantRedressement(MagickImage image, RenderRequest request)
+    {
+        if (image.Width == 0 || image.Height == 0) return;
+        if (request.TargetWidthPx <= 0 || request.TargetHeightPx <= 0) return;
+
+        // Part de l'image que le cadrage retiendra. Un cadrage plein en garde tout ; un
+        // cadrage serré demande une source d'autant plus grande pour rendre la même
+        // définition finale.
+        var partLargeur = request.Crop.IsFull ? 1.0 : Math.Clamp(request.Crop.Width, 0.01, 1.0);
+        var partHauteur = request.Crop.IsFull ? 1.0 : Math.Clamp(request.Crop.Height, 0.01, 1.0);
+
+        var voulueLargeur = request.TargetWidthPx / partLargeur * SurEchantillonnage;
+        var voulueHauteur = request.TargetHeightPx / partHauteur * SurEchantillonnage;
+
+        // le plus contraignant des deux axes commande : réduire davantage perdrait de la
+        // définition sur l'autre
+        var facteur = Math.Max(voulueLargeur / image.Width, voulueHauteur / image.Height);
+        if (facteur >= 1) return;   // déjà assez petite : rien à gagner
+
+        image.Resize(new MagickGeometry(
+            (uint)Math.Max(1, Math.Round(image.Width * facteur)),
+            (uint)Math.Max(1, Math.Round(image.Height * facteur)))
+        { IgnoreAspectRatio = true });
+
+        image.ResetPage();
     }
 
     /// <summary>
