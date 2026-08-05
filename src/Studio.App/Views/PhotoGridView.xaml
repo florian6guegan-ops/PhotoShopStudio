@@ -1,6 +1,7 @@
 <UserControl x:Class="Studio.App.Views.PhotoGridView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Studio.App.Controls">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -37,16 +38,29 @@
         </StackPanel>
 
         <Grid Grid.Row="1">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <ItemsControl x:Name="PhotosGrid">
-                <!-- « réduire » et « agrandir » agissent sur toute la planche d'un coup :
-                     une mise à l'échelle vaut mieux que de recalculer chaque vignette. -->
-                <ItemsControl.LayoutTransform>
-                    <ScaleTransform x:Name="GridZoom" ScaleX="1" ScaleY="1"/>
-                </ItemsControl.LayoutTransform>
+            <!-- La planche ne fabrique QUE les tuiles visibles (voir PlancheVirtualisee) :
+                 un dossier peut en compter 1200, et le WrapPanel les construisait toutes.
+                 Le défilement appartient donc au panneau, et le ScrollViewer descend dans
+                 le gabarit de la liste — un ScrollViewer posé autour, comme avant, mesurerait
+                 la planche entière et annulerait la virtualisation. -->
+            <ItemsControl x:Name="PhotosGrid"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          ScrollViewer.CanContentScroll="True">
+                <ItemsControl.Template>
+                    <ControlTemplate TargetType="ItemsControl">
+                        <ScrollViewer CanContentScroll="True" Focusable="False"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsPresenter/>
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </ItemsControl.Template>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel/>
+                        <!-- « réduire » et « agrandir » agissent sur toute la planche d'un
+                             coup : l'échelle est posée sur la liste par le code, et elle
+                             descend jusqu'ici (propriété héritée). -->
+                        <controls:PlancheVirtualisee/>
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
@@ -108,7 +122,6 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </ScrollViewer>
 
             <!-- Dossier sans photos : on le DIT, et on propose d'en choisir un autre.
                  La planche restait vide et muette, l'opérateur devant le client. -->

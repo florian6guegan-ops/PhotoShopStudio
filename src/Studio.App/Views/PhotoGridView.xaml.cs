@@ -660,7 +660,9 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         {
             if (ct.IsCancellationRequested) return;
 
-            var lot = aLire.Skip(debut).Take(tranche).ToList();
+            // GetRange et non Skip/Take : sur 1200 photos, le Skip reparcourait la liste
+            // depuis le début à chaque tranche
+            var lot = aLire.GetRange(debut, Math.Min(tranche, aLire.Count - debut));
             var lues = new VignetteLue[lot.Count];
 
             try
@@ -883,13 +885,19 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     private void OnSmaller(object sender, RoutedEventArgs e) => Zoom(1 / 1.15);
     private void OnBigger(object sender, RoutedEventArgs e) => Zoom(1.15);
 
+    /// <summary>
+    /// Échelle des vignettes. Elle vit ici plutôt que dans un <c>ScaleTransform</c> du
+    /// gabarit : la planche est virtualisée, et c'est le panneau qui a besoin de connaître
+    /// la taille réelle d'une tuile pour savoir combien en tiennent à l'écran.
+    /// </summary>
+    private double _echelleVignettes = 1.0;
+
     private void Zoom(double facteur)
     {
         // bornes larges mais réelles : sous 0,5 on ne distingue plus un visage, au-delà
         // de 2 on ne voit plus assez de photos pour choisir
-        var echelle = Math.Clamp(GridZoom.ScaleX * facteur, 0.5, 2.0);
-        GridZoom.ScaleX = echelle;
-        GridZoom.ScaleY = echelle;
+        _echelleVignettes = Math.Clamp(_echelleVignettes * facteur, 0.5, 2.0);
+        Controls.PlancheVirtualisee.SetEchelle(PhotosGrid, _echelleVignettes);
     }
 
     private void OnSelectAll(object sender, RoutedEventArgs e)

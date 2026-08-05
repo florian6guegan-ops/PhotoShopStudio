@@ -599,10 +599,19 @@ public sealed class SuiviImpressions : ObservableObject
         finally
         {
             _attentes.Remove(travail.Numero);
-        }
 
-        battement.Stop();
-        releve.Stop();
+            // Les deux minuteurs sont arrêtés ICI, et non après le bloc.
+            //
+            // Un DispatcherTimer démarré est retenu par le répartiteur : rien ne le ramasse
+            // tant qu'il tourne. Posés après le try, ils n'étaient arrêtés que sur les deux
+            // sorties prévues — fin normale ou expiration. Toute autre issue (l'opérateur
+            // qui quitte, une lecture qui lève) les laissait battre POUR TOUJOURS : le
+            // relevé interrogeait le relais 32 bits toutes les dix secondes, indéfiniment,
+            // en retenant au passage la commande et son suivi. Sur une journée de comptoir,
+            // c'est un relevé de plus par commande passée.
+            battement.Stop();
+            releve.Stop();
+        }
 
         // Ce qu'on vient de mesurer sert aux commandes suivantes. Seulement quand tout est
         // sorti : une commande interrompue en cours de route a passé du temps à attendre

@@ -4,20 +4,77 @@ namespace Studio.Imaging;
 
 public static class MagickInit
 {
-    private static bool _done;
+    /// <summary>
+    /// Les limites sont posées UNE fois, et le premier arrivé attend qu'elles le soient.
+    ///
+    /// <b>Un simple drapeau ne suffisait pas.</b> <c>Configure</c> est appelé depuis les
+    /// rendus menés en parallèle (<c>PrintOrchestrator.RenderEnvelope</c>) et depuis le
+    /// chargement des vignettes, lui aussi parallèle. Avec <c>if (_done) return; _done =
+    /// true;</c>, un second fil pouvait lire le drapeau déjà posé pendant que le premier
+    /// n'avait pas encore écrit les limites — et décoder un fichier piégé SANS plafond,
+    /// c'est-à-dire précisément le cas contre lequel cette méthode existe.
+    ///
+    /// <see cref="Lazy{T}"/> garantit les deux : une seule exécution, et tout appelant
+    /// bloqué jusqu'à ce qu'elle soit terminée.
+    /// </summary>
+    private static readonly Lazy<bool> Limites = new(() =>
+    {
+        ResourceLimits.Memory = 2UL * 1024 * 1024 * 1024;      // 2 Go puis bascule sur disque
+        ResourceLimits.Width = 60000;                           // ~15 m à 300 dpi : au-delà c'est un fichier piégé
+        ResourceLimits.Height = 60000;
+        return true;
+    }, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// Plafonne les ressources de Magick.NET : un fichier client corrompu ou
     /// démesuré ne doit jamais pouvoir mettre l'application à genoux (leçon DiLand).
     /// </summary>
-    public static void Configure()
-    {
-        if (_done) return;
-        _done = true;
+    public static void Configure() => _ = Limites.Value;
 
-        ResourceLimits.Memory = 2UL * 1024 * 1024 * 1024;      // 2 Go puis bascule sur disque
-        ResourceLimits.Width = 60000;                           // ~15 m à 300 dpi : au-delà c'est un fichier piégé
-        ResourceLimits.Height = 60000;
+    /// <summary>
+    /// Fait décoder un JPEG à la taille dont on a besoin, et pas à celle du fichier.
+    ///
+    /// <b>C'est l'économie la moins chère du logiciel.</b> Le décodeur JPEG sait sauter des
+    /// coefficients et rendre l'image au demi, au quart ou au huitième : c'est du
+    /// sous-échantillonnage exact, pas une réduction après coup. Une photo de 24 Mpx dont on
+    /// ne veut qu'un aperçu de 900 px se décode ainsi huit fois plus vite, et ne passe
+    /// jamais entière par la mémoire.
+    ///
+    /// <b>On demande un CARRÉ</b>, du plus grand des deux côtés voulus : l'indication porte
+    /// sur le FICHIER, dont l'orientation n'est connue qu'après lecture de l'EXIF. Demander
+    /// 900 × 600 sur un fichier couché ferait décoder trop petit ; un carré est juste dans
+    /// les deux sens, et coûte au pire un cran de décodage.
+    ///
+    /// Rend null pour tout ce qui n'est pas un JPEG — les autres formats n'ont pas de
+    /// décodage progressif — et jamais à la hausse : le décodeur ne sait pas agrandir, un
+    /// besoin supérieur au fichier le laisse simplement le lire en entier.
+    /// </summary>
+    /// <param name="sourcePath">Fichier à lire.</param>
+    /// <param name="cote">Côté voulu, en pixels ; zéro ou moins = pas d'indication.</param>
+    public static MagickReadSettings? IndicationDeTaille(string sourcePath, int cote)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+
+        if (cote <= 0) return null;
+        if (Path.GetExtension(sourcePath).ToLowerInvariant() is not (".jpg" or ".jpeg")) return null;
+
+        var settings = new MagickReadSettings();
+        settings.SetDefine(MagickFormat.Jpeg, "size", $"{cote}x{cote}");
+        return settings;
+    }
+
+    /// <summary>
+    /// Ouvre une image en ne décodant que ce dont on a besoin. Voir
+    /// <see cref="IndicationDeTaille"/>.
+    /// </summary>
+    /// <param name="cote">Côté voulu, en pixels ; zéro ou moins = décodage complet.</param>
+    public static MagickImage Lire(string sourcePath, int cote)
+    {
+        Configure();
+
+        return IndicationDeTaille(sourcePath, cote) is { } econome
+            ? new MagickImage(sourcePath, econome)
+            : new MagickImage(sourcePath);
     }
 
     /// <summary>
@@ -87,15 +144,55 @@ public static class MagickInit
         {
             image.Format = MagickFormat.Jpeg;
             image.Quality = QualiteJpeg;
-            image.Write(path);
-            return;
+        }
+        else
+        {
+            image.Settings.SetDefine(MagickFormat.Png, "compression-level", CompressionPng);
+
+            // une image née d'une couleur porte le pseudo-format « XC », que rien ne sait
+            // écrire : on impose le format plutôt que de le laisser deviner par l'extension
+            image.Format = MagickFormat.Png;
         }
 
-        image.Settings.SetDefine(MagickFormat.Png, "compression-level", CompressionPng);
+        EcrirePuisPoser(image, path);
+    }
 
-        // une image née d'une couleur porte le pseudo-format « XC », que rien ne sait
-        // écrire : on impose le format plutôt que de le laisser deviner par l'extension
-        image.Format = MagickFormat.Png;
-        image.Write(path);
+    /// <summary>
+    /// Écrit à côté, puis met en place d'un seul geste.
+    ///
+    /// <b>Ce n'est pas une précaution théorique.</b> Un rendu qui existe déjà n'est jamais
+    /// refait : <c>PrintOrchestrator.RenderEnvelope</c> saute le calcul dès que
+    /// <c>File.Exists(output)</c> — c'est ce qui rend une commande rejouable après un
+    /// incident sans tout recalculer. Mais un tirage 50×70 met une dizaine de secondes à
+    /// s'écrire : une coupure de courant, un arrêt forcé ou une saturation du disque
+    /// pendant ces secondes laissait un PNG TRONQUÉ à l'emplacement final. À la reprise, il
+    /// était donc réutilisé tel quel — le minilab recevait une image incomplète, ou
+    /// <c>new Bitmap(page.Path)</c> levait sur une commande qu'on croyait rattrapée.
+    ///
+    /// Le fichier temporaire porte l'identifiant du processus et du fil : deux rendus
+    /// menés en parallèle (ils le sont) ne peuvent pas se marcher dessus.
+    ///
+    /// <c>File.Move</c> est atomique sur un même volume — et le temporaire est écrit dans
+    /// le dossier de destination, donc c'est toujours le cas.
+    /// </summary>
+    private static void EcrirePuisPoser(IMagickImage<byte> image, string path)
+    {
+        var dossier = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dossier)) Directory.CreateDirectory(dossier);
+
+        var temporaire = $"{path}.{Environment.ProcessId}-{Environment.CurrentManagedThreadId}.part";
+
+        try
+        {
+            image.Write(temporaire);
+            File.Move(temporaire, path, overwrite: true);
+        }
+        catch
+        {
+            // un temporaire abandonné ne doit pas s'accumuler dans le dossier des rendus,
+            // ni surtout passer pour un rendu valide au prochain passage
+            try { File.Delete(temporaire); } catch (IOException) { }
+            throw;
+        }
     }
 }

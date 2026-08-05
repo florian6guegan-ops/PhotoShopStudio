@@ -51,9 +51,14 @@ public sealed class PreviewRenderer : IDisposable
     /// <param name="maxSide">Côté le plus long de l'aperçu, en pixels.</param>
     public PreviewRenderer(string sourcePath, int maxSide = 900)
     {
-        MagickInit.Configure();
-
-        _reduite = new MagickImage(sourcePath);
+        // La source est décodée À LA TAILLE DE L'APERÇU, pas à celle du fichier.
+        //
+        // Un reflex de 24 Mpx était décodé en entier pour n'en garder que 900 px de côté,
+        // soit 0,8 Mpx : trente fois trop de pixels, et une pointe de mémoire de cent
+        // mégaoctets par photo ouverte. Le décodeur JPEG sait rendre l'image au huitième
+        // sans rien perdre de ce qu'on en fera — voir MagickInit.IndicationDeTaille. C'est
+        // ce qui rend l'ouverture de « Modifier » immédiate sur une carte de reflex.
+        _reduite = MagickInit.Lire(sourcePath, maxSide);
         _reduite.AutoOrient();
 
         if (_reduite.GetColorProfile() is { } profil)

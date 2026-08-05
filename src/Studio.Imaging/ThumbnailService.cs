@@ -91,10 +91,18 @@ public sealed class ThumbnailService
             {
                 var jpeg = File.ReadAllBytes(candidat);
 
-                // Les vignettes d'avant ce fichier compagnon n'en ont pas : on lit la
+                // Les vignettes d'avant ce fichier compagnon n'en ont pas : on lit alors la
                 // définition à l'ancienne, une fois, et on la dépose pour les suivantes.
-                var (largeur, hauteur) = LireLaDefinition(candidat)
-                                         ?? DefinitionDeLOriginal(sourcePath);
+                //
+                // <b>Seulement dans ce cas-là.</b> Le dépôt était fait à CHAQUE lecture, y
+                // compris quand le fichier compagnon venait d'être lu : rouvrir un dossier de
+                // 1200 photos réécrivait donc 1200 petits fichiers, depuis les huit fils qui
+                // chargent la planche — soit exactement l'accès disque que ce cache existe
+                // pour supprimer, et de la contention entre fils par-dessus.
+                if (LireLaDefinition(candidat) is { } connue)
+                    return new Vignette(jpeg, connue.Width, connue.Height);
+
+                var (largeur, hauteur) = DefinitionDeLOriginal(sourcePath);
                 EcrireLaDefinition(candidat, largeur, hauteur);
 
                 return new Vignette(jpeg, largeur, hauteur);
@@ -105,22 +113,13 @@ public sealed class ThumbnailService
             }
         }
 
-        MagickInit.Configure();
-
-        var settings = new MagickReadSettings();
-        var ext = Path.GetExtension(sourcePath).ToLowerInvariant();
-        if (ext is ".jpg" or ".jpeg")
-        {
-            // Le décodeur JPEG ne sait réduire que par 1/2, 1/4, 1/8, et il choisit le
-            // premier facteur qui reste AU MOINS aussi grand que l'indication. Demander le
-            // double de la vignette (1024 pour 512) lui faisait donc décoder deux fois
-            // trop de pixels : 3 557 ms pour 20 photos de 6 Mo, contre 2 378 ms à
-            // l'indication juste — un tiers de moins, pour une vignette d'un kilo-octet de
-            // différence. Mesuré le 04/08/2026 sur les photos de la commande 08-012.
-            settings.SetDefine(MagickFormat.Jpeg, "size", $"{demande}x{demande}");
-        }
-
-        using var image = new MagickImage(sourcePath, settings);
+        // Le décodeur JPEG ne sait réduire que par 1/2, 1/4, 1/8, et il choisit le premier
+        // facteur qui reste AU MOINS aussi grand que l'indication. Demander le double de la
+        // vignette (1024 pour 512) lui faisait décoder deux fois trop de pixels : 3 557 ms
+        // pour 20 photos de 6 Mo, contre 2 378 ms à l'indication juste — un tiers de moins,
+        // pour une vignette d'un kilo-octet de différence. Mesuré le 04/08/2026 sur les
+        // photos de la commande 08-012.
+        using var image = MagickInit.Lire(sourcePath, demande);
 
         // La définition de l'ORIGINAL, avant toute réduction : BaseWidth/BaseHeight ne
         // suivent pas l'échelle appliquée par le décodeur. L'orientation se lit ici, avant

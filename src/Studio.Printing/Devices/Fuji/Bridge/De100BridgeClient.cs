@@ -149,7 +149,13 @@ public sealed class De100BridgeClient : IAsyncDisposable
         {
             // le plus souvent le relais est mort au démarrage : sa sortie d'erreur dit
             // pourquoi, et c'est bien plus utile qu'un « pas de réponse »
+            AbandonnerLaConnexion();
             throw new TimeoutException(DescribeStartupFailure(hostPath));
+        }
+        catch
+        {
+            AbandonnerLaConnexion();
+            throw;
         }
 
         _reader = new StreamReader(_pipe, new UTF8Encoding(false));
@@ -159,6 +165,36 @@ public sealed class De100BridgeClient : IAsyncDisposable
         _ = Task.Run(() => ReadLoopAsync(_readLoop.Token), CancellationToken.None);
 
         Log?.Invoke("Relais DE100 connecté.");
+    }
+
+    /// <summary>
+    /// Défait ce qu'une connexion ratée laisse derrière elle : le tube, et surtout le RELAIS.
+    ///
+    /// <b>Sans cela, chaque échec laissait un processus 32 bits en vie.</b> Le relais ne
+    /// s'arrête tout seul qu'à la DÉCONNEXION d'un client — s'il n'y en a jamais eu, il
+    /// attend indéfiniment sur son tube. Or l'appelant réessaie : le bandeau des machines
+    /// interroge le minilab toutes les quelques secondes, et chaque tentative en démarrait
+    /// un de plus. Un minilab en veille suffisait donc à empiler des dizaines de
+    /// <c>Studio.De100Host.exe</c>, chacun tenant un tube du même nom — après quoi plus
+    /// aucune connexion ne tombait sur le bon.
+    /// </summary>
+    private void AbandonnerLaConnexion()
+    {
+        Ferme(_pipe);
+        _pipe = null;
+
+        try
+        {
+            if (_host is { HasExited: false }) _host.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException
+                                       or System.ComponentModel.Win32Exception)
+        {
+            // processus déjà parti, ou hors de portée : rien de plus à faire
+        }
+
+        _host?.Dispose();
+        _host = null;
     }
 
     /// <summary>Vrai si le SDK Fuji est présent sur le poste (question posée au relais).</summary>
@@ -338,14 +374,29 @@ public sealed class De100BridgeClient : IAsyncDisposable
         var waiter = new TaskCompletionSource<De100Message>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[request.Id] = waiter;
 
-        await _writeLock.WaitAsync();
         try
         {
-            await _writer!.WriteLineAsync(De100Protocol.Encode(request));
+            await _writeLock.WaitAsync();
+            try
+            {
+                await _writer!.WriteLineAsync(De100Protocol.Encode(request));
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
-        finally
+        catch
         {
-            _writeLock.Release();
+            // La commande n'est jamais partie : son attente n'a plus lieu d'être.
+            //
+            // Elle restait sinon dans le registre — un tube rompu lève ICI, pas plus loin —
+            // et n'en sortait qu'à l'arrêt de la boucle de lecture. Le bandeau des machines
+            // interroge le relais toutes les quelques secondes : une liaison coupée y
+            // empilait une entrée morte par interrogation, chacune avec sa promesse jamais
+            // tenue.
+            _pending.TryRemove(request.Id, out _);
+            throw;
         }
 
         var attente = DelaiPour(command);
@@ -395,8 +446,12 @@ public sealed class De100BridgeClient : IAsyncDisposable
         {
             // arrêt demandé
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
+            // ObjectDisposedException est le cas de l'ARRÊT : DisposeAsync referme le tube
+            // pendant que cette boucle attend une ligne dessus. Non capturée, elle sortait
+            // d'une tâche que personne n'observe — le finally passait quand même, mais la
+            // fermeture s'achevait sur une exception perdue.
             Log?.Invoke($"Relais DE100 déconnecté : {ex.Message}");
         }
         finally

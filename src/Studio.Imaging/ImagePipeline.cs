@@ -300,9 +300,6 @@ public static class ImagePipeline
     /// </summary>
     private static MagickReadSettings? LectureEconome(RenderRequest request)
     {
-        var extension = Path.GetExtension(request.SourcePath).ToLowerInvariant();
-        if (extension is not (".jpg" or ".jpeg")) return null;
-
         if (request.TargetWidthPx <= 0 || request.TargetHeightPx <= 0) return null;
 
         // la part que le recadrage retiendra : plus il est serré, plus il faut de source
@@ -325,11 +322,8 @@ public static class ImagePipeline
         // au-delà de ce qu'un JPEG contient, l'indication ne sert plus à rien
         if (besoin >= 100_000) return null;
 
-        var cote = (uint)Math.Max(1, Math.Ceiling(besoin));
-
-        var settings = new MagickReadSettings();
-        settings.SetDefine(MagickFormat.Jpeg, "size", $"{cote}x{cote}");
-        return settings;
+        return MagickInit.IndicationDeTaille(
+            request.SourcePath, (int)Math.Max(1, Math.Ceiling(besoin)));
     }
 
     /// <param name="dpi">Résolution du produit : c'est elle qui donne l'épaisseur du trait de
@@ -405,8 +399,7 @@ public static class ImagePipeline
             {
                 tirage.RenderingIntent = RenderingIntent.Perceptual;
                 tirage.BlackPointCompensation = true;
-                tirage.TransformColorSpace(ColorProfiles.SRGB,
-                    new ColorProfile(File.ReadAllBytes(request.IccProfilePath)));
+                tirage.TransformColorSpace(ColorProfiles.SRGB, Profil(request.IccProfilePath));
             }
 
             return tirage;
@@ -540,9 +533,26 @@ public static class ImagePipeline
             // s'applique une seconde fois par-dessus la nôtre)
             image.RenderingIntent = RenderingIntent.Perceptual;  // photos : dégradés et peaux préservés
             image.BlackPointCompensation = true;                 // évite les noirs bouchés en dye-sub
-            image.TransformColorSpace(ColorProfiles.SRGB, new ColorProfile(File.ReadAllBytes(request.IccProfilePath)));
+            image.TransformColorSpace(ColorProfiles.SRGB, Profil(request.IccProfilePath));
         }
     }
+
+    /// <summary>
+    /// Le profil ICC d'un fichier, lu UNE fois pour toute la séance.
+    ///
+    /// Un profil d'imprimante pèse quelques centaines de kilo-octets, et il était relu à
+    /// chaque tirage : une enveloppe de quarante photos ouvrait donc quarante fois le même
+    /// fichier, depuis quatre fils à la fois, au beau milieu du rendu. Ils ne changent
+    /// jamais en cours d'exploitation — le catalogue les dépose une fois pour toutes.
+    ///
+    /// <see cref="ColorProfile"/> ne porte que les octets du profil et ne s'altère pas à
+    /// l'usage : le même objet se partage entre fils sans risque.
+    /// </summary>
+    private static ColorProfile Profil(string chemin) =>
+        Profils.GetOrAdd(chemin, c => new ColorProfile(File.ReadAllBytes(c)));
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ColorProfile>
+        Profils = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Dimensions de l'image une fois orientée (EXIF + rotation utilisateur), sans

@@ -135,9 +135,9 @@ public static class DnpSpouleur
         var enPause = false;
 
         // Win32_PrintJob.Name vaut « <file>, <numéro> » : c'est la seule clé qui rattache
-        // un travail à sa file, et elle ne se filtre proprement qu'ici, à la lecture
+        // un travail à sa file.
         using var recherche = new ManagementObjectSearcher(
-            new SelectQuery("Win32_PrintJob", null,
+            new SelectQuery("Win32_PrintJob", ClauseDeFile(nomDeFile),
                 ["Name", "TotalPages", "PagesPrinted", "StatusMask"]));
 
         foreach (var travail in recherche.Get().Cast<ManagementObject>())
@@ -160,6 +160,29 @@ public static class DnpSpouleur
         }
 
         return (restantes, travaux, enPause);
+    }
+
+    /// <summary>
+    /// Le tri des travaux confié à WMI plutôt que fait ici, sur tout ce qu'il a renvoyé.
+    ///
+    /// <b>Ce n'est pas une coquetterie de requête.</b> Cette lecture est sur le chemin
+    /// d'impression : <c>CadenceSpouleur</c> l'appelle avant CHAQUE photo, et
+    /// <c>PagesSorties</c> une seconde fois juste après. Sans clause, WMI construisait et
+    /// transmettait un objet par travail de TOUT le poste — DiLand en laisse couramment
+    /// plusieurs dizaines dans la file de la DS620 — pour n'en garder ensuite qu'une
+    /// poignée. Sur une commande de six cents photos, cela se compte en milliers d'objets
+    /// COM créés et détruits pour rien, pendant que la machine attend du papier.
+    ///
+    /// <b>La clause ne fait que PRÉ-trier</b> : le <c>StartsWith</c> qui suit reste la règle
+    /// qui tranche. C'est ce qui permet de renoncer à la clause sans conséquence quand le
+    /// nom porte un caractère que <c>LIKE</c> interpréterait (<c>%</c>, <c>_</c>, crochets) —
+    /// on lit alors tout, comme avant, plutôt que de risquer de manquer un travail.
+    /// </summary>
+    private static string? ClauseDeFile(string nomDeFile)
+    {
+        if (nomDeFile.AsSpan().IndexOfAny("%_[]") >= 0) return null;
+
+        return $"Name LIKE '{nomDeFile.Replace("'", "''")},%'";
     }
 
     private static EtatSpouleurDnp LireLImprimante(
@@ -300,7 +323,7 @@ public static class DnpSpouleur
         try
         {
             using var recherche = new ManagementObjectSearcher(
-                new SelectQuery("Win32_PrintJob"));
+                new SelectQuery("Win32_PrintJob", ClauseDeFile(nomDeFile)));
 
             foreach (var travail in recherche.Get().Cast<ManagementObject>())
             {

@@ -5,6 +5,10 @@
     <IsTestProject>true</IsTestProject>
     <!-- nécessaire pour référencer Studio.Printing (net8.0-windows) -->
     <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- La planche virtualisée est un panneau WPF : la vérifier demande de la mesurer et de
+         la disposer pour de vrai, avec un répartiteur et un arbre visuel. Voir
+         PlancheVirtualiseeTests. -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,9 +20,14 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- UseWPF retire System.IO et System.Net.Http de la liste des using implicites : on
+         les remet, sans quoi la moitié des essais ne compilerait plus. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Studio.App\Studio.App.csproj" />
     <ProjectReference Include="..\..\src\Studio.Core\Studio.Core.csproj" />
     <ProjectReference Include="..\..\src\Studio.Imaging\Studio.Imaging.csproj" />
     <ProjectReference Include="..\..\src\Studio.Printing\Studio.Printing.csproj" />
