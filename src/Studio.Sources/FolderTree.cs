@@ -17,8 +17,29 @@ public sealed record FolderShortcut(string Path, string Label, string Icon);
 /// </summary>
 public static class FolderTree
 {
-    /// <summary>Sous-dossiers visibles d'un dossier, triés par nom.</summary>
-    public static List<FolderNode> SubFolders(string path)
+    /// <summary>Dans quel ordre présenter les sous-dossiers.</summary>
+    public enum TriDossiers
+    {
+        /// <summary>
+        /// Le plus récemment modifié d'abord. <b>C'est le défaut</b> : les photos qu'on
+        /// vient de recevoir sont celles qu'on cherche, et un tri alphabétique les enfouit
+        /// au milieu de dossiers vieux de plusieurs mois.
+        /// </summary>
+        PlusRecent,
+
+        /// <summary>Ordre alphabétique — pour retrouver un dossier dont on connaît le nom.</summary>
+        Nom,
+    }
+
+    /// <summary>
+    /// Sous-dossiers visibles d'un dossier.
+    ///
+    /// La date retenue est celle de la DERNIÈRE ÉCRITURE du dossier, pas de sa création :
+    /// un dossier créé la semaine dernière et rempli ce matin doit remonter en tête. Un
+    /// dossier dont la date est illisible part au fond plutôt que de faire échouer la
+    /// lecture — c'est le cas d'un support retiré en pleine énumération.
+    /// </summary>
+    public static List<FolderNode> SubFolders(string path, TriDossiers tri = TriDossiers.PlusRecent)
     {
         var nodes = new List<FolderNode>();
         foreach (var sub in PhotoScanner.SafeDirectories(path))
@@ -35,8 +56,32 @@ public static class FolderTree
             nodes.Add(new FolderNode(sub, Path.GetFileName(sub)));
         }
 
-        nodes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        if (tri == TriDossiers.Nom)
+        {
+            nodes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            return nodes;
+        }
+
+        var dates = new Dictionary<string, DateTime>(nodes.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var node in nodes) dates[node.Path] = DerniereEcriture(node.Path);
+
+        nodes.Sort((a, b) =>
+        {
+            var ordre = dates[b.Path].CompareTo(dates[a.Path]);
+            return ordre != 0
+                ? ordre
+                : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+        });
+
         return nodes;
+    }
+
+    /// <summary>Date de dernière écriture, ou <see cref="DateTime.MinValue"/> si illisible.</summary>
+    private static DateTime DerniereEcriture(string path)
+    {
+        try { return Directory.GetLastWriteTime(path); }
+        catch (IOException) { return DateTime.MinValue; }
+        catch (UnauthorizedAccessException) { return DateTime.MinValue; }
     }
 
     /// <summary>Le dossier au-dessus, ou null si l'on est déjà à la racine d'un disque.</summary>

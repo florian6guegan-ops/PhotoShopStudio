@@ -38,6 +38,17 @@ public partial class FolderBrowserView : UserControl
     /// <summary>Nombre de sous-dossiers illustrés d'une vignette : au-delà, l'icône suffit.</summary>
     private const int MaxVignettes = 60;
 
+    /// <summary>
+    /// L'ordre des sous-dossiers, retenu d'un dossier à l'autre.
+    ///
+    /// <b>Le plus récent d'abord, et c'est le défaut.</b> Ce qu'on cherche est presque
+    /// toujours ce qui vient d'arriver — le WeTransfer de ce matin, la carte qu'on vient de
+    /// vider — et l'ordre alphabétique l'enfouissait au milieu de dossiers vieux de
+    /// plusieurs mois. Statique : changer l'ordre puis descendre d'un dossier ne doit pas
+    /// le remettre comme avant.
+    /// </summary>
+    private static FolderTree.TriDossiers _tri = FolderTree.TriDossiers.PlusRecent;
+
     /// <param name="depart">Dossier ouvert à l'arrivée ; null = le dernier visité, sinon Images.</param>
     /// <param name="onChosen">Ce qu'on fait du dossier retenu.</param>
     public FolderBrowserView(string? depart, Action<Choix> onChosen)
@@ -57,9 +68,36 @@ public partial class FolderBrowserView : UserControl
             .Concat(FolderTree.Shortcuts().Select(r => new RaccourciRow(r)))
             .ToList();
 
-        Loaded += (_, _) => Naviguer(_dossier);
+        Loaded += (_, _) =>
+        {
+            MajBoutonTri();
+            Naviguer(_dossier);
+        };
         Unloaded += (_, _) => _cts?.Cancel();
     }
+
+    /// <summary>Bascule l'ordre et relit le dossier courant.</summary>
+    private void OnTrier(object sender, System.Windows.RoutedEventArgs e)
+    {
+        _tri = _tri == FolderTree.TriDossiers.PlusRecent
+            ? FolderTree.TriDossiers.Nom
+            : FolderTree.TriDossiers.PlusRecent;
+
+        MajBoutonTri();
+        Naviguer(_dossier);
+    }
+
+    /// <summary>
+    /// Le bouton dit l'ordre COURANT, pas celui qu'on obtiendrait en cliquant.
+    ///
+    /// L'inverse se lit aussi bien dans les deux sens et personne ne sait plus ce qui est
+    /// affiché — alors que la question posée devant un client est « dans quel ordre est-ce
+    /// que je regarde ? ».
+    /// </summary>
+    private void MajBoutonTri() =>
+        TriButton.Content = _tri == FolderTree.TriDossiers.PlusRecent
+            ? "↓  Plus récents"
+            : "A→Z  Par nom";
 
     /// <summary>
     /// Dernier dossier ouvert, retenu d'un passage à l'autre. Les photos d'une boutique
@@ -107,7 +145,7 @@ public partial class FolderBrowserView : UserControl
         BreadcrumbList.ItemsSource = FolderTree.Breadcrumb(dossier);
         ParentButton.IsEnabled = FolderTree.Parent(dossier) is not null;
 
-        var sousDossiers = FolderTree.SubFolders(dossier);
+        var sousDossiers = FolderTree.SubFolders(dossier, _tri);
         _tronque = sousDossiers.Count > 300;
         _masques = 0;
 

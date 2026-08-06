@@ -47,6 +47,14 @@
                         MinWidth="0" MinHeight="46" Padding="16,0" FontSize="16" Margin="0,0,12,0"
                         ToolTip="Remonter d'un dossier" Click="OnParent">⬆  Dossier parent</Button>
 
+                <!-- Le tri bascule entre les deux seuls ordres qui servent : le plus
+                     récent — ce qu'on vient de recevoir, et donc ce qu'on cherche neuf
+                     fois sur dix — et le nom, pour retrouver un dossier qu'on connaît. -->
+                <Button x:Name="TriButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        MinWidth="0" MinHeight="46" Padding="16,0" FontSize="16" Margin="12,0,0,0"
+                        ToolTip="Changer l'ordre des dossiers" Click="OnTrier"
+                        Content="↓  Plus récents"/>
+
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                     <ItemsControl x:Name="BreadcrumbList" VerticalAlignment="Center">
                         <ItemsControl.ItemsPanel>
