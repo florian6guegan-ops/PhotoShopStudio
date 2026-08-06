@@ -179,10 +179,27 @@ public partial class CatalogView : UserControl
             ProductCatalog.Save(services.ProductsJson, services.Catalog.All);
             services.ReloadCatalog();
 
-            MessageBox.Show(
-                $"Réglages du pilote enregistrés pour « {product.Name} ».\n" +
-                "Ils seront appliqués à chaque impression de ce produit.",
-                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            // Ce qu'on vient d'enregistrer, EN CLAIR. Un DEVMODE est un bloc de mille deux
+            // cents octets opaques : personne — ni l'opérateur, ni celui qui dépanne à
+            // distance — ne pouvait dire sur quels réglages un produit tirait. C'est
+            // pourtant la première question quand une machine sort du papier gâché.
+            var resume = LectureDevMode.Resume(captured);
+            var alertes = LectureDevMode.Avertissements(captured);
+
+            FileLog.Write($"Réglages pilote capturés pour « {product.Name} » : " +
+                          (resume.Count > 0 ? string.Join(" · ", resume) : "aucun réglage lisible"));
+
+            var texte = $"Réglages du pilote enregistrés pour « {product.Name} ».\n" +
+                        "Ils seront appliqués à chaque impression de ce produit.";
+
+            if (resume.Count > 0)
+                texte += "\n\n" + string.Join("\n", resume.Select(r => "· " + r));
+
+            if (alertes.Count > 0)
+                texte += "\n\n⚠  " + string.Join("\n\n⚠  ", alertes);
+
+            MessageBox.Show(texte, "Studio Photo", MessageBoxButton.OK,
+                alertes.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex)
         {

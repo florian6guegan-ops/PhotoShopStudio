@@ -2161,3 +2161,64 @@ tracés directement à 16 px disparaissent.
 
 **À ne relancer que si la marque change.** Une icône refaite à chaque compilation change
 d'octets sans changer de dessin, et le dépôt en garderait la trace à chaque commit.
+
+## DS620 : pourquoi l'envoi direct à la DiLand est HORS DE PORTÉE
+
+DiLand n'imprime pas sur la DS620 par le pilote Windows. Son journal
+(`DnpPrinterQueueDocumentPrinter.log`) montre le SDK en direct :
+
+```
+GetFreeBuffer → WaitForFreeBuffer → SetMediaSize(CSP_6x4)
+            → SetOvercoatFinish(OVERCOAT_FINISH_GLOSSY) → SendImageData
+```
+
+L'idée de faire pareil est morte sur un fait mesuré le 06/08/2026, DiLand ouvert :
+
+```
+DiLand ouvert : True        SDK chargeable: True
+Ports trouvés : 0 []
+rang 0 : 0x80000000  (comm KO) — imprimante injoignable
+```
+
+**DiLand tient le port USB en exclusif.** Le SDK ne voit pas la machine tant qu'il tourne —
+et il tourne en permanence, c'est lui qui reçoit les bornes. `SendImageData` ne servirait
+donc que DiLand fermé, c'est-à-dire jamais. C'est la même contrainte que celle qui a fait
+écrire `DnpSpouleur` (l'état par le spouleur plutôt que par le SDK), et elle vaut aussi pour
+l'impression. Décision de l'exploitant, 06/08/2026 : on garde DiLand ouvert.
+
+Conséquence pratique : **la finition BRILLANT est hors de portée sur cette machine.** Le
+`.GPD` du pilote ne propose que `OPTYPE_LUSTER`, `OPTYPE_MATTE1`, `OPTYPE_FINE_MATTE` et
+`OPTYPE_LUSTER_MATTE` ; le brillant ne se pose que par le SDK, donc par DiLand seul.
+
+## Ce qu'un DEVMODE contient, et ce qu'il faut y surveiller
+
+`LectureDevMode` lit — jamais n'écrit — les réglages qu'un pilote Unidrv range à la fin de
+son DEVMODE : une suite de chaînes ASCII terminées par un zéro, chaque nom de réglage suivi
+de l'option retenue. Ce sont exactement les noms du `.GPD` du pilote.
+
+⚠ **On CHERCHE les noms connus, on ne compte pas les chaînes deux par deux.** Le bloc privé
+réel de la DS620 s'ouvre par les marqueurs d'Unidrv (`DINU"`, `SMTJ`, `RESDLL`…) : le
+découpage par paires se décale d'un cran et annonce « OPTYPE_LUSTER = PRINTBUFFCONTROL ».
+
+⚠ **On n'écrit JAMAIS dans les octets privés d'un pilote.** Les chaînes ne sont qu'une table
+de noms ; la sélection réelle vit ailleurs dans le bloc. Changer un réglage passe par le
+dialogue du pilote (`DevMode.ShowDriverDialog`), et par lui seul.
+
+Deux réglages sont signalés comme dangereux, et ce sont les deux suspects du décalage de
+couleurs constaté sur les commandes 06-005 et 06-006 :
+
+| Réglage | Valeur trouvée | Pourquoi c'est un problème |
+| --- | --- | --- |
+| `Resolution` | `Option1` (High-speed) | le mode où l'entraînement du papier est le plus sollicité, donc où les passages de couleur se décalent le plus |
+| `PRINTBUFFCONTROL` | `PBC_NONCLEAR` | le tampon d'image n'est pas vidé entre deux tirages : ce qui restait du précédent se voit sur le suivant, en fantôme décalé |
+
+`PrintOrchestrator` écrit ces réglages au journal à chaque enveloppe : sans cela, un tirage
+raté ne laisse aucune trace de ce sur quoi il est sorti.
+`tools\Studio.PrintProbe devmode-lire <fichier.bin>` les dit en ligne de commande.
+
+**Ce qui est établi, et ce qui ne l'est pas.** Les fichiers rendus des deux commandes ont
+été ouverts et sont PROPRES : le défaut naît après nous. Deux tirages du même fichier à une
+minute d'écart ont donné des défauts DIFFÉRENTS — toute la planche pour l'un, une bande
+haute pour l'autre. Un réglage figé donnerait le même défaut à chaque fois : ce qui varie
+tient donc au tampon, à la mécanique, ou aux deux. L'épreuve qui trancherait est d'imprimer
+le même fichier depuis DiLand.

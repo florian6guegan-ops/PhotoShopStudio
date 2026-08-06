@@ -1,3 +1,66 @@
+# Exécution — 06/08/2026, après-midi (DS620 et cadrage)
+
+## I. Le décalage des couleurs de la DS620 — ce qui est ÉTABLI ⏳
+
+L'exploitant gâche du papier sur les planches identité. Le défaut n'apparaît jamais avec
+DiLand, sur aucun poste.
+
+- [x] I1 **Les fichiers qu'on envoie sont PROPRES.** Les rendus des commandes 06-005 et
+      06-006 ont été ouverts et regardés : aucun fantôme, aucune dominante. Le défaut naît
+      APRÈS nous — ce n'est ni le pipeline, ni le détourage, ni l'ICC
+- [x] I2 **DiLand n'utilise pas le pilote Windows** pour cette machine. Son journal montre
+      le SDK en direct : `GetFreeBuffer` → `WaitForFreeBuffer` → `SetMediaSize` →
+      `SetOvercoatFinish(GLOSSY)` → `SendImageData`
+- [x] I3 ⛔ **L'envoi direct est hors de portée** : sonde 32 bits lancée DiLand ouvert —
+      `Ports trouvés : 0`, `0x80000000` sur les trois rangs. DiLand tient le port USB en
+      exclusif, et il tourne en permanence. Décision de l'exploitant : on garde DiLand
+      ouvert, donc on reste sur le pilote
+- [x] I4 Deux tirages du MÊME fichier à une minute d'écart ont donné des défauts
+      DIFFÉRENTS. Un réglage figé donnerait toujours le même : ce qui varie tient au
+      tampon, à la mécanique, ou aux deux
+
+## J. Ce que le pilote cachait ✅
+
+- [x] J1 `LectureDevMode` : les réglages d'un DEVMODE, dits en français. Mille deux cents
+      octets opaques dont personne — ni l'opérateur, ni celui qui dépanne à distance — ne
+      pouvait dire le contenu
+- [x] J2 ⚠ On CHERCHE les noms connus au lieu de compter les chaînes deux par deux : le
+      bloc réel s'ouvre par les marqueurs d'Unidrv, et le découpage par paires annonçait
+      « OPTYPE_LUSTER = PRINTBUFFCONTROL ». Un essai le tient
+- [x] J3 Deux réglages signalés comme dangereux, et ce sont les deux suspects :
+      `Resolution = Option1` (**mode rapide**) et `PRINTBUFFCONTROL = PBC_NONCLEAR`
+      (**tampon non vidé entre deux tirages**)
+- [x] J4 Les réglages partent au JOURNAL à chaque enveloppe, et s'affichent à la capture
+- [x] J5 `Studio.PrintProbe devmode-lire <fichier>` les dit en ligne de commande
+- [x] J6 Ce qui part au pilote est aplati en **24 bits sur du blanc** : nos rendus sont des
+      PNG 32 bits, et la DS620 annonce `ColorMode=24bpp`. GDI+ convertissait à la volée,
+      dans le chemin d'impression, à chaque tirage
+
+## K. Cadrage automatique sur le visage ✅
+
+- [x] K1 Réglage du poste, **décoché par défaut** : le cadrage automatique déplace le cadre
+      de photos que l'opérateur n'a pas ouvertes
+- [x] K2 Le regard aux **deux cinquièmes** de la hauteur, pas au milieu : un portrait dont
+      les yeux tombent au centre paraît tassé
+- [x] K3 Il ne fait que DÉPLACER : ni format, ni zoom. Neuf essais le tiennent, dont celui
+      qui vérifie qu'aucun bord blanc n'apparaît jamais
+- [x] K4 Ne touche ni un cadrage venu d'une borne, ni la « photo entière », ni rien dès que
+      l'opérateur a posé un geste. La détection tourne en tâche de fond, une photo à la fois
+
+## L. Le raccourci du bureau ✅
+
+- [x] L1 Il lance un `.cmd`, et Windows lui donnait donc l'icône de l'invite de commandes
+- [x] L2 `tools\Creer-Raccourci.ps1` pose l'icône de l'application, sur n'importe quel poste
+
+## Reste à faire par l'exploitant (06/08/2026, après-midi)
+
+1. **Dialogue du pilote DP-DS620** (Catalogue → planche identité → capturer les réglages) :
+   passer la vitesse sur **qualité** et le tampon sur **vidé**, puis retirer une planche.
+   Ce sont les deux seules différences avec DiLand qui restent atteignables.
+2. Si le fantôme persiste : imprimer le MÊME fichier depuis DiLand. S'il sort propre, le
+   pilote est en cause ; s'il sort fantômé, c'est la machine, et aucun réglage ne la
+   réparera.
+
 # Exécution — passe du 06/08/2026 (retours du comptoir)
 
 Dix retours d'un même après-midi d'exploitation. Sept touchent l'écran « Modifier », deux le

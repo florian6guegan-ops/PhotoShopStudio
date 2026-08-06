@@ -1611,6 +1611,20 @@ public sealed class PrintOrchestrator
                     ? File.ReadAllBytes(Path.Combine(_catalogDir, file))
                     : null;
                 devModes[key] = devMode;
+
+                // CE QUE LA MACHINE VA RECEVOIR, écrit une fois par produit et par
+                // commande. Sans cette ligne, un tirage raté ne laisse aucune trace des
+                // réglages sur lesquels il est sorti — et c'est la première chose qu'on
+                // cherche quand du papier part à la poubelle (06/08/2026).
+                if (devMode is not null)
+                {
+                    var resume = LectureDevMode.Resume(devMode);
+                    if (resume.Count > 0)
+                        Log?.Invoke($"Réglages pilote de « {product.Name} » : {string.Join(" · ", resume)}");
+
+                    foreach (var alerte in LectureDevMode.Avertissements(devMode))
+                        Log?.Invoke($"⚠ {product.Name} : {alerte}");
+                }
             }
 
             // le bitmap n'est ouvert que si au moins une de ses copies reste à tirer

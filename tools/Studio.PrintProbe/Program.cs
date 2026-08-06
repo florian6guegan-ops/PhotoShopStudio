@@ -16,6 +16,7 @@ return args switch
     ["dnp"] => EtatDnp(),
     ["papier", var printer, var w, var h] => CheckPaper(printer, ParseMm(w), ParseMm(h)),
     ["devmode", var printer, var file] => CaptureDevMode(printer, file),
+    ["devmode-lire", var file] => LireDevMode(file),
     ["test", var printer, var w, var h] => PrintTestPage(printer, ParseMm(w), ParseMm(h), null),
     ["test", var printer, var w, var h, var pdf] => PrintTestPage(printer, ParseMm(w), ParseMm(h), pdf),
     ["image", var printer, var file, var w, var h] => PrintImage(printer, file, ParseMm(w), ParseMm(h), null),
@@ -34,9 +35,50 @@ static int Usage()
           dnp                                   état des DNP vu par le spouleur Windows
           papier <imprimante> <Lmm> <Hmm>       ce format passera-t-il ? (n'imprime rien)
           devmode <imprimante> <fichier.bin>    capture les réglages pilote (dialogue)
+          devmode-lire <fichier.bin>            DIT ce que ce DEVMODE contient (n'écrit rien)
           test <imprimante> <Lmm> <Hmm> [pdf]   page de test calibrée (règle cm)
         """);
     return 1;
+}
+
+/// <summary>
+/// Dit, en clair, sur quels réglages un produit tire.
+///
+/// Un DEVMODE est un bloc de mille deux cents octets opaques : c'est la première question
+/// qu'on se pose quand une machine gâche du papier, et elle n'avait aucune réponse.
+/// </summary>
+static int LireDevMode(string file)
+{
+    if (!File.Exists(file))
+    {
+        Console.WriteLine($"Fichier introuvable : {file}");
+        return 1;
+    }
+
+    var octets = File.ReadAllBytes(file);
+    Console.WriteLine($"{file} — {octets.Length} octets");
+    Console.WriteLine();
+
+    var lus = LectureDevMode.Lire(octets);
+    if (lus.Count == 0)
+    {
+        Console.WriteLine("Ce pilote ne range aucun réglage lisible dans son DEVMODE.");
+        return 0;
+    }
+
+    foreach (var reglage in lus)
+        Console.WriteLine(reglage.Connu
+            ? $"  {reglage.Libelle,-52}  [{reglage.Reglage} = {reglage.Valeur}]"
+            : $"  {"",-52}  [{reglage.Reglage} = {reglage.Valeur}]");
+
+    var alertes = LectureDevMode.Avertissements(octets);
+    if (alertes.Count == 0) return 0;
+
+    Console.WriteLine();
+    foreach (var alerte in alertes) Console.WriteLine($"  /!\\  {alerte}");
+    Console.WriteLine();
+
+    return 0;
 }
 
 /// <summary>
