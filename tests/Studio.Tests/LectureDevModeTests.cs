@@ -96,7 +96,28 @@ public class LectureDevModeTests
 
         Assert.Equal(2, alertes.Count);
         Assert.Contains(alertes, a => a.Contains("RAPIDE", StringComparison.Ordinal));
-        Assert.Contains(alertes, a => a.Contains("tampon", StringComparison.OrdinalIgnoreCase));
+
+        // l'avertissement doit nommer la ligne du dialogue, sinon l'opérateur ne la trouve
+        // pas : le pilote l'appelle « Réessayer l'impression », jamais « tampon »
+        Assert.Contains(alertes, a => a.Contains("Réessayer l'impression", StringComparison.Ordinal));
+        Assert.Contains(alertes, a => a.Contains("Désactiver", StringComparison.Ordinal));
+        Assert.Contains(alertes, a => a.Contains("High-quality", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// <b>On ne traduit PAS la finition.</b> Le dialogue du pilote affiche « Brillant » là
+    /// où le DEVMODE porte <c>OPTYPE_LUSTER</c> (copie d'écran du 06/08/2026) : les noms
+    /// internes ne disent pas ce que l'opérateur lit, et annoncer « lustré » sur un tirage
+    /// brillant coûte la feuille. On rend le nom brut, et on le dit.
+    /// </summary>
+    [Fact]
+    public void La_finition_est_rendue_sans_traduction_inventee()
+    {
+        var lus = LectureDevMode.Lire(Fabriquer("OVERCOATTYPE", "OPTYPE_LUSTER"));
+
+        Assert.Single(lus);
+        Assert.Contains("OPTYPE_LUSTER", lus[0].Libelle, StringComparison.Ordinal);
+        Assert.False(lus[0].Inquietant);
     }
 
     [Fact]

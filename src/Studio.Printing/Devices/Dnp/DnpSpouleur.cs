@@ -360,6 +360,47 @@ public static class DnpSpouleur
         return supprimes;
     }
 
+    /// <summary>
+    /// Les « fonctionnalités d'impression avancées » de la file Windows sont-elles actives ?
+    ///
+    /// C'est la case de l'onglet Avancé des propriétés d'imprimante. Active — c'est le
+    /// défaut de Windows — le spouleur enregistre le travail en EMF et le REJOUE dans son
+    /// propre processus pour le rendre : le pilote reçoit alors une image découpée en
+    /// bandes, à un rythme qui ne dépend plus de nous. Désactivée, le rendu a lieu chez
+    /// l'appelant et le spouleur ne transporte que des octets déjà prêts.
+    ///
+    /// On ne la CHANGE pas — elle appartient au poste, pas à l'application — mais on la DIT
+    /// au journal : c'est un des rares réglages capables d'expliquer un tirage abîmé sans
+    /// que rien d'autre n'ait bougé, et il ne se voit nulle part depuis Studio.
+    /// </summary>
+    /// <returns>Null si la file n'a pas répondu.</returns>
+    public static bool? FonctionnalitesAvancees(string nomDeFile)
+    {
+        if (string.IsNullOrWhiteSpace(nomDeFile)) return null;
+
+        try
+        {
+            using var recherche = new ManagementObjectSearcher(
+                new SelectQuery("Win32_Printer",
+                    $"Name = '{nomDeFile.Replace("'", "''")}'", ["Name", "Attributes"]));
+
+            var imprimante = recherche.Get().Cast<ManagementObject>().FirstOrDefault();
+            if (imprimante is null) return null;
+
+            using (imprimante)
+            {
+                // PRINTER_ATTRIBUTE_RAW_ONLY (0x1000) est posé quand la case est DÉCOCHÉE :
+                // le drapeau dit « brut seulement », donc l'inverse de la case.
+                return (Entier(imprimante["Attributes"]) & 0x1000) == 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Spouleur : attributs de « {nomDeFile} » illisibles — {ex.Message}");
+            return null;
+        }
+    }
+
     /// <summary>Le libellé montré à l'opérateur, avec ce qui reste à sortir.</summary>
     public static string Decrire(EtatSpouleurDnp etat)
     {

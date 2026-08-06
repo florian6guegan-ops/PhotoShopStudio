@@ -156,24 +156,33 @@ public static class LectureDevMode
     private static (string Libelle, string Avertissement) Traduire(string reglage, string valeur) =>
         (reglage, valeur) switch
         {
-            ("Resolution", "Option1") => ("Vitesse : rapide (High-speed)",
-                "La DS620 tire en mode RAPIDE. C'est le mode où l'entraînement du papier est " +
-                "le plus sollicité, donc celui où les passages de couleur risquent le plus de " +
-                "se décaler. DiLand, lui, laisse la machine à sa vitesse normale."),
+            ("Resolution", "Option1") => ("Qualité d'impression : High-speed",
+                "La DS620 tire en mode RAPIDE (dialogue du pilote → Graphique → « Qualité " +
+                "d'impression »). C'est le mode où l'entraînement du papier est le plus " +
+                "sollicité, donc celui où les passages de couleur risquent le plus de se " +
+                "décaler. À passer sur « High-quality »."),
 
-            ("Resolution", "Option2") => ("Vitesse : qualité (High-quality)", ""),
+            ("Resolution", "Option2") => ("Qualité d'impression : High-quality", ""),
 
-            ("PRINTBUFFCONTROL", "PBC_NONCLEAR") => ("Tampon de l'imprimante : NON vidé",
-                "Le tampon d'image de la DS620 n'est pas vidé entre deux tirages. Ce qui " +
-                "restait du tirage précédent peut alors se voir sur le suivant — un fantôme " +
-                "décalé de la même photo. À passer sur « vidé » dans le dialogue du pilote."),
+            // Le dialogue du pilote appelle ce réglage « Réessayer l'impression », et c'est
+            // sous ce nom-là qu'il faut le chercher — pas sous « tampon ». Réessayer suppose
+            // de GARDER l'image dans la mémoire de la machine, d'où le nom interne.
+            ("PRINTBUFFCONTROL", "PBC_NONCLEAR") =>
+                ("Réessayer l'impression : activé (l'image reste en mémoire)",
+                "La DS620 garde l'image en mémoire d'un tirage à l'autre (dialogue du " +
+                "pilote → Caractéristiques de l'imprimante → « Réessayer l'impression » = " +
+                "Activer). Ce qui restait du tirage précédent peut alors se voir sur le " +
+                "suivant — un fantôme décalé de la même photo. À passer sur « Désactiver »."),
 
-            ("PRINTBUFFCONTROL", "PBC_CLEAR") => ("Tampon de l'imprimante : vidé avant chaque tirage", ""),
+            ("PRINTBUFFCONTROL", "PBC_CLEAR") =>
+                ("Réessayer l'impression : désactivé (mémoire vidée entre deux tirages)", ""),
 
-            ("OVERCOATTYPE", "OPTYPE_LUSTER") => ("Finition : lustré", ""),
-            ("OVERCOATTYPE", "OPTYPE_MATTE1") => ("Finition : mat", ""),
-            ("OVERCOATTYPE", "OPTYPE_FINE_MATTE") => ("Finition : mat fin", ""),
-            ("OVERCOATTYPE", "OPTYPE_LUSTER_MATTE") => ("Finition : lustré-mat", ""),
+            // Les noms internes du pilote NE DISENT PAS la finition : son dialogue affiche
+            // « Brillant » là où le DEVMODE porte OPTYPE_LUSTER (relevé sur copie d'écran le
+            // 06/08/2026). On rend donc le nom brut plutôt qu'une traduction inventée — se
+            // tromper de finition sur un tirage coûte la feuille.
+            ("OVERCOATTYPE", var finition) =>
+                ($"Finition de surcouchage (nom pilote : {finition})", ""),
 
             ("CUTTERCONTROL", "CUT_STANDARD") => ("Découpe : standard", ""),
             ("CUTTERCONTROL", "CUT_2INCH") => ("Découpe : 2 pouces", ""),

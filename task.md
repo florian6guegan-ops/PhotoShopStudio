@@ -52,14 +52,28 @@ DiLand, sur aucun poste.
 - [x] L1 Il lance un `.cmd`, et Windows lui donnait donc l'icône de l'invite de commandes
 - [x] L2 `tools\Creer-Raccourci.ps1` pose l'icône de l'application, sur n'importe quel poste
 
+- [x] J7 ⚠ **Deux corrections après la copie d'écran du dialogue** (06/08/2026) : le pilote
+      propose bien le **Brillant**, contrairement à ce que ses noms internes laissaient
+      croire — `OPTYPE_LUSTER` s'affiche « Brillant ». Et `PRINTBUFFCONTROL` s'appelle
+      **« Réessayer l'impression »** dans le dialogue : chercher « tampon » ne donne rien
+- [x] J8 Les **fonctionnalités d'impression avancées** de la file (actives sur ce poste)
+      partent aussi au journal : le spouleur rejoue alors le rendu dans son processus
+
 ## Reste à faire par l'exploitant (06/08/2026, après-midi)
 
-1. **Dialogue du pilote DP-DS620** (Catalogue → planche identité → capturer les réglages) :
-   passer la vitesse sur **qualité** et le tampon sur **vidé**, puis retirer une planche.
-   Ce sont les deux seules différences avec DiLand qui restent atteignables.
-2. Si le fantôme persiste : imprimer le MÊME fichier depuis DiLand. S'il sort propre, le
-   pilote est en cause ; s'il sort fantômé, c'est la machine, et aucun réglage ne la
-   réparera.
+Dans le dialogue du pilote DP-DS620 (Catalogue → planche identité → capturer les réglages),
+**une modification à la fois**, avec une planche tirée entre chaque — sinon on ne saura pas
+laquelle a agi :
+
+1. Caractéristiques de l'imprimante → **« Réessayer l'impression » = Désactiver**
+   (c'est `PBC_NONCLEAR`, le suspect n°1 : l'image reste en mémoire d'un tirage à l'autre) ;
+2. Graphique → **« Qualité d'impression » = High-quality** (au lieu de High-speed) ;
+3. Propriétés de l'imprimante → onglet Avancé → décocher **« Fonctionnalités d'impression
+   avancées »** (celui-là ne se capture pas, il appartient au poste).
+
+Si le fantôme survit aux trois : imprimer le MÊME fichier depuis DiLand. S'il sort propre,
+le pilote est en cause ; s'il sort fantômé, c'est l'entraînement de la machine, et aucun
+réglage ne la réparera.
 
 # Exécution — passe du 06/08/2026 (retours du comptoir)
 

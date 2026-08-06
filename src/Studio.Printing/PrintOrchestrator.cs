@@ -1625,6 +1625,12 @@ public sealed class PrintOrchestrator
                     foreach (var alerte in LectureDevMode.Avertissements(devMode))
                         Log?.Invoke($"⚠ {product.Name} : {alerte}");
                 }
+
+                // Le réglage du POSTE que le DEVMODE ne porte pas, et qui décide pourtant
+                // de la façon dont l'image arrive au pilote. Voir DnpSpouleur.
+                if (Devices.Dnp.DnpSpouleur.FonctionnalitesAvancees(product.PrinterName) is { } avancees)
+                    Log?.Invoke($"File « {product.PrinterName} » : fonctionnalités d'impression " +
+                                $"avancées {(avancees ? "ACTIVÉES (rendu rejoué par le spouleur)" : "désactivées")}");
             }
 
             // le bitmap n'est ouvert que si au moins une de ses copies reste à tirer

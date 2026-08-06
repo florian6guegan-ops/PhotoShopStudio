@@ -2186,9 +2186,16 @@ donc que DiLand fermé, c'est-à-dire jamais. C'est la même contrainte que cell
 écrire `DnpSpouleur` (l'état par le spouleur plutôt que par le SDK), et elle vaut aussi pour
 l'impression. Décision de l'exploitant, 06/08/2026 : on garde DiLand ouvert.
 
-Conséquence pratique : **la finition BRILLANT est hors de portée sur cette machine.** Le
-`.GPD` du pilote ne propose que `OPTYPE_LUSTER`, `OPTYPE_MATTE1`, `OPTYPE_FINE_MATTE` et
-`OPTYPE_LUSTER_MATTE` ; le brillant ne se pose que par le SDK, donc par DiLand seul.
+⚠ **Les noms internes du `.GPD` ne disent PAS ce que le dialogue affiche.** Le pilote publie
+`OPTYPE_LUSTER`, `OPTYPE_MATTE1`, `OPTYPE_FINE_MATTE`, `OPTYPE_LUSTER_MATTE` — et son
+dialogue, lui, propose Brillant / Mat / Mat fin / Lustre, la file de la boutique étant sur
+**Brillant** alors que son DEVMODE porte `OPTYPE_LUSTER` (copie d'écran du 06/08/2026). En
+déduire une finition d'après le nom interne est donc faux, et une finition annoncée de
+travers coûte la feuille : `LectureDevMode` rend le nom brut, sans le traduire.
+
+De même, `PRINTBUFFCONTROL` s'appelle **« Réessayer l'impression »** dans le dialogue —
+`PBC_NONCLEAR` = Activer. Chercher « tampon » dans les propriétés de l'imprimante ne donne
+rien.
 
 ## Ce qu'un DEVMODE contient, et ce qu'il faut y surveiller
 
@@ -2209,8 +2216,16 @@ couleurs constaté sur les commandes 06-005 et 06-006 :
 
 | Réglage | Valeur trouvée | Pourquoi c'est un problème |
 | --- | --- | --- |
-| `Resolution` | `Option1` (High-speed) | le mode où l'entraînement du papier est le plus sollicité, donc où les passages de couleur se décalent le plus |
-| `PRINTBUFFCONTROL` | `PBC_NONCLEAR` | le tampon d'image n'est pas vidé entre deux tirages : ce qui restait du précédent se voit sur le suivant, en fantôme décalé |
+| `Resolution` | `Option1` (High-speed) | le mode où l'entraînement du papier est le plus sollicité, donc où les passages de couleur se décalent le plus. Dialogue : Graphique → « Qualité d'impression » |
+| `PRINTBUFFCONTROL` | `PBC_NONCLEAR` | l'image reste en mémoire d'un tirage à l'autre : ce qui restait du précédent se voit sur le suivant, en fantôme décalé. Dialogue : Caractéristiques de l'imprimante → « Réessayer l'impression » |
+
+Un TROISIÈME réglage compte, et il ne vit pas dans le DEVMODE : les **fonctionnalités
+d'impression avancées** de la file Windows (onglet Avancé des propriétés d'imprimante).
+Actives — le défaut de Windows, et le cas de la boutique — le spouleur enregistre le travail
+en EMF et le REJOUE dans son propre processus pour le rendre ; le pilote reçoit alors une
+image découpée en bandes, à un rythme qui ne dépend plus de nous.
+`DnpSpouleur.FonctionnalitesAvancees` le lit et `PrintOrchestrator` l'écrit au journal. On ne
+le change pas : il appartient au poste.
 
 `PrintOrchestrator` écrit ces réglages au journal à chaque enveloppe : sans cela, un tirage
 raté ne laisse aucune trace de ce sur quoi il est sorti.
