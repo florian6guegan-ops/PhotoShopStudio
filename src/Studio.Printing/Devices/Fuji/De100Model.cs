@@ -156,7 +156,23 @@ public sealed record De100Media(
     int PaperWidthMm,
     int PaperHeightMm,
     De100Surface Surface,
-    double PaperRemainingMm);
+    double PaperRemainingMm)
+{
+    /// <summary>
+    /// La machine ne dit pas combien de papier il reste.
+    ///
+    /// <b>Elle ne le MESURE pas, elle le DÉCOMPTE</b> à partir d'une longueur qu'on lui
+    /// déclare au chargement du magasin. Tant que cette déclaration n'a pas été faite, elle
+    /// décompte à partir de rien et annonce zéro — sur un rouleau neuf comme sur un rouleau
+    /// fini. C'est l'état de la DE100-2 de la boutique, relevé le 06/08/2026 : encres,
+    /// compteur, magasin et largeur se lisent parfaitement, seule la longueur vaut 0.
+    ///
+    /// L'écran affichait donc « 0 tirage restant » sur une machine prête avec un rouleau
+    /// presque neuf. Un zéro qu'on ne sait pas expliquer ne doit pas se présenter comme une
+    /// mesure : il faut dire qu'on ne sait pas, et où aller le déclarer.
+    /// </summary>
+    public bool LongueurNonDeclaree => PaperRemainingMm <= 0;
+}
 
 /// <summary>Niveau d'un consommable, en pourcentage quand la machine le donne ainsi.</summary>
 /// <param name="Name">Libellé destiné à l'opérateur.</param>

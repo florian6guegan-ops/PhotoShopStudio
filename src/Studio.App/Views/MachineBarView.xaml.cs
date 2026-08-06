@@ -419,14 +419,19 @@ public partial class MachineBarView : UserControl
             // des A4 ne lui apprend rien. Et elle compte les ENCRES et le bac, pas
             // seulement le papier — voir EstimationConsommables.
             var vise = FormatVise(info);
-            Restant = info.Media is { } m
-                ? $"{m.PaperRemainingMm / 1000:0.0} m" +
-                  (vise is null
-                      ? ""
-                      : " · " + EstimationConsommables
-                          .Pour(vise, m, info.Supplies, ObservationDe(info.MachineId))
-                          .Resume(vise.Name))
-                : "";
+            Restant = info.Media switch
+            {
+                // Zéro mètre sur une machine qui va bien, ce n'est pas une machine vide :
+                // c'est une longueur jamais déclarée. Voir De100Media.LongueurNonDeclaree.
+                { LongueurNonDeclaree: true } => "longueur de rouleau non déclarée",
+                { } m => $"{m.PaperRemainingMm / 1000:0.0} m" +
+                         (vise is null
+                             ? ""
+                             : " · " + EstimationConsommables
+                                 .Pour(vise, m, info.Supplies, ObservationDe(info.MachineId))
+                                 .Resume(vise.Name)),
+                _ => "",
+            };
 
             Encres = info.Supplies is { } s
                 ?

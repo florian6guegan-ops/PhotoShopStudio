@@ -180,9 +180,16 @@ public partial class MachineStatusView : UserControl
 
             Compteur = $"{info.TotalPrintCount:N0} tirages depuis la mise en service";
 
-            Papier = info.Media is { } media
-                ? $"{media.PaperRemainingMm / 1000:0.00} m restants — rouleau {media.PaperWidthMm} mm, {media.Surface}"
-                : "aucun rouleau déclaré";
+            Papier = info.Media switch
+            {
+                // Voir De100Media.LongueurNonDeclaree : la machine décompte une longueur
+                // qu'on lui donne, elle ne mesure rien. Non déclarée, elle annonce zéro —
+                // et l'écran annonçait « 0 tirage restant » sur un rouleau neuf.
+                { LongueurNonDeclaree: true } m =>
+                    $"rouleau {m.PaperWidthMm} mm, {m.Surface} — longueur restante non déclarée sur la machine",
+                { } m => $"{m.PaperRemainingMm / 1000:0.00} m restants — rouleau {m.PaperWidthMm} mm, {m.Surface}",
+                _ => "aucun rouleau déclaré",
+            };
 
             Consommables = info.Supplies is { } s
                 ?
@@ -196,9 +203,12 @@ public partial class MachineStatusView : UserControl
                 : [];
 
             // les formats à longueur libre n'ont pas de compte utile
+            var longueurInconnue = info.Media?.LongueurNonDeclaree == true;
             Formats = info.Formats
                 .Where(f => !f.Format.IsVariable)
-                .Select(f => new FormatRow(f.Format.Name, $"{f.RemainingPrints:N0}"))
+                // Le compte par format se déduit de la longueur restante : si elle n'est pas
+                // déclarée, ces zéros n'ont aucun sens et il vaut mieux ne rien avancer.
+                .Select(f => new FormatRow(f.Format.Name, longueurInconnue ? "?" : $"{f.RemainingPrints:N0}"))
                 .ToList();
 
             var basses = info.Supplies?.InksBelow(SeuilAlerte).Select(i => $"{i.Name} ({i.Level} %)").ToList() ?? [];
