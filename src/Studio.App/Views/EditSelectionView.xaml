@@ -31,7 +31,7 @@
                  soit l'outil en cours. C'est la demande de fond — voir la planche entière
                  pendant qu'on travaille, au lieu de défiler photo par photo. -->
             <Border Grid.Column="0" Width="560" Background="{StaticResource CardBrush}" CornerRadius="12">
-                <ScrollViewer x:Name="StripScroll" VerticalScrollBarVisibility="Auto" Padding="8">
+                <ScrollViewer x:Name="StripScroll" VerticalScrollBarVisibility="Auto" Padding="6">
                     <ItemsControl x:Name="Strip">
                         <!-- Deux colonnes : on voit deux fois plus de photos sans quitter
                              l'écran, ce qui est tout l'objet de cette bande. -->
@@ -42,7 +42,11 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Margin="0,0,0,8" CornerRadius="8" Padding="4"
+                                <!-- De l'air TOUT AUTOUR, et pas seulement en dessous : les
+                                     deux colonnes se touchaient, et le fond coloré d'une
+                                     photo visée débordait sur sa voisine — on ne savait plus
+                                     laquelle des deux était prise. -->
+                                <Border Margin="5,5,5,9" CornerRadius="8" Padding="4"
                                         Background="{Binding CibleBrush}"
                                         PreviewMouseLeftButtonDown="OnStripDown"
                                         MouseLeftButtonUp="OnStripUp"

@@ -15,7 +15,9 @@
                        Text="Faites glisser le cadre, zoomez à la molette ou au pincement"/>
         </DockPanel>
 
-        <!-- Scène : photo + voile sombre hors recadrage -->
+        <!-- Scène : la photo ENTIÈRE, à sa vraie clarté, et le cadre par-dessus. Ce qui
+             tombe hors du cadrage n'est plus assombri : le voile empêchait de juger ce
+             qu'on s'apprêtait à couper (demandé le 06/08/2026). -->
         <Border Grid.Row="1" Background="#263238" CornerRadius="12" ClipToBounds="True">
             <Grid x:Name="Stage" Background="Transparent"
                   MouseLeftButtonDown="OnStageMouseDown" MouseLeftButtonUp="OnStageMouseUp"
@@ -35,7 +37,6 @@
 
                 <Image x:Name="Photo" Stretch="Uniform" Margin="0"/>
                 <Canvas x:Name="Overlay" IsHitTestVisible="False">
-                    <Path x:Name="Shade" Fill="#A6000000"/>
                     <Rectangle x:Name="CropBorder" Stroke="White" StrokeThickness="3"/>
                 </Canvas>
                 <TextBlock x:Name="FitMessage" Visibility="Collapsed"

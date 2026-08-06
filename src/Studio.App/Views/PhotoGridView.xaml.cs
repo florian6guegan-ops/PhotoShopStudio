@@ -794,9 +794,14 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         // soixante photos dont le client en veut quarante d'affilée, c'est quarante clics
         // en moins. Le geste est celui de l'explorateur Windows, donc il n'a pas à
         // s'apprendre.
-        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && _ancreSelection is not null)
+        //
+        // L'ancre retombe sur la dernière photo TOUCHÉE quand aucun clic simple ne l'a
+        // encore posée : après un Ctrl+A ou un « tout », le Maj+clic ne faisait rien du
+        // tout et le geste passait pour absent.
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) &&
+            (_ancreSelection ?? _photoCourante) is { } ancre)
         {
-            SelectionnerLaPlage(_ancreSelection, photo);
+            SelectionnerLaPlage(ancre, photo);
             return;
         }
 
@@ -958,6 +963,16 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         if (toutPris) _photoCourante = null;
         else _photoCourante ??= _photos.LastOrDefault();
+
+        // la plage repart de zéro : l'ancre d'avant appartenait à une sélection qu'on
+        // vient de refaire d'un bloc
+        _ancreSelection = null;
+
+        FileLog.Write(toutPris
+            ? "Ctrl+A : sélection annulée"
+            : $"Ctrl+A : {_photos.Count} photo(s) prises");
+
+        UpdateSummary();
     }
 
     private void OnCartChanged()
@@ -1386,6 +1401,13 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// Il est coché d'office — on ne duplique une photo que pour la tirer — et garde le
     /// même fichier source : rien n'est recopié sur le disque, seule la ligne de commande
     /// est doublée.
+    ///
+    /// <b>La vignette et la définition sont RECOPIÉES depuis l'original</b>, et c'est ce
+    /// qui manquait. Elles n'arrivent d'ordinaire qu'à la lecture du dossier, que le
+    /// doublon a manquée : sans vignette il s'affichait comme une case vide dans la
+    /// planche comme dans la bande de « Modifier » — le bouton passait pour mort — et
+    /// sans définition <see cref="PhotoItem.Cadre"/> ne pouvait pas naître, si bien que
+    /// le doublon partait au tirage en pleine image, sans le cadrage de son original.
     /// </summary>
     /// <returns>Le doublon, à insérer dans la bande de l'écran appelant.</returns>
     private PhotoItem DupliquerPhoto(PhotoItem origine)
@@ -1407,6 +1429,12 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         // le cadrage en DERNIER, comme partout : les mutateurs ci-dessus le remettent à zéro
         copie.PoserLeCadrageDOrigine(origine.Crop);
         copie.Selected = true;
+
+        // La définition AVANT la vignette : c'est elle qui autorise le cadre à naître, et
+        // la vignette se dessine avec le cadre par-dessus.
+        var (largeur, hauteur) = origine.SourcePixels;
+        if (largeur > 0 && hauteur > 0) copie.SetSourceSize(largeur, hauteur);
+        if (origine.SourceThumbnail is { } vignette) copie.SetSourceThumbnail(vignette);
 
         var rang = _photos.IndexOf(origine);
         if (rang < 0) _photos.Add(copie);
@@ -2063,10 +2091,23 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         {
             Path = path;
             _cartChanged = cartChanged;
+            Cle = $"{path}#{System.Threading.Interlocked.Increment(ref _dernierRang)}";
         }
+
+        private static int _dernierRang;
 
         public string Path { get; }
         public string Name => System.IO.Path.GetFileName(Path);
+
+        /// <summary>
+        /// Ce qui distingue CETTE ligne de commande de toutes les autres, doublons compris.
+        ///
+        /// Le chemin ne suffit plus depuis qu'une même photo peut figurer deux fois dans une
+        /// commande (bouton « Dupliquer ») : les caches d'aperçu de l'écran « Modifier »
+        /// étaient rangés par chemin, et l'original en noir et blanc rendait donc son image
+        /// au doublon resté en couleur.
+        /// </summary>
+        public string Cle { get; }
 
         /// <summary>
         /// Ce que le tirage retiendra de la photo — la traduction du <see cref="Cadre"/>,
@@ -2432,14 +2473,9 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                     crop.X * largeur, crop.Y * hauteur,
                     crop.Width * largeur, crop.Height * hauteur);
 
-                // voile sur ce qui sera coupé : le cadre seul se perd sur une photo claire
-                var voile = new SolidColorBrush(Color.FromArgb(110, 0, 0, 0));
-                var dehors = new CombinedGeometry(
-                    GeometryCombineMode.Exclude,
-                    new RectangleGeometry(new Rect(0, 0, largeur, hauteur)),
-                    new RectangleGeometry(cadre));
-                dessin.DrawGeometry(voile, null, dehors);
-
+                // Ce qui sera coupé n'est PLUS assombri : le voile rendait illisible la
+                // moitié d'une vignette, et c'est justement cette moitié qu'on regarde
+                // pour décider de la rattraper. Le cadre jaune, épais, dit la limite.
                 var trait = new Pen(Brushes.Yellow, Math.Max(2, largeur / 90.0));
                 trait.Freeze();
                 dessin.DrawRectangle(null, trait, cadre);

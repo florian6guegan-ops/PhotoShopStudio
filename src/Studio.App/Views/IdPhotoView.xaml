@@ -16,29 +16,37 @@
              touchent ; et un module se replie ENTIER quand la fenêtre rétrécit, là où le
              WrapPanel coupait un compteur en deux lignes. -->
 
+        <!-- Les cotes de ces trois styles ont été RESSERRÉES (06/08/2026) : la barre
+             enflait sous les titres, les fonds et les marges de ses modules, et cette
+             enflure était prise sur la seule chose que l'écran serve à faire — voir le
+             visage assez grand pour placer les anneaux au millimètre. Rien n'a été retiré,
+             tout a maigri : titres en 10, air de moitié, boutons à 34 px. La barre perd
+             près d'un tiers de sa hauteur, qui revient à la photo. -->
+
         <Style x:Key="Module" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="Margin" Value="0,0,8,6"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <Setter Property="Margin" Value="0,0,6,4"/>
         </Style>
 
         <Style x:Key="TitreModule" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontSize" Value="10"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="Margin" Value="2,0,0,4"/>
+            <Setter Property="Margin" Value="2,0,0,1"/>
         </Style>
 
         <!-- Les boutons ronds des compteurs et du redressement : une seule définition
              plutôt que la même paire de dimensions recopiée neuf fois.
-             40 px et non 48 : sur cet écran, la hauteur de la barre est prise à la PHOTO,
-             et c'est la photo qu'on est venu regarder. -->
+             34 px et non 48 : sur cet écran, la hauteur de la barre est prise à la PHOTO,
+             et c'est la photo qu'on est venu regarder. Un doigt en trouve encore le
+             centre — c'est la cote des compteurs de la planche. -->
         <Style x:Key="BoutonModule" TargetType="Button" BasedOn="{StaticResource FlatButton}">
-            <Setter Property="MinWidth" Value="42"/>
-            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="MinWidth" Value="36"/>
+            <Setter Property="MinHeight" Value="34"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontSize" Value="17"/>
         </Style>
 
     </UserControl.Resources>
@@ -53,16 +61,16 @@
         <!-- En-tête compact : chaque pixel pris ici est un pixel de moins pour la photo, et
              c'est la photo qu'on regarde. Le titre perd sa marge basse de 18 px, l'aide
              passe en 15. -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+        <DockPanel Grid.Row="0" Margin="0,0,0,6">
             <TextBlock x:Name="TitleText" DockPanel.Dock="Left" Style="{StaticResource PageTitle}"
-                       Margin="0" FontSize="26" Text="Photo d'identité"/>
+                       Margin="0" FontSize="22" Text="Photo d'identité"/>
             <Button x:Name="AgrandirButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
-                    MinWidth="150" MinHeight="40" FontSize="15" Padding="14,0" Margin="12,0,0,0"
+                    MinWidth="130" MinHeight="34" FontSize="14" Padding="12,0" Margin="10,0,0,0"
                     Click="OnBasculerAgrandissement"
                     ToolTip="Cache la bande et les réglages pour ne garder que la photo. Échap ou un second appui pour revenir.">⛶  Agrandir</Button>
             <TextBlock x:Name="AideText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
-                       FontSize="15" HorizontalAlignment="Right" VerticalAlignment="Center"
-                       TextWrapping="Wrap" MaxWidth="520"
+                       FontSize="13" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       TextWrapping="Wrap" MaxWidth="460"
                        Text="Placez l'anneau jaune au sommet du crâne et le bleu sous le menton : le cadrage suit"/>
         </DockPanel>
 
@@ -121,7 +129,9 @@
                       SizeChanged="OnStageSizeChanged">
                     <Image x:Name="Photo" Stretch="Uniform"/>
                     <Canvas x:Name="Overlay" IsHitTestVisible="False">
-                        <Path x:Name="Shade" Fill="#A6000000"/>
+                        <!-- Rien n'est assombri hors du cadrage : le voile cachait le
+                             visage dès qu'il débordait de la case, alors que c'est lui
+                             qu'on regarde pour placer les anneaux. -->
                         <Rectangle x:Name="CropBorder" StrokeThickness="4"/>
                         <Line x:Name="CrownLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
                         <Line x:Name="ChinMinLine" StrokeThickness="1.5" StrokeDashArray="4 3"/>
@@ -267,7 +277,7 @@
              réglages occupent la place restante et se replient en plusieurs lignes ; les
              boutons d'action gardent la leur en toutes circonstances. -->
         <Border x:Name="BarreReglages" Grid.Row="2" Background="{StaticResource CardBrush}"
-                CornerRadius="12" Padding="12" Margin="0,10,0,0">
+                CornerRadius="12" Padding="10,8" Margin="0,8,0,0">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -281,8 +291,8 @@
                 <!-- Le verdict de conformité sur toute la largeur : c'est une phrase, pas
                      une étiquette, et la coincer entre deux blocs de boutons la tronquait. -->
                 <TextBlock x:Name="ComplianceText" Grid.Row="0" Grid.ColumnSpan="2"
-                           Style="{StaticResource Texte}" FontSize="17" FontWeight="SemiBold"
-                           Margin="0,0,0,8" TextWrapping="Wrap"/>
+                           Style="{StaticResource Texte}" FontSize="14" FontWeight="SemiBold"
+                           Margin="0,0,0,5" TextWrapping="Wrap"/>
 
                 <WrapPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
 
@@ -291,13 +301,13 @@
                         <StackPanel>
                             <TextBlock Style="{StaticResource TitreModule}" Text="PAPIER"/>
                             <StackPanel Orientation="Horizontal">
-                                <ComboBox x:Name="ProductCombo" MinWidth="300" FontSize="18"
+                                <ComboBox x:Name="ProductCombo" MinWidth="250" FontSize="15" Padding="8,4"
                                           DisplayMemberPath="Label" VerticalAlignment="Center"
                                           SelectionChanged="OnProductChanged"/>
                                 <TextBlock x:Name="FinishLabel" Text="Finition" Style="{StaticResource Hint}"
-                                           FontSize="15" VerticalAlignment="Center" Margin="14,0,8,0"
+                                           FontSize="13" VerticalAlignment="Center" Margin="12,0,6,0"
                                            Visibility="Collapsed"/>
-                                <ComboBox x:Name="FinishCombo" MinWidth="150" FontSize="18"
+                                <ComboBox x:Name="FinishCombo" MinWidth="130" FontSize="15" Padding="8,4"
                                           VerticalAlignment="Center" Visibility="Collapsed"/>
                             </StackPanel>
                         </StackPanel>
@@ -310,18 +320,20 @@
                         <StackPanel>
                             <TextBlock Style="{StaticResource TitreModule}" Text="QUANTITÉ"/>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Photos" Style="{StaticResource Hint}" FontSize="15"
-                                           VerticalAlignment="Center" Margin="0,0,8,0"
+                                <TextBlock Text="Photos" Style="{StaticResource Hint}" FontSize="13"
+                                           VerticalAlignment="Center" Margin="0,0,6,0"
                                            ToolTip="Nombre de photos sur une planche"/>
                                 <Button Style="{StaticResource BoutonModule}" Click="OnCopiesMinus">−</Button>
-                                <TextBlock x:Name="CopiesText" Text="6" Style="{StaticResource Valeur}" MinWidth="44"/>
+                                <TextBlock x:Name="CopiesText" Text="6" Style="{StaticResource Valeur}"
+                                           FontSize="19" MinWidth="36"/>
                                 <Button Style="{StaticResource BoutonModule}" Click="OnCopiesPlus">+</Button>
 
-                                <TextBlock Text="Planches" Style="{StaticResource Hint}" FontSize="15"
-                                           VerticalAlignment="Center" Margin="20,0,8,0"
+                                <TextBlock Text="Planches" Style="{StaticResource Hint}" FontSize="13"
+                                           VerticalAlignment="Center" Margin="16,0,6,0"
                                            ToolTip="Nombre de tirages identiques de CETTE photo"/>
                                 <Button Style="{StaticResource BoutonModule}" Click="OnQuantityMinus">−</Button>
-                                <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}" MinWidth="44"/>
+                                <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}"
+                                           FontSize="19" MinWidth="36"/>
                                 <Button Style="{StaticResource BoutonModule}" Click="OnQuantityPlus">+</Button>
                             </StackPanel>
                         </StackPanel>
@@ -334,14 +346,15 @@
                             <TextBlock Style="{StaticResource TitreModule}" Text="REDRESSER"/>
                             <StackPanel Orientation="Horizontal"
                                         ToolTip="Incline la photo pour rattraper un cadrage de travers. Raccourci : touche T, puis la molette. T ou Échap pour sortir.">
-                                <Button Style="{StaticResource BoutonModule}" FontSize="20"
+                                <Button Style="{StaticResource BoutonModule}" FontSize="17"
                                         Click="OnRedresserGauche"
                                         ToolTip="Pencher vers la gauche">↺</Button>
-                                <TextBlock x:Name="RedressementText" Text="0°" Style="{StaticResource Valeur}" MinWidth="64"/>
-                                <Button Style="{StaticResource BoutonModule}" FontSize="20"
+                                <TextBlock x:Name="RedressementText" Text="0°" Style="{StaticResource Valeur}"
+                                           FontSize="19" MinWidth="52"/>
+                                <Button Style="{StaticResource BoutonModule}" FontSize="17"
                                         Click="OnRedresserDroite"
                                         ToolTip="Pencher vers la droite">↻</Button>
-                                <Button Style="{StaticResource BoutonModule}" FontSize="16" Margin="6,0,0,0"
+                                <Button Style="{StaticResource BoutonModule}" FontSize="14" Margin="5,0,0,0"
                                         Click="OnRedressementRemiseAZero"
                                         ToolTip="Remettre d'aplomb">0</Button>
                             </StackPanel>
@@ -357,21 +370,22 @@
                             <StackPanel Orientation="Horizontal">
                                 <CheckBox x:Name="GrayscaleCheck" VerticalAlignment="Center"
                                           Checked="OnGrayscaleChanged" Unchecked="OnGrayscaleChanged">
-                                    <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="17"/>
+                                    <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="14"/>
                                 </CheckBox>
-                                <CheckBox x:Name="WhiteBackgroundCheck" VerticalAlignment="Center" Margin="20,0,0,0"
+                                <CheckBox x:Name="WhiteBackgroundCheck" VerticalAlignment="Center" Margin="16,0,0,0"
                                           ToolTip="Remplace le fond de studio par du blanc franc. Le sujet n'est jamais entamé : seul est effacé ce qui ressemble au fond et touche le bord de la photo."
                                           Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
-                                    <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="17"/>
+                                    <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="14"/>
                                 </CheckBox>
                                 <!-- Les mêmes corrections que sur les tirages : une photo
                                      d'identité prise au comptoir est sous-exposée ou tire
                                      au jaune comme une autre. -->
-                                <Button x:Name="CorrectButton" Style="{StaticResource FlatButton}" MinWidth="140"
-                                        MinHeight="48" Margin="20,0,0,0" FontSize="16" Click="OnCorrect"
+                                <Button x:Name="CorrectButton" Style="{StaticResource FlatButton}" MinWidth="120"
+                                        MinHeight="34" Padding="12,0" Margin="16,0,0,0" FontSize="14"
+                                        Click="OnCorrect"
                                         ToolTip="Exposition, contraste, température… les mêmes réglages que sur les tirages.">🎚  Corriger</Button>
-                                <TextBlock x:Name="CorrectionsText" Style="{StaticResource Hint}" FontSize="14"
-                                           VerticalAlignment="Center" Margin="10,0,0,0" MaxWidth="220"/>
+                                <TextBlock x:Name="CorrectionsText" Style="{StaticResource Hint}" FontSize="12"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" MaxWidth="200"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -381,19 +395,25 @@
                             VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
                     <!-- Ce que le lot représente : muet sur une photo seule, où il ne
                          dirait que ce que les deux compteurs disent déjà. -->
-                    <TextBlock x:Name="LotText" Style="{StaticResource Valeur}" FontSize="17"
-                               VerticalAlignment="Center" Margin="0,0,16,0"/>
-                    <Button Style="{StaticResource FlatButton}" MinWidth="130" Click="OnRedetect"
+                    <TextBlock x:Name="LotText" Style="{StaticResource Valeur}" FontSize="15"
+                               VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <!-- Ces trois boutons héritaient des 76 px de « BigButton », et
+                         imposaient donc leur hauteur à TOUTE la barre : c'était à eux
+                         seuls le tiers de l'enflure. -->
+                    <Button Style="{StaticResource FlatButton}" MinWidth="110" MinHeight="44"
+                            Padding="14,0" FontSize="15" Click="OnRedetect"
                             ToolTip="Refaire le cadrage automatique">↻ Auto</Button>
                     <!-- L'envoi est une prestation à part, facturée à la photo : il
                          n'imprime rien et l'impression ne l'envoie pas. -->
-                    <Button x:Name="MailButton" Style="{StaticResource FlatButton}" MinWidth="180"
-                            Margin="12,0,0,0" Click="OnSendByMail" IsEnabled="False"
+                    <Button x:Name="MailButton" Style="{StaticResource FlatButton}" MinWidth="150"
+                            MinHeight="44" Padding="14,0" FontSize="15"
+                            Margin="10,0,0,0" Click="OnSendByMail" IsEnabled="False"
                             ToolTip="Envoie au client la photo entière, le cadrage en version légère et le cadrage en pleine résolution. Prestation facturée.">✉  Envoyer</Button>
                     <!-- « Suivant » et non « Imprimer » : la planche se regarde AVANT le
                          papier. Refaire une planche identité coûte une feuille et un
                          client qui attend. -->
-                    <Button x:Name="PrintButton" Style="{StaticResource BigButton}" Margin="12,0,0,0"
+                    <Button x:Name="PrintButton" Style="{StaticResource BigButton}" Margin="10,0,0,0"
+                            MinHeight="50" MinWidth="170" FontSize="20" Padding="18,8"
                             Click="OnPrint" IsEnabled="False"
                             ToolTip="Voir les planches telles qu'elles sortiront, puis imprimer">Suivant  →</Button>
                 </StackPanel>

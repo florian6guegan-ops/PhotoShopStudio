@@ -275,13 +275,6 @@ public partial class CropSurface : UserControl
         // à l'impression.
         MontrerLesPoignees(!cadre.AllowsWhiteMargins, cadre);
 
-        var cadreRect = new Rect(cadreX, cadreY, cadreLargeur, cadreHauteur);
-
-        Voile.Data = new CombinedGeometry(
-            GeometryCombineMode.Exclude,
-            new RectangleGeometry(new Rect(0, 0, largeur, hauteur)),
-            new RectangleGeometry(cadreRect));
-
         Canvas.SetLeft(Cadre, cadreX);
         Canvas.SetTop(Cadre, cadreY);
         Cadre.Width = cadreLargeur;

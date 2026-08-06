@@ -203,9 +203,6 @@ public partial class CropEditorView : UserControl
             _crop.Width * display.Width,
             _crop.Height * display.Height);
 
-        Shade.Data = new CombinedGeometry(GeometryCombineMode.Exclude,
-            new RectangleGeometry(display), new RectangleGeometry(cropRect));
-
         Canvas.SetLeft(CropBorder, cropRect.X);
         Canvas.SetTop(CropBorder, cropRect.Y);
         CropBorder.Width = cropRect.Width;

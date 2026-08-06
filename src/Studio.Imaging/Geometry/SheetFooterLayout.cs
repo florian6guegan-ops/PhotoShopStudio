@@ -99,8 +99,19 @@ public static class SheetFooterLayout
     /// </summary>
     public const double HauteurMinimaleMm = 6;
 
-    /// <summary>Air laissé au-dessus, en dessous et sur les côtés de ce que la bande porte.</summary>
+    /// <summary>Air laissé au-dessus et en dessous de ce que la bande porte.</summary>
     private const double MargeMm = 1.2;
+
+    /// <summary>
+    /// Air laissé à GAUCHE et à DROITE, plus large que l'autre — et il faut qu'il le soit.
+    ///
+    /// La planche est tirée à fond perdu : la machine réclame l'image avec 3 mm de débord
+    /// qu'elle rogne elle-même (voir <c>PrintOrchestrator.RemplirLeDebord</c>), soit près
+    /// d'un millimètre et demi mangé sur chaque bord. À 1,2 mm du bord, la date en perdait
+    /// donc le premier chiffre — « légèrement coupée sur le côté gauche », constaté sur le
+    /// papier le 06/08/2026. Quatre millimètres la mettent hors d'atteinte du rognage.
+    /// </summary>
+    private const double MargeBordMm = 4;
 
     /// <summary>
     /// Corps de la date. DiLand écrit la sienne en 5 mm — relevé dans son code :
@@ -108,6 +119,31 @@ public static class SheetFooterLayout
     /// la date est illisible sur le tirage.
     /// </summary>
     public const double CorpsDateMm = 5;
+
+    /// <summary>
+    /// Corps de l'HEURE, en fraction de celui de la date.
+    ///
+    /// L'heure est une précision, pas la mention : c'est la DATE qui prouve qu'une photo
+    /// d'identité est récente. Elle est donc écrite plus petite, à la suite — ce que
+    /// demandait l'exploitant le 06/08/2026, et qui évite d'allonger la bande.
+    /// </summary>
+    public const double FractionHeure = 0.72;
+
+    /// <summary>Ce qui sépare la date de l'heure, en fraction du corps de la date.</summary>
+    public const double EcartHeureCadratins = 0.45;
+
+    /// <summary>
+    /// Largeur approchée d'un texte, sans contexte de dessin.
+    ///
+    /// Un caractère de sans-empattement tient dans un peu plus de la moitié de son corps.
+    /// On MAJORE volontairement : une mention un peu plus courte vaut mieux qu'une date
+    /// tronquée. Publique parce que le peintre doit tomber sur les mêmes largeurs que la
+    /// découpe, faute de quoi l'heure sortirait du cadre réservé.
+    /// </summary>
+    public static double LargeurTexte(int caracteres, double corpsPx) =>
+        caracteres * corpsPx * DemiCadratin;
+
+    private const double DemiCadratin = 0.58;
 
     /// <summary>
     /// Hauteur à réserver en bas de la planche pour <paramref name="footer"/>, en pixels.
@@ -145,6 +181,7 @@ public static class SheetFooterLayout
 
         var band = new PixelRect(0, photosBottom, sheetWidth, hauteur);
         var marge = MmPx.ToPixels(MargeMm, dpi);
+        var margeBord = MmPx.ToPixels(MargeBordMm, dpi);
         var utile = hauteur - 2 * marge;
 
         // Bande courte, ou rien d'autre à porter : la date reprend sa place d'avant, seule
@@ -161,7 +198,7 @@ public static class SheetFooterLayout
         // De droite à gauche : le logo puis le QR, tous deux carrés sur la hauteur utile.
         // Ils sont dimensionnés AVANT la mention parce qu'ils ne se compriment pas — un
         // code QR trop petit cesse d'être lu, là où un texte se resserre.
-        var droite = sheetWidth - marge;
+        var droite = sheetWidth - margeBord;
 
         PixelRect? logo = null;
         if (!string.IsNullOrWhiteSpace(footer.LogoPath))
@@ -182,7 +219,7 @@ public static class SheetFooterLayout
 
         // La date garde le corps de DiLand, et la bande est taillée pour l'accueillir.
         var largeurDate = LargeurDeLaDate(corpsDate);
-        var date = new PixelRect(marge, y, largeurDate, utile);
+        var date = new PixelRect(margeBord, y, largeurDate, utile);
 
         // La mention prend ce qui sépare la date de ce qui est à droite. Elle est centrée
         // sur CET espace et non sur la planche : centrée sur la planche, elle chevaucherait
@@ -198,12 +235,13 @@ public static class SheetFooterLayout
     }
 
     /// <summary>
-    /// Largeur à réserver pour « JJ/MM/AAAA HH:MM ».
+    /// Largeur à réserver pour « JJ/MM/AAAA » suivi de « HH:MM » en plus petit.
     ///
-    /// Seize caractères d'une sans-empattement en corps <paramref name="corpsPx"/> tiennent
-    /// dans un peu plus de la moitié de ce corps chacun. On ne MESURE pas le texte — cela
-    /// demanderait un contexte de dessin, donc une image, dans ce qui doit rester un calcul
-    /// pur — et on majore : une mention un peu plus courte vaut mieux qu'une date tronquée.
+    /// On ne MESURE pas le texte — cela demanderait un contexte de dessin, donc une image,
+    /// dans ce qui doit rester un calcul pur : voir <see cref="LargeurTexte"/>.
     /// </summary>
-    private static int LargeurDeLaDate(int corpsPx) => (int)(corpsPx * 16 * 0.58);
+    private static int LargeurDeLaDate(int corpsPx) => (int)Math.Ceiling(
+        LargeurTexte("00/00/0000".Length, corpsPx)
+        + corpsPx * EcartHeureCadratins
+        + LargeurTexte("00:00".Length, corpsPx * FractionHeure));
 }

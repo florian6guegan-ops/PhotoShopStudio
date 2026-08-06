@@ -45,9 +45,14 @@ public static class SheetFooterPainter
     }
 
     /// <summary>
-    /// La date, en corps 5 mm comme celle de DiLand.
+    /// La date, en corps 5 mm comme celle de DiLand, puis l'HEURE à la suite, en plus petit.
     ///
-    /// <paramref name="seule"/> la recentre sur toute la bande : c'est la planche d'avant,
+    /// Les deux sont écrites séparément et non d'un seul texte : c'est la date qui prouve
+    /// qu'une photo d'identité est récente, l'heure n'est qu'une précision d'atelier — elle
+    /// permet de retrouver le tirage dans la journée sans peser autant que la date à l'œil.
+    /// Demandé par l'exploitant le 06/08/2026.
+    ///
+    /// <paramref name="seule"/> recentre le tout sur la bande : c'est la planche d'avant,
     /// celle où la bande ne porte rien d'autre, et il n'y a pas de raison de la coller à
     /// gauche d'un espace vide.
     /// </summary>
@@ -55,29 +60,44 @@ public static class SheetFooterPainter
         bool seule, int dpi)
     {
         var corps = MmPx.ToPixels(SheetFooterLayout.CorpsDateMm, dpi);
-        var texte = footer.Moment.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+        var corpsHeure = corps * SheetFooterLayout.FractionHeure;
+
+        var jour = footer.Moment.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+        var heure = footer.Moment.ToString("HH:mm", CultureInfo.InvariantCulture);
+
+        var largeurJour = SheetFooterLayout.LargeurTexte(jour.Length, corps);
+        var largeurHeure = SheetFooterLayout.LargeurTexte(heure.Length, corpsHeure);
+        var ecart = corps * SheetFooterLayout.EcartHeureCadratins;
+
+        // la ligne de base tombe aux trois quarts du corps sous le haut du texte : c'est ce
+        // qui centre optiquement une capitale et un chiffre dans leur zone. Elle est la
+        // MÊME pour l'heure : deux corps différents doivent poser sur le même trait, sinon
+        // l'heure flotte au-dessus de la date.
+        var ligneDeBase = zone.Y + (zone.Height + corps * 0.72) / 2;
+
+        var gauche = seule
+            ? (sheet.Width - (largeurJour + ecart + largeurHeure)) / 2.0
+            : zone.X;
 
         // Le corps est donné en PIXELS : ImageMagick dessine à 72 points par pouce quelle
         // que soit la densité de l'image, donc un point vaut ici un pixel. Le convertir
         // comme un vrai corps typographique le divisait par quatre — mention illisible.
-        var dessin = new Drawables()
+        sheet.Draw(new Drawables()
             .Font(Fonts.SansEmpattement())
             .FontPointSize(corps)
             .FillColor(MagickColors.Black)
-            .StrokeColor(MagickColors.Transparent);
+            .StrokeColor(MagickColors.Transparent)
+            .TextAlignment(TextAlignment.Left)
+            .Text(gauche, ligneDeBase, jour));
 
-        // la ligne de base tombe aux trois quarts du corps sous le haut du texte : c'est ce
-        // qui centre optiquement une capitale et un chiffre dans leur zone
-        var ligneDeBase = zone.Y + (zone.Height + corps * 0.72) / 2;
-
-        if (seule)
-            dessin.TextAlignment(TextAlignment.Center)
-                .Text(sheet.Width / 2.0, ligneDeBase, texte);
-        else
-            dessin.TextAlignment(TextAlignment.Left)
-                .Text(zone.X, ligneDeBase, texte);
-
-        sheet.Draw(dessin);
+        // gris et non noir : l'œil doit tomber sur la date, pas sur l'heure
+        sheet.Draw(new Drawables()
+            .Font(Fonts.SansEmpattement())
+            .FontPointSize(corpsHeure)
+            .FillColor(new MagickColor("#3C3C3C"))
+            .StrokeColor(MagickColors.Transparent)
+            .TextAlignment(TextAlignment.Left)
+            .Text(gauche + largeurJour + ecart, ligneDeBase, heure));
     }
 
     /// <summary>
@@ -96,10 +116,16 @@ public static class SheetFooterPainter
         // toute. Le facteur 0,62 laisse l'air qui sépare les lignes.
         var corps = lignes.Length > 1 ? zone.Height * 0.40 : zone.Height * 0.62;
 
-        // ...mais jamais au point de dépasser en largeur. Le même demi-cadratin que la date
-        // (voir SheetFooterLayout) majore la largeur d'un texte sans le mesurer.
-        var laPlusLongue = lignes.Max(l => l.Trim().Length);
-        corps = Math.Min(corps, zone.Width / (laPlusLongue * 0.58));
+        // ...mais jamais au point de dépasser en largeur. Le demi-cadratin de la date (voir
+        // SheetFooterLayout) majore la largeur d'un texte sans le mesurer — SAUF pour la
+        // première ligne, écrite en gras et le plus souvent en capitales : elle est
+        // sensiblement plus large, et le calcul la laissait mordre sur le code QR. Les
+        // suivantes sont écrites en corps réduit, ce dont il faut tenir compte aussi.
+        var largeurEnCorps = lignes
+            .Select((ligne, i) => ligne.Trim().Length * (i == 0 ? 0.68 : 0.58 * 0.78))
+            .Max();
+
+        corps = Math.Min(corps, zone.Width / largeurEnCorps);
         if (corps < 2) return;
 
         var centreX = zone.X + zone.Width / 2.0;

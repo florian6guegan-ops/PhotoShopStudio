@@ -125,7 +125,42 @@ internal partial class EditSelectionView : UserControl
         var toutVise = _photos.Count > 0 && _photos.All(p => p.Ciblee);
         foreach (var photo in _photos) photo.Ciblee = !toutVise;
 
+        // la plage repart de la photo affichée : l'ancre d'avant appartenait à une
+        // sélection que l'on vient de refaire d'un bloc
+        _ancreVisee = null;
+
+        FileLog.Write(toutVise
+            ? "Ctrl+A : plus aucune photo visée"
+            : $"Ctrl+A : {_photos.Count} photo(s) visées");
+
         Refresh();
+    }
+
+    /// <summary>
+    /// D'où part la prochaine plage de Maj+clic. Nulle tant que rien n'a été cliqué : on
+    /// retombe alors sur la photo affichée, qui est bien celle que l'opérateur regarde.
+    /// </summary>
+    private PhotoGridView.PhotoItem? _ancreVisee;
+
+    /// <summary>
+    /// Vise toutes les vignettes entre deux photos, bornes comprises.
+    ///
+    /// <b>Elle VISE, elle ne bascule pas</b> : basculer relâcherait les photos déjà prises
+    /// par une plage précédente, et l'opérateur perdrait son travail au lieu de l'étendre.
+    /// C'est la même règle que sur la planche (voir <c>PhotoGridView.SelectionnerLaPlage</c>).
+    /// </summary>
+    private void ViserLaPlage(PhotoGridView.PhotoItem depuis, PhotoGridView.PhotoItem jusqua)
+    {
+        var debut = _photos.IndexOf(depuis);
+        var fin = _photos.IndexOf(jusqua);
+        if (debut < 0 || fin < 0) return;
+
+        if (debut > fin) (debut, fin) = (fin, debut);
+
+        for (var i = debut; i <= fin; i++) _photos[i].Ciblee = true;
+
+        FileLog.Write($"Maj+clic : {fin - debut + 1} photo(s) visées");
+        SetCurrent(jusqua);
     }
 
     /// <summary>
@@ -178,16 +213,23 @@ internal partial class EditSelectionView : UserControl
         // le Polaroid n'est pas un mode qu'on bascule : c'est la forme du produit
         FitButton.IsEnabled = CadrageCourant != FitMode.Polaroid;
 
-        // le contour ne se conçoit qu'avec du blanc à recouper : les marges de la « photo
-        // entière », ou le cadre du Polaroid — dont le bord est justement ce qu'on découpe
-        var aRecouper = CadrageCourant is FitMode.Fit or FitMode.Polaroid;
-        CutBorderCheck.IsEnabled = aRecouper;
-        CutBorderCheck.IsChecked = _courante.CutBorder;
+        // <b>La case reste cliquable dans TOUS les modes.</b> Elle était grisée en
+        // « remplir le format » — le mode par défaut de presque tous les produits — et
+        // l'opérateur qui cliquait dessus ne la voyait jamais se cocher : elle passait pour
+        // cassée (signalé le 06/08/2026). Le trait y a désormais un sens, et le rendu le
+        // trace : c'est le bord du tirage, celui que les ciseaux suivent.
+        CutBorderCheck.IsEnabled = true;
+
+        // Ce que la case montre, c'est l'état des photos VISÉES — celles sur lesquelles le
+        // clic va porter — et non de la seule photo affichée. Sur une sélection visée dont
+        // la photo courante ne faisait pas partie, la case se remettait à zéro juste après
+        // avoir été cochée.
+        CutBorderCheck.IsChecked = Visees().All(p => p.CutBorder);
         CutBorderCheck.ToolTip = CadrageCourant switch
         {
             FitMode.Fit => "Trace un trait noir de 0,2 mm sur le bord de la photo, à suivre aux ciseaux.",
             FitMode.Polaroid => "Trace le bord du Polaroid, bande blanche du bas comprise : c'est là qu'on coupe.",
-            _ => "Sans objet en « remplir le format » : la photo occupe tout le tirage, il n'y a rien à recouper.",
+            _ => "Trace un trait noir de 0,2 mm tout au bord du tirage, à suivre aux ciseaux.",
         };
 
         GrayscaleToggle.IsChecked = _courante.Adjustments.Grayscale;
@@ -309,7 +351,7 @@ internal partial class EditSelectionView : UserControl
     /// <summary>À appeler dès que les PIXELS de la photo changent, pas son cadrage.</summary>
     private void Perimer(PhotoGridView.PhotoItem photo)
     {
-        _photosPretes.Remove(photo.Path);
+        _photosPretes.Remove(photo.Cle);
         _versionSurface++;
     }
 
@@ -328,7 +370,9 @@ internal partial class EditSelectionView : UserControl
         // le trait de découpe se voit sur la surface, comme il sortira sur le papier
         Surface.ContourDeDecoupe = _courante.CutBorder;
 
-        if (_photosPretes.TryGet(_courante.Path, out var prete))
+        // rangée par CLÉ et non par chemin : un doublon partage le fichier de son original
+        // sans partager ses corrections (voir PhotoItem.Cle)
+        if (_photosPretes.TryGet(_courante.Cle, out var prete))
         {
             Surface.Show(prete, cadre, angle);
             return;
@@ -377,7 +421,7 @@ internal partial class EditSelectionView : UserControl
                 // rien n'a bougé pendant le calcul : le résultat vaut, on le garde
                 if (version != _versionSurface) continue;
 
-                _photosPretes.Set(photo.Path, preparee);
+                _photosPretes.Set(photo.Cle, preparee);
                 if (ReferenceEquals(photo, _courante))
                     Surface.Show(preparee, Cadre(photo), photo.FineRotationDegrees);
             }
@@ -646,15 +690,31 @@ internal partial class EditSelectionView : UserControl
         if (Cible(sender) is not { } photo) return;
         Tracer(nameof(OnStripDown), photo);
 
+        // Maj+clic : toute la PLAGE depuis la dernière vignette touchée. C'est le geste de
+        // l'explorateur Windows, et il manquait à cette bande : viser vingt photos qui se
+        // suivent demandait vingt Ctrl+clic.
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            ViserLaPlage(_ancreVisee ?? _courante, photo);
+
+            // la case à cocher de la vignette ne doit pas basculer par-dessus : le geste
+            // est celui de la plage, et lui seul
+            e.Handled = true;
+            return;
+        }
+
         // Ctrl maintenue : on vise. Rien n'est visé au départ ; Ctrl+clic ajoute une photo
         // à ce que les réglages toucheront, sans rien changer à ce qui sera imprimé.
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             photo.Ciblee = !photo.Ciblee;
+            _ancreVisee = photo;
             SetCurrent(photo);
             return;
         }
 
+        // l'ancre suit le dernier clic SIMPLE : c'est de là que partira la prochaine plage
+        _ancreVisee = photo;
         SetCurrent(photo);
 
         if (!CTenue) return;
@@ -830,6 +890,10 @@ internal partial class EditSelectionView : UserControl
         foreach (var photo in visees) Redessiner(photo);
 
         FileLog.Write($"Contour de découpe {(actif ? "activé" : "retiré")} sur {visees.Count} photo(s)");
+
+        // et l'on relit l'état : sans cela, la case affichait encore celui d'avant dès que
+        // la photo courante n'était pas du lot visé
+        Refresh();
     }
 
     /// <summary>

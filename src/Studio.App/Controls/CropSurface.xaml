@@ -1,8 +1,8 @@
 <UserControl x:Class="Studio.App.Controls.CropSurface"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Fond sombre : le voile et le liseré du cadre ne se lisent que sur du sombre,
-         et une photo claire cesse de se confondre avec l'écran. -->
+    <!-- Fond sombre : le liseré du cadre ne se lit que sur du sombre, et une photo claire
+         cesse de se confondre avec l'écran. -->
     <Grid x:Name="Root" Background="#263238" ClipToBounds="True"
           IsManipulationEnabled="True"
           SizeChanged="OnSizeChanged"
@@ -28,9 +28,11 @@
                  décaleraient le cadrage de quelques pixels. -->
             <Image x:Name="Photo" Stretch="Fill"/>
 
-            <!-- Ce que le tirage laissera de côté, assombri : l'opérateur voit d'un coup
-                 d'œil ce qu'il coupe. Une photo déjà rognée à l'écran ne le dit pas. -->
-            <Path x:Name="Voile" Fill="#A6000000"/>
+            <!-- Ce que le tirage laissera de côté n'est PLUS assombri : le voile noircissait
+                 la moitié de l'écran et empêchait de juger ce qu'on allait couper — un
+                 visage dans la zone perdue devenait illisible, alors que c'est précisément
+                 lui qu'on regarde pour décider de le garder (demandé le 06/08/2026). Le
+                 cadre jaune suffit à dire où passe la limite. -->
 
             <!-- Le cadre, immobile : c'est le format du tirage. -->
             <!-- Jaune et non blanc : sur une photo claire — un mariage, un ciel, un fond

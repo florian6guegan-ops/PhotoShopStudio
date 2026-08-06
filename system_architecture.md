@@ -2068,3 +2068,96 @@ des rendus, qui tournent déjà en tâche de fond.
 
 `tools\Studio.RenduProbe` refait toutes ces mesures sur une vraie photo, y compris le
 contrôle de qualité. À relancer avant de toucher au pipeline.
+
+## Un doublon doit recevoir la vignette ET la définition de son original
+
+`PhotoGridView.DupliquerPhoto` fabrique une seconde ligne de commande sur le même fichier.
+Deux choses n'arrivent d'ordinaire qu'à la LECTURE du dossier, que le doublon a manquée, et
+il faut donc les lui recopier à la main :
+
+- **la vignette source** (`SetSourceThumbnail`) — sans elle `RefreshThumbnail` sort
+  immédiatement, et le doublon s'affiche comme une case vide dans la planche comme dans la
+  bande de « Modifier ». Le bouton passait pour mort ;
+- **la définition du fichier** (`SetSourceSize`) — sans elle `PhotoItem.Cadre` rend `null`,
+  faute de savoir sur combien de pixels bâtir le cadre. Le doublon partait alors à
+  l'impression en **pleine image**, sans le cadrage de son original.
+
+L'ordre compte : la définition d'abord, puis la vignette, et le cadrage d'origine
+(`PoserLeCadrageDOrigine`) AVANT les deux — c'est lui que le cadre relit en naissant.
+
+Côté impression, rien à faire : `OrderService.CreateOrder` copie le fichier une seule fois
+mais crée bien **deux `OrderItem`**, chacun avec son format et son cadrage.
+
+## `PhotoItem.Cle` : le chemin ne suffit plus à ranger un cache
+
+Depuis qu'une même photo peut figurer deux fois dans une commande, tout cache rangé par
+`Path` confond l'original et son doublon. C'est ce qui arrivait au cache d'aperçu de
+`EditSelectionView` (`_photosPretes`, qui garde la photo composée AVEC ses corrections) :
+l'original passé en noir et blanc rendait son image au doublon resté en couleur.
+
+`PhotoItem.Cle` est propre à l'instance et ne change jamais. Règle : **ce qui dépend des
+RÉGLAGES se range par `Cle`, ce qui ne dépend que du FICHIER se range par `Path`.** Le
+cache haute définition (`_hautesDefinitions`) reste donc par chemin, et c'est voulu — un
+doublon profite du chargement de son original.
+
+## Le contour de découpe existe AUSSI en « remplir le format »
+
+Il n'y était pas, et la case était grisée dans ce mode — celui par défaut de presque tous
+les produits. L'opérateur cliquait, rien ne se cochait, la case passait pour cassée
+(signalé le 06/08/2026). Trois choses le composaient, corrigées ensemble :
+
+1. `ImagePipeline.RenderInto` ne posait `aDecouper` que dans la branche « photo entière » ;
+   en « remplir », le bord de la photo EST le bord du tirage, et c'est encore là que passent
+   les ciseaux quand plusieurs tirages sortent sur la même feuille ;
+2. `EditSelectionView` grisait la case hors de `Fit` et `Polaroid` ;
+3. la case montrait l'état de la photo AFFICHÉE alors que le clic porte sur les photos
+   VISÉES : sur une sélection dont la courante ne faisait pas partie, elle se remettait à
+   zéro juste après avoir été cochée. Elle lit désormais `Visees()`.
+
+## Le Polaroid porte ses traits de coupe SANS qu'on les demande
+
+Le cadre garde ses proportions (0,823) et ne remplit donc pas la feuille : sur un 10×15
+(0,67) il laisse du blanc en haut et en bas. Sans repère, le tirage ne ressemble pas à un
+Polaroid mais à une photo posée au milieu du blanc — constaté sur papier le 06/08/2026.
+
+`RenderPolaroid` trace donc toujours le contour sur `pose.Frame`, quelle que soit la case
+« Contour de découpe », et pose des **repères d'angle** (`DrawCornerTicks`) dans le blanc
+autour : à un millimètre du cadre, donc emportés par la chute, là où le contour reste sur
+le tirage. Ceux qui ne tiennent pas sont simplement omis — sur un 10×15, le cadre occupe
+toute la largeur et il ne reste de place qu'en haut et en bas.
+
+## La bande basse : 4 mm de marge latérale, à cause du fond perdu
+
+`SheetFooterLayout.MargeBordMm` vaut **4 mm**, quand l'air vertical n'en fait que 1,2. Ce
+n'est pas une question de goût : la planche part à fond perdu, la machine réclame l'image
+avec 3 mm de débord qu'elle rogne elle-même (`PrintOrchestrator.RemplirLeDebord`), soit
+près d'un millimètre et demi mangé sur CHAQUE bord. À 1,2 mm, la date perdait son premier
+chiffre sur le papier.
+
+La date et l'heure sont écrites séparément — `dd/MM/yyyy` en corps 5 mm, `HH:mm` à
+`FractionHeure` (0,72) et en gris. C'est la DATE qui prouve qu'une photo d'identité est
+récente ; l'heure n'est qu'une précision d'atelier, et elle ne doit pas peser autant à
+l'œil. Les largeurs se calculent sans contexte de dessin (`LargeurTexte`) : le peintre et
+la découpe DOIVENT appeler la même fonction, sans quoi l'heure sort de sa zone.
+
+⚠ La première ligne de la mention est en **gras et en capitales** : elle se majore à 0,68
+cadratin par caractère, pas à 0,58 comme le reste. Avec 0,58, elle mordait sur le code QR.
+
+## Ce qui n'est pas cadré n'est plus assombri
+
+Le voile sombre a disparu des quatre endroits où il vivait : `CropSurface`,
+`CropEditorView`, `IdPhotoView` et les vignettes de la planche (`DessinerCadre`). Il
+noircissait précisément la partie qu'on regarde pour décider de la rattraper — un visage
+qui déborde du cadre devenait illisible. Le cadre jaune, épais, dit la limite (demandé le
+06/08/2026).
+
+## Le logo est VERSIONNÉ, pas fabriqué à la compilation
+
+`src\Studio.App\Assets\studio-photo.ico` porte six définitions (256 → 16 px).
+`tools\Studio.Logo` le redessine — un diaphragme orange dans un anneau bleu, tout en
+fractions du côté, si bien que le 16 px est exactement le 256 px en plus petit. Chaque
+définition est tracée quatre fois trop grand puis réduite : les traits fins d'un diaphragme
+tracés directement à 16 px disparaissent.
+
+**À ne relancer que si la marque change.** Une icône refaite à chaque compilation change
+d'octets sans changer de dessin, et le dépôt en garderait la trace à chaque commit.

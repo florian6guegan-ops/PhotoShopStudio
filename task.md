@@ -1,3 +1,98 @@
+# Exécution — passe du 06/08/2026 (retours du comptoir)
+
+Dix retours d'un même après-midi d'exploitation. Sept touchent l'écran « Modifier », deux le
+papier, un l'identité de l'application.
+
+## A. Le bouton « Dupliquer » ne faisait apparaître aucune vignette ✅
+
+- [x] A1 Le doublon naissait **sans vignette source** : `RefreshThumbnail` sortait
+      immédiatement et la case restait vide, dans la planche comme dans la bande
+- [x] A2 Il naissait aussi **sans la définition du fichier**, donc `PhotoItem.Cadre` rendait
+      `null` — et le doublon partait au tirage en **pleine image**, sans le cadrage de son
+      original. C'est le défaut grave des deux : il ne se voit qu'une fois le papier sorti
+- [x] A3 Vérifié côté impression : `OrderService.CreateOrder` copie le fichier une seule
+      fois mais crée bien **deux `OrderItem`**. Le doublon part
+- [x] A4 `PhotoItem.Cle` : les caches d'aperçu étaient rangés par chemin, que l'original et
+      son doublon partagent. Passer l'un en noir et blanc donnait son image à l'autre
+
+## B. La case « Contour de découpe » ne se cochait pas ✅
+
+- [x] B1 Elle était **grisée** en « remplir le format » — le mode par défaut de presque tous
+      les produits. Le clic ne pouvait pas la cocher
+- [x] B2 Et pour cause : `ImagePipeline` ne traçait rien dans ce mode. Le bord de la photo
+      EST le bord du tirage, et c'est là que passent les ciseaux quand plusieurs tirages
+      sortent sur la même feuille. Le trait s'y pose désormais
+- [x] B3 La case montrait l'état de la photo AFFICHÉE alors que le clic porte sur les photos
+      VISÉES : elle se remettait à zéro juste après avoir été cochée
+
+## C. Le format Polaroid ne ressemblait pas à un Polaroid ✅
+
+- [x] C1 Sur photo du tirage : rien ne marquait le bord du cadre, qui ne remplit pas la
+      feuille — le résultat lisait comme une photo posée au milieu du blanc
+- [x] C2 Le contour est désormais tracé **d'office** sur ce format, sans passer par la case
+- [x] C3 Plus des **repères d'angle** dans le blanc autour, à 1 mm : ils partent avec la
+      chute, là où le contour reste sur le tirage. Omis là où il n'y a pas la place
+
+## D. La planche identité : date rognée, heure absente ✅
+
+- [x] D1 La date était à 1,2 mm du bord ; le fond perdu en mange près de 1,5 sur chaque
+      côté. **4 mm** de marge latérale, et elle est hors d'atteinte du rognage
+- [x] D2 L'heure est écrite à la suite, en corps réduit (0,72) et en gris : c'est la DATE
+      qui prouve qu'une photo est récente, l'heure n'est qu'une précision d'atelier
+- [x] D3 La mention en gras et capitales se majorait à 0,58 cadratin comme le reste : elle
+      mordait sur le code QR. 0,68 pour la première ligne
+
+## E. Faire de la place à ce qu'on est venu regarder ✅
+
+- [x] E1 **Cadrage identité** : trois boutons héritaient des 76 px de `BigButton` et
+      imposaient leur hauteur à toute la barre. Titres, air et boutons resserrés — la barre
+      perd près d'un tiers de sa hauteur, qui revient à la photo
+- [x] E2 **Récapitulatif de planche** : deux cartes empilées, quatre rangées de boutons,
+      près de trois cents pixels sous une planche qu'on est venu JUGER. Tout tient
+      maintenant sur une seule barre qui se replie
+
+## F. Les gestes de la sélection ✅
+
+- [x] F1 **Maj+clic** manquait à la bande de « Modifier » : viser vingt photos qui se
+      suivent demandait vingt Ctrl+clic. Elle VISE, elle ne bascule pas — comme sur la
+      planche, et pour la même raison
+- [x] F2 Sur la planche, le Maj+clic ne faisait rien tant qu'aucun clic simple n'avait posé
+      d'ancre : après un Ctrl+A ou un « tout », le geste passait pour absent. L'ancre
+      retombe sur la dernière photo touchée
+- [x] F3 Ctrl+A basculait déjà des deux côtés ; il le DIT maintenant dans le journal, seul
+      moyen de vérifier après coup ce qu'un raccourci a fait
+
+## G. Ce qui n'est pas cadré n'est plus assombri ✅
+
+- [x] G1 Le voile noircissait précisément la partie qu'on regarde pour décider de la
+      rattraper. Retiré des quatre endroits : surface de recadrage, éditeur, cadrage
+      identité, et vignettes de la planche
+- [x] G2 Les vignettes de la bande de « Modifier » se touchaient : de l'air tout autour, et
+      le fond d'une photo visée ne déborde plus sur sa voisine
+
+## H. L'application a un logo ✅
+
+- [x] H1 Un diaphragme orange dans un anneau bleu, aux couleurs de l'application
+- [x] H2 Six définitions de 256 à 16 px, chacune tracée quatre fois trop grand puis réduite
+- [x] H3 `tools\Studio.Logo` le redessine ; l'icône est **versionnée**, pas fabriquée à la
+      compilation
+
+## Vérification
+
+- [x] `dotnet build` de la solution : 0 erreur
+- [x] `dotnet test` : **1216 essais, 0 échec** (deux ajoutés sur le contour en « remplir »,
+      un sur les traits de coupe du Polaroid ; un ancien essai retourné, qui vérifiait que
+      la case ne posait justement rien)
+- [x] Tirages d'essai rendus et regardés : Polaroid et planche identité horodatée
+- [x] L'application démarre, la fenêtre porte son icône
+
+## Reste à faire par l'exploitant (passe du 06/08/2026)
+
+- Sortir **un** Polaroid sur la DS620 et vérifier que le trait de coupe tombe où il faut
+- Sortir **une** planche identité et vérifier que la date n'est plus rognée à gauche
+- Dire si le voile doit revenir sur le cadrage identité : c'est le seul écran où il pouvait
+  se défendre, et il a été retiré par cohérence avec les trois autres
+
 # Exécution — 14ᵉ passe (vitesse des rendus)
 
 ## W. Le décodage lisait 24 Mpx pour en garder 0,2 ✅

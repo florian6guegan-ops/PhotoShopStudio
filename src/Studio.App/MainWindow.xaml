@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="clr-namespace:Studio.App.Views"
         Title="Studio Photo — PHOTOCONCEPT"
+        Icon="Assets/studio-photo.ico"
         WindowState="Maximized"
         MinWidth="1024" MinHeight="700"
         Background="{StaticResource PageBrush}">

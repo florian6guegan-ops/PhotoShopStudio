@@ -268,6 +268,57 @@ public static class ImagePipeline
     }
 
     /// <summary>
+    /// Repères de coupe dans le blanc qui entoure un cadre : quatre paires de traits, dans
+    /// le prolongement de ses bords.
+    ///
+    /// Ils sont posés HORS du cadre, à un millimètre : ils partent donc avec la chute,
+    /// là où le contour, lui, reste sur le tirage. C'est ce qui permet de viser la coupe
+    /// avant de poser les ciseaux, et non pendant.
+    ///
+    /// Seuls ceux qui tiennent sont tracés : sur un papier dont le cadre occupe toute la
+    /// largeur — le cas d'un Polaroid sur du 10×15 — il ne reste de place qu'en haut et
+    /// en bas, et les repères latéraux sont simplement omis.
+    /// </summary>
+    private static void DrawCornerTicks(MagickImage image, PixelRect cadre, int dpi)
+    {
+        var longueur = MmPx.ToPixels(3, dpi);
+        var ecart = MmPx.ToPixels(1, dpi);
+
+        var traits = new Drawables()
+            .DisableStrokeAntialias()
+            .StrokeColor(new MagickColor("#909090"))
+            .StrokeWidth(Math.Max(1, MmPx.ToPixels(TraitDeDecoupeMm, dpi)))
+            .FillColor(MagickColors.Transparent);
+
+        var quelqueChose = false;
+
+        void Trait(double x1, double y1, double x2, double y2)
+        {
+            if (Math.Min(x1, x2) < 0 || Math.Min(y1, y2) < 0) return;
+            if (Math.Max(x1, x2) >= image.Width || Math.Max(y1, y2) >= image.Height) return;
+
+            traits.Line(x1, y1, x2, y2);
+            quelqueChose = true;
+        }
+
+        double[] verticales = [cadre.X, cadre.Right - 1];
+        foreach (var x in verticales)
+        {
+            Trait(x, cadre.Y - ecart - longueur, x, cadre.Y - ecart);
+            Trait(x, cadre.Bottom - 1 + ecart, x, cadre.Bottom - 1 + ecart + longueur);
+        }
+
+        double[] horizontales = [cadre.Y, cadre.Bottom - 1];
+        foreach (var y in horizontales)
+        {
+            Trait(cadre.X - ecart - longueur, y, cadre.X - ecart, y);
+            Trait(cadre.Right - 1 + ecart, y, cadre.Right - 1 + ecart + longueur, y);
+        }
+
+        if (quelqueChose) image.Draw(traits);
+    }
+
+    /// <summary>
     /// Fait décoder le JPEG à la taille dont le tirage a besoin, et pas à celle du fichier.
     ///
     /// <b>C'est la plus grosse économie du rendu, et elle ne coûte rien en qualité.</b> Le
@@ -391,9 +442,17 @@ public static class ImagePipeline
             tirage.Density = new Density(dpi, dpi, DensityUnit.PixelsPerInch);
             tirage.Composite(photo, pose.Window.X, pose.Window.Y, CompositeOperator.Over);
 
-            // le contour suit le bord du POLAROID, pas celui de la photo : c'est le cadre
-            // entier qu'on découpe, bande basse comprise
-            if (request.CutBorder) DrawCutBorder(tirage, pose.Frame, dpi);
+            // Le contour suit le bord du POLAROID, pas celui de la photo : c'est le cadre
+            // entier qu'on découpe, bande basse comprise.
+            //
+            // <b>Il est tracé D'OFFICE sur ce format</b>, et non plus sur demande. Le cadre
+            // garde ses proportions et ne remplit donc pas la feuille — un 10×15 n'a pas le
+            // rapport d'un Polaroid — et rien sur le papier ne disait où le sortir : le
+            // tirage ne ressemblait pas à un Polaroid mais à une photo posée de travers au
+            // milieu du blanc (constaté sur papier le 06/08/2026). Un Polaroid se découpe,
+            // c'est sa forme qui fait le produit.
+            DrawCutBorder(tirage, pose.Frame, dpi);
+            DrawCornerTicks(tirage, pose.Frame, dpi);
 
             if (request.IccProfilePath is not null)
             {
@@ -478,8 +537,7 @@ public static class ImagePipeline
         var targetW = (uint)request.TargetWidthPx;
         var targetH = (uint)request.TargetHeightPx;
 
-        // Emplacement de la photo dans le tirage, quand du blanc l'entoure : c'est là que
-        // passeront les ciseaux. Nul en mode « remplir », où la photo occupe tout.
+        // Emplacement de la photo dans le tirage : c'est là que passeront les ciseaux.
         PixelRect? aDecouper = null;
 
         if (request.Fit == FitMode.Fill)
@@ -498,6 +556,13 @@ public static class ImagePipeline
             image.ResetPage();
             // garantit les dimensions exactes même après arrondis
             image.Extent(targetW, targetH, Gravity.Center, MagickColors.White);
+
+            // Le bord de la photo EST le bord du tirage : c'est encore là que passent les
+            // ciseaux quand plusieurs tirages sortent sur la même feuille. La case
+            // « Contour de découpe » ne posait rien du tout dans ce mode — c'est le
+            // troisième symptôme du même défaut, avec la case grisée et le trait qui ne
+            // s'affichait qu'à l'écran.
+            aDecouper = new PixelRect(0, 0, (int)targetW, (int)targetH);
         }
         else
         {

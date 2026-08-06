@@ -6,7 +6,16 @@
     <UseWPF>true</UseWPF>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
+    <!-- L'icône de l'exécutable : bureau, barre des tâches, explorateur. Elle est
+         VERSIONNÉE et non fabriquée à la compilation ; c'est tools/Studio.Logo qui la
+         redessine, et seulement quand la marque change. -->
+    <ApplicationIcon>Assets\studio-photo.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- la même, embarquée : c'est celle que porte la fenêtre elle-même -->
+    <Resource Include="Assets\studio-photo.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- modèle de détection de visage embarqué à côté de l'exécutable -->

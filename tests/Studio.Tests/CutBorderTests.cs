@@ -146,16 +146,56 @@ public class CutBorderTests : IDisposable
     }
 
     /// <summary>
-    /// En « remplir le format », la photo occupe tout le tirage : il n'y a rien à recouper, et
-    /// un cadre noir au ras du papier ne ferait que gâcher le tirage.
+    /// En « remplir le format », la photo occupe tout le tirage : le trait se pose donc au RAS
+    /// du papier, sur son bord même. C'est encore là que passent les ciseaux quand plusieurs
+    /// tirages sortent sur la même feuille, et c'est ce que la case promet.
+    ///
+    /// Elle ne posait rien du tout dans ce mode — et elle y était de surcroît grisée à l'écran,
+    /// si bien qu'elle passait tout simplement pour cassée (signalé le 06/08/2026).
     /// </summary>
     [Fact]
-    public void En_remplir_le_format_l_option_ne_trace_rien()
+    public void En_remplir_le_format_le_trait_borde_le_tirage()
     {
         using var tirage = Rendre(FitMode.Fill, contour: true);
 
+        var (x, plusSombre) = PlusSombreSurLaLigne(tirage, SheetH / 2);
+
+        Assert.True(plusSombre < 100, $"aucun trait au bord du tirage (plus sombre : {plusSombre})");
+        Assert.True(x <= 3 || x >= SheetW - 4, $"le trait est tombé en {x}, loin du bord");
+
+        // et rien au MILIEU : le trait borde le tirage, il ne le traverse pas
+        Assert.True(Clarte(tirage, SheetW / 2, SheetH / 2) > 100, "le trait a mordu sur la photo");
+    }
+
+    /// <summary>Sans la case, le tirage plein format reste vierge de tout trait.</summary>
+    [Fact]
+    public void En_remplir_le_format_sans_l_option_rien_n_est_trace()
+    {
+        using var tirage = Rendre(FitMode.Fill, contour: false);
+
         var (_, plusSombre) = PlusSombreSurLaLigne(tirage, SheetH / 2);
 
-        Assert.True(plusSombre > 100, $"un trait a été tracé sans marge à recouper ({plusSombre})");
+        Assert.True(plusSombre > 100, $"un pixel à {plusSombre} : quelque chose a été tracé");
+    }
+
+    /// <summary>
+    /// Le Polaroid porte SES traits de coupe sans qu'on les demande.
+    ///
+    /// Le cadre garde ses proportions et ne remplit pas la feuille : sans repère, le tirage ne
+    /// ressemblait pas à un Polaroid mais à une photo perdue au milieu du blanc, et rien ne
+    /// disait où couper (constaté sur papier le 06/08/2026).
+    /// </summary>
+    [Fact]
+    public void Le_polaroid_porte_ses_traits_de_coupe_sans_qu_on_les_demande()
+    {
+        using var tirage = Rendre(FitMode.Polaroid, contour: false);
+
+        var pose = PolaroidFrame.Place(SheetW, SheetH);
+
+        // sur la ligne qui traverse la fenêtre image, le trait du cadre est à sa gauche
+        var (x, plusSombre) = PlusSombreSurLaLigne(tirage, pose.Window.Y + pose.Window.Height / 2);
+
+        Assert.True(plusSombre < 100, $"aucun trait de coupe (plus sombre : {plusSombre})");
+        Assert.InRange(x, pose.Frame.X - 2, pose.Frame.X + 2);
     }
 }
