@@ -228,8 +228,20 @@ public partial class OrdersView : UserControl
         _ => true,
     };
 
+    /// <summary>
+    /// Une enveloppe de TIRAGES, c'est-à-dire sans une seule photo d'identité.
+    ///
+    /// <b>La règle s'est durcie le 06/08/2026.</b> Il suffisait d'une ligne de tirage pour
+    /// qu'une enveloppe MIXTE — des 10×15 et une planche d'identité dans la même commande —
+    /// paraisse dans « Tirages photo ». On y retrouvait donc les planches qu'on avait
+    /// justement rangées dans leur propre onglet, et l'intérêt de séparer les deux tombait.
+    ///
+    /// Rien ne se perd : une enveloppe mixte reste dans « Photos d'identité » et dans
+    /// « Tout ».
+    /// </summary>
     private static bool EstDesTirages(Envelope enveloppe) =>
-        enveloppe.Lines.Any(l => !EstIdentite(l));
+        enveloppe.Lines.Any(l => !EstIdentite(l))
+        && !enveloppe.Lines.Any(EstIdentite);
 
     /// <summary>
     /// Une ligne de planche d'identité.

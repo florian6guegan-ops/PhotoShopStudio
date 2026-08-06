@@ -313,6 +313,54 @@ public partial class SettingsView : UserControl
 
         RapportAdresseBox.Text = poste.AdresseRapport;
         CadrageAutoCheck.IsChecked = poste.CadrageAutoVisage;
+
+        RemplirLesSupports(poste);
+    }
+
+    /// <summary>Un support branché, et faut-il le cacher des sources de photos.</summary>
+    private sealed class LigneSupport(string libelle, string racine, bool masque)
+    {
+        public string Libelle { get; } = libelle;
+        public string Racine { get; } = racine;
+        public bool Masque { get; set; } = masque;
+    }
+
+    private List<LigneSupport> _supports = [];
+
+    /// <summary>
+    /// Les supports branchés, plus ceux qu'on masque et qui ne le sont pas.
+    ///
+    /// <b>Les deux, et pas seulement les premiers.</b> Une clef masquée puis débranchée
+    /// disparaîtrait de cette liste, et le réglage se perdrait au prochain enregistrement —
+    /// on aurait « décoché » sans y toucher.
+    /// </summary>
+    private void RemplirLesSupports(PosteSettings poste)
+    {
+        var branches = Studio.Sources.RemovableDriveWatcher.GetDrives()
+            .Select(d => new LigneSupport(d.Label, d.RootPath, poste.EstMasque(d.Label, d.RootPath)))
+            .ToList();
+
+        foreach (var masque in poste.Masques)
+        {
+            if (string.IsNullOrWhiteSpace(masque)) continue;
+            if (branches.Any(l => l.Libelle.Contains(masque, StringComparison.OrdinalIgnoreCase))) continue;
+
+            branches.Add(new LigneSupport($"{masque}  (débranché)", masque, true));
+        }
+
+        _supports = branches;
+        SupportsList.ItemsSource = _supports;
+        AucunSupportText.Visibility = _supports.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Enregistre dès la coche, comme les favoris : un bouton de plus serait un bouton de
+    /// plus à oublier, et l'effet se voit au prochain choix de photos.
+    /// </summary>
+    private void OnSupportChange(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        App.Services.SavePoste(SaisiePoste());
     }
 
     /// <summary>Nom réservé au choix « laisser Studio décider ».</summary>
@@ -348,7 +396,11 @@ public partial class SettingsView : UserControl
         RoleChoisi(GrandFormatCombo),
         RoleChoisi(SublimationCombo),
         RapportAdresseBox.Text.Trim(),
-        CadrageAutoCheck.IsChecked == true);
+        CadrageAutoCheck.IsChecked == true,
+        // On retient le LIBELLÉ tel qu'il s'affiche (« DILAND (E:) ») : il porte le nom de
+        // volume ET la lettre, et la reconnaissance accepte l'un ou l'autre. Une clef qui
+        // change de lettre reste donc masquée.
+        [.. _supports.Where(s => s.Masque).Select(s => s.Libelle)]);
 
     /// <summary>
     /// Choisit le dossier de DiLand. On accepte le dossier d'INSTALLATION : personne ne

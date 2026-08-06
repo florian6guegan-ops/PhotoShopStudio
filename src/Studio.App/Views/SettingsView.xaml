@@ -547,6 +547,39 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Les supports proposés comme source de photos. La clef de DiLand est
+                     branchée en permanence sur le poste de la boutique : elle porte sa
+                     licence, jamais de photos, et elle s'affichait pourtant au milieu des
+                     cartes clients. C'est un réglage de POSTE — chez un collègue ce sera un
+                     autre volume, ou aucun. -->
+                <TextBlock Text="Supports de photos" Style="{StaticResource Texte}"
+                           FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                                   Text="Cochez les supports à NE PAS proposer quand on choisit des photos. Un support coché reste accessible par « Parcourir » : il disparaît seulement des tuiles."/>
+
+                        <ItemsControl x:Name="SupportsList" Margin="0,12,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding Masque, Mode=TwoWay}"
+                                              Checked="OnSupportChange" Unchecked="OnSupportChange"
+                                              FontSize="17" Margin="0,4"
+                                              Foreground="{StaticResource TextBrush}"
+                                              VerticalContentAlignment="Center"
+                                              Content="{Binding Libelle}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock x:Name="AucunSupportText" Style="{StaticResource Hint}"
+                                   Margin="0,10,0,0" Visibility="Collapsed"
+                                   Text="Aucun support branché pour le moment. Branchez la clef à masquer et revenez sur cet écran."/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Le cadrage. Un seul réglage pour l'instant, mais il change ce que
                      l'opérateur voit à l'ouverture de CHAQUE photo : il mérite son titre
                      plutôt que d'être glissé au milieu des imprimantes. -->

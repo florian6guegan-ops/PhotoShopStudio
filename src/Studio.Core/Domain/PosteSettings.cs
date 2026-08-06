@@ -44,13 +44,49 @@ namespace Studio.Core.Domain;
 /// comportement qu'elle connaît. Il ne touche jamais un cadrage déjà posé — celui d'une
 /// borne, ou celui qu'on vient de régler à la main.
 /// </param>
+/// <param name="SupportsMasques">
+/// Supports à NE PAS proposer comme source de photos, désignés par leur nom de volume ou
+/// leur lettre (« DILAND », « E: »). La comparaison ignore la casse.
+///
+/// La clef de DiLand est branchée en permanence sur le poste de la boutique : elle porte
+/// sa licence, jamais de photos, et elle s'affichait pourtant à côté des cartes clients.
+/// C'est un choix de POSTE et non du dépôt — chez un collègue, ce sera un autre volume, ou
+/// aucun.
+/// </param>
 public sealed record PosteSettings(
     string DiLandRacine = "",
     string ImprimanteGrandFormat = "",
     string ImprimanteSublimation = "",
     string AdresseRapport = "",
-    bool CadrageAutoVisage = false)
+    bool CadrageAutoVisage = false,
+    IReadOnlyList<string>? SupportsMasques = null)
 {
+    /// <summary>Les supports masqués, jamais null — un fichier ancien n'en porte pas.</summary>
+    public IReadOnlyList<string> Masques => SupportsMasques ?? [];
+
+    /// <summary>
+    /// Ce support doit-il rester caché ?
+    ///
+    /// On accepte le nom de volume comme la lettre parce que l'opérateur lit les deux sur
+    /// la tuile (« DILAND (E:) ») et qu'on ne va pas lui demander lequel compte. Une clef
+    /// qui change de lettre reste reconnue par son nom, et inversement.
+    /// </summary>
+    public bool EstMasque(string libelle, string racine)
+    {
+        foreach (var masque in Masques)
+        {
+            if (string.IsNullOrWhiteSpace(masque)) continue;
+
+            var propre = masque.Trim().TrimEnd('\\', ':');
+            if (propre.Length == 0) continue;
+
+            if (libelle.Contains(propre, StringComparison.OrdinalIgnoreCase)) return true;
+            if (racine.TrimEnd('\\', ':').Equals(propre, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
     public const string FileName = "poste.json";
 
     private static readonly JsonSerializerOptions Options = new()

@@ -87,10 +87,21 @@ public partial class SourcePickerView : UserControl
             "Parcourir les dossiers");
     }
 
+    /// <summary>
+    /// Les supports proposés, moins ceux que le poste masque.
+    ///
+    /// La clef de DiLand est branchée en permanence : elle porte sa licence, jamais de
+    /// photos, et elle s'affichait pourtant au milieu des cartes clients — une tuile de
+    /// plus à écarter du regard à chaque commande. La liste se règle dans Paramètres, par
+    /// poste : chez un collègue ce sera un autre volume, ou aucun.
+    /// </summary>
     private void Refresh(IReadOnlyList<RemovableDrive> drives)
     {
-        DrivesList.ItemsSource = drives;
-        NoDrivesText.Visibility = drives.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var poste = App.Services.Poste;
+        var visibles = drives.Where(d => !poste.EstMasque(d.Label, d.RootPath)).ToList();
+
+        DrivesList.ItemsSource = visibles;
+        NoDrivesText.Visibility = visibles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Un support entier : DCIM d'abord, sous-dossiers compris.</summary>
