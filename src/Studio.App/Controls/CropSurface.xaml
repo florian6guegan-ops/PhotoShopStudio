@@ -51,10 +51,10 @@
                  élargir le cadrage, le coin opposé restant en place. Sur le cadre et non
                  sur la photo — c'est le rectangle du tirage qu'on redimensionne, comme
                  dans n'importe quel outil de recadrage. -->
-            <Ellipse x:Name="Poignee0" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
-            <Ellipse x:Name="Poignee1" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
-            <Ellipse x:Name="Poignee2" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
-            <Ellipse x:Name="Poignee3" Width="26" Height="26" Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Rectangle x:Name="Poignee0" Width="24" Height="24" Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
+            <Rectangle x:Name="Poignee1" Width="24" Height="24" Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
+            <Rectangle x:Name="Poignee2" Width="24" Height="24" Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
+            <Rectangle x:Name="Poignee3" Width="24" Height="24" Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
 
             <!-- Encoches au MILIEU de chaque côté du cadre : elles tirent le côté seul, le
                  côté opposé restant en place. Un coin fait bouger deux bords à la fois, ce
@@ -64,14 +64,14 @@
                  Elles sont couchées dans le sens du bord qu'elles commandent — barre
                  horizontale en haut et en bas, verticale à gauche et à droite — pour que
                  leur forme dise dans quel sens elles tirent. -->
-            <Rectangle x:Name="PoigneeHaut" Width="38" Height="14" RadiusX="7" RadiusY="7"
-                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
-            <Rectangle x:Name="PoigneeDroite" Width="14" Height="38" RadiusX="7" RadiusY="7"
-                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
-            <Rectangle x:Name="PoigneeBas" Width="38" Height="14" RadiusX="7" RadiusY="7"
-                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
-            <Rectangle x:Name="PoigneeGauche" Width="14" Height="38" RadiusX="7" RadiusY="7"
-                       Fill="#F0932B" Stroke="White" StrokeThickness="2"/>
+            <Rectangle x:Name="PoigneeHaut" Width="38" Height="14"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
+            <Rectangle x:Name="PoigneeDroite" Width="14" Height="38"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
+            <Rectangle x:Name="PoigneeBas" Width="38" Height="14"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
+            <Rectangle x:Name="PoigneeGauche" Width="14" Height="38"
+                       Fill="#F0932B" Stroke="White" StrokeThickness="2" Opacity="0.8"/>
         </Canvas>
 
         <TextBlock x:Name="Consigne" Foreground="#B0BEC5" FontSize="16"

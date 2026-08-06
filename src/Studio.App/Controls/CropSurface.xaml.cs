@@ -352,9 +352,46 @@ public partial class CropSurface : UserControl
 
         for (var i = 0; i < NombreDePoignees; i++)
         {
-            Canvas.SetLeft(formes[i], _prises[i].X - formes[i].Width / 2);
-            Canvas.SetTop(formes[i], _prises[i].Y - formes[i].Height / 2);
+            var (x, y) = PlaceInterieure(i, formes[i], gauche, haut, droite, bas, milieuX, milieuY);
+            Canvas.SetLeft(formes[i], x);
+            Canvas.SetTop(formes[i], y);
         }
+    }
+
+    /// <summary>Écart entre le trait du cadre et la poignée, pour qu'elle ne le mange pas.</summary>
+    private const double MargeInterieure = 4;
+
+    /// <summary>
+    /// Où poser la poignée pour qu'elle tienne ENTIÈREMENT dans le cadre.
+    ///
+    /// Elles étaient centrées sur le trait, donc à moitié dehors : sur une photo qui
+    /// remplit le format, cette moitié-là tombe hors de l'image, sur le fond de l'écran.
+    /// On les rentre, et on ne touche pas à <see cref="_prises"/> : ces points-là restent
+    /// sur le cadre, parce que tout le calcul du geste s'y rapporte, et le rayon de saisie
+    /// (<see cref="RayonPoignee"/>) les couvre largement.
+    /// </summary>
+    private static (double X, double Y) PlaceInterieure(
+        int i, Shape forme,
+        double gauche, double haut, double droite, double bas, double milieuX, double milieuY)
+    {
+        var dedansGauche = gauche + MargeInterieure;
+        var dedansHaut = haut + MargeInterieure;
+        var dedansDroite = droite - forme.Width - MargeInterieure;
+        var dedansBas = bas - forme.Height - MargeInterieure;
+
+        return i switch
+        {
+            0 => (dedansGauche, dedansHaut),
+            1 => (dedansDroite, dedansHaut),
+            2 => (dedansDroite, dedansBas),
+            3 => (dedansGauche, dedansBas),
+
+            // les milieux de côté restent centrés sur leur bord, et rentrent du leur
+            4 => (milieuX - forme.Width / 2, dedansHaut),
+            5 => (dedansDroite, milieuY - forme.Height / 2),
+            6 => (milieuX - forme.Width / 2, dedansBas),
+            _ => (dedansGauche, milieuY - forme.Height / 2),
+        };
     }
 
     // — gestes —

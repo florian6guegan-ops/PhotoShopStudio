@@ -466,8 +466,58 @@ public sealed class AppServices
         return fresh;
     }
 
-    public static AppServices Load(string dataRoot = @"D:\PhotoStudioData")
+    /// <summary>
+    /// Où vivent les données de la boutique : catalogue, commandes, journaux, réglages.
+    ///
+    /// <b>Ce chemin était écrit en dur sur <c>D:</c>.</b> Sur le poste de la boutique il
+    /// tombe juste ; sur celui d'un collègue qui n'a qu'un disque C:, la création des
+    /// sous-dossiers lève, et l'application s'arrête sur « Impossible de démarrer » —
+    /// avant d'avoir montré quoi que ce soit. Vu en préparant la version 1.1.0, le
+    /// 06/08/2026, alors qu'on s'apprêtait à la distribuer.
+    ///
+    /// L'ordre compte : la variable d'environnement l'emporte (elle permet de déplacer les
+    /// données sans recompiler), puis l'emplacement historique de la boutique — pour que ce
+    /// poste-là ne change pas d'un pouce — et à défaut le dossier de l'utilisateur, qui
+    /// existe partout et où l'on a toujours le droit d'écrire.
+    /// </summary>
+    public static string RacineDonneesParDefaut()
     {
+        var declare = Environment.GetEnvironmentVariable("STUDIO_DATA");
+        if (!string.IsNullOrWhiteSpace(declare)) return declare;
+
+        foreach (var candidat in new[]
+                 {
+                     @"D:\PhotoStudioData",
+                     Path.Combine(
+                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                         "StudioPhoto", "data"),
+                 })
+        {
+            // On ne se contente pas de regarder si le disque existe : un D: qui serait un
+            // lecteur optique ou une clef protégée passerait le test et échouerait ensuite.
+            // Le seul essai qui prouve quelque chose est d'écrire.
+            try
+            {
+                Directory.CreateDirectory(candidat);
+                return candidat;
+            }
+            catch (Exception)
+            {
+                // candidat suivant
+            }
+        }
+
+        // Les deux ont échoué : on rend le dossier utilisateur quand même, pour que le
+        // message d'erreur nomme un chemin plausible plutôt qu'un disque inexistant.
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudioPhoto", "data");
+    }
+
+    public static AppServices Load(string? dataRoot = null)
+    {
+        dataRoot ??= RacineDonneesParDefaut();
+
         // « models » en fait partie : l'écran Paramètres y renvoie pour poser le modèle de
         // détourage, et un dossier qui n'existe pas se cherche longtemps
         foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache", "incoming", "models", "attente" })

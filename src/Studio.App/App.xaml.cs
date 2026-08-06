@@ -14,9 +14,22 @@ public partial class App : Application
         DispatcherUnhandledException += OnUnhandledException;
         Studio.Printing.BitmapPrinter.Log = message => Infrastructure.FileLog.Write(message);
 
+        // Le journal et les modèles de détourage visaient chacun « D:\PhotoStudioData »
+        // de leur côté. Sur un poste sans disque D:, le premier écrivait dans le vide et
+        // le second ne trouvait jamais rien — sans que rien ne le dise. Ils suivent
+        // maintenant la racine RÉELLE, celle que l'application vient de choisir.
+        var racine = AppServices.RacineDonneesParDefaut();
+
+        Infrastructure.FileLog.LogsDir = System.IO.Path.Combine(racine, "logs");
+        Studio.Imaging.BiRefNetMatting.DossiersCherches =
+        [
+            System.IO.Path.Combine(racine, "models"),
+            System.IO.Path.Combine(AppContext.BaseDirectory, "models"),
+        ];
+
         try
         {
-            Services = AppServices.Load();
+            Services = AppServices.Load(racine);
         }
         catch (Exception ex)
         {
