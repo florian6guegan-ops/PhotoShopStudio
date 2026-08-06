@@ -1,4 +1,6 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Printing;
 
 namespace Studio.Printing;
@@ -12,6 +14,48 @@ public static class BitmapPrinter
 {
     /// <summary>Journal optionnel (branché sur FileLog par l'app) : trace la page réellement obtenue.</summary>
     public static Action<string>? Log { get; set; }
+
+    /// <summary>
+    /// Ouvre un rendu et l'aplatit en 24 bits SUR DU BLANC, prêt à partir au pilote.
+    ///
+    /// <b>Le canal alpha n'a aucun sens sur du papier</b>, et il ne doit pas arriver jusqu'au
+    /// pilote. Nos rendus sortent en PNG 32 bits (ImageMagick garde le canal alpha même quand
+    /// il est plein), et <c>new Bitmap(chemin)</c> les charge donc en <c>Format32bppArgb</c>.
+    /// Les pilotes photo, eux, sont réglés en 24 bits — la DS620 annonce
+    /// <c>ColorMode=24bpp</c> dans son DEVMODE. GDI+ doit alors convertir à la volée, à
+    /// chaque tirage, dans le chemin d'impression : c'est du travail en plus sur le fil qui
+    /// alimente la machine, et le résultat dépend du pilote plutôt que de nous.
+    ///
+    /// On convertit donc UNE fois, ici, et ce qui part est exactement ce qu'on a voulu.
+    /// </summary>
+    public static Bitmap ChargerPourImpression(string path)
+    {
+        using var lu = new Bitmap(path);
+
+        // déjà sans transparence : rien à refaire, la copie coûterait pour rien
+        if (lu.PixelFormat == PixelFormat.Format24bppRgb) return new Bitmap(lu);
+
+        var plat = new Bitmap(lu.Width, lu.Height, PixelFormat.Format24bppRgb);
+        try
+        {
+            plat.SetResolution(lu.HorizontalResolution, lu.VerticalResolution);
+
+            using var g = Graphics.FromImage(plat);
+            // le fond du papier : ce que l'alpha laissait voir, c'est du blanc
+            g.Clear(Color.White);
+            g.CompositingMode = CompositingMode.SourceOver;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor; // 1:1, aucune remise à l'échelle
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.DrawImage(lu, new Rectangle(0, 0, lu.Width, lu.Height));
+
+            return plat;
+        }
+        catch
+        {
+            plat.Dispose();
+            throw;
+        }
+    }
 
     /// <param name="printerName">Nom exact de la file Windows.</param>
     /// <param name="bitmap">Image finale (déjà à la bonne résolution).</param>

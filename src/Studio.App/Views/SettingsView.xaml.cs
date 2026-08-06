@@ -312,6 +312,7 @@ public partial class SettingsView : UserControl
         RemplirLesRoles(SublimationCombo, imprimantes, poste.ImprimanteSublimation);
 
         RapportAdresseBox.Text = poste.AdresseRapport;
+        CadrageAutoCheck.IsChecked = poste.CadrageAutoVisage;
     }
 
     /// <summary>Nom réservé au choix « laisser Studio décider ».</summary>
@@ -346,7 +347,8 @@ public partial class SettingsView : UserControl
         DiLandBox.Text.Trim(),
         RoleChoisi(GrandFormatCombo),
         RoleChoisi(SublimationCombo),
-        RapportAdresseBox.Text.Trim());
+        RapportAdresseBox.Text.Trim(),
+        CadrageAutoCheck.IsChecked == true);
 
     /// <summary>
     /// Choisit le dossier de DiLand. On accepte le dossier d'INSTALLATION : personne ne

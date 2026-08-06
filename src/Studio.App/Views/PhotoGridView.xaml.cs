@@ -2134,6 +2134,18 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         public bool CadrageImpose { get; private set; }
 
         /// <summary>
+        /// Le cadrage automatique sur le visage est déjà passé sur cette photo.
+        ///
+        /// Il ne doit passer QU'UNE fois : rouvrir « Modifier » sur une commande déjà réglée
+        /// remettrait sinon le cadre sur le visage et effacerait ce que l'opérateur y avait
+        /// fait. Voir <c>EditSelectionView.CadrerSurLesVisages</c>.
+        /// </summary>
+        public bool CadrageAutoFait { get; private set; }
+
+        /// <summary>À appeler après avoir posé le cadre sur le visage.</summary>
+        public void MarquerCadrageAuto() => CadrageAutoFait = true;
+
+        /// <summary>
         /// Pose le recadrage qui accompagnait la commande — voir <see cref="CadrageImpose"/>.
         /// À appeler EN DERNIER : produit, quarts de tour et mode le remettent à zéro.
         /// </summary>

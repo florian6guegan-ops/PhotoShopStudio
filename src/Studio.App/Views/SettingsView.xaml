@@ -547,6 +547,25 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Le cadrage. Un seul réglage pour l'instant, mais il change ce que
+                     l'opérateur voit à l'ouverture de CHAQUE photo : il mérite son titre
+                     plutôt que d'être glissé au milieu des imprimantes. -->
+                <TextBlock Text="Cadrage des photos" Style="{StaticResource Texte}"
+                           FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
+
+                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <CheckBox x:Name="CadrageAutoCheck" FontSize="18"
+                                  Foreground="{StaticResource TextBrush}"
+                                  VerticalContentAlignment="Center"
+                                  Content="Poser le cadre sur le visage"/>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                                   Margin="0,8,0,0"
+                                   Text="À l'ouverture de « Modifier », le cadre se pose sur le visage trouvé au lieu du centre de la photo, le regard aux deux cinquièmes de la hauteur. Il ne fait que DÉPLACER le cadre : le format et le zoom ne changent pas, et un cadrage déjà choisi — celui d'une borne, ou celui que vous venez de régler — n'est jamais touché. Sans visage trouvé, la photo reste centrée comme avant."/>
+                    </StackPanel>
+                </Border>
+
                 <!-- La mise à jour. On vérifie et on annonce ; on n'installe JAMAIS sans
                      que l'opérateur l'ait demandé — l'installation ferme l'application,
                      peut-être au milieu d'une commande. -->

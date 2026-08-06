@@ -36,11 +36,20 @@ namespace Studio.Core.Domain;
 /// Retenue pour ne se saisir qu'UNE fois par poste : le jour où l'on en a besoin est
 /// justement celui où l'on ne veut pas la chercher.
 /// </param>
+/// <param name="CadrageAutoVisage">
+/// À l'ouverture de « Modifier », poser le cadre sur le VISAGE au lieu du centre de la photo.
+///
+/// Faux par défaut, et c'est délibéré : le cadrage automatique déplace le cadre de photos
+/// que l'opérateur n'a pas ouvertes, et une boutique qui ne s'y attend pas doit retrouver le
+/// comportement qu'elle connaît. Il ne touche jamais un cadrage déjà posé — celui d'une
+/// borne, ou celui qu'on vient de régler à la main.
+/// </param>
 public sealed record PosteSettings(
     string DiLandRacine = "",
     string ImprimanteGrandFormat = "",
     string ImprimanteSublimation = "",
-    string AdresseRapport = "")
+    string AdresseRapport = "",
+    bool CadrageAutoVisage = false)
 {
     public const string FileName = "poste.json";
 

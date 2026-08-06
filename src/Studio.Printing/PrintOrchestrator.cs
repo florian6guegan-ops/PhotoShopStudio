@@ -1635,7 +1635,9 @@ public sealed class PrintOrchestrator
                             throw new PrinterNotReadyException(place.Panne);
                     }
 
-                    bitmap ??= new Bitmap(page.Path);
+                    // aplati en 24 bits sur du blanc, une fois pour toutes les copies :
+                    // voir BitmapPrinter.ChargerPourImpression
+                    bitmap ??= BitmapPrinter.ChargerPourImpression(page.Path);
 
                     BitmapPrinter.Print(
                         product.PrinterName, bitmap, page.WidthMm, page.HeightMm,

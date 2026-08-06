@@ -100,7 +100,87 @@ internal partial class EditSelectionView : UserControl
         SetCurrent(_courante);
 
         Loaded += (_, _) => Focus(); // sans le focus, ni C ni T ne nous parviennent
+
+        // en dernier : il travaille en tâche de fond sur la liste que tout ce qui précède
+        // vient de mettre en place
+        CadrerSurLesVisages();
     }
+
+    /// <summary>
+    /// L'opérateur a touché au cadrage. Le cadrage automatique s'arrête net dès que c'est
+    /// vrai : il travaille en tâche de fond, photo après photo, et une photo qu'il
+    /// atteindrait après coup écraserait un cadrage fait à la main.
+    /// </summary>
+    private bool _gesteOperateur;
+
+    /// <summary>
+    /// Pose le cadre sur le VISAGE, photo après photo, sans bloquer l'écran.
+    ///
+    /// Réglage du poste, faux par défaut (voir <c>PosteSettings.CadrageAutoVisage</c>). Il
+    /// ne fait que DÉPLACER le cadre — voir <see cref="CadrageAutomatique"/> — et laisse
+    /// tranquilles :
+    ///
+    /// <list type="bullet">
+    ///   <item>les photos dont le cadrage vient d'une BORNE (<c>CadrageImpose</c>) : le
+    ///   client a choisi sa zone, ce n'est pas à nous de la refaire ;</item>
+    ///   <item>le mode « photo entière » et le Polaroid, où la photo tient tout entière
+    ///   dans le cadre : il n'y a rien à déplacer ;</item>
+    ///   <item>tout, dès que l'opérateur a posé un geste.</item>
+    /// </list>
+    ///
+    /// La détection lit le FICHIER en pleine définition — une demi-seconde par photo — et
+    /// tourne donc hors du fil de l'interface, une photo à la fois. Les vignettes se
+    /// remettent à jour au fur et à mesure.
+    /// </summary>
+    private async void CadrerSurLesVisages()
+    {
+        if (!App.Services.Poste.CadrageAutoVisage) return;
+
+        var faites = 0;
+
+        foreach (var photo in _photos.ToList())
+        {
+            if (_gesteOperateur) break;
+            if (!ACadrerSurLeVisage(photo)) continue;
+
+            Studio.Imaging.Faces.DetectedFace? visage;
+            try
+            {
+                var chemin = photo.Path;
+                visage = await Task.Run(() => App.Services.Faces.DetectMain(chemin));
+            }
+            catch (Exception ex)
+            {
+                // pas de visage trouvable, modèle absent, fichier illisible : la photo
+                // reste centrée, comme avant. Ce n'est pas une panne.
+                FileLog.Write($"Cadrage automatique : détection impossible ({photo.Name})", ex);
+                continue;
+            }
+
+            // l'écran a pu être quitté, ou l'opérateur toucher au cadre, pendant la détection
+            if (_gesteOperateur || visage is null) continue;
+            if (!ACadrerSurLeVisage(photo) || photo.Cadre is not { } cadre) continue;
+
+            var point = CadrageAutomatique.TournerAvecLaPhoto(
+                CadrageAutomatique.PointAViser(visage.Box, visage.Eyes),
+                photo.RotationQuarterTurns);
+
+            CadrageAutomatique.Poser(cadre, point);
+            photo.MarquerCadrageAuto();
+
+            Appliquer(photo, cadre);
+            faites++;
+        }
+
+        if (faites > 0) FileLog.Write($"Cadrage automatique : cadre posé sur {faites} visage(s)");
+    }
+
+    /// <summary>Cette photo peut-elle recevoir le cadrage automatique ? Voir ci-dessus.</summary>
+    private static bool ACadrerSurLeVisage(PhotoGridView.PhotoItem photo) =>
+        !photo.CadrageAutoFait
+        && !photo.CadrageImpose
+        && photo.SourceSizeKnown
+        && (photo.FitOverride ?? photo.Product?.DefaultFit ?? FitMode.Fill) == FitMode.Fill;
 
     /// <summary>
     /// Les raccourcis de la grille valent ici aussi.
@@ -170,13 +250,27 @@ internal partial class EditSelectionView : UserControl
     /// </summary>
     private void BrancherSurface()
     {
+        // Ces trois événements ne partent QUE d'un geste à la souris (voir CropSurface :
+        // Bouge() n'est appelé que depuis les gestionnaires de souris et de pincement).
+        // C'est donc ici qu'on sait que l'opérateur a repris la main, et que le cadrage
+        // automatique doit cesser de travailler derrière lui.
         Surface.Changed += (_, _) =>
         {
+            _gesteOperateur = true;
             if (Surface.Crop is { } cadre) Appliquer(_courante, cadre);
         };
 
-        Surface.TiltRequested += (_, sens) => Redresser(_courante, sens);
-        Surface.FrameRotationRequested += (_, _) => PivoterCadre(_courante);
+        Surface.TiltRequested += (_, sens) =>
+        {
+            _gesteOperateur = true;
+            Redresser(_courante, sens);
+        };
+
+        Surface.FrameRotationRequested += (_, _) =>
+        {
+            _gesteOperateur = true;
+            PivoterCadre(_courante);
+        };
     }
 
     /// <summary>Cadrage effectif de la photo courante : le sien, sinon celui du produit.</summary>
@@ -719,6 +813,9 @@ internal partial class EditSelectionView : UserControl
 
         if (!CTenue) return;
 
+        // C maintenue : on s'apprête à recadrer à la souris sur la vignette
+        _gesteOperateur = true;
+
         _glisse = true;
         _glisseSur = photo;
         _dernierPoint = e.GetPosition(this);
@@ -857,6 +954,9 @@ internal partial class EditSelectionView : UserControl
     /// </summary>
     private void SurLesVisees(string geste, Action<PhotoGridView.PhotoItem> action)
     {
+        // un bouton du panneau est un geste : le cadrage automatique s'arrête là
+        _gesteOperateur = true;
+
         var visees = Visees();
         foreach (var photo in visees) action(photo);
 
