@@ -59,6 +59,24 @@ DiLand, sur aucun poste.
 - [x] J8 Les **fonctionnalités d'impression avancées** de la file (actives sur ce poste)
       partent aussi au journal : le spouleur rejoue alors le rendu dans son processus
 
+## M. « Capturer les réglages » fermait l'application ✅
+
+Signalé pendant l'essai des réglages ci-dessous — et c'est la même cause que tout le reste.
+
+- [x] M1 Ce n'était pas un plantage mais un **blocage** : `AppHangXProcB1` dans le journal
+      des événements, à 11:48, 11:53 et 11:59. Aucune exception dans le journal de Studio,
+      et pour cause — il n'y en a pas eu
+- [x] M2 Le dialogue du pilote interroge la machine pour s'afficher ; DiLand tient le port ;
+      le fil de l'interface reste bloqué dans un appel natif dont on ne peut pas sortir, et
+      Windows ferme une fenêtre qui ne pompe plus
+- [x] M3 `DevMode.ShowDriverDialogAsync` : le dialogue part sur son propre fil, STA et
+      d'arrière-plan. L'écran reste vivant, et un pilote muet laisse un fil en plan au lieu
+      de tuer l'application
+- [x] M4 `DialoguePilote` prévient quand DiLand tourne, et laisse le dernier mot à
+      l'opérateur — la machine répond parfois quand même
+- [x] M5 Les trois écrans qui ouvraient ce dialogue sont passés dessus : catalogue,
+      finitions, grand format
+
 ## Reste à faire par l'exploitant (06/08/2026, après-midi)
 
 Dans le dialogue du pilote DP-DS620 (Catalogue → planche identité → capturer les réglages),

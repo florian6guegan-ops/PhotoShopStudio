@@ -2197,6 +2197,24 @@ De même, `PRINTBUFFCONTROL` s'appelle **« Réessayer l'impression »** dans le
 `PBC_NONCLEAR` = Activer. Chercher « tampon » dans les propriétés de l'imprimante ne donne
 rien.
 
+### Le dialogue du pilote ne s'ouvre JAMAIS sur le fil de l'interface
+
+Même cause, troisième victime. Le dialogue du pilote DS620 interroge la machine pour se
+remplir — il porte un onglet « Infos de l'imprimante ». DiLand tenant le port, il s'ouvre et
+reste « (Ne répond pas) », le fil de l'interface bloqué DANS un appel natif dont on ne peut
+pas sortir. Windows a fait ce qu'il fait d'une fenêtre qui ne pompe plus : il a fermé
+l'application. **Trois fois en onze minutes le 06/08/2026** — journal des événements,
+`AppHangXProcB1`, et pas la moindre exception dans le journal de Studio, puisqu'il n'y en a
+pas eu.
+
+`DevMode.ShowDriverDialogAsync` lance donc le dialogue sur son propre fil, en STA et en
+arrière-plan : l'écran reste vivant, et un pilote qui ne répond jamais laisse un fil en plan
+au lieu de tuer l'application. `DialoguePilote` prévient en plus quand DiLand tourne, et
+laisse le dernier mot à l'opérateur.
+
+⚠ `DevMode.ShowDriverDialog` (la version synchrone) existe toujours, et elle bloque. Elle
+est réservée aux outils en ligne de commande — jamais l'application.
+
 ## Ce qu'un DEVMODE contient, et ce qu'il faut y surveiller
 
 `LectureDevMode` lit — jamais n'écrit — les réglages qu'un pilote Unidrv range à la fin de

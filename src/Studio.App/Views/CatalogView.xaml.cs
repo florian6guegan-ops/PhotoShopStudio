@@ -158,7 +158,7 @@ public partial class CatalogView : UserControl
         Navigator.Go(new FinishesView(row.Product), "Finitions");
     }
 
-    private void OnCaptureDevmode(object sender, RoutedEventArgs e)
+    private async void OnCaptureDevmode(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is not ProductRow row) return;
         var services = App.Services;
@@ -170,8 +170,10 @@ public partial class CatalogView : UserControl
                 ? File.ReadAllBytes(Path.Combine(services.CatalogDir, product.DevmodeFile))
                 : null;
 
-            var captured = DevMode.ShowDriverDialog(product.PrinterName, current);
-            if (captured is null) return; // dialogue annulé
+            // le dialogue part sur son propre fil : un pilote qui ne répond pas ne doit
+            // plus faire tuer l'application par Windows (voir DialoguePilote)
+            var captured = await DialoguePilote.OuvrirAsync(product.PrinterName, current);
+            if (captured is null) return; // annulé, ou pilote injoignable
 
             var fileName = $"devmode-{product.Code}.bin";
             File.WriteAllBytes(Path.Combine(services.CatalogDir, fileName), captured);

@@ -71,7 +71,7 @@ public partial class FinishesView : UserControl
     private string? SelectedIcc() =>
         IccCombo.SelectedItem as string is { } icc && icc != NoIcc ? icc : null;
 
-    private void OnCapture(object sender, RoutedEventArgs e)
+    private async void OnCapture(object sender, RoutedEventArgs e)
     {
         var name = NameBox.Text.Trim();
         if (name.Length == 0)
@@ -85,7 +85,7 @@ public partial class FinishesView : UserControl
             return;
         }
 
-        if (Capture(name) is { } file)
+        if (await Capture(name) is { } file)
         {
             _product.Finishes.Add(new FinishOption
             {
@@ -98,7 +98,7 @@ public partial class FinishesView : UserControl
         }
     }
 
-    private void OnRecapture(object sender, RoutedEventArgs e)
+    private async void OnRecapture(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is not FinishRow row) return;
         var finish = _product.Finishes.First(f => f.Name == row.Name);
@@ -106,7 +106,7 @@ public partial class FinishesView : UserControl
         // la liste repart du profil actuel de la finition : recapturer sans y toucher ne l'efface pas
         RefreshIccList(finish.IccProfile);
 
-        if (Capture(finish.Name) is not null)
+        if (await Capture(finish.Name) is not null)
         {
             finish.IccProfile = SelectedIcc();
             Save();
@@ -129,7 +129,7 @@ public partial class FinishesView : UserControl
     }
 
     /// <summary>Ouvre le dialogue du pilote et écrit le DEVMODE ; renvoie le nom du fichier, null si annulé.</summary>
-    private string? Capture(string finishName)
+    private async Task<string?> Capture(string finishName)
     {
         ErrorText.Text = "";
         var services = App.Services;
@@ -139,8 +139,11 @@ public partial class FinishesView : UserControl
         try
         {
             byte[]? current = File.Exists(path) ? File.ReadAllBytes(path) : null;
-            var captured = DevMode.ShowDriverDialog(_product.PrinterName, current);
-            if (captured is null) return null; // dialogue annulé
+
+            // sur son propre fil : un pilote qui ne répond pas faisait tuer l'application
+            // par Windows (voir DialoguePilote)
+            var captured = await DialoguePilote.OuvrirAsync(_product.PrinterName, current);
+            if (captured is null) return null; // annulé, ou pilote injoignable
 
             File.WriteAllBytes(path, captured);
             return fileName;

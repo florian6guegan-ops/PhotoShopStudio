@@ -592,7 +592,9 @@ public partial class LargeFormatPrintView : UserControl
 
         try
         {
-            var devMode = DevMode.ShowDriverDialog(printer, _settings.DevModeBytes);
+            // sur son propre fil : voir DialoguePilote — un pilote qui ne répond pas
+            // faisait tuer l'application par Windows
+            var devMode = await DialoguePilote.OuvrirAsync(printer, _settings.DevModeBytes);
             if (devMode is not null)
             {
                 _settings.DevModeBytes = devMode;
