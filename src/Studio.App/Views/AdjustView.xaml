@@ -1,4 +1,4 @@
-<UserControl x:Class="Studio.App.Views.AdjustView"
+﻿<UserControl x:Class="Studio.App.Views.AdjustView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
@@ -88,11 +88,11 @@
                 <Slider x:Name="SharpnessSlider" Style="{StaticResource Reglage}"
                         Minimum="0" Maximum="100" ValueChanged="OnChanged"/>
 
-                <CheckBox x:Name="GrayscaleCheck" Content="Noir et blanc" Margin="0,10,0,0"
+                <CheckBox x:Name="GrayscaleCheck" Style="{StaticResource CaseCochable}" Content="Noir et blanc" Margin="0,10,0,0"
                           FontSize="14" Foreground="{StaticResource TextBrush}"
                           Checked="OnChanged" Unchecked="OnChanged"/>
 
-                <CheckBox x:Name="RedEyeCheck" Content="Enlever les yeux rouges" Margin="0,8,0,0"
+                <CheckBox x:Name="RedEyeCheck" Style="{StaticResource CaseCochable}" Content="Enlever les yeux rouges" Margin="0,8,0,0"
                           FontSize="14" Foreground="{StaticResource TextBrush}"
                           ToolTip="Neutralise le rouge du flash au fond de l'œil. Ne touche qu'aux pupilles, trouvées par le détecteur de visages."
                           Checked="OnChanged" Unchecked="OnChanged"/>

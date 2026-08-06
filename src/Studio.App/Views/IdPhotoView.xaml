@@ -1,4 +1,4 @@
-<UserControl x:Class="Studio.App.Views.IdPhotoView"
+﻿<UserControl x:Class="Studio.App.Views.IdPhotoView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
@@ -368,11 +368,11 @@
                         <StackPanel>
                             <TextBlock Style="{StaticResource TitreModule}" Text="IMAGE"/>
                             <StackPanel Orientation="Horizontal">
-                                <CheckBox x:Name="GrayscaleCheck" VerticalAlignment="Center"
+                                <CheckBox x:Name="GrayscaleCheck" Style="{StaticResource CaseCochable}" VerticalAlignment="Center"
                                           Checked="OnGrayscaleChanged" Unchecked="OnGrayscaleChanged">
                                     <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="14"/>
                                 </CheckBox>
-                                <CheckBox x:Name="WhiteBackgroundCheck" VerticalAlignment="Center" Margin="16,0,0,0"
+                                <CheckBox x:Name="WhiteBackgroundCheck" Style="{StaticResource CaseCochable}" VerticalAlignment="Center" Margin="16,0,0,0"
                                           ToolTip="Remplace le fond de studio par du blanc franc. Le sujet n'est jamais entamé : seul est effacé ce qui ressemble au fond et touche le bord de la photo."
                                           Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
                                     <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="14"/>

@@ -1,4 +1,4 @@
-<UserControl x:Class="Studio.App.Views.EditSelectionView"
+﻿<UserControl x:Class="Studio.App.Views.EditSelectionView"
              x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -154,7 +154,7 @@
                             <!-- Juste sous le bouton de mode : c'est là qu'on décide des marges
                                  blanches, donc là qu'on décide du repère de coupe. La case est
                                  grisée en « remplir le format », où il n'y a rien à recouper. -->
-                            <CheckBox x:Name="CutBorderCheck" FontSize="15" Margin="2,0,0,10"
+                            <CheckBox x:Name="CutBorderCheck" Style="{StaticResource CaseCochable}" FontSize="15" Margin="2,0,0,10"
                                       Foreground="{StaticResource TextBrush}" VerticalContentAlignment="Center"
                                       Content="Contour de découpe"
                                       ToolTip="Trace un trait noir de 0,2 mm sur le bord de la photo, à suivre aux ciseaux quand le tirage sort avec des marges blanches."

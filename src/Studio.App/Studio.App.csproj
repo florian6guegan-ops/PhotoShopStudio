@@ -15,6 +15,14 @@
   <ItemGroup>
     <!-- la même, embarquée : c'est celle que porte la fenêtre elle-même -->
     <Resource Include="Assets\studio-photo.ico" />
+
+    <!-- L'ÉCRAN D'ATTENTE DU DÉMARRAGE.
+         Le raccourci passe par Lancer-Studio.cmd, qui recompile avant d'ouvrir : entre le
+         clic et la fenêtre, l'opérateur n'avait qu'une console noire à l'icône de Windows,
+         devant un client. WPF affiche cette image dès le lancement du processus et la fait
+         disparaître d'elle-même quand la fenêtre principale paraît — sans une ligne de
+         code, et sans rien retarder. -->
+    <SplashScreen Include="Assets\studio-photo.png" />
   </ItemGroup>
 
   <ItemGroup>
