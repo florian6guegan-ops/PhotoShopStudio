@@ -45,9 +45,22 @@ log(sdkDnp is null
 
 De100Driver? driver = null;
 
-// Blocage constate : on cesse d interroger la DNP jusqu au redemarrage du relais
-// (voir EtatDesDnp).
+// Blocage constate trop de fois : on cesse d interroger la DNP jusqu au redemarrage du
+// relais (voir EtatDesDnp).
 var dnpAbandonne = false;
+
+// Une machine qui imprime repond lentement. On la laisse tranquille un moment plutot que
+// de la declarer disparue.
+var dnpMuetJusqua = DateTime.MinValue;
+var dnpQuarantaines = 0;
+
+// Trois minutes : plus long qu une planche d identite, assez court pour que le bandeau
+// se retablisse pendant que l operateur regarde encore l ecran.
+var DnpQuarantaine = TimeSpan.FromMinutes(3);
+
+// Au-dela, ce n est plus une machine occupee : chaque delai depasse laisse un fil bloque
+// dans l appel natif, et l on ne peut pas en accumuler indefiniment.
+const int DnpQuarantainesAvantAbandon = 5;
 var writeLock = new object();
 StreamWriter? writer = null;
 
@@ -215,13 +228,22 @@ De100Message Handle(De100Message request) => request.Name switch
 /// CspStatInterop). Avec le bon, la DS620 rend son numero de serie et son etat DILAND
 /// OUVERT. Le masquage n avait donc plus d objet, et il coutait le bandeau d etat.
 ///
-/// L attente reste bornee, et un blocage reste definitif pour la session : reessayer
-/// toutes les deux minutes accumulerait des fils bloques, et cette boucle sert aussi le
-/// minilab.
+/// UNE LENTEUR N EST PAS UNE PANNE. Le renoncement etait DEFINITIF pour la session : six
+/// secondes sans reponse et la DNP disparaissait de Studio jusqu au redemarrage du relais.
+/// Or la machine repond lentement PENDANT QU ELLE IMPRIME — deux planches d identite
+/// lancees a la suite ont suffi (06/08/2026 a 17:31), la machine allant parfaitement bien :
+/// « Prete », 35 tirages restants. Studio la donnait pour disparue, DiLand non.
+///
+/// On met donc la DNP en QUARANTAINE quelques minutes au lieu de l abandonner, et l on ne
+/// renonce pour de bon qu apres plusieurs quarantaines de suite. Le compromis est celui-ci :
+/// chaque delai depasse laisse derriere lui un fil bloque dans l appel natif, et cette
+/// boucle sert aussi le minilab — on ne peut donc pas reessayer indefiniment.
 /// </summary>
 List<DnpPrinterInfo> EtatDesDnp()
 {
     if (dnpAbandonne) return [];
+
+    if (DateTime.Now < dnpMuetJusqua) return [];
 
     if (!DnpDriver.IsSdkInstalled())
     {
@@ -249,11 +271,27 @@ List<DnpPrinterInfo> EtatDesDnp()
     // Elle etait ici, et c est ce qui a fige une commande de 41 photos le 03/08/2026 :
     // enumerer les imprimantes peut rester suspendu quand une file ne repond pas, et le
     // relais servant les commandes une par une, tout le reste attendait derriere.
-    if (lecture.Wait(TimeSpan.FromSeconds(6))) return lecture.Result;
+    if (lecture.Wait(TimeSpan.FromSeconds(6)))
+    {
+        dnpQuarantaines = 0;   // elle a repondu : l ardoise est effacee
+        return lecture.Result;
+    }
 
-    dnpAbandonne = true;
-    log("Imprimantes DNP sans reponse en 6 s : port tenu par un autre programme, ou " +
-        "machine muette. On cesse de les interroger jusqu au redemarrage du relais.");
+    dnpQuarantaines++;
+
+    if (dnpQuarantaines >= DnpQuarantainesAvantAbandon)
+    {
+        dnpAbandonne = true;
+        log($"Imprimantes DNP sans reponse {dnpQuarantaines} fois de suite : port tenu par un " +
+            "autre programme, ou machine muette. On cesse de les interroger jusqu au " +
+            "redemarrage du relais.");
+        return [];
+    }
+
+    dnpMuetJusqua = DateTime.Now + DnpQuarantaine;
+    log($"Imprimantes DNP sans reponse en 6 s (essai {dnpQuarantaines} sur " +
+        $"{DnpQuarantainesAvantAbandon}) : elles impriment peut-etre. On les laisse " +
+        $"tranquilles {DnpQuarantaine.TotalMinutes:0} min et l on reessaie.");
     return [];
 }
 
