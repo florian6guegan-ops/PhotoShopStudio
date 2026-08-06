@@ -4,14 +4,33 @@ using System.Text;
 namespace Studio.Printing.Devices.Dnp;
 
 /// <summary>
-/// Liaison brute avec le SDK de statut DNP (<c>CPPCtrl32.dll</c>), utilisé par les
+/// Liaison brute avec le SDK de statut DNP (<c>cspstat.dll</c>), utilisé par les
 /// imprimantes à sublimation DS620 / DS820 / QW410.
 ///
-/// LA BIBLIOTHÈQUE EST BIEN <c>CPPCtrl32.dll</c>. Le poste porte aussi un
-/// <c>cspstat.dll</c> qui exporte les mêmes noms, et l'appeler fait planter le processus
-/// en violation d'accès (constaté le 31/07/2026 sur <c>GetSerialNo</c>). DiLand appelle
-/// <c>CPPCtrl32.dll</c> pour ses 47 fonctions : c'est la référence, elle tourne en
-/// production sur cette machine.
+/// LA BIBLIOTHÈQUE EST <c>cspstat.dll</c>, ET PAS <c>CPPCtrl32.dll</c>. Le poste porte
+/// les deux, aux mêmes noms de fonctions, et ce fichier a longtemps appelé la seconde :
+/// la découverte rendait 0 imprimante et la DS620 restait invisible, DiLand ouvert
+/// comme fermé. Relevé le 06/08/2026 dans l'IL de <c>FitEng.DiLand.Library</c> :
+/// <c>DnpHelper.GetPrinters</c> → <c>CspStatApi</c> → <c>CspStatNativeMethods</c>, dont
+/// tous les <c>DllImport</c> visent <c>cspstat.dll</c>. <c>CPPCtrl32.dll</c> n'est appelée
+/// que par <c>CitizenNativeMethods</c>, pour les imprimantes à cartes Fargo.
+///
+/// Vérifié le même jour, processus 32 bits, DiLand OUVERT : <c>cspstat.dll</c> découvre
+/// une imprimante et rend le numéro de série <c>DS6X64011657</c> ; <c>CPPCtrl32.dll</c>
+/// en découvre zéro. La violation d'accès du 31/07/2026 venait du numéro de port, pas de
+/// la bibliothèque — voir <see cref="GetPrinterPortNum"/>.
+///
+/// UNE SEULE DES DEUX À LA FOIS, JAMAIS LES DEUX. Elles exportent les mêmes symboles et
+/// se marchent dessus : un processus qui charge les deux meurt en violation d'accès, à la
+/// SORTIE — « Fatal error. Internal CLR error. », loin de l'appel fautif, ce qui égare.
+/// Mesuré le 06/08/2026 : deux fois les deux → un plantage ; quatre fois une seule → rien.
+/// C'est très probablement ce qui a tué le relais 32 bits le matin même, et le minilab
+/// avec lui. Ne jamais charger <c>CPPCtrl32.dll</c> « pour comparer » dans un processus
+/// qui sert la production.
+///
+/// Au passage, cela retire sa cause à la règle « DiLand tient le port USB en exclusif » :
+/// elle n'a jamais été vraie pour le SDK. Elle le reste pour le DIALOGUE DU PILOTE, qui
+/// lui gèle bel et bien tant que DiLand tourne.
 ///
 /// ATTENTION : la DLL est en 32 bits, mêmes contraintes que le SDK Fuji.
 ///
@@ -26,7 +45,7 @@ namespace Studio.Printing.Devices.Dnp;
 /// </summary>
 internal static class CspStatInterop
 {
-    private const string Dll = "CPPCtrl32.dll";
+    private const string Dll = "cspstat.dll";
 
     // — découverte —
 
@@ -38,6 +57,13 @@ internal static class CspStatInterop
     /// deux par imprimante, (type, identifiant d'unité) — et <paramref name="arraySize"/>
     /// est sa taille EN OCTETS, pas un nombre d'éléments. Un <c>int[]</c> ne convient pas :
     /// la fonction rendait 0 et aucune imprimante n'était vue.
+    ///
+    /// ATTENTION aussi à ce qu'on fait du tampon : son contenu N'EST PAS un numéro de
+    /// port. La DS620 de la boutique s'y annonce <c>14 01</c>, et passer 20 ou 1 aux
+    /// autres fonctions rend systématiquement -1 ; passer une composition des deux octets
+    /// (276, 5121) tue le processus en violation d'accès. Le numéro de port attendu est le
+    /// RANG dans la découverte — 0 pour la première machine. C'est avec 0 que le numéro de
+    /// série sort, le 06/08/2026.
     /// </summary>
     /// <param name="portArray">Tampon d'octets alloué par l'appelant.</param>
     /// <param name="arraySize">Taille du tampon, en octets.</param>

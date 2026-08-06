@@ -6,7 +6,7 @@ namespace Studio.Printing.Devices.Dnp;
 
 /// <summary>
 /// Interrogation et réglage des imprimantes à sublimation DNP (DS620, DS820, QW410)
-/// via <c>CPPCtrl32.dll</c>.
+/// via <c>cspstat.dll</c>.
 ///
 /// À n'instancier que dans un processus 32 bits — la DLL est en x86.
 ///
@@ -27,10 +27,11 @@ public sealed class DnpDriver
 
     /// <summary>
     /// La bibliothèque du SDK DNP. Voir <see cref="CspStatInterop"/> : le poste porte
-    /// aussi un <c>cspstat.dll</c> aux mêmes noms de fonctions, dont l'appel fait planter
-    /// le processus. DiLand appelle celle-ci.
+    /// aussi un <c>CPPCtrl32.dll</c> aux mêmes noms de fonctions, qui ne découvre AUCUNE
+    /// imprimante à sublimation — elle sert aux imprimantes à cartes. DiLand appelle
+    /// celle-ci.
     /// </summary>
-    private const string SdkFileName = "CPPCtrl32.dll";
+    private const string SdkFileName = "cspstat.dll";
 
     /// <summary>Déclare où trouver le SDK DNP.</summary>
     public static void UseSdkFrom(string directory) => NativeSdkResolver.Register(SdkFileName, directory);

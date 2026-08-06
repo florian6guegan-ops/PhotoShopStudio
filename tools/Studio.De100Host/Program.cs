@@ -40,17 +40,14 @@ log(sdkDirectory is null
 
 var sdkDnp = DnpDriver.LocateSdk();
 log(sdkDnp is null
-    ? "SDK DNP introuvable : definissez STUDIO_DNP_SDK sur le dossier contenant CPPCtrl32.dll."
+    ? "SDK DNP introuvable : definissez STUDIO_DNP_SDK sur le dossier contenant cspstat.dll."
     : $"SDK DNP trouvé : {sdkDnp}");
 
 De100Driver? driver = null;
 
-// Blocage constate hors DiLand : on cesse d interroger la DNP jusqu a ce que DiLand
-// passe par la (voir EtatDesDnp).
+// Blocage constate : on cesse d interroger la DNP jusqu au redemarrage du relais
+// (voir EtatDesDnp).
 var dnpAbandonne = false;
-
-// DiLand tenait-il le port au dernier passage ? Sert a detecter la bascule, pas l etat.
-var dilandTenaitLePort = DiLandPresence.IsRunning();
 var writeLock = new object();
 StreamWriter? writer = null;
 
@@ -211,40 +208,24 @@ De100Message Handle(De100Message request) => request.Name switch
 /// <summary>
 /// Etat des imprimantes DNP branchees.
 ///
-/// PIEGE VERIFIE LE 31/07/2026 : CPPCtrl32.dll se bloque indefiniment quand DiLand tient
-/// le port USB de la DS620. Un appel direct figerait la boucle de lecture du relais, qui
-/// ne repondrait plus pour le minilab non plus. On borne donc l attente.
+/// ON N ATTEND PLUS QUE DILAND SE FERME. Jusqu au 06/08/2026, ce relais sautait purement
+/// l appel des que DiLand tournait — c est-a-dire presque toujours en boutique — au motif
+/// qu il tenait le port USB en exclusif. Ce motif etait faux : le SDK ne voyait rien
+/// parce que le mauvais fichier etait appele (CPPCtrl32.dll au lieu de cspstat.dll, voir
+/// CspStatInterop). Avec le bon, la DS620 rend son numero de serie et son etat DILAND
+/// OUVERT. Le masquage n avait donc plus d objet, et il coutait le bandeau d etat.
 ///
-/// Depuis le 03/08/2026 on ne renonce plus pour toute la session : on regarde d abord si
-/// DiLand tourne. S il tourne, on ne tente meme pas l appel (port tenu, la DNP disparait
-/// du bandeau) ; des qu il se ferme, la machine redevient interrogeable sans redemarrer
-/// Studio Photo. Un blocage constate HORS DiLand reste, lui, definitif : c est alors un
-/// vrai probleme materiel, et reessayer toutes les deux minutes accumulerait des fils
-/// bloques.
+/// L attente reste bornee, et un blocage reste definitif pour la session : reessayer
+/// toutes les deux minutes accumulerait des fils bloques, et cette boucle sert aussi le
+/// minilab.
 /// </summary>
 List<DnpPrinterInfo> EtatDesDnp()
 {
-    var diland = DiLandPresence.IsRunning();
-
-    if (diland != dilandTenaitLePort)
-    {
-        log(diland
-            ? "DiLand vient de s ouvrir : il tient le port USB, la DNP est masquee."
-            : "DiLand vient de se fermer : la DNP redevient interrogeable.");
-
-        // le renoncement constate pendant que DiLand tenait le port ne vaut plus rien
-        // maintenant qu il l a lache
-        if (!diland) dnpAbandonne = false;
-        dilandTenaitLePort = diland;
-    }
-
-    if (diland) return [];
-
     if (dnpAbandonne) return [];
 
     if (!DnpDriver.IsSdkInstalled())
     {
-        log("SDK DNP introuvable (CPPCtrl32.dll) : aucune imprimante DNP remontee.");
+        log("SDK DNP introuvable (cspstat.dll) : aucune imprimante DNP remontee.");
         dnpAbandonne = true;
         return [];
     }
@@ -271,9 +252,8 @@ List<DnpPrinterInfo> EtatDesDnp()
     if (lecture.Wait(TimeSpan.FromSeconds(6))) return lecture.Result;
 
     dnpAbandonne = true;
-    log("Imprimantes DNP sans reponse en 6 s alors que DiLand ne tourne pas : port tenu " +
-        "par un autre programme, ou machine muette. On cesse de les interroger jusqu au " +
-        "prochain passage de DiLand.");
+    log("Imprimantes DNP sans reponse en 6 s : port tenu par un autre programme, ou " +
+        "machine muette. On cesse de les interroger jusqu au redemarrage du relais.");
     return [];
 }
 

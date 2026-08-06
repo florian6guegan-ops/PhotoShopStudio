@@ -224,20 +224,20 @@ public partial class MachineBarView : UserControl
 
         try
         {
-            // <b>On ne DEMANDE PLUS RIEN au relais quand DiLand tourne.</b>
+            // <b>On demande de nouveau l'instantané, même DiLand ouvert.</b>
             //
-            // DiLand tient le port USB des DNP en exclusif : le SDK ne peut pas répondre, et
-            // le relais 32 bits meurt d'essayer — la sérialisation de l'instantané DNP fait
-            // configurer par réflexion, en pleine course, des types que son moteur
-            // d'exécution ne supporte pas en 32 bits (« Fatal error. Internal CLR error. »,
-            // 06/08/2026 à 12:29:44, moins d'une seconde après son démarrage).
+            // Ce bandeau a sauté l'appel pendant deux jours, sur deux motifs qui se sont
+            // tous les deux effondrés le 06/08/2026 :
             //
-            // Le relais emportait alors le MINILAB avec lui — « Pipe is broken », et plus
-            // aucun tirage DE100 ne partait. Une tuile d'état ne vaut pas une machine à
-            // l'arrêt : quand DiLand est là, on lit le spouleur, qui répond toujours.
-            var lues = DiLandPresence.IsRunning()
-                ? []
-                : await App.Services.Minilab.DnpSnapshotAsync();
+            // — « DiLand tient le port USB en exclusif » : faux pour le SDK. Il ne voyait
+            //   rien parce que le code appelait CPPCtrl32.dll au lieu de cspstat.dll. Avec
+            //   la bonne, la DS620 rend son numéro de série DiLand OUVERT.
+            // — « le relais 32 bits meurt en sérialisant l'instantané » (« Fatal error.
+            //   Internal CLR error. », 12:29:44, qui emportait le MINILAB avec lui) : ce
+            //   n'est pas la sérialisation. Elle passe, mesurée en 32 bits, instantané
+            //   complet. Le plantage vient de CHARGER LES DEUX DLL du SDK dans le même
+            //   processus — voir CspStatInterop. Une seule est chargée désormais.
+            var lues = await App.Services.Minilab.DnpSnapshotAsync();
 
             // Le SDK n'en découvre aucune : la machine dort peut-être, ou DiLand la tient. On
             // complète d'après le spouleur Windows pour l'afficher plutôt que de la faire
