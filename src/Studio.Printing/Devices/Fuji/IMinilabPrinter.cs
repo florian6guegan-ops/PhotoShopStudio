@@ -125,21 +125,62 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         remove => _client.MachineEvent -= value;
     }
 
+    /// <summary>
+    /// Garantit une liaison vivante avec le relais, et REMET LA LIAISON DANS L'ÉTAT OÙ ELLE
+    /// ÉTAIT — c'est cette seconde moitié qui compte.
+    ///
+    /// <b>Toute méthode qui parle au relais doit passer par ici</b>, DNP comprises. Une
+    /// méthode qui se contente de « si pas connecté, connecte » rétablit le tube mais laisse
+    /// <see cref="_subscribed"/> croire que l'abonnement tient encore : le relais est neuf,
+    /// il n'a plus aucun abonnement, et plus un seul tirage ne reçoit son verdict — en
+    /// silence, jusqu'à la fin de la session. C'est le défaut du 04/08/2026, qu'on peut
+    /// rouvrir sans y penser en ajoutant une méthode qui court-circuite ce garde.
+    ///
+    /// <b>Le réabonnement est immédiat, plus paresseux.</b> Il attendait le prochain envoi :
+    /// entre la mort du relais et le tirage suivant, les travaux DÉJÀ EN MACHINE perdaient
+    /// leur issue sans que rien ne le dise. C'est ce qui a laissé la commande 06-021 de
+    /// 61 tirages « non confirmée » le 06/08/2026 à 16:09. On se réabonne donc aux machines
+    /// qu'on suivait, dans la seconde qui suit la reconnexion.
+    /// </summary>
     private void EnsureConnected()
     {
+        char[] aReabonner;
+
         lock (_sync)
         {
             if (_connected && _client.IsConnected) return;
 
-            // Le relais est neuf : ce qu'on lui avait demandé ne tient plus. Sans cette
-            // remise à zéro, `_subscribed` gardait la machine d'AVANT la coupure, on ne se
-            // réabonnait donc jamais, et plus aucun tirage ne recevait son verdict — pour
-            // toute la vie de l'application, en silence. Le relais redémarre : c'est arrivé
-            // deux fois le 04/08/2026.
+            // Le relais est neuf : ce qu'on lui avait demandé ne tient plus.
+            aReabonner = [.. _subscribed];
             _subscribed.Clear();
 
             _client.ConnectAsync().GetAwaiter().GetResult();
             _connected = true;
+        }
+
+        // Hors du verrou : un appel au relais sous verrou bloquerait tout le reste de
+        // l'application si la machine tardait à répondre.
+        foreach (var machine in aReabonner) Reabonner(machine);
+    }
+
+    /// <summary>
+    /// Réabonne une machine après une coupure, sans jamais faire échouer l'appel en cours.
+    ///
+    /// Un réabonnement qui échoue est une mauvaise nouvelle, pas une raison de refuser le
+    /// tirage qu'on était en train de préparer : il sera retenté au prochain envoi, et le
+    /// journal garde la trace.
+    /// </summary>
+    private void Reabonner(char machineId)
+    {
+        try
+        {
+            _client.SubscribeAsync(machineId).GetAwaiter().GetResult();
+            lock (_sync) _subscribed.Add(machineId);
+            Log?.Invoke($"Relais retrouvé : réabonné aux notifications de la machine « {machineId} ».");
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Réabonnement de la machine « {machineId} » impossible : {ex.Message}");
         }
     }
 
@@ -233,11 +274,18 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         _client.CancelAsync(orderHandle).GetAwaiter().GetResult();
     }
 
-    /// <summary>État des imprimantes DNP, vues par le même relais.</summary>
-    public async Task<IReadOnlyList<Dnp.DnpPrinterInfo>> DnpSnapshotAsync()
+    /// <summary>
+    /// État des imprimantes DNP, vues par le même relais.
+    ///
+    /// Passe par <see cref="EnsureConnected"/> comme tout le reste : c'est l'appel LE PLUS
+    /// FRÉQUENT de l'application — le bandeau d'état le lance en boucle — donc celui qui
+    /// ressuscite le relais neuf fois sur dix. S'il rétablissait le tube sans rétablir les
+    /// abonnements, il ferait taire le minilab à chaque coupure.
+    /// </summary>
+    public Task<IReadOnlyList<Dnp.DnpPrinterInfo>> DnpSnapshotAsync()
     {
-        if (!_client.IsConnected) await _client.ConnectAsync();
-        return await _client.DnpSnapshotAsync();
+        EnsureConnected();
+        return _client.DnpSnapshotAsync();
     }
 
     /// <summary>
@@ -246,10 +294,10 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
     ///
     /// Passe par le relais parce que le SDK des DNP est en 32 bits, comme celui du minilab.
     /// </summary>
-    public async Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies)
+    public Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies)
     {
-        if (!_client.IsConnected) await _client.ConnectAsync();
-        return await _client.DnpPrintAsync(imagePath, portNumber, overcoat, copies);
+        EnsureConnected();
+        return _client.DnpPrintAsync(imagePath, portNumber, overcoat, copies);
     }
 
     public ValueTask DisposeAsync() => _client.DisposeAsync();
