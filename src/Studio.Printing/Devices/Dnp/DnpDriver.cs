@@ -148,17 +148,45 @@ public sealed class DnpDriver
         return buffer.ToString().Trim();
     }
 
-    private static DnpMediaSize ParseMediaSize(string value) =>
-        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
-        && Enum.IsDefined(typeof(DnpMediaSize), n)
+    /// <summary>
+    /// Le format du rouleau chargé, lu dans le libellé que rend <c>GetMedia</c>.
+    ///
+    /// CE LIBELLÉ N'EST PAS UN NOMBRE. La DS620 de la boutique rend « 00301 » : les TROIS
+    /// premiers chiffres portent le format (003 = <see cref="DnpMediaSize.Size6x4"/>, le
+    /// rouleau 10×15), les deux derniers autre chose. Lu en entier, ça donnait 301, aucun
+    /// format ne correspondait, et le bandeau affichait « None » depuis le début —
+    /// constaté le 06/08/2026, une fois la bonne bibliothèque appelée.
+    /// </summary>
+    private static DnpMediaSize ParseMediaSize(string value)
+    {
+        var chiffres = new string(value.TakeWhile(char.IsDigit).ToArray());
+        if (chiffres.Length > 3) chiffres = chiffres[..3];
+
+        return int.TryParse(chiffres, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+               && Enum.IsDefined(typeof(DnpMediaSize), n)
             ? (DnpMediaSize)n
             : DnpMediaSize.None;
+    }
 
-    private static DnpMediaClass ParseMediaClass(string value) => value.ToUpperInvariant() switch
+    /// <summary>
+    /// La classe de média lue sur la puce RFID du rouleau.
+    ///
+    /// Elle sort en CHIFFRES, pas en lettres : « 0002 » sur le rouleau de la boutique. Les
+    /// libellés RX / HQL / HDM sont acceptés en plus, sans preuve qu'une machine les rende
+    /// un jour — ils ne coûtent rien et évitent d'avoir à y revenir.
+    /// </summary>
+    private static DnpMediaClass ParseMediaClass(string value)
     {
-        "RX" => DnpMediaClass.Rx,
-        "HQL" => DnpMediaClass.Hql,
-        "HDM" => DnpMediaClass.Hdm,
-        _ => DnpMediaClass.Unknown,
-    };
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+            && Enum.IsDefined(typeof(DnpMediaClass), n))
+            return (DnpMediaClass)n;
+
+        return value.ToUpperInvariant() switch
+        {
+            "RX" => DnpMediaClass.Rx,
+            "HQL" => DnpMediaClass.Hql,
+            "HDM" => DnpMediaClass.Hdm,
+            _ => DnpMediaClass.Unknown,
+        };
+    }
 }

@@ -39,6 +39,13 @@ namespace Studio.Printing.Devices.Dnp;
 /// donne l'état machine, les compteurs, le média chargé, et permet de régler finition,
 /// massicot et vitesse avant un tirage.
 ///
+/// LA DÉCOUVERTE EST OBLIGATOIRE, ET DANS CHAQUE PROCESSUS. <see cref="GetPrinterPortNum"/>
+/// ne se contente pas de compter les machines : c'est lui qui construit la table de ports
+/// du SDK. Tant qu'il n'a pas été appelé, TOUTES les autres fonctions rendent -1 sur tous
+/// les rangs — ce qui se lit comme une machine muette alors qu'elle va parfaitement bien
+/// (constaté le 06/08/2026). La table ne survit pas au processus : un relais qui redémarre
+/// doit redécouvrir.
+///
 /// Toutes les fonctions prennent un numéro de port USB, obtenu via
 /// <see cref="GetPrinterPortNum"/>. Les <c>StringBuilder</c> doivent être alloués par
 /// l'appelant (256 caractères suffisent partout).
