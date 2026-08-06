@@ -215,6 +215,8 @@ De100Message Handle(De100Message request) => request.Name switch
 
     De100Commands.DnpSnapshot => De100Protocol.Success(request, EtatDesDnp()),
 
+    De100Commands.DnpPrint => TirerSurDnp(request),
+
     _ => De100Protocol.Failure(request, $"Commande inconnue : « {request.Name} »"),
 };
 
@@ -293,6 +295,56 @@ List<DnpPrinterInfo> EtatDesDnp()
         $"{DnpQuarantainesAvantAbandon}) : elles impriment peut-etre. On les laisse " +
         $"tranquilles {DnpQuarantaine.TotalMinutes:0} min et l on reessaie.");
     return [];
+}
+
+/// <summary>
+/// Envoie un tirage a une DNP SANS PASSER PAR LE PILOTE WINDOWS.
+///
+/// C est le chemin de DiLand, et c est celui qui ne fabrique pas le fantome colore :
+/// mesure du 06/08/2026, le pilote est hors de cause des qu on ne l emprunte plus. Voir
+/// DnpEnvoiDirect pour les trois conventions de la trame.
+///
+/// La decouverte doit avoir eu lieu DANS CE PROCESSUS avant tout envoi : c est
+/// ListPorts qui construit la table de ports du SDK, et sans elle SendImageData ne sait
+/// pas a qui parler.
+///
+/// L application garde le pilote en secours : si cet envoi echoue, elle imprime comme
+/// avant plutot que de ne rien sortir.
+/// </summary>
+De100Message TirerSurDnp(De100Message request)
+{
+    var demande = De100Protocol.Payload<De100DnpPrintRequest>(request)
+                  ?? throw new InvalidOperationException("Demande de tirage DNP vide.");
+
+    if (!File.Exists(demande.ImagePath))
+        return De100Protocol.Failure(request, $"Image introuvable : {demande.ImagePath}");
+
+    var pilote = new DnpDriver();
+
+    var ports = pilote.ListPorts();
+    if (!ports.Contains(demande.PortNumber))
+        return De100Protocol.Failure(request,
+            $"Aucune DNP au rang {demande.PortNumber} (decouverte : {ports.Count}).");
+
+    using var image = new System.Drawing.Bitmap(demande.ImagePath);
+
+    var faits = 0;
+    for (var i = 0; i < Math.Max(1, demande.Copies); i++)
+    {
+        if (!DnpEnvoiDirect.Envoyer(demande.PortNumber, image, (DnpOvercoat)demande.Overcoat))
+        {
+            log($"Envoi direct DNP refuse a la copie {i + 1} : {faits} exemplaire(s) accepte(s).");
+            return De100Protocol.Failure(request,
+                $"L imprimante a refuse le tirage apres {faits} exemplaire(s).");
+        }
+
+        faits++;
+    }
+
+    log($"Envoi direct DNP : {faits} exemplaire(s) de {Path.GetFileName(demande.ImagePath)} " +
+        $"({image.Width}x{image.Height}) acceptes, sans passer par le spouleur.");
+
+    return De100Protocol.Success(request, faits);
 }
 
 De100Message Subscribe(De100Message request)

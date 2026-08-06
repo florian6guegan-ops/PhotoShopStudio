@@ -255,6 +255,18 @@ public sealed class De100BridgeClient : IAsyncDisposable
         await SendAsync<List<Dnp.DnpPrinterInfo>>(De100Commands.DnpSnapshot) ?? [];
 
     /// <summary>
+    /// Envoie un tirage à une DNP sans passer par le pilote Windows, et rend le nombre
+    /// d'exemplaires que la machine a acceptés.
+    ///
+    /// Seul le CHEMIN traverse le tube : le relais ouvre le fichier de son côté. Une
+    /// planche 10×15 à 300 ppp fait près de sept méga-octets une fois décompressée, et ce
+    /// tube sert aussi le minilab, une commande à la fois.
+    /// </summary>
+    public async Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies) =>
+        await SendAsync<int>(De100Commands.DnpPrint,
+            new De100DnpPrintRequest(imagePath, portNumber, overcoat, copies));
+
+    /// <summary>
     /// Un processus 64 bits transmet souvent DOTNET_ROOT pointant vers son propre runtime :
     /// le relais 32 bits y chercherait alors un hostfxr qui n'y est pas, et s'arrêterait
     /// aussitôt. On efface la variable et on désigne explicitement le runtime 32 bits.

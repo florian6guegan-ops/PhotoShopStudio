@@ -220,5 +220,17 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         return await _client.DnpSnapshotAsync();
     }
 
+    /// <summary>
+    /// Tire sur une DNP sans passer par le pilote Windows, et rend le nombre d'exemplaires
+    /// acceptés par la machine.
+    ///
+    /// Passe par le relais parce que le SDK des DNP est en 32 bits, comme celui du minilab.
+    /// </summary>
+    public async Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies)
+    {
+        if (!_client.IsConnected) await _client.ConnectAsync();
+        return await _client.DnpPrintAsync(imagePath, portNumber, overcoat, copies);
+    }
+
     public ValueTask DisposeAsync() => _client.DisposeAsync();
 }

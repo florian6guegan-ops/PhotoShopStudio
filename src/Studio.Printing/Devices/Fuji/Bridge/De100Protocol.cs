@@ -40,7 +40,27 @@ public static class De100Commands
     /// (<c>cspstat.dll</c>) est lui aussi en 32 bits.
     /// </summary>
     public const string DnpSnapshot = "dnp-snapshot";
+
+    /// <summary>
+    /// Envoie une image à une DNP <b>sans passer par le pilote Windows</b>.
+    /// Charge utile : <see cref="De100DnpPrintRequest"/>.
+    ///
+    /// C'est le CHEMIN du fichier qui traverse le tube, jamais l'image : une planche 10×15
+    /// à 300 ppp pèse près de sept méga-octets une fois décompressée, et le tube sert aussi
+    /// le minilab, une commande à la fois.
+    /// </summary>
+    public const string DnpPrint = "dnp-print";
 }
+
+/// <summary>
+/// Un tirage à envoyer directement à une DNP, sans le pilote Windows.
+/// </summary>
+/// <param name="ImagePath">Le rendu à tirer, DÉJÀ à la taille de la trame de la machine.</param>
+/// <param name="PortNumber">Rang de la machine dans la découverte du SDK.</param>
+/// <param name="Overcoat">Finition de surface, telle que le produit la demande.</param>
+/// <param name="Copies">Nombre d'exemplaires ; chacun est un envoi distinct.</param>
+public sealed record De100DnpPrintRequest(
+    string ImagePath, int PortNumber, int Overcoat, int Copies);
 
 /// <summary>Événements poussés spontanément par le relais.</summary>
 public static class De100Events
