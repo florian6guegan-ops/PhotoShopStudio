@@ -22,6 +22,6 @@
       À MONTER avant de publier une version, sinon les postes ne verront rien à installer.
       Le script tools\Publier.ps1 la lit et refuse de publier une version déjà parue.
     -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
   </PropertyGroup>
 </Project>

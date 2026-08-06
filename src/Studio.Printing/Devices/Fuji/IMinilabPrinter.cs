@@ -15,6 +15,26 @@ public interface IMinilabPrinter
     IReadOnlyList<char> ReadyMachines();
 
     /// <summary>
+    /// Les imprimantes DNP telles que leur SDK les voit. Elles passent par ce relais parce
+    /// que leur bibliothèque est en 32 bits, comme celle du minilab.
+    /// </summary>
+    Task<IReadOnlyList<Dnp.DnpPrinterInfo>> DnpSnapshotAsync();
+
+    /// <summary>
+    /// Envoie un tirage à une DNP <b>sans passer par le pilote Windows</b>, et rend le
+    /// nombre d'exemplaires acceptés par la machine.
+    ///
+    /// C'est le chemin de DiLand, et le seul qui ne fabrique pas le fantôme coloré : le
+    /// pilote de DNP date de 2017, n'a pas de successeur, et le défaut n'apparaît que par
+    /// lui. Voir <c>DnpEnvoiDirect</c>.
+    /// </summary>
+    /// <param name="imagePath">Le rendu, DÉJÀ à la taille de la trame de la machine.</param>
+    /// <param name="portNumber">Rang de la machine dans la découverte du SDK.</param>
+    /// <param name="overcoat">Finition de surface (voir <c>DnpOvercoat</c>).</param>
+    /// <param name="copies">Nombre d'exemplaires.</param>
+    Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies);
+
+    /// <summary>
     /// Finition du papier réellement chargé dans la machine. Le tirage doit la déclarer :
     /// annoncer « brillant » sur du lustré donne un rendu faux.
     /// </summary>

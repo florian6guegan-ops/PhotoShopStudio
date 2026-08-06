@@ -1655,13 +1655,18 @@ public sealed class PrintOrchestrator
                             throw new PrinterNotReadyException(place.Panne);
                     }
 
-                    // aplati en 24 bits sur du blanc, une fois pour toutes les copies :
-                    // voir BitmapPrinter.ChargerPourImpression
-                    bitmap ??= BitmapPrinter.ChargerPourImpression(page.Path);
+                    // LE CHEMIN DIRECT D'ABORD, quand la machine s'y prête : c'est le seul
+                    // qui ne fabrique pas le fantôme coloré. Voir EnvoyerDirectementALaDnp.
+                    if (!EnvoyerDirectementALaDnp(product, page))
+                    {
+                        // aplati en 24 bits sur du blanc, une fois pour toutes les copies :
+                        // voir BitmapPrinter.ChargerPourImpression
+                        bitmap ??= BitmapPrinter.ChargerPourImpression(page.Path);
 
-                    BitmapPrinter.Print(
-                        product.PrinterName, bitmap, page.WidthMm, page.HeightMm,
-                        devMode, pdfPath, documentName);
+                        BitmapPrinter.Print(
+                            product.PrinterName, bitmap, page.WidthMm, page.HeightMm,
+                            devMode, pdfPath, documentName);
+                    }
 
                     faites++;
 
@@ -1688,6 +1693,94 @@ public sealed class PrintOrchestrator
             var fin = derniere.Attendre(plafond: 0, ct);
             if (fin.EnPanne) throw new PrinterNotReadyException(fin.Panne);
         }
+    }
+
+    /// <summary>
+    /// Tente d'envoyer une page à une DNP <b>sans passer par le pilote Windows</b>, et rend
+    /// vrai si la machine l'a prise. Faux = l'appelant imprime comme avant.
+    ///
+    /// <b>Pourquoi ce chemin passe en premier.</b> Le fantôme coloré n'apparaît QUE par le
+    /// pilote — jamais depuis DiLand, qui ne l'emprunte pas. Mesuré le 06/08/2026 : DiLand
+    /// imprime sans que le spouleur en sache rien, et le premier tirage envoyé par ce
+    /// chemin depuis Studio est sorti sans le défaut. Le pilote de DNP date de 2017 et n'a
+    /// pas de successeur : il n'y avait rien à corriger de ce côté-là.
+    ///
+    /// <b>Trois conditions, et l'on renonce dès que l'une manque</b> — un tirage qui sort
+    /// par le pilote vaut mille fois mieux qu'un tirage qui ne sort pas :
+    ///
+    /// 1. le relais 32 bits répond (le SDK des DNP y vit, comme celui du minilab) ;
+    /// 2. le SDK découvre EXACTEMENT UNE imprimante. Avec plusieurs DNP, rien ne dit
+    ///    laquelle porte la file Windows visée : le SDK donne un numéro de série, la file un
+    ///    nom, et personne ne fait le lien. Tant que l'appariement n'est pas écrit, on ne
+    ///    devine pas sur quelle machine part le papier ;
+    /// 3. le rendu tombe sur la TRAME NATIVE de la machine. Le pilote ré-échantillonne ce
+    ///    qui ne tombe pas juste ; l'envoi direct, lui, ne corrige rien — une image d'un
+    ///    pixel de trop sortirait décalée. La planche identité était dans ce cas jusqu'au
+    ///    06/08/2026 (1845 × 1239 au lieu de 1844 × 1240).
+    /// </summary>
+    private bool EnvoyerDirectementALaDnp(Product product, RenderedPage page)
+    {
+        if (_minilab is null) return false;
+        if (!product.PrinterName.StartsWith("DP-DS", StringComparison.OrdinalIgnoreCase)
+            && !product.PrinterName.StartsWith("DS6", StringComparison.OrdinalIgnoreCase)
+            && !product.PrinterName.StartsWith("DS8", StringComparison.OrdinalIgnoreCase)
+            && !product.PrinterName.StartsWith("QW", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            var vues = _minilab.DnpSnapshotAsync().GetAwaiter().GetResult();
+            if (vues.Count != 1)
+            {
+                Log?.Invoke(vues.Count == 0
+                    ? "Envoi direct DNP impossible : le SDK ne voit aucune machine. On passe par le pilote."
+                    : $"Envoi direct DNP impossible : {vues.Count} machines vues, et rien ne dit " +
+                      "laquelle porte cette file. On passe par le pilote.");
+                return false;
+            }
+
+            var acceptes = _minilab
+                .DnpPrintAsync(page.Path, vues[0].PortNumber, (int)FinitionDnp(product, page), 1)
+                .GetAwaiter().GetResult();
+
+            if (acceptes >= 1)
+            {
+                Log?.Invoke($"Tirage envoyé DIRECTEMENT à la DNP {vues[0].SerialNumber} " +
+                            $"({Path.GetFileName(page.Path)}) — le pilote Windows n'a rien vu.");
+                return true;
+            }
+
+            Log?.Invoke("La DNP a refusé l'envoi direct : on repasse par le pilote.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Le repli n'est pas une politesse : sans lui, une panne du relais empêcherait
+            // d'imprimer du tout, alors que le pilote, lui, répond toujours.
+            Log?.Invoke($"Envoi direct DNP indisponible ({ex.Message}) : on passe par le pilote.");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// La finition à annoncer à la machine pour ce tirage.
+    ///
+    /// Le pilote la porte dans son DEVMODE ; l'envoi direct, lui, doit la déclarer
+    /// lui-même. « Lustré » est le défaut de la boutique, et c'est ce que le DEVMODE de la
+    /// planche identité demande (<c>OPTYPE_LUSTER</c>).
+    /// </summary>
+    private static Devices.Dnp.DnpOvercoat FinitionDnp(Product product, RenderedPage page)
+    {
+        var nom = page.Finish ?? product.Finishes?.FirstOrDefault()?.Name ?? "";
+
+        if (nom.Contains("mat", StringComparison.OrdinalIgnoreCase))
+            return Devices.Dnp.DnpOvercoat.Matte;
+
+        if (nom.Contains("brillant", StringComparison.OrdinalIgnoreCase)
+            || nom.Contains("glossy", StringComparison.OrdinalIgnoreCase))
+            return Devices.Dnp.DnpOvercoat.Glossy;
+
+        return Devices.Dnp.DnpOvercoat.Luster;
     }
 
     /// <summary>

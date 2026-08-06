@@ -29,6 +29,21 @@ public class MinilabRoutingTests : IDisposable
 
         public IReadOnlyList<char> ReadyMachines() => ready;
 
+        /// <summary>Les DNP qu'on lui fait voir ; vide par défaut, comme sans relais.</summary>
+        public List<Studio.Printing.Devices.Dnp.DnpPrinterInfo> Dnps { get; } = [];
+
+        /// <summary>Envois directs reçus : (image, port, finition, exemplaires).</summary>
+        public List<(string Image, int Port, int Finition, int Copies)> EnvoisDirects { get; } = [];
+
+        public Task<IReadOnlyList<Studio.Printing.Devices.Dnp.DnpPrinterInfo>> DnpSnapshotAsync() =>
+            Task.FromResult<IReadOnlyList<Studio.Printing.Devices.Dnp.DnpPrinterInfo>>(Dnps);
+
+        public Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies)
+        {
+            EnvoisDirects.Add((imagePath, portNumber, overcoat, copies));
+            return Task.FromResult(copies);
+        }
+
         public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
 
         /// <summary>Rouleau chargé ; 0 par défaut = largeur inconnue, aucun contrôle.</summary>

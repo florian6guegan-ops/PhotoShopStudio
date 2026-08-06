@@ -48,6 +48,13 @@ public class PrintCancelTests : IDisposable
         public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
         public int LoadedPaperWidthMm(char machineId) => 152;
 
+        /// <summary>Aucune DNP : ces tests ne portent que sur le minilab.</summary>
+        public Task<IReadOnlyList<Studio.Printing.Devices.Dnp.DnpPrinterInfo>> DnpSnapshotAsync() =>
+            Task.FromResult<IReadOnlyList<Studio.Printing.Devices.Dnp.DnpPrinterInfo>>([]);
+
+        public Task<int> DnpPrintAsync(string imagePath, int portNumber, int overcoat, int copies) =>
+            Task.FromResult(0);
+
         /// <summary>Muette : l'orchestrateur garde son propre calcul de définition.</summary>
         public (uint Width, uint Height) ExpectedPixels(
             char machineId, double widthMm, double heightMm, uint dpi) => (0, 0);
