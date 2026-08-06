@@ -100,7 +100,10 @@ public partial class CropEditorView : UserControl
             // carrée — et non la feuille. Elle n'a pas d'orientation à choisir.
             if (_fit == FitMode.Polaroid) return PolaroidFrame.WindowAspect;
 
-            var aspect = _product.WidthMm / _product.HeightMm;
+            // Bord blanc : on cadre la FENÊTRE, liseré déduit, et non la feuille — voir
+            // Product.FenetreMm. Cadrer au rapport du papier faisait perdre une bande.
+            var (fenetreW, fenetreH) = _product.FenetreMm;
+            var aspect = fenetreW / fenetreH;
 
             bool cadrePaysage;
             if (_frameLandscape is { } choisi)

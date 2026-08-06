@@ -566,10 +566,34 @@ public static class ImagePipeline
         }
         else
         {
-            // image entière : tient dans le format moins les marges, fond blanc autour
-            var availW = targetW - 2 * (uint)request.BorderPx;
-            var availH = targetH - 2 * (uint)request.BorderPx;
-            image.Resize(new MagickGeometry(availW, availH)); // conserve les proportions
+            // la fenêtre : le format moins le liseré, des deux côtés. Bornée à un pixel —
+            // une marge absurde ne doit pas rendre la fenêtre nulle, ni la soustraction
+            // repasser par zéro sur des entiers non signés.
+            var marge = (uint)Math.Max(0, request.BorderPx);
+            var availW = targetW > 2 * marge ? targetW - 2 * marge : 1u;
+            var availH = targetH > 2 * marge ? targetH - 2 * marge : 1u;
+
+            if (marge > 0)
+            {
+                // <b>BORD BLANC : la photo REMPLIT la fenêtre.</b> Le blanc qui l'entoure
+                // fait alors la même largeur des quatre côtés — c'est un liseré, et c'est
+                // ce que le client achète.
+                //
+                // Elle était seulement MISE À L'ÉCHELLE dans la fenêtre, en gardant ses
+                // proportions : une photo 3:2 dans un 10×15 laissait donc deux bandes
+                // blanches larges en haut et en bas, et deux filets sur les côtés. Le
+                // tirage ne ressemblait pas à un bord blanc mais à une photo mal calée
+                // (signalé le 06/08/2026). C'est aussi ce que fait DiLand sur les mêmes
+                // produits : marges égales de 5 mm, et « recadrer par défaut » actif.
+                RognerAuRapport(image, availW, availH);
+                image.Resize(new MagickGeometry(availW, availH) { IgnoreAspectRatio = true });
+            }
+            else
+            {
+                // PHOTO ENTIÈRE : rien n'est coupé, et le blanc comble ce que le rapport
+                // laisse. Les marges y sont inégales, et c'est tout l'objet du mode.
+                image.Resize(new MagickGeometry(availW, availH)); // conserve les proportions
+            }
 
             // relevé APRÈS le redimensionnement et AVANT le fond blanc : c'est la taille
             // réelle de la photo, celle que Extent va centrer

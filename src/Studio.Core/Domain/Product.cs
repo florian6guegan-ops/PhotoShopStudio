@@ -135,6 +135,31 @@ public sealed class Product
     public FitMode DefaultFit { get; set; } = FitMode.Fill;
     /// <summary>Marge blanche imposée (mode Fit), en mm.</summary>
     public double BorderMm { get; set; }
+
+    /// <summary>
+    /// Ce produit sort-il avec un LISERÉ blanc régulier — un « bord blanc » ?
+    ///
+    /// À ne pas confondre avec la « photo entière », qui partage le même
+    /// <see cref="FitMode.Fit"/> : celle-ci ne coupe RIEN et laisse le blanc combler ce que
+    /// le rapport de la photo ne remplit pas, donc des marges INÉGALES — un calage. Le bord
+    /// blanc, lui, recadre la photo pour qu'elle remplisse la fenêtre, et le blanc fait la
+    /// même largeur des quatre côtés.
+    ///
+    /// C'est <see cref="BorderMm"/> qui les distingue, et rien d'autre.
+    /// </summary>
+    public bool ABordBlanc => BorderMm > 0;
+
+    /// <summary>
+    /// La FENÊTRE : ce que la photo occupe réellement, liseré déduit, en millimètres.
+    ///
+    /// <b>C'est elle qui donne le rapport à cadrer</b>, et non le format du papier. Sur un
+    /// « bord blanc 10×15 », le papier fait 102 × 152 mais la photo n'occupe que
+    /// 92 × 142 : cadrer au rapport du papier fait forcément perdre une bande au tirage,
+    /// puisque ce n'est pas le rectangle où la photo atterrit.
+    /// </summary>
+    public (double Width, double Height) FenetreMm => ABordBlanc
+        ? (WidthMm - 2 * BorderMm, HeightMm - 2 * BorderMm)
+        : (WidthMm, HeightMm);
     /// <summary>Fichier ICC dans catalog/icc, null = sRGB géré par le pilote.</summary>
     public string? IccProfile { get; set; }
 

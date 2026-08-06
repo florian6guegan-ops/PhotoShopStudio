@@ -2232,10 +2232,14 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 // Polaroid : le cadre montré est la FENÊTRE du film — presque carrée — et
                 // non la feuille. C'est elle que l'opérateur remplit ; lui montrer un
                 // 10×15 lui ferait cadrer sur des bords qui seront coupés.
+                // Polaroid comme BORD BLANC : ce qu'on cadre est la FENÊTRE, pas la feuille.
+                // Sur un « bord blanc 10×15 », le papier fait 102 × 152 mais la photo n'en
+                // occupe que 92 × 142 ; cadrer au rapport du papier faisait perdre une
+                // bande au tirage, puisque ce n'est pas le rectangle où la photo atterrit.
                 var polaroid = (FitOverride ?? _product.DefaultFit) == FitMode.Polaroid;
                 var (largeur, hauteur) = polaroid
                     ? (PolaroidFrame.WindowWidthMm, PolaroidFrame.WindowHeightMm)
-                    : (_product.WidthMm, _product.HeightMm);
+                    : _product.FenetreMm;
 
                 // Orientation du cadre : celle d'un cadrage déjà posé s'il y en a un —
                 // l'opérateur a pu demander un tirage en travers de la photo, et la
@@ -2256,7 +2260,12 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                     // blanc). Sans cette ligne le mode ne changeait rien à l'écran : le
                     // cadre forçait la photo à couvrir le format quoi qu'il arrive, et
                     // l'opérateur ne voyait jamais les marges qu'il venait de demander.
-                    AllowsWhiteMargins = (FitOverride ?? _product.DefaultFit) == FitMode.Fit,
+                    //
+                    // Le BORD BLANC en est exclu bien qu'il partage le même FitMode : sa
+                    // photo REMPLIT la fenêtre, et c'est le liseré — posé au rendu — qui
+                    // fait le blanc. Lui laisser des marges ici, c'en aurait fait deux.
+                    AllowsWhiteMargins = (FitOverride ?? _product.DefaultFit) == FitMode.Fit
+                                         && !_product.ABordBlanc,
                 };
 
                 // le drapeau ci-dessus arrive après le Reset du constructeur : c'est ici
