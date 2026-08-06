@@ -2215,6 +2215,40 @@ laisse le dernier mot à l'opérateur.
 ⚠ `DevMode.ShowDriverDialog` (la version synchrone) existe toujours, et elle bloque. Elle
 est réservée aux outils en ligne de commande — jamais l'application.
 
+## On ne demande RIEN au relais sur les DNP quand DiLand tourne
+
+Quatrième victime du même port USB, et la plus coûteuse : **elle arrêtait le minilab.**
+
+Le bandeau demandait l'instantané DNP au relais 32 bits à chaque rafraîchissement. DiLand
+tenant le port, le SDK ne peut pas répondre — mais le relais mourait avant même d'essayer, en
+CONFIGURANT les types de la réponse :
+
+```
+12:29:44  relais · Fatal error. Internal CLR error. (0x80131506)
+             at JsonTypeInfo`1[[System.UInt32]].CreatePropertyInfoForTypeInfo()
+             at ...JsonPropertyInfo.Configure()   ← et la même chaîne, en boucle
+12:29:55  Impression : commande 06-009 en échec | Pipe is broken
+```
+
+Moins d'une seconde après son démarrage, à chaque fois. Et le relais emporte le MINILAB avec
+lui : plus aucun tirage DE100 ne partait.
+
+Deux mesures, et il faut les deux :
+
+1. **`MachineBarView` ne demande plus l'instantané DNP quand `DiLandPresence.IsRunning()`.**
+   On sait déjà que la réponse serait « injoignable » ; on lit le spouleur, qui répond
+   toujours. Une tuile d'état ne vaut pas une machine à l'arrêt.
+2. **`De100Protocol` appelle `MakeReadOnly()` sur chaque `JsonTypeInfo`**, et pas seulement
+   `GetTypeInfo`. C'est ce qui manquait au correctif du 05/08/2026 : `GetTypeInfo` fabrique
+   la description du type mais laisse sa CONFIGURATION au premier usage — or c'est elle qui
+   descend dans chaque propriété et fait, par réflexion et en pleine course, le travail que
+   le moteur 32 bits ne supporte pas.
+
+⚠ La leçon générale, quatre fois vérifiée le 06/08/2026 : **tout ce qui touche au port USB
+de la DNP pendant que DiLand tourne finit par bloquer ou tuer quelque chose.** Le SDK direct,
+le dialogue du pilote, l'instantané du relais. Avant d'ajouter un appel qui parle à cette
+machine, se demander d'abord si le spouleur ne sait pas déjà répondre.
+
 ## Ce qu'un DEVMODE contient, et ce qu'il faut y surveiller
 
 `LectureDevMode` lit — jamais n'écrit — les réglages qu'un pilote Unidrv range à la fin de

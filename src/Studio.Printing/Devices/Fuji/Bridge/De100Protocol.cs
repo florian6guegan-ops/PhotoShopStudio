@@ -160,12 +160,33 @@ public static class De100Protocol
             typeof(Dnp.DnpPrinterInfo), typeof(List<Dnp.DnpPrinterInfo>),
             typeof(Dnp.DnpStatus),
             typeof(De100JobResult), typeof(De100MachineEvent),
+            typeof(Dnp.EtatSpouleurDnp), typeof(Dnp.EtatFileDnp),
             typeof(List<string>), typeof(string), typeof(bool),
+
+            // Les primitives que portent les enregistrements ci-dessus. Elles sont
+            // configurées EN CASCADE depuis leurs porteurs, mais les nommer coûte
+            // trois lignes et ferme le cas où un type y échapperait.
+            typeof(uint), typeof(int), typeof(double), typeof(char),
         ];
 
         foreach (var type in transportes)
         {
-            try { Json.GetTypeInfo(type); }
+            try
+            {
+                // <b>GetTypeInfo ne suffisait PAS, et c'est ce qui manquait au correctif du
+                // 05/08/2026.</b> Il fabrique la description du type, mais laisse sa
+                // CONFIGURATION pour le premier usage — or c'est elle qui descend dans
+                // chaque propriété, en construit le convertisseur, et fait le travail par
+                // réflexion que le moteur 32 bits ne supporte pas quand deux fils s'y
+                // mettent ensemble. Le relais est mort exactement là le 06/08/2026 :
+                //
+                //   Fatal error. Internal CLR error. (0x80131506)
+                //      at JsonTypeInfo`1[[System.UInt32]].CreatePropertyInfoForTypeInfo()
+                //      at ...JsonPropertyInfo.Configure() ← et la même chaîne, en boucle
+                //
+                // MakeReadOnly() force cette configuration ICI, une fois, sur un seul fil.
+                Json.GetTypeInfo(type).MakeReadOnly();
+            }
             catch (Exception) { /* ce type retombera sur la résolution paresseuse */ }
         }
 

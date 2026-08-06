@@ -224,10 +224,23 @@ public partial class MachineBarView : UserControl
 
         try
         {
-            var lues = await App.Services.Minilab.DnpSnapshotAsync();
+            // <b>On ne DEMANDE PLUS RIEN au relais quand DiLand tourne.</b>
+            //
+            // DiLand tient le port USB des DNP en exclusif : le SDK ne peut pas répondre, et
+            // le relais 32 bits meurt d'essayer — la sérialisation de l'instantané DNP fait
+            // configurer par réflexion, en pleine course, des types que son moteur
+            // d'exécution ne supporte pas en 32 bits (« Fatal error. Internal CLR error. »,
+            // 06/08/2026 à 12:29:44, moins d'une seconde après son démarrage).
+            //
+            // Le relais emportait alors le MINILAB avec lui — « Pipe is broken », et plus
+            // aucun tirage DE100 ne partait. Une tuile d'état ne vaut pas une machine à
+            // l'arrêt : quand DiLand est là, on lit le spouleur, qui répond toujours.
+            var lues = DiLandPresence.IsRunning()
+                ? []
+                : await App.Services.Minilab.DnpSnapshotAsync();
 
-            // Le SDK n'en découvre aucune : la machine dort peut-être. On complète d'après
-            // le spouleur Windows pour l'afficher « en veille » plutôt que de la faire
+            // Le SDK n'en découvre aucune : la machine dort peut-être, ou DiLand la tient. On
+            // complète d'après le spouleur Windows pour l'afficher plutôt que de la faire
             // disparaître. Cette lecture-là se fait ICI et jamais dans le relais — voir
             // DiLandPresence.VuesParWindows.
             if (lues.Count == 0)
