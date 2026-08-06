@@ -20,6 +20,18 @@ namespace Studio.Printing.Devices.Dnp;
 /// en découvre zéro. La violation d'accès du 31/07/2026 venait du numéro de port, pas de
 /// la bibliothèque — voir <see cref="GetPrinterPortNum"/>.
 ///
+/// ET SURTOUT : <c>CPPCtrl32.dll</c> DÉBORDE. Mesuré le 06/08/2026 avec un tampon de
+/// 4 Ko rempli de 0xAA dont on ne lui annonçait que 24 octets : elle écrit jusqu'à
+/// l'octet 95 — <b>72 octets au-delà de ce qu'on lui a alloué, à chaque appel</b>. Elle
+/// n'a pas le même contrat que cspstat (elle veut douze entrées de huit octets, pas de
+/// deux). <c>cspstat.dll</c>, elle, écrit deux octets pour une imprimante et s'arrête là.
+///
+/// C'est ce débordement qui tuait le relais 32 bits : un tas écrasé ne plante pas sur le
+/// coup, il tue le processus plus tard et AILLEURS — « Fatal error. Internal CLR error. »
+/// en pleine construction de types ou de sérialisation, ce qui envoie chercher le défaut
+/// à l'opposé de sa cause. 43 morts le 05/08, 52 le 06/08, et à chaque fois le minilab
+/// passait « hors ligne » et son compteur se figeait jusqu'au redémarrage du relais.
+///
 /// UNE SEULE DES DEUX À LA FOIS, JAMAIS LES DEUX. Elles exportent les mêmes symboles et
 /// se marchent dessus : un processus qui charge les deux meurt en violation d'accès, à la
 /// SORTIE — « Fatal error. Internal CLR error. », loin de l'appel fautif, ce qui égare.
