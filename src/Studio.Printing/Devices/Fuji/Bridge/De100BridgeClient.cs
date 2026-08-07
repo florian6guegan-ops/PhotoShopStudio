@@ -12,7 +12,10 @@ namespace Studio.Printing.Devices.Fuji.Bridge;
 /// Studio.App. Cette classe démarre <c>Studio.De100Host.exe</c> au besoin, dialogue avec
 /// lui par un tube nommé, et présente la même surface que <see cref="De100Driver"/>.
 ///
-/// Le relais s'arrête tout seul quand on se déconnecte : pas de processus fantôme.
+/// Le relais s'arrête quand on se déconnecte, et Windows le tue si nous disparaissons
+/// sans prévenir — voir <see cref="ProcessusLie"/>. Cette dernière garantie manquait :
+/// l'application a planté deux fois le 07/08/2026, et le poste de Créteil s'est retrouvé
+/// avec deux relais de versions différentes en concurrence sur le même SDK.
 /// </summary>
 public sealed class De100BridgeClient : IAsyncDisposable
 {
@@ -136,6 +139,15 @@ public sealed class De100BridgeClient : IAsyncDisposable
         PointerVersLeRuntime32Bits(demarrage);
 
         _host = Process.Start(demarrage);
+
+        // Lié à nous AVANT toute autre chose : à partir d'ici, le relais ne peut plus nous
+        // survivre, même si nous plantons. Le Kill de Deconnecter reste — il ferme
+        // proprement le cas normal — mais il demande que quelqu'un soit encore là pour
+        // l'appeler, ce qui n'est justement pas le cas quand l'application meurt d'un coup.
+        if (_host is not null && !ProcessusLie.Attacher(_host))
+            Log?.Invoke("Relais DE100 : le système a refusé de le lier à l'application. " +
+                        "Il sera fermé normalement, mais pourrait survivre à un plantage.");
+
         DrainerLaSortieDErreur();
 
         _pipe = new NamedPipeClientStream(".", De100Protocol.PipeName, PipeDirection.InOut,

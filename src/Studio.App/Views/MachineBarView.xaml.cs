@@ -222,6 +222,21 @@ public partial class MachineBarView : UserControl
                 : "Minilab injoignable — les tirages restent possibles si la machine répond.";
         }
 
+        // RIEN À MONTRER : ni réponse du relais, ni souvenir d'une réponse. C'est le cas
+        // d'une application qui démarre machines éteintes — et le bandeau restait alors
+        // vide, comme si le poste n'avait pas de minilab du tout. On les affiche d'après
+        // les files Windows, hors ligne, plutôt que de laisser croire qu'il n'y en a pas.
+        // Même filet que les DNP en dessous.
+        if (fujis.Count == 0)
+        {
+            var connues = await Task.Run(() => MinilabPresence.VusParWindows());
+            if (connues.Count > 0)
+            {
+                fujis = [.. connues.Select(f => new MachineTile(f))];
+                MessageText.Text = "Minilab éteint ou en veille — il répondra dès qu'il sera allumé.";
+            }
+        }
+
         try
         {
             // <b>On demande de nouveau l'instantané, même DiLand ouvert.</b>

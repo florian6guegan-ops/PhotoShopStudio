@@ -85,6 +85,13 @@ public partial class MachineStatusView : UserControl
                 "\n\nLes tirages ne sont pas affectés tant que la machine répond à l'impression.";
         }
 
+        // Le minilab n'a rien dit : on le montre quand même, d'après les files Windows et
+        // hors ligne. Même filet que la DNP juste en dessous — un écran qui s'intitule
+        // « état des machines » et n'en affiche aucune ne renseigne sur rien.
+        if (lignes.Count == 0)
+            foreach (var connu in await Task.Run(() => MinilabPresence.VusParWindows()))
+                lignes.Add(new MachineRow(connu));
+
         // La DNP à part, et sans faire échouer l'écran : DiLand tient son port en exclusif
         // tant qu'il tourne, donc son absence est une situation normale et non une panne.
         try
