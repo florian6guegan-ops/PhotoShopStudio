@@ -662,6 +662,20 @@ public partial class SettingsView : UserControl
             Filter = "Archive ZIP|*.zip",
             Title = "Où enregistrer le rapport ?",
         };
+
+        // LES TÉLÉCHARGEMENTS PAR DÉFAUT, et non le dernier dossier visité.
+        //
+        // Ce rapport n'est pas fait pour rester sur le poste : on le transmet, par
+        // WhatsApp, WeTransfer ou une clef. Le dossier proposé doit donc être celui que la
+        // personne au bout du fil saura retrouver — « regarde dans tes Téléchargements »
+        // se dit au téléphone, « dans le dernier dossier où tu as enregistré quelque
+        // chose » ne se dit pas.
+        //
+        // Le dossier peut avoir été déplacé, ou redirigé vers OneDrive : sans lui, on
+        // laisse simplement la boîte choisir, comme avant.
+        if (DossiersUtilisateur.Telechargement() is { } telechargements)
+            boite.InitialDirectory = telechargements;
+
         DossiersFavoris.Epingler(boite);
 
         if (boite.ShowDialog() != true) return;
