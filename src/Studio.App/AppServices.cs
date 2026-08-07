@@ -523,8 +523,14 @@ public sealed class AppServices
         foreach (var sub in new[] { "orders", "catalog", Path.Combine("catalog", "icc"), "counters", "config", "logs", "cache", "incoming", "models", "attente" })
             Directory.CreateDirectory(Path.Combine(dataRoot, sub));
 
+        // Un poste NEUF prend le catalogue livré avec l'application — celui de la boutique,
+        // avec ses formats, ses prix, ses canaux de machine et ses réglages pilote. Les
+        // produits d'amorçage ne sont qu'un dernier recours : quatre des cinq pointent sur
+        // « Microsoft Print to PDF », ce qui donne un logiciel qui démarre et dont rien ne
+        // sort. C'est exactement ce qu'a eu le poste de Créteil le 07/08/2026.
         var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
-        if (!File.Exists(productsJson))
+        if (!File.Exists(productsJson)
+            && !CatalogueLivre.PoserSiAbsent(Path.Combine(dataRoot, "catalog")))
             ProductCatalog.Save(productsJson, ProductCatalog.CreateDefaultProducts());
 
         var catalog = ProductCatalog.Load(productsJson);
