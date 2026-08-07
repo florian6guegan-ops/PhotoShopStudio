@@ -359,6 +359,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         }
         catch (Exception ex)
         {
+            // ÉCRIT AU JOURNAL, et pas seulement montré à l'opérateur.
+            //
+            // Cette boîte-là a annoncé « Can't read ONNX file » pendant toute une soirée à
+            // Créteil sans laisser la moindre trace : le journal ne portait rien, et le
+            // défaut n'était diagnosticable qu'en photographiant l'écran. Une erreur qu'on
+            // montre est exactement celle qu'on voudra relire à distance.
+            FileLog.Write("Photo d'identité : image illisible", ex);
+
             MessageBox.Show($"Photo illisible : {ex.Message}", "Studio Photo",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             _current = null;

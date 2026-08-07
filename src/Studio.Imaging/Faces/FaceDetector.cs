@@ -31,7 +31,71 @@ public sealed class FaceDetector
     {
         if (!File.Exists(modelPath))
             throw new FileNotFoundException($"Modèle YuNet introuvable : {modelPath}", modelPath);
-        _modelPath = modelPath;
+
+        _modelPath = CheminLisibleParOpenCv(modelPath);
+    }
+
+    /// <summary>
+    /// Un chemin qu'OpenCV saura ouvrir : le sien s'il est en pur ASCII, sinon une copie
+    /// du fichier dans un dossier qui l'est.
+    ///
+    /// <b>OpenCV ne lit pas les chemins accentués.</b> Sa couche fichier prend des
+    /// <c>char*</c> et ne fait pas la conversion que Windows attend : le modèle est là,
+    /// bien là, et il répond « Can't read ONNX file ». Le message le montre d'ailleurs
+    /// lui-même, l'accent déjà abîmé — <c>C:\Users\PhotoConcept CrÃ©teil\…</c>.
+    ///
+    /// <b>Ce n'est pas un cas rare, c'est le cas français.</b> Le poste de Créteil ouvre
+    /// une session « PhotoConcept Créteil » : tout ce qui vit sous son profil porte donc un
+    /// accent, et la détection de visage y était morte — donc le pré-cadrage, donc les
+    /// photos d'identité, c'est-à-dire le module qu'on y utilise le plus. Ici, à
+    /// Maisons-Alfort, l'application tourne depuis <c>D:\PhotoShopStudio</c> et rien ne le
+    /// laissait voir. Constaté le 08/08/2026 sur une identité étrangère.
+    ///
+    /// L'IMAGE, elle, ne passe jamais par un chemin : elle est décodée par Magick et
+    /// remise à OpenCV en mémoire (voir <see cref="DetectAll"/>). C'est ce qui a limité le
+    /// défaut au seul chargement du modèle.
+    /// </summary>
+    internal static string CheminLisibleParOpenCv(string chemin)
+    {
+        if (EstAscii(chemin)) return chemin;
+
+        try
+        {
+            // ProgramData plutôt que le dossier temporaire : celui de l'utilisateur vit
+            // sous son profil, donc sous le même accent. Le nom de ProgramData n'est pas
+            // localisé, il est en ASCII sur toutes les installations de Windows.
+            var abri = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "StudioPhoto", "modeles");
+
+            var cible = Path.Combine(abri, Path.GetFileName(chemin));
+            if (!EstAscii(cible)) return chemin;
+
+            // recopié seulement si absent ou différent : ce chemin est pris à chaque
+            // détection, et le modèle ne change qu'avec la version
+            if (!File.Exists(cible)
+                || new FileInfo(cible).Length != new FileInfo(chemin).Length)
+            {
+                Directory.CreateDirectory(abri);
+                File.Copy(chemin, cible, overwrite: true);
+            }
+
+            return cible;
+        }
+        catch (Exception)
+        {
+            // droits refusés, disque plein : on rend le chemin d'origine. La détection
+            // échouera comme avant, ce qui vaut mieux qu'empêcher d'ouvrir l'écran.
+            return chemin;
+        }
+    }
+
+    private static bool EstAscii(string valeur)
+    {
+        foreach (var c in valeur)
+            if (c > 127) return false;
+
+        return true;
     }
 
     /// <summary>Visage principal (meilleur score), ou null si aucun visage exploitable.</summary>
