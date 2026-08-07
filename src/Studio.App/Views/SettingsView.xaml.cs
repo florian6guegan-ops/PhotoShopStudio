@@ -1120,9 +1120,75 @@ public partial class SettingsView : UserControl
 
         ModelesText.Foreground = (Brush)Application.Current.Resources["TextBrush"];
         ModelesText.Text = string.Join("   ·   ", lignes) +
-                           $"\nLes modèles se posent à la main dans {DossierDesModeles()} — " +
-                           "ils ne sont pas dans le logiciel, un demi-gigaoctet n'a rien à faire " +
-                           "dans un dépôt public.";
+                           $"\nIls ne sont pas dans le logiciel — un demi-gigaoctet qu'on ne veut pas " +
+                           $"retélécharger à chaque version — et se posent dans {DossierDesModeles()}.";
+
+        // Le bouton ne propose que ce qui manque, et le « lite » d'abord : c'est celui de
+        // la boutique, et le seul qui tourne sur les cartes qu'on y trouve.
+        InstallerModeleButton.IsEnabled = leger is null || puissant is null;
+        InstallerModeleButton.Content = leger is null
+            ? "Installer le modèle (109 Mo)"
+            : "Installer le modèle puissant (467 Mo)";
+
+        if (leger is not null && puissant is not null)
+        {
+            InstallerModeleButton.Content = "Modèles installés";
+            TelechargementText.Text = "";
+        }
+    }
+
+    /// <summary>
+    /// Télécharge le modèle manquant depuis la publication qui les porte.
+    ///
+    /// <b>Il s'installait à la main.</b> L'écran se contentait d'indiquer un dossier et un
+    /// nom de fichier ; personne n'y a jamais rien posé, et le poste de Créteil a tourné
+    /// sans détourage depuis son installation — le réglage restait sur la méthode par
+    /// couleur, ce qui ressemble à un choix et n'en était pas un.
+    /// </summary>
+    private async void OnInstallerLeModele(object sender, RoutedEventArgs e)
+    {
+        var manquant = BiRefNetMatting.CheminDuModele(DetourageSettings.ModeleLeger) is null
+            ? DetourageSettings.ModeleLeger
+            : DetourageSettings.ModelePuissantFichier;
+
+        InstallerModeleButton.IsEnabled = false;
+        TelechargementText.Foreground = (Brush)Application.Current.Resources["TextBrush"];
+        TelechargementText.Text = $"Téléchargement de « {manquant} »…";
+
+        try
+        {
+            using var client = new System.Net.Http.HttpClient
+            {
+                // 109 Mo sur la connexion partagée d'une boutique : le défaut de 100 s
+                // couperait l'installation en plein milieu.
+                Timeout = TimeSpan.FromMinutes(30),
+            };
+
+            var avancement = new Progress<double>(fraction =>
+                TelechargementText.Text =
+                    $"Téléchargement de « {manquant} »… {fraction:P0}");
+
+            var chemin = await ModelesDetourage.TelechargerAsync(
+                client, manquant, DossierDesModeles(), avancement);
+
+            FileLog.Write($"Modèle de détourage installé : {chemin}");
+
+            TelechargementText.Foreground = (Brush)Application.Current.Resources["OkBrush"];
+            TelechargementText.Text = "Modèle installé.";
+
+            DecrireLesModeles();
+            DireOuEnEstLeDetourage(SaisieDetourage());
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Modèle de détourage « {manquant} » : téléchargement impossible", ex);
+
+            TelechargementText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+            TelechargementText.Text =
+                $"Téléchargement impossible : {ex.Message}. Le détourage par couleur reste disponible.";
+
+            InstallerModeleButton.IsEnabled = true;
+        }
     }
 
     /// <summary>Ce que va faire le détourage, tel que l'écran est réglé — en une phrase.</summary>

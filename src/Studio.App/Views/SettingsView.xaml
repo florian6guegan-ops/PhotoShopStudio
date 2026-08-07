@@ -299,6 +299,17 @@
                         <TextBlock x:Name="ModelesText" Style="{StaticResource Texte}" FontSize="15"
                                    Margin="0,10,0,0" TextWrapping="Wrap"/>
 
+                        <!-- Le modèle s'installait à la main, en copiant 109 Mo dans le
+                             dossier de données. Personne ne l'a fait : le poste de Créteil
+                             a tourné sans détourage depuis son installation. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
+                            <Button x:Name="InstallerModeleButton" Content="Installer le modèle"
+                                    Click="OnInstallerLeModele" Padding="16,8" FontSize="15"/>
+                            <TextBlock x:Name="TelechargementText" Style="{StaticResource Texte}"
+                                       FontSize="15" Margin="12,0,0,0" VerticalAlignment="Center"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+
                         <TextBlock x:Name="DetourageEtatText" Style="{StaticResource Texte}" FontSize="17"
                                    Margin="0,14,0,0" TextWrapping="Wrap"/>
                     </StackPanel>

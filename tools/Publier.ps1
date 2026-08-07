@@ -184,7 +184,48 @@ if (Test-Path $archive) { Remove-Item $archive -Force }
 
 Write-Host ""
 Write-Host "  Fabrication de l'archive..."
-Compress-Archive -Path "$publication\*" -DestinationPath $archive -CompressionLevel Optimal
+
+# Les entrees sont ecrites une par une, avec des BARRES OBLIQUES.
+#
+# Compress-Archive - et meme ZipFile.CreateFromDirectory sous PowerShell 5.1 - ecrivent
+# les separateurs en ANTISLASH. La specification ZIP impose la barre oblique : un nom
+# comme « de100\Studio.De100Host.exe » est donc, pour un decompresseur conforme, un
+# fichier PLAT dont le nom contient un antislash, et non un fichier dans un sous-dossier.
+#
+# L'Explorateur Windows repare de lui-meme et cree le dossier, ce qui masque le defaut
+# sur les postes ou l'on decompresse par un double-clic. Ailleurs - 7-Zip, WinRAR, un
+# script - le sous-dossier « de100 » n'est jamais cree, et l'application annonce alors
+# que le relais 32 bits est introuvable alors que le fichier est bien dans l'archive.
+# C'est ce qu'a vu un poste tiers, sans que rien ne permette de le comprendre.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$racineArchive = (Resolve-Path $publication).Path
+$zip = [System.IO.Compression.ZipFile]::Open($archive, 'Create')
+try {
+    foreach ($fichier in Get-ChildItem $racineArchive -Recurse -File) {
+        $relatif = $fichier.FullName.Substring($racineArchive.Length + 1).Replace('\', '/')
+        [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $zip, $fichier.FullName, $relatif, 'Optimal')
+    }
+}
+finally {
+    $zip.Dispose()
+}
+
+# Verifie ce qu'on vient d'ecrire : une archive mal formee ne se voit qu'a l'installation,
+# chez quelqu'un d'autre, et se manifeste par un message qui parle d'autre chose.
+$controle = [System.IO.Compression.ZipFile]::OpenRead($archive)
+try {
+    $antislash = @($controle.Entries | Where-Object { $_.FullName -like '*\*' }).Count
+    $relaisDansLArchive = @($controle.Entries |
+        Where-Object { $_.FullName -eq 'de100/Studio.De100Host.exe' }).Count
+
+    if ($antislash -gt 0) { throw "Archive non conforme : $antislash entree(s) a antislash." }
+    if ($relaisDansLArchive -ne 1) { throw "Archive incomplete : le relais de100 n'y est pas." }
+}
+finally {
+    $controle.Dispose()
+}
 
 $taille = [Math]::Round((Get-Item $archive).Length / 1MB, 1)
 Write-Host "  Archive : $archive ($taille Mo)"

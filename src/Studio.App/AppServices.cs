@@ -535,6 +535,16 @@ public sealed class AppServices
         var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
         CatalogueLivre.AssurerUnCatalogue(Path.Combine(dataRoot, "catalog"));
 
+        // Les profils ICC que le catalogue nomme sont déjà sur le poste, posés par les
+        // pilotes : on les recopie là où il les cherche. Sans cela, la planche d'identité
+        // de Créteil est partie sans gestion couleur pendant toute son installation, et
+        // rien ne le disait — un profil manquant ne fait pas échouer l'impression.
+        var profils = CatalogueLivre.ImporterLesProfilsManquants(
+            Path.Combine(dataRoot, "catalog"), IccProfiles.WindowsColorDir);
+
+        if (profils.Count > 0)
+            FileLog.Write($"Profils ICC repris de Windows : {string.Join(", ", profils)}");
+
         var catalog = ProductCatalog.Load(productsJson);
         var store = new OrderFolderStore(Path.Combine(dataRoot, "orders"));
         var counter = new DailyCounter(Path.Combine(dataRoot, "counters", "daily.json"));

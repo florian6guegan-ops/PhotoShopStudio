@@ -279,6 +279,115 @@ public class CatalogueLivreTests : IDisposable
         Assert.NotNull(apres.Find("le-mien"));
     }
 
+    // ————— les profils ICC —————
+    //
+    // Ils ne sont pas livrés — ce sont des fichiers du fabricant, 1,6 Mo pour la seule
+    // DS620 — mais les pilotes les posent dans le dossier couleur de Windows. Le catalogue
+    // de Créteil nommait DS620-R0.icc pour la planche d'identité, le dossier catalog\icc
+    // était vide, et les planches sont parties sans gestion couleur sans que rien ne le
+    // dise : un profil manquant ne fait pas échouer l'impression.
+
+    private string Windows => Path.Combine(_racine, "windows-couleur");
+
+    private void PoserProfilWindows(string nom)
+    {
+        Directory.CreateDirectory(Windows);
+        File.WriteAllBytes(Path.Combine(Windows, nom), [0, 1, 2, 3]);
+    }
+
+    private void PoserCatalogueAvecIcc(string icc)
+    {
+        ProductCatalog.Save(Path.Combine(Donnees, "products.json"),
+            [new Product { Code = "ID-FR-6", Name = "Planche identité", IccProfile = icc }]);
+    }
+
+    [Fact]
+    public void Le_profil_reclame_est_repris_du_dossier_couleur_de_Windows()
+    {
+        PoserCatalogueAvecIcc("DS620-R0.icc");
+        PoserProfilWindows("DS620-R0.icc");
+
+        var importes = CatalogueLivre.ImporterLesProfilsManquants(Donnees, Windows);
+
+        Assert.Equal(["DS620-R0.icc"], importes);
+        Assert.True(File.Exists(Path.Combine(Donnees, "icc", "DS620-R0.icc")));
+    }
+
+    /// <summary>Un profil déjà importé n'est pas écrasé : l'atelier a pu en poser un corrigé.</summary>
+    [Fact]
+    public void Un_profil_deja_importe_n_est_pas_ecrase()
+    {
+        PoserCatalogueAvecIcc("DS620-R0.icc");
+        PoserProfilWindows("DS620-R0.icc");
+
+        Directory.CreateDirectory(Path.Combine(Donnees, "icc"));
+        var sien = Path.Combine(Donnees, "icc", "DS620-R0.icc");
+        File.WriteAllBytes(sien, [9, 9, 9, 9, 9, 9]);
+
+        Assert.Empty(CatalogueLivre.ImporterLesProfilsManquants(Donnees, Windows));
+        Assert.Equal(6, new FileInfo(sien).Length);
+    }
+
+    /// <summary>Un profil que Windows n'a pas : on passe, sans lever et sans rien créer.</summary>
+    [Fact]
+    public void Un_profil_introuvable_ne_fait_rien()
+    {
+        PoserCatalogueAvecIcc("JAMAIS-VU.icc");
+        PoserProfilWindows("DS620-R0.icc");
+
+        Assert.Empty(CatalogueLivre.ImporterLesProfilsManquants(Donnees, Windows));
+    }
+
+    /// <summary>
+    /// <b>Les profils des FINITIONS comptent aussi.</b> Le DE100 en a un par média —
+    /// Glossy, Lustre, Pearl, Silk — et ce sont ceux-là qu'on oublie, parce qu'ils ne sont
+    /// pas portés par le produit mais par sa finition.
+    /// </summary>
+    [Fact]
+    public void Les_profils_des_finitions_sont_repris_aussi()
+    {
+        ProductCatalog.Save(Path.Combine(Donnees, "products.json"),
+        [
+            new Product
+            {
+                Code = "10x15",
+                Name = "10x15",
+                Finishes =
+                [
+                    new FinishOption { Name = "Brillant", IccProfile = "DE100 Glossy.icc" },
+                    new FinishOption { Name = "Lustré", IccProfile = "DE100 Lustre.icc" },
+                ],
+            },
+        ]);
+
+        PoserProfilWindows("DE100 Glossy.icc");
+        PoserProfilWindows("DE100 Lustre.icc");
+
+        var importes = CatalogueLivre.ImporterLesProfilsManquants(Donnees, Windows);
+
+        Assert.Equal(2, importes.Count);
+        Assert.True(File.Exists(Path.Combine(Donnees, "icc", "DE100 Lustre.icc")));
+    }
+
+    /// <summary>Sans catalogue, il n'y a rien à réclamer : on ne lève pas pour autant.</summary>
+    [Fact]
+    public void Sans_catalogue_aucun_profil_n_est_cherche()
+    {
+        PoserProfilWindows("DS620-R0.icc");
+
+        Assert.Empty(CatalogueLivre.ImporterLesProfilsManquants(Donnees, Windows));
+    }
+
+    /// <summary>Un dossier couleur inexistant est le cas d'un poste sans pilote installé.</summary>
+    [Fact]
+    public void Un_dossier_couleur_absent_ne_leve_pas()
+    {
+        PoserCatalogueAvecIcc("DS620-R0.icc");
+
+        Assert.Empty(CatalogueLivre.ImporterLesProfilsManquants(
+            Donnees, Path.Combine(_racine, "nulle-part")));
+    }
+
     /// <summary>
     /// L'épreuve de vérité : le catalogue RÉEL du dépôt, celui que Publier.ps1 recopie.
     /// Il doit se poser et porter les produits de la boutique — pas cinq lignes d'amorçage.

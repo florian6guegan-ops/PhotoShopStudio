@@ -129,6 +129,84 @@ public static class CatalogueLivre
     }
 
     /// <summary>
+    /// Va chercher, dans le dossier couleur de Windows, les profils ICC que le catalogue
+    /// réclame et qui ne sont pas encore dans <c>catalog\icc</c>.
+    ///
+    /// <b>Ils sont déjà sur le poste, posés par les pilotes.</b> Le catalogue de la
+    /// boutique nomme <c>DS620-R0.icc</c> pour la planche d'identité ; ce fichier de
+    /// 1,6 Mo n'est pas versionné — c'est un fichier du fabricant — mais le pilote DNP
+    /// l'installe dans le dossier couleur du spouleur en même temps que lui. Il n'y a donc
+    /// rien à livrer ni à télécharger : seulement à le recopier là où le catalogue le
+    /// cherche.
+    ///
+    /// Sans cela, le poste de Créteil a tiré ses planches d'identité SANS GESTION COULEUR
+    /// depuis son installation, et rien ne le disait — le profil manquant ne fait pas
+    /// échouer l'impression, il la laisse partir en sRGB présumé.
+    ///
+    /// <b>N'écrase jamais un profil déjà importé</b> : l'atelier a pu en poser un corrigé.
+    /// </summary>
+    /// <param name="dossierCatalogue">Le <c>catalog\</c> du dossier de données.</param>
+    /// <param name="dossierCouleurWindows">Où les pilotes déposent leurs profils.</param>
+    /// <returns>Les noms de fichiers effectivement importés.</returns>
+    public static IReadOnlyList<string> ImporterLesProfilsManquants(
+        string dossierCatalogue, string dossierCouleurWindows)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dossierCatalogue);
+
+        var productsJson = Path.Combine(dossierCatalogue, "products.json");
+        if (!File.Exists(productsJson) || !Directory.Exists(dossierCouleurWindows)) return [];
+
+        try
+        {
+            var reclames = ProfilsReclames(ProductCatalog.Load(productsJson));
+            if (reclames.Count == 0) return [];
+
+            var dossierIcc = Path.Combine(dossierCatalogue, "icc");
+            var importes = new List<string>();
+
+            foreach (var nom in reclames)
+            {
+                var cible = Path.Combine(dossierIcc, nom);
+                if (File.Exists(cible)) continue;
+
+                var source = Path.Combine(dossierCouleurWindows, nom);
+                if (!File.Exists(source)) continue;
+
+                Directory.CreateDirectory(dossierIcc);
+                File.Copy(source, cible);
+                importes.Add(nom);
+            }
+
+            return importes;
+        }
+        catch (Exception)
+        {
+            // catalogue illisible, dossier en lecture seule : un profil manquant ne vaut
+            // pas d'empêcher le démarrage — le tirage part en sRGB présumé, comme avant
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Les profils nommés par le catalogue : ceux des produits, et ceux des finitions —
+    /// le DE100 en a un par média, et ce sont ceux-là qu'on oublie.
+    /// </summary>
+    private static HashSet<string> ProfilsReclames(ProductCatalog catalogue)
+    {
+        var noms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var produit in catalogue.All)
+        {
+            if (!string.IsNullOrWhiteSpace(produit.IccProfile)) noms.Add(produit.IccProfile!);
+
+            foreach (var finition in produit.Finishes ?? [])
+                if (!string.IsNullOrWhiteSpace(finition.IccProfile)) noms.Add(finition.IccProfile!);
+        }
+
+        return noms;
+    }
+
+    /// <summary>
     /// Ce catalogue est-il celui d'amorçage, jamais touché depuis ?
     ///
     /// Reconnu sur ses codes, à l'identique et sans rien de plus : dès qu'un produit a été
