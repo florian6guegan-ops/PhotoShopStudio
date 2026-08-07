@@ -213,6 +213,72 @@ public class CatalogueLivreTests : IDisposable
         Assert.True(CatalogueLivre.PoserSiAbsent(Donnees, Livre));
     }
 
+    // ————— le point d'entrée du démarrage —————
+    //
+    // Ces essais-là manquaient, et c'est ce qui a laissé passer la 1.3.2 : PoserSiAbsent
+    // était juste et vérifiée, mais le démarrage l'appelait derrière un « && » qui la
+    // court-circuitait dès qu'un catalogue existait. Une méthode juste, mal appelée, se
+    // comporte exactement comme une méthode fausse.
+
+    /// <summary>
+    /// <b>Le défaut de la 1.3.2, en un essai.</b> Le poste de Créteil, mis à jour à 23:06,
+    /// a gardé ses cinq produits d'amorçage : la reprise n'était jamais atteinte.
+    /// </summary>
+    [Fact]
+    public void Au_demarrage_un_catalogue_d_amorcage_est_repris()
+    {
+        PoserLeLivre("10x15", "13x18", "20x30");
+        ProductCatalog.Save(Path.Combine(Donnees, "products.json"), ProductCatalog.CreateDefaultProducts());
+
+        CatalogueLivre.AssurerUnCatalogue(Donnees, Livre);
+
+        var apres = ProductCatalog.Load(Path.Combine(Donnees, "products.json"));
+        Assert.Equal(3, apres.All.Count);
+        Assert.All(apres.All, p => Assert.Equal(ProductOutput.FujiMinilab, p.Output));
+    }
+
+    [Fact]
+    public void Au_demarrage_un_poste_neuf_recoit_le_catalogue_livre()
+    {
+        PoserLeLivre("10x15", "13x18");
+
+        CatalogueLivre.AssurerUnCatalogue(Donnees, Livre);
+
+        Assert.Equal(2, ProductCatalog.Load(Path.Combine(Donnees, "products.json")).All.Count);
+    }
+
+    /// <summary>
+    /// Sans catalogue livré — une archive d'avant la correction — le poste doit tout de
+    /// même démarrer : les produits d'amorçage restent le dernier recours.
+    /// </summary>
+    [Fact]
+    public void Au_demarrage_sans_catalogue_livre_l_amorcage_prend_le_relais()
+    {
+        CatalogueLivre.AssurerUnCatalogue(Donnees, Livre);
+
+        var pose = ProductCatalog.Load(Path.Combine(Donnees, "products.json"));
+        Assert.NotEmpty(pose.All);
+        Assert.Equal(
+            ProductCatalog.CreateDefaultProducts().Select(p => p.Code).ToHashSet(),
+            pose.All.Select(p => p.Code).ToHashSet());
+    }
+
+    /// <summary>Le catalogue d'un poste qui tourne n'est jamais touché au démarrage.</summary>
+    [Fact]
+    public void Au_demarrage_le_catalogue_du_poste_est_intact()
+    {
+        PoserLeLivre("10x15", "13x18");
+        ProductCatalog.Save(
+            Path.Combine(Donnees, "products.json"),
+            [new Product { Code = "le-mien", Name = "Le mien", Price = 9.99m }]);
+
+        CatalogueLivre.AssurerUnCatalogue(Donnees, Livre);
+
+        var apres = ProductCatalog.Load(Path.Combine(Donnees, "products.json"));
+        Assert.Single(apres.All);
+        Assert.NotNull(apres.Find("le-mien"));
+    }
+
     /// <summary>
     /// L'épreuve de vérité : le catalogue RÉEL du dépôt, celui que Publier.ps1 recopie.
     /// Il doit se poser et porter les produits de la boutique — pas cinq lignes d'amorçage.

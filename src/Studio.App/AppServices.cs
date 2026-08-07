@@ -528,10 +528,12 @@ public sealed class AppServices
         // produits d'amorçage ne sont qu'un dernier recours : quatre des cinq pointent sur
         // « Microsoft Print to PDF », ce qui donne un logiciel qui démarre et dont rien ne
         // sort. C'est exactement ce qu'a eu le poste de Créteil le 07/08/2026.
+        // Toute la décision est DANS AssurerUnCatalogue, et rien ici : l'enchaîner sur
+        // place — « si le fichier manque ET que la pose échoue, alors amorçage » — court-
+        // circuitait la reprise dès qu'un catalogue existait, donc précisément quand elle
+        // sert. C'est ce qui a laissé Créteil sur ses cinq produits en 1.3.2.
         var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
-        if (!File.Exists(productsJson)
-            && !CatalogueLivre.PoserSiAbsent(Path.Combine(dataRoot, "catalog")))
-            ProductCatalog.Save(productsJson, ProductCatalog.CreateDefaultProducts());
+        CatalogueLivre.AssurerUnCatalogue(Path.Combine(dataRoot, "catalog"));
 
         var catalog = ProductCatalog.Load(productsJson);
         var store = new OrderFolderStore(Path.Combine(dataRoot, "orders"));

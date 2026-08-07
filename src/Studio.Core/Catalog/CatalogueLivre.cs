@@ -95,6 +95,40 @@ public static class CatalogueLivre
     }
 
     /// <summary>
+    /// Garantit que le poste a un catalogue, et le meilleur dont on dispose : celui livré
+    /// avec l'application, sinon les produits d'amorçage.
+    ///
+    /// <b>C'est le point d'entrée, et il n'y en a qu'un.</b> Le démarrage enchaînait
+    /// lui-même les deux décisions :
+    ///
+    /// <code>
+    /// if (!File.Exists(productsJson) &amp;&amp; !PoserSiAbsent(...))
+    ///     Save(productsJson, CreateDefaultProducts());
+    /// </code>
+    ///
+    /// — et le court-circuit du <c>&amp;&amp;</c> faisait que <see cref="PoserSiAbsent"/>
+    /// n'était JAMAIS appelée quand un catalogue existait, c'est-à-dire dans le seul cas
+    /// où la reprise a quelque chose à faire. Le poste de Créteil, mis à jour en 1.3.2 le
+    /// 07/08/2026 à 23:06, a donc gardé ses cinq produits d'amorçage. La méthode était
+    /// pourtant juste et vérifiée : c'est son appel qui ne l'était pas. D'où cet
+    /// enchaînement, écrit une fois et vérifiable de bout en bout.
+    /// </summary>
+    /// <param name="dossierCatalogue">Le <c>catalog\</c> du dossier de données.</param>
+    /// <param name="dossierLivre">Où chercher ; par défaut <see cref="DossierParDefaut"/>.</param>
+    public static void AssurerUnCatalogue(string dossierCatalogue, string? dossierLivre = null)
+    {
+        if (PoserSiAbsent(dossierCatalogue, dossierLivre)) return;
+
+        // Rien n'a été posé : soit le poste a son propre catalogue et on n'y touche pas,
+        // soit rien n'était livré et il faut bien lui donner de quoi démarrer.
+        var cible = Path.Combine(dossierCatalogue, "products.json");
+        if (File.Exists(cible)) return;
+
+        Directory.CreateDirectory(dossierCatalogue);
+        ProductCatalog.Save(cible, ProductCatalog.CreateDefaultProducts());
+    }
+
+    /// <summary>
     /// Ce catalogue est-il celui d'amorçage, jamais touché depuis ?
     ///
     /// Reconnu sur ses codes, à l'identique et sans rien de plus : dès qu'un produit a été
