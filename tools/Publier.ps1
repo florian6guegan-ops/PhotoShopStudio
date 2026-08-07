@@ -136,12 +136,31 @@ New-Item -ItemType Directory -Path $catalogueCible -Force | Out-Null
 Copy-Item (Join-Path $catalogueSource 'products.json') $catalogueCible -Force
 Copy-Item (Join-Path $catalogueSource 'devmode-*.bin') $catalogueCible -Force -ErrorAction SilentlyContinue
 
+# Les 274 documents d'identite. Sans ce fichier, l'ecran d'identite ne propose que la
+# norme francaise - le repli, qui passait pour un choix : c'est ce qu'a eu le poste de
+# Creteil. Il vit dans catalog\ et non dans catalog\boutique\ : ce n'est pas une
+# sauvegarde du poste, mais un referentiel de normes repris de DiLand.
+$referentiel = Join-Path $racine 'catalog\diland-id-documents.json'
+if (-not (Test-Path $referentiel)) {
+    throw "Referentiel des documents d'identite introuvable : $referentiel"
+}
+
+Copy-Item $referentiel $catalogueCible -Force
+
+# Le fichier porte { "Documents": [ ... ] } et non un tableau nu : compter la racine
+# rendrait 1, comme le catalogue au bout d'un pipe.
+$documents = ConvertFrom-Json (Get-Content $referentiel -Raw)
+$nbDocuments = @($documents.Documents).Count
+if ($nbDocuments -lt 100) {
+    throw "Referentiel d'identite anormalement pauvre : $nbDocuments documents. Publication interrompue."
+}
+
 # ConvertFrom-Json APPELE, et non branche sur un pipe : au bout d'un pipe, PowerShell 5.1
 # rend le tableau comme un seul objet, et @(...).Count vaut 1 quel que soit le catalogue.
 $produits = ConvertFrom-Json (Get-Content (Join-Path $catalogueCible 'products.json') -Raw)
 $nbProduits = @($produits).Count
 $nbDevmodes = @(Get-ChildItem $catalogueCible -Filter 'devmode-*.bin' -ErrorAction SilentlyContinue).Count
-Write-Host "  $nbProduits produits, $nbDevmodes reglage(s) pilote."
+Write-Host "  $nbProduits produits, $nbDevmodes reglage(s) pilote, $nbDocuments documents d'identite."
 
 # Le catalogue livre date-t-il de la derniere modification du catalogue VIVANT ? Un
 # oubli de Sauver-Catalogue.cmd livrerait des prix perimes sans que rien ne le dise.

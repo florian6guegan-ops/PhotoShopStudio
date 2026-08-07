@@ -891,7 +891,7 @@ public partial class SettingsView : UserControl
         }
 
         DropboxValiderButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
 
         try
         {
@@ -1314,7 +1314,7 @@ public partial class SettingsView : UserControl
         }
 
         EssaiButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
         EtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
         EtatText.Text = "Envoi de l'essai…";
 

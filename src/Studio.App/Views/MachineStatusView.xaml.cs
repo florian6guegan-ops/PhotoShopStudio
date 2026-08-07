@@ -66,7 +66,7 @@ public partial class MachineStatusView : UserControl
         {
             MessageText.Text = "Interrogation des machines…";
             MachinesList.ItemsSource = null;
-            Mouse.OverrideCursor = Cursors.Wait;
+            Mouse.OverrideCursor = CurseurStudio.Attente;
         }
 
         var lignes = new List<MachineRow>();

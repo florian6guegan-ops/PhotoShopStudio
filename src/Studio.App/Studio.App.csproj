@@ -16,6 +16,10 @@
     <!-- la même, embarquée : c'est celle que porte la fenêtre elle-même -->
     <Resource Include="Assets\studio-photo.ico" />
 
+    <!-- Le curseur d'attente : le diaphragme du logo qui tourne, à la place du cercle
+         bleu de Windows. Versionné et redessiné par tools/Studio.Logo, comme l'icône. -->
+    <Resource Include="Assets\studio-attente.ani" />
+
     <!-- L'ÉCRAN D'ATTENTE DU DÉMARRAGE.
          Le raccourci passe par Lancer-Studio.cmd, qui recompile avant d'ouvrir : entre le
          clic et la fenêtre, l'opérateur n'avait qu'une console noire à l'icône de Windows,

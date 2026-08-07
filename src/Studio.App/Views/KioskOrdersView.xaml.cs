@@ -299,7 +299,7 @@ public partial class KioskOrdersView : UserControl
 
         try
         {
-            Mouse.OverrideCursor = Cursors.Wait;
+            Mouse.OverrideCursor = CurseurStudio.Attente;
 
             Directory.CreateDirectory(destination);
             var combien = 0;

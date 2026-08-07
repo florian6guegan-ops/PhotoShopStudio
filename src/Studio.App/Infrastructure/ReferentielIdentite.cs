@@ -1,4 +1,5 @@
 using System.IO;
+using Studio.Core.Catalog;
 using Studio.Imaging.Geometry;
 
 namespace Studio.App.Infrastructure;
@@ -24,6 +25,22 @@ public static class ReferentielIdentite
         try
         {
             var chemin = Path.Combine(App.Services.CatalogDir, NomDuFichier);
+
+            // …puis celui LIVRÉ avec l'application.
+            //
+            // Il manquait, et le repli sur la seule norme française passait pour un choix :
+            // le poste de Créteil n'a proposé que le 35×45 français, alors que les 274
+            // documents existaient dans le dépôt. Le chemin ci-dessous n'y menait que sur
+            // un poste de développement — remonter l'arborescence depuis l'exécutable ne
+            // trouve un dossier « catalog\ » que quand on tourne depuis les sources.
+            //
+            // Lu depuis l'installation plutôt que recopié dans les données : c'est un
+            // référentiel de NORMES, pas une donnée du poste. Chaque version livre le sien,
+            // et il n'y a rien à resynchroniser. Le dossier de données l'emporte tout de
+            // même, pour qu'un poste puisse le corriger sans attendre une version.
+            if (!File.Exists(chemin))
+                chemin = Path.Combine(
+                    AppContext.BaseDirectory, CatalogueLivre.NomDuDossier, NomDuFichier);
 
             // le référentiel vit dans le dépôt tant qu'il n'a pas été installé
             if (!File.Exists(chemin) && TrouverDansLeDepot() is { } depot) chemin = depot;

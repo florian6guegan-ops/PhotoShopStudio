@@ -303,7 +303,7 @@ public partial class OrdersView : UserControl
 
         try
         {
-            Mouse.OverrideCursor = Cursors.Wait;
+            Mouse.OverrideCursor = CurseurStudio.Attente;
 
             Directory.CreateDirectory(destination);
             foreach (var fichier in Directory.EnumerateFiles(source))
@@ -520,7 +520,7 @@ public partial class OrdersView : UserControl
         if ((sender as Button)?.Tag is not OrderRow row) return;
         var services = App.Services;
 
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
         try
         {
             await Task.Run(() => Studio.Printing.EscPosTicket.Send(

@@ -40,18 +40,30 @@ public static class Logo
         icone.Write(cheminIco, MagickFormat.Ico);
     }
 
-    private static MagickImage Dessiner(uint cote)
+    /// <param name="cote">Côté de l'image carrée, en pixels.</param>
+    /// <param name="rotationDegres">
+    /// Rotation des lames du diaphragme. Le reste ne bouge pas : c'est ce qui donne le
+    /// curseur d'attente, où seul le mécanisme tourne dans sa monture.
+    /// </param>
+    /// <param name="avecTuile">
+    /// La tuile sombre aux angles arrondis. Vraie pour l'icône, où elle sépare le logo du
+    /// bureau ; fausse pour le curseur, où un carré opaque de 32 px promené sur l'écran
+    /// masquerait ce qu'on est en train de regarder.
+    /// </param>
+    internal static MagickImage Dessiner(uint cote, double rotationDegres = 0, bool avecTuile = true)
     {
         var image = new MagickImage(MagickColors.Transparent, cote, cote);
         double c = cote;
         var centre = c / 2;
+        var rotation = rotationDegres * Math.PI / 180;
 
         var dessin = new Drawables();
 
         // la tuile : un carré aux angles arrondis, comme les icônes du système
-        dessin.FillColor(Fond)
-            .StrokeColor(MagickColors.Transparent)
-            .RoundRectangle(0, 0, c - 1, c - 1, c * 0.22, c * 0.22);
+        if (avecTuile)
+            dessin.FillColor(Fond)
+                .StrokeColor(MagickColors.Transparent)
+                .RoundRectangle(0, 0, c - 1, c - 1, c * 0.22, c * 0.22);
 
         // l'anneau bleu : la monture de l'objectif
         dessin.FillColor(MagickColors.Transparent)
@@ -71,7 +83,7 @@ public static class Logo
         var sommets = new List<PointD>();
         for (var i = 0; i < 6; i++)
         {
-            var angle = Math.PI / 2 + i * Math.PI / 3;
+            var angle = Math.PI / 2 + i * Math.PI / 3 + rotation;
             sommets.Add(new PointD(
                 centre + trou * Math.Cos(angle),
                 centre - trou * Math.Sin(angle)));
@@ -83,7 +95,7 @@ public static class Logo
         dessin.StrokeColor(Fond).StrokeWidth(c * 0.032).FillColor(MagickColors.Transparent);
         for (var i = 0; i < 6; i++)
         {
-            var angle = Math.PI / 2 + i * Math.PI / 3;
+            var angle = Math.PI / 2 + i * Math.PI / 3 + rotation;
             var vers = angle + Math.PI / 3;
 
             dessin.Line(

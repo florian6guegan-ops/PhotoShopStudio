@@ -1317,7 +1317,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             DateTime.Now.ToString("yyyyMMdd-HHmmss"));
 
         IndexButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
         try
         {
             var resultat = await Task.Run(() => IndexSheet.Render(
@@ -1904,7 +1904,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             .ToList();
 
         PrintButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
         try
         {
             // La commande est créée tout de suite — c'est court : un numéro, les

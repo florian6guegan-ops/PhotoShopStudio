@@ -383,7 +383,7 @@ public partial class IdSheetRecapView : UserControl
 
         _impressionLancee = true;
         ImprimerButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
 
         try
         {

@@ -22,4 +22,18 @@ Studio.Logo.Logo.Ecrire(
     Path.Combine(sortie, "studio-photo.ico"),
     Path.Combine(sortie, "studio-photo.png"));
 
-Console.WriteLine($"Logo écrit dans {sortie}");
+// Le curseur d'attente : le même diaphragme, qui tourne. Versionné comme l'icône, et
+// refait ici pour la même raison — il doit suivre la marque quand elle change.
+Studio.Logo.CurseurAttente.Ecrire(Path.Combine(sortie, "studio-attente.ani"));
+
+// Une bande des images du cycle, sur demande : c'est le seul moyen de juger le mouvement
+// sans installer le curseur. Elle n'est PAS versionnée — d'où le chemin à donner.
+//   dotnet run --project tools/Studio.Logo -- <sortie> --apercu <fichier.png>
+var apercu = Array.IndexOf(args, "--apercu");
+if (apercu >= 0 && apercu + 1 < args.Length)
+{
+    Studio.Logo.CurseurAttente.EcrireApercu(args[apercu + 1]);
+    Console.WriteLine($"Aperçu écrit dans {args[apercu + 1]}");
+}
+
+Console.WriteLine($"Logo et curseur écrits dans {sortie}");

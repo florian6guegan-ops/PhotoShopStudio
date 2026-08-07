@@ -332,7 +332,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         _corrige = null;
 
         EmptyText.Visibility = Visibility.Collapsed;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
 
         try
         {
@@ -659,7 +659,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     {
         if (_current is null || _displayBitmap is null) return;
 
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
         try
         {
             var chemin = _current.Path;

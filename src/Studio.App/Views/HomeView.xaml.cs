@@ -372,7 +372,7 @@ public partial class HomeView : UserControl
 
         try
         {
-            Mouse.OverrideCursor = Cursors.Wait;
+            Mouse.OverrideCursor = CurseurStudio.Attente;
             var prete = App.Services.DiLandImport.Stage(
                 ligne.Order, telechargements, nom, ecraser: true);
             Mouse.OverrideCursor = null;

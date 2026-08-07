@@ -113,7 +113,7 @@ public partial class PrevenirClientView : UserControl
 
         _envoiEnCours = true;
         EnvoyerButton.IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
         EtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
         EtatText.Text = "Envoi en cours…";
 

@@ -207,7 +207,7 @@ public partial class MailSendView : UserControl
         EnvoyerButton.IsEnabled = false;
         RetourButton.IsEnabled = false;
         EtatText.Text = "Préparation des fichiers…";
-        Mouse.OverrideCursor = Cursors.Wait;
+        Mouse.OverrideCursor = CurseurStudio.Attente;
 
         // Le dossier porte la date : les fichiers RESTENT après l'envoi, pour qu'un envoi
         // refusé se rejoue sans tout refabriquer — une photo de 24 Mpx coûte plusieurs
