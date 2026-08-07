@@ -110,6 +110,53 @@ Write-Host "  Compilation du relais 32 bits du minilab..."
 if ($LASTEXITCODE -ne 0) { throw "La compilation du relais a echoue : rien n'est publie." }
 
 # ---------------------------------------------------------------------------
+# 3 bis. Le catalogue de la boutique
+#
+# Sans lui, un poste neuf demarre sur les cinq produits d'amorcage - dont quatre
+# pointent sur « Microsoft Print to PDF ». Le logiciel s'ouvre, affiche des tirages,
+# et rien ne sort des machines pourtant presentes. C'est ce qu'a eu le poste de
+# Creteil le 07/08/2026, et rien dans le guide ne disait comment s'en sortir.
+#
+# Le dossier s'appelle "catalogue" et pas autrement : c'est la que l'application le
+# cherche au premier demarrage (CatalogueLivre.NomDuDossier).
+#
+# Il n'ecrase JAMAIS le catalogue d'un poste qui tourne deja : la pose n'a lieu que
+# si catalog\products.json est absent.
+$catalogueSource = Join-Path $racine 'catalog\boutique'
+$catalogueCible = Join-Path $publication 'catalogue'
+
+if (-not (Test-Path (Join-Path $catalogueSource 'products.json'))) {
+    throw "Catalogue de la boutique introuvable : $catalogueSource. Lancez tools\Sauver-Catalogue.cmd."
+}
+
+Write-Host ""
+Write-Host "  Catalogue de la boutique..."
+
+New-Item -ItemType Directory -Path $catalogueCible -Force | Out-Null
+Copy-Item (Join-Path $catalogueSource 'products.json') $catalogueCible -Force
+Copy-Item (Join-Path $catalogueSource 'devmode-*.bin') $catalogueCible -Force -ErrorAction SilentlyContinue
+
+# ConvertFrom-Json APPELE, et non branche sur un pipe : au bout d'un pipe, PowerShell 5.1
+# rend le tableau comme un seul objet, et @(...).Count vaut 1 quel que soit le catalogue.
+$produits = ConvertFrom-Json (Get-Content (Join-Path $catalogueCible 'products.json') -Raw)
+$nbProduits = @($produits).Count
+$nbDevmodes = @(Get-ChildItem $catalogueCible -Filter 'devmode-*.bin' -ErrorAction SilentlyContinue).Count
+Write-Host "  $nbProduits produits, $nbDevmodes reglage(s) pilote."
+
+# Le catalogue livre date-t-il de la derniere modification du catalogue VIVANT ? Un
+# oubli de Sauver-Catalogue.cmd livrerait des prix perimes sans que rien ne le dise.
+$vivant = Join-Path (Split-Path $racine -Qualifier) '\PhotoStudioData\catalog\products.json'
+if (Test-Path $vivant) {
+    $ecart = (Get-Item $vivant).LastWriteTime - (Get-Item (Join-Path $catalogueSource 'products.json')).LastWriteTime
+    if ($ecart.TotalDays -gt 1) {
+        Write-Host ""
+        Write-Host ("  ATTENTION : le catalogue de la boutique a ete modifie il y a " +
+                    [Math]::Round($ecart.TotalDays) + " jour(s) sans que la copie soit rafraichie.") -ForegroundColor Yellow
+        Write-Host "  Lancez tools\Sauver-Catalogue.cmd puis recommencez, sinon vous livrez des prix perimes." -ForegroundColor Yellow
+    }
+}
+
+# ---------------------------------------------------------------------------
 # 4. L'archive
 # ---------------------------------------------------------------------------
 

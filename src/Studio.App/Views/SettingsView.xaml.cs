@@ -608,11 +608,21 @@ public partial class SettingsView : UserControl
 
         if (FabriquerLeRapport() is not { } chemin) return;
 
+        // Lue ICI, sur le fil d'interface, et non dans le Task.Run qui suit.
+        //
+        // Un TextBox n'appartient qu'au fil qui l'a créé : le lire ailleurs lève
+        // « Le thread appelant ne peut pas accéder à cet objet ». C'est ce qui est arrivé
+        // au poste de Créteil le 07/08/2026 à 13:39, et au pire moment — on n'envoie un
+        // rapport que le jour où quelque chose ne marche pas, et l'envoi échouait
+        // justement ce jour-là. L'adresse, elle, était déjà lue plus haut : c'est ce qui a
+        // masqué le défaut aussi longtemps.
+        var note = RapportNoteBox.Text;
+
         RapportEnvoyerButton.IsEnabled = false;
         try
         {
             await Task.Run(() => RapportDiagnostic.Envoyer(
-                App.Services.Mail, adresse, chemin, RapportNoteBox.Text));
+                App.Services.Mail, adresse, chemin, note));
 
             // l'adresse est gardée : elle ne se saisit qu'une fois par poste
             App.Services.SavePoste(SaisiePoste() with { AdresseRapport = adresse });

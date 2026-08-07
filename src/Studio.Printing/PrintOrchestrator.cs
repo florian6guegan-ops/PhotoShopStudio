@@ -200,6 +200,16 @@ public sealed class PrintOrchestrator
         {
             WriteSpoolState(order, envelope, SpoolState.Printed);
             envelope.Status = EnvelopeStatus.Printed;
+
+            // Gravé sur la commande, et pas seulement dans l'objet en mémoire : sans ces
+            // deux lignes, l'enveloppe close ne l'était que le temps de la session. Le
+            // 07/08/2026, la commande 07-015 s'arrêtait sur « photos-copied » dans son
+            // journal et restait « Submitted » dans order.json, pour une prestation
+            // pourtant rendue.
+            MettreAJourStatutCommande(order);
+            _store.Save(order);
+            _store.AppendEvent(order, "printed", $"env={envelope.Number}, courriel");
+
             Log?.Invoke($"Enveloppe {order.DisplayNumber}/{envelope.Number} : envoi par courriel, " +
                         "rien à imprimer.");
             return;
@@ -353,6 +363,7 @@ public sealed class PrintOrchestrator
         ClearResumePoint(order, envelope);
         WriteSpoolState(order, envelope, SpoolState.Printed);
         envelope.Status = EnvelopeStatus.Printed;
+        MettreAJourStatutCommande(order);
         _store.Save(order);
         _store.AppendEvent(order, "printed", $"env={envelope.Number}");
     }
@@ -428,6 +439,13 @@ public sealed class PrintOrchestrator
         _store.Save(order);
         _store.AppendEvent(order, "minilab-submit-start",
             $"env={envelope.Number}, machine={machine}, tirages={pages.Sum(p => p.Copies)}");
+
+        // Retenue pour pouvoir la clore quand la machine aura rendu ses verdicts : c'est le
+        // seul circuit où la sortie est connue APRÈS le retour de l'envoi. Voir
+        // ConfirmerSortieMinilab.
+        if (!_enveloppesAuMinilab.TryGetValue(order.DisplayNumber, out var envoyees))
+            _enveloppesAuMinilab[order.DisplayNumber] = envoyees = [];
+        envoyees.Add(envelope.Number);
 
         // la finition doit être celle du papier réellement chargé : annoncer « brillant »
         // sur du lustré fausse le rendu
@@ -1097,6 +1115,24 @@ public sealed class PrintOrchestrator
     /// coupé, un format qu'elle ne connaît pas, et l'on retombe sur le calcul qui sort
     /// depuis toujours. On ne perd jamais un tirage parce qu'une lecture a échoué.
     /// </summary>
+    /// <summary>
+    /// Définitions déjà obtenues de la machine, par machine, format et résolution.
+    ///
+    /// <b>Une seule question par format, et non une par tirage.</b> Cette lecture est sur
+    /// le chemin d'impression : elle partait une fois par photo, soit 61 allers-retours sur
+    /// la commande 07-008 du 07/08/2026 — 61 traversées du relais 32 bits pendant que la
+    /// machine imprimait, et 61 lignes identiques dans le journal du jour, soixante sur
+    /// trois cent trente-quatre. C'est le relais qu'il faut ménager avant tout : le
+    /// surcharger de lectures pendant qu'il travaille est exactement ce qui l'a fait
+    /// tomber (voir De100Protocol).
+    ///
+    /// Ce que la machine réclame pour un format donné tient à son canal d'impression et à
+    /// son débord, pas au rouleau du moment : la réponse ne change pas d'un tirage à
+    /// l'autre. Retenue pour la session, elle est donc relue à chaque démarrage.
+    /// </summary>
+    private readonly Dictionary<(char, double, double, int), (int Width, int Height)>
+        _definitionsMinilab = [];
+
     private (int Width, int Height) DefinitionAttendue(
         char machine, double largeurMm, double longueurMm, int dpi)
     {
@@ -1104,16 +1140,22 @@ public sealed class PrintOrchestrator
 
         if (_minilab is null) return nôtre;
 
+        var clé = (machine, largeurMm, longueurMm, dpi);
+        if (_definitionsMinilab.TryGetValue(clé, out var connue)) return connue;
+
         try
         {
             var (w, h) = _minilab.ExpectedPixels(machine, largeurMm, longueurMm, (uint)dpi);
             if (w == 0 || h == 0) return nôtre;
 
+            // Écrit ici, donc UNE fois par format : la ligne dit ce qu'on a appris de la
+            // machine, elle n'a pas à être répétée à chaque photo qui s'en sert.
             if (w != (uint)nôtre.Item1 || h != (uint)nôtre.Item2)
                 Log?.Invoke($"Minilab : {largeurMm:0}×{longueurMm:0} mm — la machine attend " +
                             $"{w}×{h} px (notre calcul : {nôtre.Item1}×{nôtre.Item2}). " +
                             "C'est SA définition qui est retenue.");
 
+            _definitionsMinilab[clé] = ((int)w, (int)h);
             return ((int)w, (int)h);
         }
         catch (Exception ex)
@@ -1263,8 +1305,98 @@ public sealed class PrintOrchestrator
     {
         WriteSpoolState(order, envelope, SpoolState.Printed);
         envelope.Status = EnvelopeStatus.Printed;
+        MettreAJourStatutCommande(order);
         _store.Save(order);
         _store.AppendEvent(order, "confirmed-by-operator", $"env={envelope.Number}");
+    }
+
+    /// <summary>
+    /// Enveloppes parties au minilab pendant cette session, par numéro de commande.
+    ///
+    /// Le minilab est le seul circuit qui rende son verdict APRÈS le retour de l'envoi :
+    /// l'enveloppe reste « Spooled » le temps que le papier sorte. Sans cette liste, rien
+    /// ne dirait quelle enveloppe une sortie confirmée vient clore.
+    /// </summary>
+    private readonly Dictionary<string, HashSet<int>> _enveloppesAuMinilab = [];
+
+    /// <summary>
+    /// La MACHINE a rendu son verdict sur tous les tirages : l'enveloppe est close.
+    ///
+    /// <b>C'est le défaut du 07/08/2026.</b> Les 61 tirages de la commande 07-008 sont
+    /// tous sortis à 15:22, le relais l'a dit tirage par tirage et le journal l'a écrit —
+    /// mais rien n'était gravé sur la commande. L'enveloppe restait « Spooled », donc
+    /// <see cref="FindEnvelopesNeedingConfirmation"/> la remontait à CHAQUE démarrage
+    /// comme une impression douteuse, pour un travail terminé six heures plus tôt. Elle a
+    /// fini confirmée à la main à 21:43.
+    ///
+    /// Distinct de <see cref="ConfirmPrinted"/>, et l'événement le dit (<c>printed</c> et
+    /// non <c>confirmed-by-operator</c>) : relire une commande six mois plus tard, c'est
+    /// vouloir savoir si c'est la machine qui a répondu ou quelqu'un qui a cliqué.
+    ///
+    /// N'agit que sur les enveloppes RÉELLEMENT parties au minilab et encore en attente :
+    /// une enveloppe déjà close, ou partie par le spouleur, n'est jamais touchée ici.
+    /// </summary>
+    public void ConfirmerSortieMinilab(Order order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        if (!_enveloppesAuMinilab.TryGetValue(order.DisplayNumber, out var envoyees)) return;
+
+        var closes = 0;
+        foreach (var envelope in order.Envelopes)
+        {
+            if (!envoyees.Contains(envelope.Number)) continue;
+            if (ReadSpoolState(order, envelope)?.Status != SpoolState.Spooled) continue;
+
+            WriteSpoolState(order, envelope, SpoolState.Printed);
+            envelope.Status = EnvelopeStatus.Printed;
+            _store.AppendEvent(order, "printed", $"env={envelope.Number}, minilab");
+            closes++;
+        }
+
+        if (closes == 0) return;
+
+        MettreAJourStatutCommande(order);
+        _store.Save(order);
+        _enveloppesAuMinilab.Remove(order.DisplayNumber);
+    }
+
+    /// <summary>
+    /// Fait suivre à la COMMANDE l'état de ses enveloppes.
+    ///
+    /// Le statut de la commande n'était écrit qu'à sa création : toutes restaient
+    /// « Submitted » à vie, y compris une fois tirées et remises au client. Ce qui compte
+    /// n'est pas l'affichage — les écrans lisent les enveloppes — mais ce qu'on relit dans
+    /// <c>order.json</c> des mois plus tard, et ce sur quoi les statistiques s'appuieront.
+    ///
+    /// Une commande annulée le reste : ce n'est pas à un tirage de la rouvrir.
+    /// </summary>
+    /// <remarks>
+    /// Interne plutôt que privée, comme <see cref="FinitionDnp"/> : la règle se vérifie
+    /// autrement qu'en passant une journée au comptoir à regarder des commandes changer
+    /// d'état.
+    /// </remarks>
+    internal static void MettreAJourStatutCommande(Order order)
+    {
+        if (order.Status == OrderStatus.Cancelled) return;
+        if (order.Envelopes.Count == 0) return;
+
+        // Tout a été rappelé : la commande est annulée, et surtout pas « prête ».
+        if (order.Envelopes.All(e => e.Status == EnvelopeStatus.Canceled))
+        {
+            order.Status = OrderStatus.Cancelled;
+            return;
+        }
+
+        // « Prête » veut dire prête à être retirée : il suffit qu'une enveloppe attende
+        // encore la main de l'opérateur (grand format sur l'Epson) pour qu'elle ne le soit
+        // pas, même si toutes les autres sont sorties.
+        if (order.Envelopes.All(e => e.Status is EnvelopeStatus.Printed or EnvelopeStatus.Canceled))
+            order.Status = OrderStatus.Ready;
+        else if (order.Envelopes.Any(e => e.Status is EnvelopeStatus.Rendering
+                                              or EnvelopeStatus.Spooled
+                                              or EnvelopeStatus.AwaitingManualPrint))
+            order.Status = OrderStatus.Printing;
     }
 
     /// <summary>
@@ -1740,7 +1872,7 @@ public sealed class PrintOrchestrator
             }
 
             var acceptes = _minilab
-                .DnpPrintAsync(page.Path, vues[0].PortNumber, (int)FinitionDnp(product, page), 1)
+                .DnpPrintAsync(page.Path, vues[0].PortNumber, (int)FinitionDnp(product, page.Finish), 1)
                 .GetAwaiter().GetResult();
 
             if (acceptes >= 1)
@@ -1766,21 +1898,41 @@ public sealed class PrintOrchestrator
     /// La finition à annoncer à la machine pour ce tirage.
     ///
     /// Le pilote la porte dans son DEVMODE ; l'envoi direct, lui, doit la déclarer
-    /// lui-même. « Lustré » est le défaut de la boutique, et c'est ce que le DEVMODE de la
-    /// planche identité demande (<c>OPTYPE_LUSTER</c>).
+    /// lui-même. <b>Le défaut de la boutique est le BRILLANT</b>, et non le lustré : le
+    /// DEVMODE de la planche identité porte bien <c>OPTYPE_LUSTER</c>, mais ce nom interne
+    /// s'affiche « Brillant » dans le dialogue du pilote — le lustré, lui, s'y appelle
+    /// <c>OPTYPE_LUSTER_MATTE</c>. C'est le piège déjà noté dans <c>LectureDevMode</c>, et
+    /// il avait été pris ici : tout tirage sans finition nommée — c'est-à-dire TOUS ceux du
+    /// catalogue, dont les planches identité — partait en lustré. DiLand, sur la même
+    /// machine, envoie <c>SetOvercoatFinish(GLOSSY)</c>.
     /// </summary>
-    private static Devices.Dnp.DnpOvercoat FinitionDnp(Product product, RenderedPage page)
+    /// <remarks>
+    /// Interne plutôt que privée, comme la règle de choix de machine du minilab : une
+    /// finition ne se vérifie autrement qu'en gâchant du papier.
+    /// </remarks>
+    internal static Devices.Dnp.DnpOvercoat FinitionDnp(Product product, string? finish)
     {
-        var nom = page.Finish ?? product.Finishes?.FirstOrDefault()?.Name ?? "";
+        var nom = finish ?? product.Finishes?.FirstOrDefault()?.Name ?? "";
 
-        if (nom.Contains("mat", StringComparison.OrdinalIgnoreCase))
-            return Devices.Dnp.DnpOvercoat.Matte;
+        // Sur les MOTS, pas sur la chaîne entière : « format » contient « mat », et une
+        // finition annoncée de travers coûte la feuille.
+        bool Dit(params string[] mots) =>
+            nom.Split(' ', '-', '_', ',', '(', ')')
+               .Any(mot => mots.Any(m => mot.StartsWith(m, StringComparison.OrdinalIgnoreCase)));
 
-        if (nom.Contains("brillant", StringComparison.OrdinalIgnoreCase)
-            || nom.Contains("glossy", StringComparison.OrdinalIgnoreCase))
-            return Devices.Dnp.DnpOvercoat.Glossy;
+        // « Mat fin » avant « mat » : le second est contenu dans le premier. Deux mots,
+        // donc cherché sur la chaîne entière.
+        if (nom.Contains("mat fin", StringComparison.OrdinalIgnoreCase)
+            || nom.Contains("fine matte", StringComparison.OrdinalIgnoreCase))
+            return Devices.Dnp.DnpOvercoat.FineMatte;
 
-        return Devices.Dnp.DnpOvercoat.Luster;
+        // « lust » couvre lustré, lustre et luster.
+        if (Dit("lust")) return Devices.Dnp.DnpOvercoat.Luster;
+
+        if (Dit("mat")) return Devices.Dnp.DnpOvercoat.Matte;
+
+        // Brillant, et tout ce qu'on ne sait pas nommer : c'est ce que la file demande.
+        return Devices.Dnp.DnpOvercoat.Glossy;
     }
 
     /// <summary>

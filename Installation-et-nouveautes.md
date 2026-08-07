@@ -21,6 +21,30 @@ Au premier démarrage, le logiciel crée son dossier de travail tout seul. Il le
 `D:\PhotoStudioData` si le poste a un disque `D:` inscriptible, sinon dans le dossier local
 de l'utilisateur. Pour l'imposer ailleurs : variable d'environnement `STUDIO_DATA`.
 
+### Le catalogue arrive avec le logiciel
+
+**Il n'y a pas de catalogue à saisir.** Le premier démarrage pose celui de la boutique
+d'origine : les formats, les prix, les paliers de remise, et surtout le **canal de machine**
+de chaque produit — c'est lui qui décide qu'un 10×15 part au minilab et une planche
+d'identité à la DS620.
+
+Deux choses à faire ensuite, dans l'écran **Catalogue** :
+
+- **Reprendre les prix.** Ce sont ceux d'un autre magasin. Ils n'ont aucune raison d'être
+  les vôtres.
+- **Réimporter les profils ICC.** Ils ne sont pas livrés — ce sont des fichiers du
+  fabricant, parfois lourds. *Catalogue → Importer* va les chercher dans le dossier couleur
+  de Windows, où les pilotes les ont déjà posés.
+
+**Une mise à jour n'écrase jamais le catalogue d'un poste qui tourne.** Vos prix, vos
+formats et vos réglages pilote vous appartiennent : la pose n'a lieu que si le poste n'a
+pas encore de catalogue.
+
+> Si vous voyez seulement cinq produits, dont quatre sur « Microsoft Print to PDF », c'est
+> que le catalogue n'a pas été livré avec votre archive — cas des versions antérieures à la
+> 1.3.2. Rien ne sortira des machines tant que ce sera le cas : reprenez une archive plus
+> récente.
+
 ### Ce qu'il faut avoir à côté
 
 | Pour piloter | Il faut |

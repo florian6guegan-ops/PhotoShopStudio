@@ -301,6 +301,20 @@ public sealed class TravailImpression : ObservableObject
     /// <summary>Réponses que la machine rendra sur cet envoi — voir <see cref="TirageTermine"/>.</summary>
     internal int VerdictsAttendus { get; private set; }
 
+    /// <summary>
+    /// Ce qui est réellement parti à la machine, quel que soit le circuit.
+    ///
+    /// <see cref="PhotosEnvoyees"/> ne vaut que pour le minilab : lui seul annonce une
+    /// étape « Envoi », parce que lui seul reçoit toute l'enveloppe d'un coup. Le spouleur
+    /// et l'envoi direct DNP remettent page par page et n'annoncent que « Impression » —
+    /// leur compte se lit donc sur <see cref="Faits"/>.
+    ///
+    /// Sans cette distinction, les neuf tirages DNP du 07/08/2026 se sont tous annoncés
+    /// « envoyée (0 photo(s)) » dans le journal, alors qu'un tirage était bien sorti à
+    /// chaque fois.
+    /// </summary>
+    internal int TiragesPartis => PhotosEnvoyees > 0 ? PhotosEnvoyees : Faits;
+
     internal void Avancer(PrintProgress avancement)
     {
         Etape = avancement.Etape;
@@ -458,7 +472,7 @@ public sealed class SuiviImpressions : ObservableObject
             await Task.Run(() => imprimer(avancement, jeton), CancellationToken.None);
 
             FileLog.Write($"Impression : commande {travail.Numero} envoyée " +
-                          $"({travail.PhotosEnvoyees} photo(s))");
+                          $"({travail.TiragesPartis} photo(s))");
             apresSucces?.Invoke();
 
             // Tout est PARTI, rien n'est encore SORTI. Sur le minilab, l'attente qui
@@ -611,6 +625,27 @@ public sealed class SuiviImpressions : ObservableObject
             // c'est un relevé de plus par commande passée.
             battement.Stop();
             releve.Stop();
+        }
+
+        // LA MACHINE A RÉPONDU SUR TOUT, ET SANS ÉCHEC : l'enveloppe est close sur le
+        // disque. C'est ce qui manquait — les verdicts arrivaient, le bandeau les montrait,
+        // le journal les écrivait, mais rien ne l'inscrivait sur la commande : elle
+        // ressortait « impression non confirmée » à chaque démarrage suivant.
+        //
+        // Jamais après une expiration (TirageTermine est alors faux) ni s'il reste un
+        // tirage raté : dans ces deux cas c'est bien à l'opérateur de trancher.
+        if (travail.TirageTermine && travail.Rates == 0)
+        {
+            try
+            {
+                App.Services.Printer.ConfirmerSortieMinilab(commande);
+            }
+            catch (Exception ex)
+            {
+                // Le papier est sorti : c'est l'essentiel, et l'opérateur pourra toujours
+                // confirmer à la main. Rien ici ne doit empêcher de prévenir le client.
+                FileLog.Write($"Commande {travail.Numero} : sortie non enregistrée", ex);
+            }
         }
 
         // Ce qu'on vient de mesurer sert aux commandes suivantes. Seulement quand tout est
