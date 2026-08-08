@@ -198,6 +198,24 @@ public sealed class PrintOrchestrator
         // passerait jamais « Prête ».
         if (circuits[0] == ProductOutput.Email)
         {
+            // DÉJÀ CLOSE : on ne la referme pas une seconde fois.
+            //
+            // L'envoi des photos clôt l'enveloppe ; si l'opérateur clique ensuite sur
+            // « Imprimer » — ce qui est naturel, la commande est là, sous ses yeux — on
+            // repassait ici et le journal de la commande recevait un SECOND événement
+            // « printed », identique au premier. Rien n'était réexpédié, mais la commande
+            // 08-002 du 08/08/2026 porte deux clôtures à vingt-trois secondes d'écart, et
+            // c'est ce genre de doublon qui rend un historique impossible à relire.
+            //
+            // L'état sur DISQUE fait foi, et non celui de l'objet en mémoire : la commande
+            // peut avoir été rouverte depuis « Commandes du jour » après un redémarrage.
+            if (ReadSpoolState(order, envelope)?.Status == SpoolState.Printed)
+            {
+                Log?.Invoke($"Enveloppe {order.DisplayNumber}/{envelope.Number} : déjà envoyée " +
+                            "par courriel, rien de plus à faire.");
+                return;
+            }
+
             WriteSpoolState(order, envelope, SpoolState.Printed);
             envelope.Status = EnvelopeStatus.Printed;
 
