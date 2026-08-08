@@ -51,10 +51,18 @@
 
                     <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource FieldLabel}" Text="Largeur × hauteur (mm)"/>
                     <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
-                        <TextBox x:Name="WidthBox" Style="{StaticResource FieldBox}" Width="120"/>
+                        <TextBox x:Name="WidthBox" Style="{StaticResource FieldBox}" Width="120"
+                                 TextChanged="OnCotesChanged"/>
                         <TextBlock Text="×" Style="{StaticResource Texte}" FontSize="22"
                                    VerticalAlignment="Center" Margin="10,0,10,14"/>
-                        <TextBox x:Name="HeightBox" Style="{StaticResource FieldBox}" Width="120"/>
+                        <TextBox x:Name="HeightBox" Style="{StaticResource FieldBox}" Width="120"
+                                 TextChanged="OnCotesChanged"/>
+                        <!-- L'équivalent en CENTIMÈTRES, sous les yeux pendant la frappe.
+                             Les noms du métier sont en cm et les cotes en mm : c'est ce
+                             qui a fait sortir un « 40×50 » en 4 × 5 cm le 08/08/2026. -->
+                        <TextBlock x:Name="CotesEnCmText" Style="{StaticResource Texte}"
+                                   FontSize="17" VerticalAlignment="Center" Margin="16,0,0,14"
+                                   Foreground="{DynamicResource MutedBrush}"/>
                     </StackPanel>
 
                     <!-- La SORTIE manquait à cette fiche : faute de pouvoir la saisir, elle

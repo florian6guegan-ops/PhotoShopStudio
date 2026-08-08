@@ -2,7 +2,9 @@ using System.Drawing.Printing;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Studio.App.Infrastructure;
+using Studio.Core.Catalog;
 using Studio.Core.Domain;
 using Studio.Imaging.Geometry;
 
@@ -144,6 +146,36 @@ public partial class ProductEditView : UserControl
         SheetHBox.IsEnabled = on;
     }
 
+    /// <summary>
+    /// Rappelle en centimètres ce qu'on est en train de saisir en millimètres.
+    ///
+    /// Le champ dit « (mm) » depuis toujours, et cela n'a pas suffi : les formats du métier
+    /// se nomment en centimètres, et « 40 × 50 » saisi dans deux cases voisines ressemble à
+    /// s'y méprendre à ce qu'on voulait. L'équivalent affiché à côté rend l'erreur visible
+    /// AVANT d'enregistrer — « 4 × 5 cm » ne se confond avec rien.
+    /// </summary>
+    private void OnCotesChanged(object sender, TextChangedEventArgs e)
+    {
+        if (CotesEnCmText is null) return; // frappe pendant l'initialisation du XAML
+
+        if (TryParseDouble(WidthBox.Text, out var largeur) && largeur > 0
+            && TryParseDouble(HeightBox.Text, out var hauteur) && hauteur > 0)
+        {
+            CotesEnCmText.Text = $"= {largeur / 10:0.#} × {hauteur / 10:0.#} cm";
+
+            // le rapport de dix se signale dès la frappe, sans attendre l'enregistrement
+            var suspect = CotesProduit.SiSaisiEnCentimetres(
+                NameBox.Text, CodeBox.Text, largeur, hauteur) is not null;
+
+            CotesEnCmText.Foreground = (Brush)Application.Current.Resources[
+                suspect ? "DangerBrush" : "MutedBrush"];
+        }
+        else
+        {
+            CotesEnCmText.Text = "";
+        }
+    }
+
     private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Back();
 
     private void OnSave(object sender, RoutedEventArgs e)
@@ -153,6 +185,38 @@ public partial class ProductEditView : UserControl
         {
             ErrorText.Text = error;
             return;
+        }
+
+        // DES CENTIMÈTRES SAISIS DANS UN CHAMP EN MILLIMÈTRES ?
+        //
+        // Le 08/08/2026, un poste équipé d'un traceur grand format a sorti un « 40×50 » en
+        // 4 × 5 cm : le produit était réglé sur 40 × 50 mm, et l'application a imprimé
+        // exactement ce qu'on lui demandait. Les noms du métier sont en centimètres, les
+        // cotes en millimètres — lire « 40x50 » sur une fiche et saisir 40 puis 50 est le
+        // raisonnement le plus naturel du monde, et rien ne l'arrêtait.
+        //
+        // On propose, on n'impose pas : le format peut légitimement ne pas coller à son
+        // nom, et c'est l'exploitant qui sait ce qu'il vend.
+        if (CotesProduit.SiSaisiEnCentimetres(
+                NameBox.Text, CodeBox.Text, parsed.Width, parsed.Height) is { } voulu)
+        {
+            var reponse = MessageBox.Show(
+                $"Ce produit s'appelle « {NameBox.Text.Trim()} » mais mesure " +
+                $"{parsed.Width / 10:0.#} × {parsed.Height / 10:0.#} cm.\n\n" +
+                $"Les cotes se saisissent en MILLIMÈTRES. Vouliez-vous " +
+                $"{voulu.LargeurMm:0.#} × {voulu.HauteurMm:0.#} mm ?\n\n" +
+                "« Oui » corrige les cotes · « Non » les garde telles quelles.",
+                "Studio Photo", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning,
+                MessageBoxResult.Yes);
+
+            if (reponse == MessageBoxResult.Cancel) return;
+
+            if (reponse == MessageBoxResult.Yes)
+            {
+                parsed = parsed with { Width = voulu.LargeurMm, Height = voulu.HauteurMm };
+                WidthBox.Text = voulu.LargeurMm.ToString(CultureInfo.CurrentCulture);
+                HeightBox.Text = voulu.HauteurMm.ToString(CultureInfo.CurrentCulture);
+            }
         }
 
         _product.Name = NameBox.Text.Trim();
