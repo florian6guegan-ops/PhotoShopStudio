@@ -101,8 +101,10 @@ public sealed class FaceDetector
     /// <summary>Visage principal (meilleur score), ou null si aucun visage exploitable.</summary>
     public DetectedFace? DetectMain(string imagePath)
     {
-        MagickInit.Configure();
-        using var magick = new MagickImage(imagePath);
+        // par MagickInit et non « new MagickImage(chemin) » : les photos du client sont
+        // sur SA carte, et c'est là que la projection en mémoire tue le processus quand
+        // elle est retirée (voir MagickInit.Lire)
+        using var magick = MagickInit.Lire(imagePath, 0);
         return DetectAll(magick).OrderByDescending(f => f.Score).FirstOrDefault();
     }
 

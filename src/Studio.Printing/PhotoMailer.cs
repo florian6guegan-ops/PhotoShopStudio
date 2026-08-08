@@ -64,7 +64,10 @@ public static class PhotoMailer
         // L'original est réécrit plutôt que copié : on applique l'orientation EXIF, sans
         // quoi la photo arrive couchée chez les clients dont la visionneuse ignore la
         // balise — c'est le cas de plusieurs webmails.
-        using (var entiere = new MagickImage(sourcePath))
+        // par MagickInit : la source est la photo du client, donc souvent sa carte, et
+        // c'est la projection en mémoire d'un support retiré qui tue le processus
+        // (voir MagickInit.Lire)
+        using (var entiere = MagickInit.Lire(sourcePath, 0))
         {
             entiere.AutoOrient();
             MagickInit.Write(entiere, original);
@@ -99,7 +102,7 @@ public static class PhotoMailer
         string sourcePath, CropSpec crop, int rotationQuarterTurns,
         double fineRotationDegrees, ImageAdjustments adjustments, string sortie)
     {
-        using var mesure = new MagickImage(sourcePath);
+        using var mesure = MagickInit.Lire(sourcePath, 0);
         mesure.AutoOrient();
 
         var largeur = Math.Max(1, (int)Math.Round(crop.Width * mesure.Width));

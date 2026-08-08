@@ -72,9 +72,70 @@ public static class MagickInit
     {
         Configure();
 
-        return IndicationDeTaille(sourcePath, cote) is { } econome
+        var econome = IndicationDeTaille(sourcePath, cote);
+
+        // SUR UNE CARTE, ON LIT LES OCTETS D'ABORD.
+        //
+        // ImageMagick ouvre un fichier en le PROJETANT en mémoire. Tant que le support
+        // reste là, c'est ce qu'on peut faire de mieux : rien n'est copié. Mais si le
+        // support disparaît pendant qu'on travaille — une carte retirée un peu vite au
+        // comptoir, une clef arrachée, une prise USB qui bouge — l'accès à une page déjà
+        // projetée lève STATUS_IN_PAGE_ERROR. Ce n'est pas une exception .NET : c'est une
+        // faute au niveau du système, que le CLR ne sait pas rattraper. Le processus meurt
+        // sur place, sans une ligne au journal.
+        //
+        // C'est ce qui a tué Studio deux fois le 07/08/2026, à 18:33 et 18:37, pendant que
+        // Windows enregistrait 236 erreurs de lecture sur le lecteur de cartes. La carte,
+        // vérifiée le lendemain, était saine : elle avait seulement perdu le contact.
+        //
+        // Lus en octets, les mêmes incidents donnent une IOException ordinaire, que
+        // l'appelant intercepte et montre à l'opérateur. On paie la photo en mémoire — un
+        // JPEG d'appareil pèse une vingtaine de mégaoctets — et seulement sur les supports
+        // qui peuvent s'en aller. Les disques du poste gardent la projection.
+        if (SurSupportQuiPeutDisparaitre(sourcePath))
+        {
+            var octets = File.ReadAllBytes(sourcePath);
+            return econome is not null
+                ? new MagickImage(octets, econome)
+                : new MagickImage(octets);
+        }
+
+        return econome is not null
             ? new MagickImage(sourcePath, econome)
             : new MagickImage(sourcePath);
+    }
+
+    /// <summary>
+    /// Le fichier est-il sur un support qui peut s'en aller sous nos pieds ?
+    ///
+    /// Les cartes et les clefs, bien sûr — mais aussi les partages réseau, qui tombent de
+    /// la même façon et donnent la même faute, et les lecteurs optiques.
+    ///
+    /// Dans le doute, on rend faux : se tromper ici ne coûte qu'une projection en mémoire
+    /// là où elle était sûre, alors que rendre vrai à tort ferait recopier chaque photo du
+    /// disque de travail.
+    /// </summary>
+    public static bool SurSupportQuiPeutDisparaitre(string chemin)
+    {
+        if (string.IsNullOrWhiteSpace(chemin)) return false;
+
+        try
+        {
+            // un chemin UNC (\\serveur\partage) n'a pas de lettre de lecteur : DriveInfo
+            // n'en dira rien, et c'est pourtant le cas le plus fragile
+            if (chemin.StartsWith(@"\\", StringComparison.Ordinal)) return true;
+
+            var racine = Path.GetPathRoot(Path.GetFullPath(chemin));
+            if (string.IsNullOrEmpty(racine)) return false;
+
+            return new DriveInfo(racine).DriveType
+                is DriveType.Removable or DriveType.Network or DriveType.CDRom;
+        }
+        catch (Exception)
+        {
+            // lecteur déjà parti, chemin malformé, droits refusés
+            return false;
+        }
     }
 
     /// <summary>
