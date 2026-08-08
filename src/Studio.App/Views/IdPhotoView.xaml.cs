@@ -1048,6 +1048,29 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
     private void UpdateCompliance()
     {
+        // LE CADRE SORT-IL DE LA PHOTO ? Avant tout le reste, et même sans visage détecté.
+        //
+        // Une photo prise trop serrée ne contient pas de quoi respecter la norme : il faut
+        // de la marge au-dessus du crâne, et si elle n'y est pas, le cadre réglementaire
+        // déborde de l'image. L'écran le laissait faire en silence — le gabarit dépassait
+        // visiblement de la photo, et le bandeau continuait de commenter la hauteur de
+        // tête comme si de rien n'était. L'opérateur imprimait alors une planche dont les
+        // bords sont vides ou étirés, sans avoir été prévenu. Signalé par les collègues le
+        // 08/08/2026.
+        //
+        // Ce défaut-là prime sur les autres : tant que le cadre n'est pas dans la photo,
+        // juger la tête ou le centrage n'a pas de sens.
+        if (!_crop.IsValid)
+        {
+            SetGuideBrush(WarnBrush);
+            ComplianceText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+            ComplianceText.Text =
+                "Le cadre sort de la photo : elle est trop serrée pour cette norme. " +
+                "Reculez le zoom, ou reprenez la photo de plus loin — telle quelle, " +
+                "le tirage aura des bords vides.";
+            return;
+        }
+
         if (_head is null)
         {
             SetGuideBrush(NeutralBrush);
@@ -1413,17 +1436,44 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // Avertit sans bloquer : l'opérateur reste juge (visage non détecté, photo
         // médiocre…). Le contrôle porte sur TOUT le lot — n'examiner que la photo à
         // l'écran laisserait passer les autres sans un mot.
-        var douteuses = _photos
-            .Where(p => p.Head is not null && !IdPhotoFr.Check(p.Crop, p.Head, _document).Compliant)
+        //
+        // DEUX DÉFAUTS DISTINCTS, et le premier ne se testait pas.
+        //
+        // Le cadre qui SORT DE LA PHOTO passait entièrement au travers : le contrôle
+        // n'examinait que les photos dont le visage avait été détecté, et ne jugeait que
+        // la géométrie du visage. Une photo trop serrée pour la norme — donc au cadre
+        // débordant — pouvait afficher une tête parfaitement dimensionnée et partir sans
+        // un mot, pour sortir avec des bords vides. Signalé par les collègues le
+        // 08/08/2026.
+        var horsPhoto = _photos.Where(p => !p.Crop.IsValid).ToList();
+
+        var nonConformes = _photos
+            .Where(p => p.Crop.IsValid
+                        && p.Head is not null
+                        && !IdPhotoFr.Check(p.Crop, p.Head, _document).Compliant)
             .ToList();
 
-        if (douteuses.Count > 0)
+        if (horsPhoto.Count > 0 || nonConformes.Count > 0)
         {
-            var lesquelles = string.Join(", ", douteuses.Select(p => p.Name));
+            var motifs = new List<string>();
+
+            if (horsPhoto.Count > 0)
+                motifs.Add(
+                    $"Le cadre SORT DE LA PHOTO sur {horsPhoto.Count} photo(s) : " +
+                    $"{string.Join(", ", horsPhoto.Select(p => p.Name))}.\n" +
+                    "Elles sont trop serrées pour cette norme, et le tirage aura des bords vides.");
+
+            if (nonConformes.Count > 0)
+                motifs.Add(
+                    $"Le cadrage ne respecte pas le gabarit " +
+                    $"{_document.WidthMm:0.#}×{_document.HeightMm:0.#} sur {nonConformes.Count} " +
+                    $"photo(s) : {string.Join(", ", nonConformes.Select(p => p.Name))}.");
+
             var reponse = MessageBox.Show(
-                $"Le cadrage ne respecte pas le gabarit {_document.WidthMm:0.#}×{_document.HeightMm:0.#} " +
-                $"sur {douteuses.Count} photo(s) : {lesquelles}.\n\nContinuer quand même ?",
-                "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                string.Join("\n\n", motifs) + "\n\nContinuer quand même ?",
+                "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
             if (reponse != MessageBoxResult.Yes) return;
         }
 

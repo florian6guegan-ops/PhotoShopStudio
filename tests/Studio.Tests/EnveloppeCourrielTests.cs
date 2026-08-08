@@ -77,18 +77,42 @@ public class EnveloppeCourrielTests : IDisposable
     }
 
     /// <summary>
-    /// <b>Le défaut corrigé.</b> Relancer l'impression sur une enveloppe déjà envoyée ne
-    /// doit rien réécrire : ni état, ni second événement.
+    /// Relancer sans confirmation est refusé net — c'est la garde d'idempotence qui vaut
+    /// pour TOUS les circuits, et elle protège déjà du double clic distrait.
     /// </summary>
     [Fact]
-    public void Relancer_l_impression_n_ajoute_pas_une_seconde_cloture()
+    public void Relancer_sans_confirmation_est_refuse()
     {
         var (orchestrateur, _) = Atelier();
         var commande = Commande();
 
         orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]));
+
+        Assert.Contains("déjà été envoyée", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(1, Clotures(commande));
+    }
+
+    /// <summary>
+    /// <b>Le défaut corrigé.</b> C'est par ce chemin-là que le doublon est passé en
+    /// boutique : l'opérateur a confirmé, et la garde d'idempotence s'efface devant lui —
+    /// à juste titre pour une vraie impression, qu'on veut parfois refaire. Mais une
+    /// enveloppe COURRIEL n'a rien à réimprimer : la confirmer une seconde fois ne
+    /// renvoyait aucun message et n'ajoutait qu'un événement « printed » en double dans le
+    /// journal de la commande. Vu sur la commande 08-002 du 08/08/2026, deux clôtures à
+    /// vingt-trois secondes d'écart.
+    /// </summary>
+    [Fact]
+    public void Relancer_avec_confirmation_n_ajoute_pas_une_seconde_cloture()
+    {
+        var (orchestrateur, _) = Atelier();
+        var commande = Commande();
+
         orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]);
-        orchestrateur.PrintEnvelope(commande, commande.Envelopes[0]);
+        orchestrateur.PrintEnvelope(commande, commande.Envelopes[0], operatorConfirmed: true);
+        orchestrateur.PrintEnvelope(commande, commande.Envelopes[0], operatorConfirmed: true);
 
         Assert.Equal(1, Clotures(commande));
         Assert.Equal(EnvelopeStatus.Printed, commande.Envelopes[0].Status);
