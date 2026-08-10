@@ -90,9 +90,21 @@ public static class DnpEnvoiDirect
     /// <param name="portNumber">Rang de la machine dans la découverte.</param>
     /// <param name="image">L'image, déjà à la taille de la trame de la machine.</param>
     /// <param name="finition">Finition de surface appliquée à ce tirage.</param>
-    public static bool Envoyer(int portNumber, Bitmap image, DnpOvercoat finition)
+    /// <param name="taille">
+    /// Format à réclamer à la machine, ou <c>null</c> pour la laisser sur son réglage.
+    /// C'est par lui qu'on obtient la DÉCOUPE : <see cref="DnpMediaSize.Size6x4x2"/> tire
+    /// deux 10×15 sur une feuille 15×20 au lieu d'en gâcher la moitié. Voir
+    /// <c>DnpDriver.TailleDeTirage</c>.
+    /// </param>
+    public static bool Envoyer(
+        int portNumber, Bitmap image, DnpOvercoat finition, DnpMediaSize? taille = null)
     {
         var (octets, largeur, hauteur) = Preparer(image);
+
+        // AVANT la finition et l'image : c'est un réglage de la machine pour le travail
+        // suivant, et il doit être posé pendant qu'elle n'a rien en cours.
+        if (taille is { } format && format != DnpMediaSize.None)
+            CspStatInterop.SetMediaSize(portNumber, (int)format);
 
         CspStatInterop.SetOvercoatFinish(portNumber, (int)finition);
 

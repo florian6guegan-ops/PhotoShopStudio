@@ -91,17 +91,52 @@ public sealed class DnpDriver
     /// <summary>Instantané complet d'une imprimante : identité, état, média, compteurs.</summary>
     public DnpPrinterInfo GetPrinterInfo(int portNumber)
     {
+        var capacite = CspStatInterop.GetInitialMediaCount(portNumber);
+
         return new DnpPrinterInfo(
             PortNumber: portNumber,
             SerialNumber: ReadString(sb => CspStatInterop.GetSerialNo(portNumber, sb)),
             FirmwareVersion: ReadString(sb => CspStatInterop.GetFirmwVersion(portNumber, sb)),
             Status: GetStatus(portNumber),
             MediaRemaining: CspStatInterop.GetMediaCounter(portNumber),
-            MediaInitialCount: CspStatInterop.GetInitialMediaCount(portNumber),
-            MediaSize: ParseMediaSize(ReadString(sb => CspStatInterop.GetMedia(portNumber, sb))),
+            MediaInitialCount: capacite,
+            MediaSize: LireLeFormat(ReadString(sb => CspStatInterop.GetMedia(portNumber, sb)), capacite),
             MediaClass: ParseMediaClass(ReadString(sb => CspStatInterop.GetRfidMediaClass(portNumber, sb))),
             QueuedPrints: CspStatInterop.GetPQTY(portNumber),
             LifetimePrints: CspStatInterop.GetCounterA(portNumber));
+    }
+
+    /// <summary>
+    /// Ce qu'il faut réclamer à la machine pour tirer cette image sur ce rouleau.
+    ///
+    /// <b>Un 10×15 sur un rouleau 15×20 doit être COUPÉ, sinon la moitié de la feuille est
+    /// perdue.</b> Studio envoyait l'image sans rien dire du format : la DS620 sortait une
+    /// feuille de 15×20 entière avec la planche d'identité dans le bas et du blanc au-dessus
+    /// (Créteil, 10/08/2026). DiLand, lui, réclame la découpe — ses propres compteurs le
+    /// disent : 138 feuilles restantes annoncées comme 275 tirages 10×15, soit deux par
+    /// feuille.
+    ///
+    /// <see cref="DnpMediaSize.Size6x4x2"/> est exactement cela : deux 6×4 sur un 6×8.
+    ///
+    /// Hors de ce cas, on réclame le rouleau lui-même : c'est ce que la machine faisait
+    /// déjà par défaut, et Maisons-Alfort tire juste ainsi depuis toujours.
+    /// </summary>
+    /// <param name="rouleau">Le format chargé, tel que <see cref="LireLeFormat"/> le donne.</param>
+    /// <param name="largeurPouces">Largeur de l'image à tirer.</param>
+    /// <param name="hauteurPouces">Hauteur de l'image à tirer.</param>
+    public static DnpMediaSize TailleDeTirage(
+        DnpMediaSize rouleau, double largeurPouces, double hauteurPouces)
+    {
+        var grand = Math.Max(largeurPouces, hauteurPouces);
+        var petit = Math.Min(largeurPouces, hauteurPouces);
+
+        // Tolérance large : un 10×15 rendu à 300 ppp fait 6,15 × 4,13 pouces, et les
+        // gabarits d'identité débordent volontairement de quelques dixièmes.
+        var estUn6x4 = grand is >= 5.5 and <= 6.6 && petit is >= 3.6 and <= 4.6;
+
+        return rouleau == DnpMediaSize.Size6x8 && estUn6x4
+            ? DnpMediaSize.Size6x4x2
+            : rouleau;
     }
 
     /// <summary>Tirages restants sur le rouleau chargé.</summary>
@@ -149,23 +184,43 @@ public sealed class DnpDriver
     }
 
     /// <summary>
-    /// Le format du rouleau chargé, lu dans le libellé que rend <c>GetMedia</c>.
+    /// Le format du rouleau chargé.
     ///
-    /// CE LIBELLÉ N'EST PAS UN NOMBRE. La DS620 de la boutique rend « 00301 » : les TROIS
-    /// premiers chiffres portent le format (003 = <see cref="DnpMediaSize.Size6x4"/>, le
-    /// rouleau 10×15), les deux derniers autre chose. Lu en entier, ça donnait 301, aucun
-    /// format ne correspondait, et le bandeau affichait « None » depuis le début —
-    /// constaté le 06/08/2026, une fois la bonne bibliothèque appelée.
+    /// <b>Le libellé de <c>GetMedia</c> n'est PAS un numéro de format.</b> C'est une
+    /// référence de consommable — deux notions différentes, et c'est ce qui a fait échouer
+    /// la première version. Elle retenait « les trois premiers chiffres portent le
+    /// format », règle déduite du seul rouleau de Maisons-Alfort (« 00301 » → 003 →
+    /// <see cref="DnpMediaSize.Size6x4"/>, juste par coïncidence). Créteil rend « 00310 »,
+    /// qui donnait le même 003 : Studio y a cru à un 10×15 pendant que la machine tirait
+    /// sur du 15×20, et les planches d'identité sortaient sur une demi-feuille (10/08/2026).
+    ///
+    /// On ne devine donc plus : une table des codes RELEVÉS sur les machines, et à défaut
+    /// la CAPACITÉ du rouleau, qui tranche sans ambiguïté — une DS620 tire 400 fois sur un
+    /// 10×15 et 200 fois sur un 15×20. C'est cette mesure qui a fini par départager les
+    /// deux boutiques, quand le code média, l'étiquette du rouleau et le souvenir de
+    /// l'exploitant se contredisaient tous les trois.
     /// </summary>
-    private static DnpMediaSize ParseMediaSize(string value)
+    /// <param name="codeMedia">Ce que rend <c>GetMedia</c>.</param>
+    /// <param name="capaciteInitiale">Ce que rend <c>GetInitialMediaCount</c>.</param>
+    internal static DnpMediaSize LireLeFormat(string? codeMedia, int capaciteInitiale)
     {
-        var chiffres = new string(value.TakeWhile(char.IsDigit).ToArray());
-        if (chiffres.Length > 3) chiffres = chiffres[..3];
+        var connu = (codeMedia ?? "").Trim() switch
+        {
+            "00301" => DnpMediaSize.Size6x4,   // Maisons-Alfort, 400 tirages
+            "00310" => DnpMediaSize.Size6x8,   // Créteil, 200 tirages
+            _ => DnpMediaSize.None,
+        };
 
-        return int.TryParse(chiffres, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
-               && Enum.IsDefined(typeof(DnpMediaSize), n)
-            ? (DnpMediaSize)n
-            : DnpMediaSize.None;
+        if (connu != DnpMediaSize.None) return connu;
+
+        // Repli sur la capacité. Les bornes sont larges : un rouleau entamé rend le nombre
+        // RESTANT sur certaines machines, et mieux vaut ne rien affirmer que se tromper.
+        return capaciteInitiale switch
+        {
+            >= 300 and <= 500 => DnpMediaSize.Size6x4,
+            >= 150 and <= 250 => DnpMediaSize.Size6x8,
+            _ => DnpMediaSize.None,
+        };
     }
 
     /// <summary>

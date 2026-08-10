@@ -361,10 +361,22 @@ De100Message TirerSurDnp(De100Message request)
 
     using var image = new System.Drawing.Bitmap(demande.ImagePath);
 
+    // Un 10x15 sur un rouleau 15x20 doit etre COUPE, sinon la machine sort une feuille
+    // entiere dont la moitie part a la poubelle. On lui reclame donc le format qui convient.
+    var etat = pilote.GetPrinterInfo(demande.PortNumber);
+    var (pppH, pppV) = pilote.GetResolution(demande.PortNumber);
+    var taille = pppH > 0 && pppV > 0
+        ? DnpDriver.TailleDeTirage(etat.MediaSize, image.Width / (double)pppH, image.Height / (double)pppV)
+        : etat.MediaSize;
+
+    if (taille != etat.MediaSize)
+        log($"Rouleau {etat.MediaSize} et tirage plus petit : on reclame {taille} " +
+            "(la machine coupe, deux tirages par feuille).");
+
     var faits = 0;
     for (var i = 0; i < Math.Max(1, demande.Copies); i++)
     {
-        if (!DnpEnvoiDirect.Envoyer(demande.PortNumber, image, (DnpOvercoat)demande.Overcoat))
+        if (!DnpEnvoiDirect.Envoyer(demande.PortNumber, image, (DnpOvercoat)demande.Overcoat, taille))
         {
             log($"Envoi direct DNP refuse a la copie {i + 1} : {faits} exemplaire(s) accepte(s).");
             return De100Protocol.Failure(request,
@@ -375,7 +387,8 @@ De100Message TirerSurDnp(De100Message request)
     }
 
     log($"Envoi direct DNP : {faits} exemplaire(s) de {Path.GetFileName(demande.ImagePath)} " +
-        $"({image.Width}x{image.Height}) acceptes, sans passer par le spouleur.");
+        $"({image.Width}x{image.Height}, rouleau {etat.MediaSize}, format demande {taille}) " +
+        "acceptes, sans passer par le spouleur.");
 
     return De100Protocol.Success(request, faits);
 }
