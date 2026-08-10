@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 
 namespace Studio.Core.Cloud;
@@ -218,14 +220,43 @@ public sealed class MiseAJour
             : extrait;
 
         var script = Path.Combine(travail, "installer-maj.cmd");
-        File.WriteAllText(script, Script(source, dossierInstalle, executable));
+        File.WriteAllText(script, Script(source, dossierInstalle, executable), EncodageDeCmd);
 
         return script;
     }
 
     /// <summary>
+    /// La page de codes dans laquelle <c>cmd.exe</c> relit un <c>.cmd</c> — jamais UTF-8.
+    ///
+    /// Le corps du script est écrit sans accent, mais les CHEMINS n'ont pas ce luxe : ils
+    /// portent le nom du compte Windows. Un poste ouvert sous « PhotoConcept Créteil » a vu
+    /// son <c>é</c> écrit en UTF-8 (<c>C3 A9</c>) puis relu en page 850, où ces deux octets
+    /// valent <c>├╣</c> : robocopy cherchait un dossier qui n'existe pas, et le bouton
+    /// « Mettre à jour » ne faisait rien de visible (10/08/2026).
+    ///
+    /// La page OEM reste l'exception : tout le reste du logiciel écrit en UTF-8.
+    /// </summary>
+    private static Encoding EncodageDeCmd
+    {
+        get
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            try
+            {
+                return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+            }
+            catch (Exception e) when (e is ArgumentException or NotSupportedException)
+            {
+                // page introuvable : UTF-8 échouera peut-être, mais ne masque rien de plus
+                return Encoding.UTF8;
+            }
+        }
+    }
+
+    /// <summary>
     /// Le script d'installation. Sans accent : PowerShell et cmd lisent les .cmd dans la
-    /// page de codes du système, et les accents y ressortent en charabia.
+    /// page de codes du système, et les accents y ressortent en charabia. Les chemins, eux,
+    /// ne se choisissent pas — c'est <see cref="EncodageDeCmd"/> qui les sauve.
     /// </summary>
     private static string Script(string source, string destination, string executable) =>
         $"""

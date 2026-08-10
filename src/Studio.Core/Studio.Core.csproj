@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- la page de codes OEM, dans laquelle cmd.exe relit le script de mise à jour -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

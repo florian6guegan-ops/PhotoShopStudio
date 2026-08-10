@@ -174,6 +174,59 @@ public class MiseAJourTests
         }
     }
 
+    /// <summary>
+    /// <b>Le chemin d'installation survit à la page de codes de cmd.exe.</b>
+    ///
+    /// Le corps du script est écrit sans accent, mais les chemins ne se choisissent pas :
+    /// ils portent le nom du compte Windows. Le poste de Créteil est ouvert sous
+    /// « PhotoConcept Créteil » ; son <c>é</c> écrit en UTF-8 (<c>C3 A9</c>) et relu par
+    /// cmd.exe en page 850 devenait <c>├╣</c>. robocopy cherchait un dossier inexistant,
+    /// et le bouton « Mettre à jour » ne faisait rien de visible — deux fois de suite,
+    /// le 10/08/2026, sans qu'aucune trace n'en dise la cause.
+    ///
+    /// On relit donc le script comme cmd.exe le relira, et le chemin doit en ressortir
+    /// intact.
+    /// </summary>
+    [Fact]
+    public void Un_chemin_accentue_survit_a_la_page_de_codes_de_cmd()
+    {
+        const string installe = @"C:\Users\PhotoConcept Créteil\Desktop\StudioPhoto";
+
+        var travail = Path.Combine(Path.GetTempPath(), "MajTest-" + Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(travail, "source");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "Studio.App.dll"), "nouvelle version");
+
+        var archive = Path.Combine(travail, "maj.zip");
+        System.IO.Compression.ZipFile.CreateFromDirectory(source, archive);
+
+        try
+        {
+            var script = MiseAJour.PreparerLInstallation(
+                archive, installe, Path.Combine(installe, "Studio.App.exe"));
+
+            var octets = File.ReadAllBytes(script);
+
+            // le bug lui-même : « é » ne doit plus être écrit sur deux octets UTF-8
+            Assert.DoesNotContain(0xC3, octets.Zip(octets.Skip(1))
+                .Where(p => p.Second == 0xA9)
+                .Select(p => (int)p.First));
+
+            // et la vérification qui compte : relu dans la page OEM du poste — celle que
+            // cmd.exe emploie — le chemin doit être exactement celui qu'on lui a donné
+            System.Text.Encoding.RegisterProvider(
+                System.Text.CodePagesEncodingProvider.Instance);
+            var oem = System.Text.Encoding.GetEncoding(
+                System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
+
+            Assert.Contains(installe, oem.GetString(octets));
+        }
+        finally
+        {
+            try { Directory.Delete(travail, recursive: true); } catch { /* au mieux */ }
+        }
+    }
+
     /// <summary>L'adresse interrogée doit être celle du dépôt de la boutique.</summary>
     [Fact]
     public void L_adresse_interrogee_est_celle_du_depot()
