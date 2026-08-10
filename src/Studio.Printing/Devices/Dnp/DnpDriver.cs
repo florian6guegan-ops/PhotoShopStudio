@@ -127,23 +127,29 @@ public sealed class DnpDriver
     public static DnpMediaSize TailleDeTirage(
         DnpMediaSize rouleau, double largeurPouces, double hauteurPouces)
     {
-        // <b>La découpe attend une PAIRE, et c'est pour cela qu'on ne la réclame pas ici.</b>
+        // <b>On réclame Size6x4, JAMAIS Size6x4x2.</b> Les deux existent et ne font pas la
+        // même chose :
         //
-        // Réclamer Size6x4x2 pour un tirage isolé a bloqué la boutique de Créteil le
-        // 10/08/2026 : la machine a ACCEPTÉ l'envoi — SendImageData rend 1, le journal
-        // annonçait un succès — puis n'a rien sorti. Elle garde la première moitié en
-        // mémoire et n'imprime la feuille qu'une fois la seconde reçue.
+        //   Size6x4    « fais-moi un 10×15 » — la machine coupe et garde le reste du rouleau
+        //   Size6x4x2  « voici une PAIRE »   — elle attend la seconde image avant d'imprimer
         //
-        // DiLand le savait : ses envois portent un « DuplexPrintPairGuid », il apparie les
-        // tirages avant de les remettre à la machine. Tant que Studio n'envoie pas les
-        // images DEUX PAR DEUX, réclamer la découpe ne fait pas gagner du papier : ça
-        // empêche d'imprimer.
+        // Le second a bloqué Créteil le 10/08/2026 : la machine ACCEPTE l'envoi —
+        // SendImageData rend 1, le journal annonce un succès — puis ne sort rien, la
+        // première moitié restant en mémoire.
         //
-        // On réclame donc le rouleau lui-même — ce que la machine faisait déjà par défaut.
-        // Le vrai gain (deux 10×15 par feuille de 15×20, soit 400 tirages au lieu de 200)
-        // demande d'abord une file d'appariement côté application, avec la question qui va
-        // avec : que faire du client qui n'en veut qu'un seul, et qu'on ferait attendre ?
-        return rouleau;
+        // Que le premier suffise n'est pas une supposition : les compteurs de DiLand, sur
+        // cette machine et ce rouleau, passent de 138 feuilles (276 tirages 10×15) à 275
+        // après UNE planche. Un seul tirage consommé, une seule image envoyée, coupée.
+        var grand = Math.Max(largeurPouces, hauteurPouces);
+        var petit = Math.Min(largeurPouces, hauteurPouces);
+
+        // Tolérance large : un 10×15 rendu à 300 ppp fait 6,15 × 4,13 pouces, et les
+        // gabarits d'identité débordent volontairement de quelques dixièmes.
+        var estUn6x4 = grand is >= 5.5 and <= 6.6 && petit is >= 3.6 and <= 4.6;
+
+        return rouleau == DnpMediaSize.Size6x8 && estUn6x4
+            ? DnpMediaSize.Size6x4
+            : rouleau;
     }
 
     /// <summary>Tirages restants sur le rouleau chargé.</summary>

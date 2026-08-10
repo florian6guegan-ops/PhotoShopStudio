@@ -58,23 +58,39 @@ public class DnpFormatRouleauTests
     // ————— que réclamer à la machine —————
 
     /// <summary>
-    /// <b>On ne réclame JAMAIS la découpe pour un tirage isolé.</b>
-    ///
-    /// Réclamer <see cref="DnpMediaSize.Size6x4x2"/> a bloqué Créteil le 10/08/2026 : la
-    /// machine accepte l'envoi — <c>SendImageData</c> rend 1, tout paraît réussi — puis
-    /// n'imprime rien. Elle garde la première moitié de la feuille en mémoire et attend la
-    /// seconde. DiLand apparie ses tirages avant de les envoyer ; Studio ne le fait pas
-    /// encore.
-    ///
-    /// Le jour où il le fera, cet essai devra changer — et il dira alors pourquoi.
+    /// <b>Le défaut de Créteil.</b> Sur un rouleau 15×20, un tirage 10×15 doit être réclamé
+    /// comme tel, sinon la machine sort la feuille entière et l'autre moitié part à la
+    /// poubelle.
     /// </summary>
     [Theory]
     [InlineData(6.15, 4.13)]  // planche d'identité en paysage
     [InlineData(4.13, 6.15)]  // la même en portrait
-    public void Un_tirage_isole_ne_reclame_pas_la_decoupe(double largeur, double hauteur)
+    public void Un_10x15_sur_un_rouleau_15x20_se_reclame_en_10x15(double largeur, double hauteur)
     {
         Assert.Equal(
-            DnpMediaSize.Size6x8,
+            DnpMediaSize.Size6x4,
+            DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, largeur, hauteur));
+    }
+
+    /// <summary>
+    /// <b>JAMAIS <see cref="DnpMediaSize.Size6x4x2"/>, qui veut dire « voici une PAIRE ».</b>
+    ///
+    /// Cette valeur a bloqué Créteil le 10/08/2026 : la machine accepte l'envoi —
+    /// <c>SendImageData</c> rend 1, tout paraît réussi — puis n'imprime rien, gardant la
+    /// première moitié de la feuille en attendant la seconde image. Studio envoie ses
+    /// tirages un par un.
+    ///
+    /// Que <see cref="DnpMediaSize.Size6x4"/> suffise se lit dans les compteurs de DiLand
+    /// sur cette même machine : 138 feuilles (276 tirages 10×15) tombent à 275 après UNE
+    /// planche. Un seul tirage consommé, une seule image envoyée, coupée.
+    /// </summary>
+    [Theory]
+    [InlineData(6.15, 4.13)]
+    [InlineData(4.13, 6.15)]
+    public void On_ne_reclame_jamais_le_mode_par_paire(double largeur, double hauteur)
+    {
+        Assert.NotEqual(
+            DnpMediaSize.Size6x4x2,
             DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, largeur, hauteur));
     }
 
