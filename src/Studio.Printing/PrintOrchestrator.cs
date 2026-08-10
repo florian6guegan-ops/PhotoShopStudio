@@ -156,6 +156,16 @@ public sealed class PrintOrchestrator
     }
 
     /// <summary>
+    /// Vrai si cet orchestrateur peut atteindre le minilab.
+    ///
+    /// <b>Sans lui, aucun tirage Fuji ne part</b> — et la panne est déroutante parce que le
+    /// relais, lui, tourne : c'est l'orchestrateur qui ne sait plus où le joindre. Vu le
+    /// 10/08/2026, commande 10-024 : reconstruire l'orchestrateur après un changement de
+    /// catalogue l'avait laissé sans minilab jusqu'au redémarrage de l'application.
+    /// </summary>
+    public bool MinilabDisponible => _minilab is not null;
+
+    /// <summary>
     /// Imprime une enveloppe complète. <paramref name="operatorConfirmed"/> doit être
     /// vrai pour resoumettre une enveloppe déjà passée à l'état Spooled.
     /// </summary>

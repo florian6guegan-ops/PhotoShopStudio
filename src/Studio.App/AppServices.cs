@@ -721,7 +721,16 @@ public sealed class AppServices
     public void ReloadCatalog()
     {
         Catalog = ProductCatalog.Load(ProductsJson);
-        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir)
+
+        // <b>Le minilab se repasse, sinon le DE100 devient inaccessible.</b> Il était
+        // oublié ici : toucher au catalogue reconstruisait un orchestrateur SANS lui, et
+        // toute impression minilab échouait ensuite sur « le relais 32 bits n'a pas été
+        // fourni » — jusqu'au redémarrage de l'application, ce qui rendait la panne
+        // incompréhensible. Créteil, commande 10-024, 10/08/2026.
+        //
+        // Le relais, lui, tournait : c'est l'ORCHESTRATEUR qui ne savait plus où le
+        // joindre. Ne pas se fier à la présence du processus pour écarter cette cause.
+        Printer = new PrintOrchestrator(Catalog, Store, CatalogDir, Minilab)
         {
             Log = message => FileLog.Write(message),
             // le nouvel orchestrateur repart nu : sans ce report, les planches perdraient
