@@ -80,11 +80,33 @@ void Send(De100Message message)
     }
 }
 
+/// <summary>
+/// Ouvre le pilote, en DISANT combien de temps chaque étape a pris.
+///
+/// <b>Pourquoi ces mesures.</b> Le 10/08/2026, à Créteil, l'ouverture prenait
+/// <b>119 secondes</b> — deux fois le même chiffre — là où elle en prend une à
+/// Maisons-Alfort. Le client, lui, renonce au bout de dix secondes et annonce une machine
+/// « en veille », alors qu'elle répond : <c>PIF_DevIsReady</c> rend 0 et
+/// <c>PIF_GetPrinterList</c> les deux machines en 22 ms. Le même exécutable lancé à la main
+/// ouvre en 163 ms ; lancé par l'application, en 119 s.
+///
+/// Tout ce qu'on pouvait observer du dehors a été écarté (SDK, matériel, réseau, DiLand,
+/// PUD, antivirus, session Windows). Faute de savoir OÙ passent ces deux minutes, on le
+/// demande au relais lui-même : le chargement de la bibliothèque native et
+/// <c>PIF_Open</c> sont désormais chronométrés séparément.
+/// </summary>
 De100Driver Driver()
 {
     if (driver is not null) return driver;
 
+    var chrono = System.Diagnostics.Stopwatch.StartNew();
+    var chargeable = De100Driver.IsSdkInstalled();
+    log($"SDK Fuji chargé ({(chargeable ? "présent" : "ABSENT")}) en {chrono.ElapsedMilliseconds} ms.");
+
+    chrono.Restart();
     driver = new De100Driver();
+    log($"PIF_Open rendu en {chrono.ElapsedMilliseconds} ms.");
+
     // sans cela, ce que le pilote a à dire d'un callback en défaut se perd : c'est le seul
     // fil qui traverse la frontière native, et rien d'autre ne l'observe
     driver.Log = message => log(message);
@@ -161,6 +183,7 @@ async Task RepondreSansJamaisBloquer(De100Message request)
         ? TimeSpan.FromMinutes(3)
         : TimeSpan.FromSeconds(10);
 
+    var chrono = System.Diagnostics.Stopwatch.StartNew();
     var travail = Task.Run(() => Handle(request));
 
     if (await Task.WhenAny(travail, Task.Delay(budget)) == travail)
@@ -168,6 +191,13 @@ async Task RepondreSansJamaisBloquer(De100Message request)
         try
         {
             Send(await travail);
+
+            // Une interrogation lente mais qui ABOUTIT ne laisse aucune trace, et c'est
+            // elle qu'on cherche : à Créteil le bandeau tombe sur le délai sans qu'on
+            // sache si le temps part dans le SDK ou ailleurs. Seuil haut : en marche
+            // normale ces commandes rendent en quelques millisecondes.
+            if (chrono.ElapsedMilliseconds >= 1000)
+                log($"« {request.Name} » a repondu en {chrono.ElapsedMilliseconds} ms.");
         }
         catch (Exception ex)
         {
@@ -184,10 +214,13 @@ async Task RepondreSansJamaisBloquer(De100Message request)
         $"La machine n'a pas repondu en {budget.TotalSeconds:0} s. Elle est probablement " +
         "en veille ou eteinte."));
 
-    // le fil continue sa vie ; son resultat, s il arrive, ne concerne plus personne
+    // le fil continue sa vie ; son resultat, s il arrive, ne concerne plus personne — mais
+    // le TEMPS qu il aura mis nous intéresse, lui : c est la seule mesure de ce que le SDK
+    // fait vraiment quand le client a déjà renoncé
     _ = travail.ContinueWith(t => log(t.IsFaulted
-            ? $"« {request.Name} » a fini par echouer : {t.Exception?.GetBaseException().Message}"
-            : $"« {request.Name} » a fini par repondre, trop tard."),
+            ? $"« {request.Name} » a fini par echouer apres {chrono.ElapsedMilliseconds} ms : " +
+              $"{t.Exception?.GetBaseException().Message}"
+            : $"« {request.Name} » a fini par repondre apres {chrono.ElapsedMilliseconds} ms, trop tard."),
         TaskScheduler.Default);
 }
 
