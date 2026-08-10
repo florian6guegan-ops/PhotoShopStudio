@@ -377,6 +377,15 @@
                                           Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
                                     <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="14"/>
                                 </CheckBox>
+                                <!-- Le gris est le fond que les textes attendent : sur du
+                                     blanc franc, une chemise blanche ou des cheveux blancs
+                                     se fondent et la silhouette ne se détache plus. Les
+                                     deux cases sont exclusives. -->
+                                <CheckBox x:Name="GrayBackgroundCheck" Style="{StaticResource CaseCochable}" VerticalAlignment="Center" Margin="16,0,0,0"
+                                          ToolTip="Même détourage, posé sur un gris clair conforme aux normes. À préférer au blanc quand le sujet porte du clair ou a les cheveux blancs : la silhouette se détache."
+                                          Checked="OnGrayBackgroundChanged" Unchecked="OnGrayBackgroundChanged">
+                                    <TextBlock Text="Fond gris" Style="{StaticResource Texte}" FontSize="14"/>
+                                </CheckBox>
                                 <!-- Les mêmes corrections que sur les tirages : une photo
                                      d'identité prise au comptoir est sous-exposée ou tire
                                      au jaune comme une autre. -->

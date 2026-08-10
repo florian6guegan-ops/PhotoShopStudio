@@ -353,8 +353,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 item.Prete = true;
             }
 
-            // le fond blanc se recalcule sur la nouvelle image, il ne se reporte pas
-            if (item.FondBlanc) await RefaireLeFondBlancAsync();
+            // le fond se recalcule sur la nouvelle image, il ne se reporte pas
+            if (item.FondBlanc || item.FondGris) await RefaireLeFondBlancAsync();
             await RecalculerLApercuCorrigeAsync();
         }
         catch (Exception ex)
@@ -396,6 +396,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         photo.Corrections = _corrections.Clone();
         photo.NoirEtBlanc = GrayscaleCheck.IsChecked == true;
         photo.FondBlanc = WhiteBackgroundCheck.IsChecked == true;
+        photo.FondGris = GrayBackgroundCheck.IsChecked == true;
         photo.Copies = _copies;
         photo.Quantite = _quantity;
     }
@@ -420,6 +421,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         {
             GrayscaleCheck.IsChecked = photo.NoirEtBlanc;
             WhiteBackgroundCheck.IsChecked = photo.FondBlanc;
+            GrayBackgroundCheck.IsChecked = photo.FondGris;
         });
 
         Redresser(photo.Redressement);
@@ -641,12 +643,51 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </summary>
     private async void OnWhiteBackgroundChanged(object sender, RoutedEventArgs e)
     {
-        if (_enReprise) return;
+        if (_enReprise || _bascuMeFond) return;
         if (_current is null || _displayBitmap is null) return;
 
+        // les deux fonds s'excluent : demander l'un retire l'autre
+        if (WhiteBackgroundCheck.IsChecked == true) DecocherSansRelancer(GrayBackgroundCheck);
+
+        _current.FondBlanc = WhiteBackgroundCheck.IsChecked == true;
+        _current.FondGris = GrayBackgroundCheck.IsChecked == true;
+
+        await AppliquerLeFondAsync();
+    }
+
+    /// <summary>Aperçu du fond gris. Même chemin que le blanc, seule la couleur diffère.</summary>
+    private async void OnGrayBackgroundChanged(object sender, RoutedEventArgs e)
+    {
+        if (_enReprise || _bascuMeFond) return;
+        if (_current is null || _displayBitmap is null) return;
+
+        if (GrayBackgroundCheck.IsChecked == true) DecocherSansRelancer(WhiteBackgroundCheck);
+
+        _current.FondGris = GrayBackgroundCheck.IsChecked == true;
         _current.FondBlanc = WhiteBackgroundCheck.IsChecked == true;
 
-        if (WhiteBackgroundCheck.IsChecked != true)
+        await AppliquerLeFondAsync();
+    }
+
+    /// <summary>
+    /// Vrai pendant qu'on décoche l'autre case : sans cela, chaque bascule rappellerait le
+    /// gestionnaire d'en face et l'on recalculerait le détourage deux fois — quatre
+    /// secondes pour rien, à chaque clic.
+    /// </summary>
+    private bool _bascuMeFond;
+
+    private void DecocherSansRelancer(System.Windows.Controls.CheckBox case_)
+    {
+        if (case_.IsChecked != true) return;
+        _bascuMeFond = true;
+        try { case_.IsChecked = false; }
+        finally { _bascuMeFond = false; }
+    }
+
+    /// <summary>Pose le fond demandé, ou revient à l'original si aucun n'est coché.</summary>
+    private async Task AppliquerLeFondAsync()
+    {
+        if (WhiteBackgroundCheck.IsChecked != true && GrayBackgroundCheck.IsChecked != true)
         {
             _detoure = null;
             await RecalculerLApercuCorrigeAsync();  // les corrections repartent de l'original
@@ -671,18 +712,24 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         try
         {
             var chemin = _current.Path;
+            var gris = GrayBackgroundCheck.IsChecked == true;
             var octets = await Task.Run(() =>
             {
                 var jpeg = App.Services.Thumbnails.GetJpeg(chemin, 1600);
                 using var image = new ImageMagick.MagickImage(jpeg);
-                return BackgroundRemoval.PoserUnFondBlanc(image)
+                var fond = gris
+                    ? BackgroundRemoval.GrisIdentite
+                    : ImageMagick.MagickColors.White;
+                return BackgroundRemoval.PoserUnFond(image, fond)
                     ? image.ToByteArray(ImageMagick.MagickFormat.Png)
                     : null;
             });
 
             if (octets is null)
             {
-                WhiteBackgroundCheck.IsChecked = false;
+                DecocherSansRelancer(WhiteBackgroundCheck);
+                DecocherSansRelancer(GrayBackgroundCheck);
+                if (_current is not null) { _current.FondBlanc = false; _current.FondGris = false; }
                 MessageBox.Show(
                     "Le fond de cette photo n'est pas assez uni pour être remplacé sans risque " +
                     "d'entamer le sujet.\n\nLa photo est laissée telle quelle.",
@@ -694,10 +741,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         }
         catch (Exception ex)
         {
-            WhiteBackgroundCheck.IsChecked = false;
+            DecocherSansRelancer(WhiteBackgroundCheck);
+            DecocherSansRelancer(GrayBackgroundCheck);
+            if (_current is not null) { _current.FondBlanc = false; _current.FondGris = false; }
             _detoure = null;
-            FileLog.Write("Fond blanc impossible", ex);
-            MessageBox.Show($"Fond blanc impossible : {ex.Message}",
+            FileLog.Write("Fond de photo d'identité impossible", ex);
+            MessageBox.Show($"Fond impossible à poser : {ex.Message}",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
@@ -864,8 +913,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // pas dans ce panneau
         var noirEtBlanc = _corrections.Grayscale;
         var fondBlanc = _corrections.WhiteBackground;
+        var fondGris = _corrections.GrayBackground;
 
-        _corrections = new ImageAdjustments { Grayscale = noirEtBlanc, WhiteBackground = fondBlanc };
+        _corrections = new ImageAdjustments
+        {
+            Grayscale = noirEtBlanc, WhiteBackground = fondBlanc, GrayBackground = fondGris,
+        };
 
         if (_current is not null) _current.Corrections = _corrections.Clone();
 
@@ -1513,6 +1566,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         var reglages = photo.Corrections.Clone();
         reglages.Grayscale = photo.NoirEtBlanc;
         reglages.WhiteBackground = photo.FondBlanc;
+        reglages.GrayBackground = photo.FondGris;
         return reglages;
     }
 
@@ -1784,6 +1838,9 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         public ImageAdjustments Corrections { get; set; } = new();
         public bool NoirEtBlanc { get; set; }
         public bool FondBlanc { get; set; }
+
+        /// <summary>Le même détourage, posé sur du gris clair. Exclusif de <see cref="FondBlanc"/>.</summary>
+        public bool FondGris { get; set; }
 
         /// <summary>Photos par planche. Recalé sur la capacité du papier au premier passage.</summary>
         public int Copies { get; set; }

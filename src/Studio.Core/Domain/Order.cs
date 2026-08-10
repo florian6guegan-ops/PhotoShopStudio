@@ -24,6 +24,21 @@ public sealed class ImageAdjustments
     public bool WhiteBackground { get; set; }
 
     /// <summary>
+    /// Le même détourage, mais posé sur du gris clair au lieu du blanc.
+    ///
+    /// <b>Pourquoi les deux existent.</b> Les textes demandent un fond « uni, de couleur
+    /// claire », et le blanc franc y est mal vu : une chemise blanche, des cheveux blancs
+    /// ou une peau très claire s'y fondent, et la silhouette cesse de se détacher. Le gris
+    /// règle cela sans assombrir le tirage. Le blanc reste offert — certains guichets et
+    /// certains clients le demandent encore.
+    ///
+    /// <b>Les deux ne se cumulent pas</b> : l'écran les rend exclusifs, et si les deux
+    /// arrivaient vrais malgré tout, le gris l'emporte (voir <c>ImageAdjuster</c>) — un
+    /// fond gris est accepté partout où le blanc l'est, l'inverse n'est pas vrai.
+    /// </summary>
+    public bool GrayBackground { get; set; }
+
+    /// <summary>
     /// Trois corrections automatiques, reprises telles quelles de DiLand — où ce sont
     /// aussi des bascules, et non des actions qu'on subit (<c>AutoLevels</c>,
     /// <c>AutoContrast</c>, <c>AutoColor</c>, chacune avec son « annuler »).
@@ -96,7 +111,8 @@ public sealed class ImageAdjustments
     public bool RedEye { get; set; }
 
     public bool IsNeutral =>
-        !Grayscale && !WhiteBackground && !AutoLevels && !AutoContrast && !AutoColor && !RedEye &&
+        !Grayscale && !WhiteBackground && !GrayBackground &&
+        !AutoLevels && !AutoContrast && !AutoColor && !RedEye &&
         Exposure == 0 && Brightness == 0 && Contrast == 0 &&
         Highlights == 0 && Shadows == 0 && Whites == 0 && Blacks == 0 &&
         Temperature == 0 && Tint == 0 && Saturation == 0 && Vibrance == 0 &&

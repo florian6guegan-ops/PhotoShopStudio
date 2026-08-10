@@ -50,14 +50,42 @@ public static class BackgroundRemoval
     public static Action<string>? Log { get; set; }
 
     /// <summary>
+    /// Le gris clair des photos d'identité : 210 sur les trois canaux, soit 82 % de blanc.
+    ///
+    /// <b>Pourquoi un gris et pas du blanc.</b> Les textes demandent un fond « uni, de
+    /// couleur claire » — gris clair ou bleu clair — et le blanc franc y est mal vu : une
+    /// chemise blanche, des cheveux blancs ou une peau très claire s'y fondent, et la
+    /// silhouette ne se détache plus. Le gris règle cela sans assombrir le tirage.
+    ///
+    /// 210 est la valeur des labos. Elle se distingue du blanc à l'œil tout en restant
+    /// franchement claire, là où un gris plus soutenu paraît sale sur un tirage déjà dense.
+    /// </summary>
+    public static readonly ImageMagick.MagickColor GrisIdentite =
+        ImageMagick.MagickColor.FromRgb(210, 210, 210);
+
+    /// <summary>
     /// Détoure le sujet et pose du blanc derrière lui. L'image est modifiée sur place ;
     /// elle est laissée intacte si le fond n'est pas reconnaissable.
     /// </summary>
     /// <param name="image">Image à traiter, déjà redressée (EXIF appliqué).</param>
     /// <returns>Vrai si un fond blanc a été posé.</returns>
-    public static bool PoserUnFondBlanc(ImageMagick.MagickImage image)
+    public static bool PoserUnFondBlanc(ImageMagick.MagickImage image) =>
+        PoserUnFond(image, ImageMagick.MagickColors.White);
+
+    /// <summary>
+    /// Détoure le sujet et pose la couleur demandée derrière lui.
+    ///
+    /// Le détourage est le même quelle que soit la couleur : seul l'aplat final change.
+    /// C'est pourquoi le gris n'a rien coûté à ajouter — tout le travail difficile, celui
+    /// qui distingue une mèche de cheveux d'un fond de studio, était déjà fait.
+    /// </summary>
+    /// <param name="image">Image à traiter, déjà redressée (EXIF appliqué).</param>
+    /// <param name="fond">Couleur à poser derrière le sujet.</param>
+    /// <returns>Vrai si un fond a été posé.</returns>
+    public static bool PoserUnFond(ImageMagick.MagickImage image, ImageMagick.MagickColor fond)
     {
         ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(fond);
 
         // Le réseau d'abord quand il est installé : il tient les mèches de cheveux là où
         // la règle de couleur ci-dessous laisse un halo. Il rend null dès que quelque
@@ -68,12 +96,12 @@ public static class BackgroundRemoval
 
         using (masque)
         {
-            // Le masque devient la transparence de la photo, puis on aplatit sur du blanc.
-            // « Alpha(Remove) » compose sur BackgroundColor sans seconde image ni encodage
-            // intermédiaire : sur un 4000 × 6016, l'aller-retour PNG coûtait plus cher que
-            // tout le reste du détourage réuni.
+            // Le masque devient la transparence de la photo, puis on aplatit sur la couleur
+            // demandée. « Alpha(Remove) » compose sur BackgroundColor sans seconde image ni
+            // encodage intermédiaire : sur un 4000 × 6016, l'aller-retour PNG coûtait plus
+            // cher que tout le reste du détourage réuni.
             image.Composite(masque, ImageMagick.CompositeOperator.CopyAlpha);
-            image.BackgroundColor = ImageMagick.MagickColors.White;
+            image.BackgroundColor = fond;
             image.Alpha(ImageMagick.AlphaOption.Remove);
         }
 

@@ -98,6 +98,9 @@ public sealed class PhotoIdentiteEnAttente
     public bool NoirEtBlanc { get; set; }
     public bool FondBlanc { get; set; }
 
+    /// <summary>Le même détourage, posé sur du gris clair. Exclusif de <see cref="FondBlanc"/>.</summary>
+    public bool FondGris { get; set; }
+
     public ImageAdjustments Corrections { get; set; } = new();
 }
 

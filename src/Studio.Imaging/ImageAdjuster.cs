@@ -34,11 +34,17 @@ public static class ImageAdjuster
 
         if (a.IsNeutral) return;
 
-        // Le fond blanc AVANT tout le reste : il raisonne sur les couleurs d'origine.
-        // Après une désaturation ou un coup de contraste, le fond ne ressemblerait plus à
-        // ce que le pourtour a mesuré, et la découpe partirait de travers.
-        if (a.WhiteBackground && image is MagickImage photo)
-            BackgroundRemoval.PoserUnFondBlanc(photo);
+        // Le fond AVANT tout le reste : il raisonne sur les couleurs d'origine. Après une
+        // désaturation ou un coup de contraste, le fond ne ressemblerait plus à ce que le
+        // pourtour a mesuré, et la découpe partirait de travers.
+        //
+        // Le gris l'emporte si les deux sont demandés : l'écran les rend exclusifs, mais
+        // une commande relue d'un journal ancien peut porter les deux, et un fond gris est
+        // accepté partout où le blanc l'est — l'inverse n'est pas vrai.
+        if ((a.GrayBackground || a.WhiteBackground) && image is MagickImage photo)
+            BackgroundRemoval.PoserUnFond(
+                photo,
+                a.GrayBackground ? BackgroundRemoval.GrisIdentite : MagickColors.White);
 
         // Les yeux rouges AVANT le noir et blanc, et avant tout réglage de couleur : la
         // correction reconnaît une pupille au ROUGE qui y domine, et une image désaturée ou
