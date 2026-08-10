@@ -58,17 +58,23 @@ public class DnpFormatRouleauTests
     // ————— que réclamer à la machine —————
 
     /// <summary>
-    /// <b>Le défaut de Créteil.</b> Une planche 10×15 rendue à 300 ppp fait 6,15 × 4,13
-    /// pouces ; sur un rouleau 15×20, il faut réclamer la découpe, sinon la machine sort la
-    /// feuille entière et l'autre moitié part à la poubelle.
+    /// <b>On ne réclame JAMAIS la découpe pour un tirage isolé.</b>
+    ///
+    /// Réclamer <see cref="DnpMediaSize.Size6x4x2"/> a bloqué Créteil le 10/08/2026 : la
+    /// machine accepte l'envoi — <c>SendImageData</c> rend 1, tout paraît réussi — puis
+    /// n'imprime rien. Elle garde la première moitié de la feuille en mémoire et attend la
+    /// seconde. DiLand apparie ses tirages avant de les envoyer ; Studio ne le fait pas
+    /// encore.
+    ///
+    /// Le jour où il le fera, cet essai devra changer — et il dira alors pourquoi.
     /// </summary>
     [Theory]
     [InlineData(6.15, 4.13)]  // planche d'identité en paysage
     [InlineData(4.13, 6.15)]  // la même en portrait
-    public void Un_10x15_sur_un_rouleau_15x20_se_fait_couper(double largeur, double hauteur)
+    public void Un_tirage_isole_ne_reclame_pas_la_decoupe(double largeur, double hauteur)
     {
         Assert.Equal(
-            DnpMediaSize.Size6x4x2,
+            DnpMediaSize.Size6x8,
             DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, largeur, hauteur));
     }
 
