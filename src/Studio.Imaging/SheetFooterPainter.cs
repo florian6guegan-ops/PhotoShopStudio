@@ -38,7 +38,7 @@ public static class SheetFooterPainter
             PoserImage(sheet, fichier, logo);
 
         if (pose.Date is { } date)
-            EcrireLaDate(sheet, footer, date, pose.Mention is null, dpi);
+            EcrireLaDate(sheet, footer, date, pose.Mention is null, pose.CorpsDatePx);
 
         if (pose.Mention is { } mention && !string.IsNullOrWhiteSpace(footer.Mention))
             EcrireLaMention(sheet, footer.Mention, mention);
@@ -57,9 +57,8 @@ public static class SheetFooterPainter
     /// gauche d'un espace vide.
     /// </summary>
     private static void EcrireLaDate(MagickImage sheet, SheetFooter footer, PixelRect zone,
-        bool seule, int dpi)
+        bool seule, int corps)
     {
-        var corps = MmPx.ToPixels(SheetFooterLayout.CorpsDateMm, dpi);
         var corpsHeure = corps * SheetFooterLayout.FractionHeure;
 
         var jour = footer.Moment.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
@@ -114,6 +113,10 @@ public static class SheetFooterPainter
 
         // Deux lignes se partagent la hauteur, l'interligne compris ; une seule la prend
         // toute. Le facteur 0,62 laisse l'air qui sépare les lignes.
+        //
+        // La zone est déjà plafonnée à la hauteur nominale d'une bande — c'est
+        // SheetFooterLayout qui s'en charge, avec le QR et le logo qui suivent la même
+        // règle. Rien à borner de plus ici.
         var corps = lignes.Length > 1 ? zone.Height * 0.40 : zone.Height * 0.62;
 
         // ...mais jamais au point de dépasser en largeur. Le demi-cadratin de la date (voir

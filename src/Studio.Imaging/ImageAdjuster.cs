@@ -34,6 +34,22 @@ public static class ImageAdjuster
 
         if (a.IsNeutral) return;
 
+        // LE MASQUE DU SUJET EN TOUT PREMIER, avant que l'image ne soit touchée. Deux
+        // raisons, et les deux comptent :
+        //
+        // 1. le détourage doit voir la photo telle qu'elle a été prise. Le fond reposé en
+        //    blanc juste en dessous effacerait justement ce sur quoi il se repère ;
+        // 2. le cache des masques a pour clé l'empreinte des PIXELS. Demandé plus bas, sur
+        //    une image déjà corrigée, il manquerait à chaque mouvement de curseur — et
+        //    l'aperçu relancerait le réseau à chaque frappe.
+        //
+        // Null quand le détourage n'a rien pu dire : la correction du sujet est alors
+        // simplement sautée, et le reste s'applique comme avant.
+        MagickImage? masqueDuSujet = null;
+        if (!a.Sujet.IsNeutral && image is MagickImage source)
+            masqueDuSujet = MasqueSujet.Calculer(
+                source, a.Sujet.ContourPx, a.Sujet.AdoucissementPx, a.CleDeLaPhoto);
+
         // Le fond AVANT tout le reste : il raisonne sur les couleurs d'origine. Après une
         // désaturation ou un coup de contraste, le fond ne ressemblerait plus à ce que le
         // pourtour a mesuré, et la découpe partirait de travers.
@@ -66,6 +82,16 @@ public static class ImageAdjuster
 
         // le reste — tons, couleur, relief — se calcule sur les octets, en parallèle
         SurLesOctets(image, octets => Corriger(octets, image, a, avecRelief));
+
+        // LE SUJET EN DERNIER, sur l'image déjà mise au point d'ensemble : l'opérateur
+        // règle d'abord la photo entière, puis rattrape le visage sur ce qu'il voit. Dans
+        // l'autre ordre, les réglages globaux repasseraient par-dessus son travail et le
+        // fond, épargné ici, serait recorrigé juste après.
+        if (masqueDuSujet is not null && image is MagickImage cible)
+        {
+            using (masqueDuSujet)
+                MasqueSujet.Appliquer(cible, a.Sujet, masqueDuSujet);
+        }
     }
 
     /// <summary>

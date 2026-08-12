@@ -53,13 +53,25 @@ public sealed record DetourageSettings(
     /// Mémoire vidéo au-dessous de laquelle le modèle puissant est déconseillé, en
     /// gigaoctets.
     ///
-    /// Ce n'est pas une estimation : la Quadro P2000 de l'atelier annonce <b>5 Go</b>
-    /// (relevé dans le registre le 03/08/2026 — les commentaires plus anciens disent 4 Go,
-    /// c'est la valeur tronquée que rend WMI), et le modèle puissant y passe une fois puis
-    /// échoue. Le seuil est donc posé juste au-dessus de ce qui a été vu échouer, sans
-    /// prétendre à la précision : c'est un avertissement, pas un refus.
+    /// Ce n'est pas une estimation, c'est un relevé — et il a été CORRIGÉ VERS LE HAUT le
+    /// 12/08/2026 :
+    ///
+    /// <list type="bullet">
+    /// <item>Quadro P2000 de l'atelier, <b>5 Go</b> : le modèle puissant passe une fois puis
+    /// échoue (03/08/2026). D'où un seuil posé à 6, juste au-dessus.</item>
+    /// <item>GTX 1660 SUPER de Créteil, <b>6 Go</b> exactement (<c>qwMemorySize</c> =
+    /// 6 442 450 944) : elle satisfaisait donc le seuil — <c>6 &lt; 6</c> est faux — et le
+    /// modèle puissant y a été offert, choisi… puis il a échoué de la même façon.</item>
+    /// </list>
+    ///
+    /// Six gigaoctets ne suffisent pas : le seuil rejoint la valeur recommandée. Le poste de
+    /// Créteil a passé une matinée à sortir des planches détourées à la couleur pendant que
+    /// le cadrage, lui, restait parfait — le premier passage réussissait, le second non.
+    ///
+    /// Cela reste un avertissement doublé d'un choix grisé, jamais une panne : le repli
+    /// existe, et il tombe désormais sur le modèle léger plutôt que sur la couleur.
     /// </summary>
-    public const double MemoireVideoMinimaleGo = 6;
+    public const double MemoireVideoMinimaleGo = 8;
 
     /// <summary>Ce qu'on conseille réellement d'avoir pour le modèle puissant.</summary>
     public const double MemoireVideoRecommandeeGo = 8;

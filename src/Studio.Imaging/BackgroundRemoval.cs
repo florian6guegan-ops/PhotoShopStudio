@@ -50,6 +50,39 @@ public static class BackgroundRemoval
     public static Action<string>? Log { get; set; }
 
     /// <summary>
+    /// Ce qu'a duré le dernier découpage réellement calculé sur ce poste, ou null tant
+    /// qu'aucun ne l'a été.
+    ///
+    /// L'écran s'en sert pour annoncer une attente : c'est la seule opération de la photo
+    /// d'identité qui se compte en secondes. Une mesure vaut mieux qu'une constante — la
+    /// durée dépend de la carte du poste, du modèle installé et de la taille traitée.
+    /// </summary>
+    public static TimeSpan? DerniereDuree { get; private set; }
+
+    /// <summary>
+    /// Le masque du sujet, par le meilleur moyen dont ce poste dispose.
+    ///
+    /// <b>C'est LE point de passage du détourage</b>, celui que partagent le fond blanc et
+    /// la correction du sujet. Le réseau d'abord quand il est allumé — il tient les mèches
+    /// de cheveux —, la méthode par couleur ensuite, qui marche toujours et en une seconde.
+    /// Les deux appelants écrivaient la même ligne chacun de leur côté ; ils la partagent
+    /// désormais, ce qui donne aussi un seul endroit où mesurer le temps que ça prend.
+    ///
+    /// Null quand rien n'a pu être découpé : l'appelant renonce alors plutôt que d'abîmer
+    /// la photo sur un masque inventé.
+    /// </summary>
+    internal static ImageMagick.MagickImage? DecouperLeSujet(ImageMagick.MagickImage image)
+    {
+        var chrono = System.Diagnostics.Stopwatch.StartNew();
+
+        var masque = BiRefNetMatting.CalculerMasque(image) ?? CalculerMasqueSujet(image);
+        if (masque is null) return null;
+
+        DerniereDuree = chrono.Elapsed;
+        return masque;
+    }
+
+    /// <summary>
     /// Le gris clair des photos d'identité : 210 sur les trois canaux, soit 82 % de blanc.
     ///
     /// <b>Pourquoi un gris et pas du blanc.</b> Les textes demandent un fond « uni, de
@@ -87,11 +120,7 @@ public static class BackgroundRemoval
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(fond);
 
-        // Le réseau d'abord quand il est installé : il tient les mèches de cheveux là où
-        // la règle de couleur ci-dessous laisse un halo. Il rend null dès que quelque
-        // chose manque (modèle absent, carte indisponible, échec), et on retombe alors
-        // sur la méthode par couleur — qui, elle, marche toujours et en une seconde.
-        var masque = BiRefNetMatting.CalculerMasque(image) ?? CalculerMasqueSujet(image);
+        var masque = DecouperLeSujet(image);
         if (masque is null) return false;
 
         using (masque)
@@ -111,8 +140,12 @@ public static class BackgroundRemoval
     /// <summary>
     /// Masque d'opacité du sujet, à la taille de l'image. Null si le fond n'est pas
     /// assez uni pour être reconnu — on préfère ne rien faire qu'abîmer la photo.
+    ///
+    /// Ouvert au reste du module pour servir de repli à <see cref="MasqueSujet"/> : la
+    /// correction du sujet a besoin de la même découpe, et sans ce repli elle ne faisait
+    /// RIEN dès que le réseau était éteint dans les réglages — ce qu'il est par défaut.
     /// </summary>
-    private static ImageMagick.MagickImage? CalculerMasqueSujet(ImageMagick.MagickImage image)
+    internal static ImageMagick.MagickImage? CalculerMasqueSujet(ImageMagick.MagickImage image)
     {
         if (image.Width < 60 || image.Height < 60) return null;
 

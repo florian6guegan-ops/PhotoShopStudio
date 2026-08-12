@@ -215,7 +215,21 @@ public partial class CatalogView : UserControl
 
     private sealed record ProductRow(Product Product)
     {
-        public string Title => $"{Product.Name} — {Product.Price:0.00} €";
+        /// <summary>
+        /// Les cotes douteuses se voient DANS LA LISTE, et non dans la fiche du produit.
+        ///
+        /// La fiche ne s'ouvre que sur celui qu'on soupçonne déjà — or personne ne
+        /// soupçonnait le « 40×50 » de 40 × 50 mm du poste DESKTOP-KT88VDM : il avait un
+        /// nom juste, un prix juste, et sortait un timbre. C'est en parcourant la liste
+        /// qu'on doit buter dessus.
+        /// </summary>
+        public string? Anomalie => CotesProduit.Anomalie(
+            Product.Name, Product.Code, Product.WidthMm, Product.HeightMm);
+
+        public bool ADesCotesDouteuses => Anomalie is not null;
+
+        public string Title =>
+            (ADesCotesDouteuses ? "⚠  " : "") + $"{Product.Name} — {Product.Price:0.00} €";
 
         public string ToggleLabel => Product.Enabled ? "Désactiver" : "Activer";
 
@@ -227,6 +241,7 @@ public partial class CatalogView : UserControl
             (Product.Finishes.Count > 0
                 ? $" — finitions : {string.Join(", ", Product.Finishes.Select(f => f.Name))}"
                 : "") +
-            (Product.Enabled ? "" : " — DÉSACTIVÉ");
+            (Product.Enabled ? "" : " — DÉSACTIVÉ")
+            + (Anomalie is { } souci ? $"\n⚠  {souci}" : "");
     }
 }

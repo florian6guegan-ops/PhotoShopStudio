@@ -61,6 +61,29 @@ var DnpQuarantaine = TimeSpan.FromMinutes(3);
 // Au-dela, ce n est plus une machine occupee : chaque delai depasse laisse un fil bloque
 // dans l appel natif, et l on ne peut pas en accumuler indefiniment.
 const int DnpQuarantainesAvantAbandon = 5;
+
+// Appels au SDK partis et jamais revenus. Voir FilsOrphelins.
+var filsOrphelins = new FilsOrphelins();
+var plafondSignale = false;
+
+// UN SEUL APPEL A LA FOIS DANS LE SDK DNP, et c est ce qui tuait le relais.
+//
+// cspstat.dll est une bibliotheque native de 2008 (elle tourne sur MSVCR90) et elle n est
+// PAS reentrante. Or deux chemins y entrent : EtatDesDnp pour le bandeau, toutes les
+// quelques secondes, et TirerSurDnp pour un envoi. RepondreSansJamaisBloquer donnant un fil
+// a chaque commande, les deux pouvaient s y trouver ENSEMBLE.
+//
+// Le 12/08/2026 a Creteil : CINQ plantages du relais, zero les six jours precedents. Tous
+// avec la meme signature — module MSVCR90.dll, code 0xc0000417 (parametre invalide passe au
+// CRT), meme decalage 0x0003523b. Le premier arrive dix secondes apres un envoi direct DNP.
+// Ce n est pas une fuite de memoire : au moment ou j ecris, le relais tient en 59 Mo et
+// douze fils, tres loin des deux gigaoctets.
+//
+// ⚠ ET C EST MA CORRECTION DE LA 1.4.1 QUI A OUVERT LA FENETRE : dnp-print y est passe de
+// dix secondes a trois minutes de budget. Le SDK reste donc occupe bien plus longtemps,
+// pendant que le bandeau continue de l interroger. Le correctif de la 1.4.1 reste juste —
+// c est la concurrence qu il fallait borner, pas le delai.
+var verrouDnp = new object();
 var writeLock = new object();
 StreamWriter? writer = null;
 
@@ -178,10 +201,50 @@ finally
 /// </summary>
 async Task RepondreSansJamaisBloquer(De100Message request)
 {
-    // Envoyer un tirage prend legitimement du temps ; interroger une machine, non.
-    var budget = request.Name is De100Commands.Submit or De100Commands.Cancel
+    // Envoyer un tirage prend legitimement du temps ; interroger une machine, non. La
+    // regle est celle de De100Commands.EngageLaMachine, que le client applique aussi :
+    // elle etait ecrite ici en dur, et DnpPrint n y figurait pas.
+    //
+    // Ce qu il en a coute, le 12/08/2026 : la troisieme planche de la commande 12-012 est
+    // arrivee pendant que la machine tirait les deux premieres, le relais a renonce a
+    // 10 s SANS INTERROMPRE l appel natif, l application s est rabattue sur le pilote
+    // Windows — et 1 s plus tard le SDK rendait la main, tirage accepte. La meme planche
+    // est partie deux fois. Une DNP qui imprime met couramment plus de dix secondes a
+    // prendre l ordre suivant : le commentaire de EtatDesDnp le disait deja.
+    var budget = De100Commands.EngageLaMachine(request.Name)
         ? TimeSpan.FromMinutes(3)
         : TimeSpan.FromSeconds(10);
+
+    // ON NE LANCE PLUS DE TRAVAIL QUAND TROP DE FILS SONT DEJA PERDUS.
+    //
+    // Chaque delai depasse laisse un fil bloque dans un appel natif qui ne rendra jamais la
+    // main — c est dit plus haut, et c est irreductible : le SDK ne s interrompt pas. Ce qui
+    // ne l etait pas, c est que RIEN ne bornait leur nombre.
+    //
+    // Or ce relais est en 32 BITS : deux gigaoctets d espace d adressage, et un mega-octet
+    // de pile par fil. Sur un poste ou le SDK se coince — Creteil, ou list-machines et
+    // dnp-snapshot expirent en boucle des que DiLand tient les machines — ils s accumulent
+    // au rythme du bandeau, et le processus finit par mourir. Constate le 12/08/2026 : le
+    // relais s est arrete DEUX FOIS en pleine commande (16:11 et 17:36), laissant la
+    // commande 12-024 « non confirmee » sans qu aucun verdict n arrive.
+    //
+    // Passe ce plafond, on repond tout de suite sans rien lancer : le SDK est manifestement
+    // coince, et lui envoyer du travail supplementaire ne fait qu avancer l heure du crash.
+    if (filsOrphelins.Sature)
+    {
+        if (!plafondSignale)
+        {
+            plafondSignale = true;
+            log($"{filsOrphelins.Perdus} appels au SDK sont restes sans retour : il est " +
+                "coince. On cesse d en lancer de nouveaux — le relais tiendrait sinon jusqu a " +
+                "epuiser sa memoire, et il mourrait en pleine commande.");
+        }
+
+        Send(De100Protocol.Failure(request,
+            "Le SDK du minilab ne rend plus la main. Redemarrez l application pour repartir " +
+            "sur une session neuve."));
+        return;
+    }
 
     var chrono = System.Diagnostics.Stopwatch.StartNew();
     var travail = Task.Run(() => Handle(request));
@@ -214,13 +277,24 @@ async Task RepondreSansJamaisBloquer(De100Message request)
         $"La machine n'a pas repondu en {budget.TotalSeconds:0} s. Elle est probablement " +
         "en veille ou eteinte."));
 
-    // le fil continue sa vie ; son resultat, s il arrive, ne concerne plus personne — mais
-    // le TEMPS qu il aura mis nous intéresse, lui : c est la seule mesure de ce que le SDK
-    // fait vraiment quand le client a déjà renoncé
-    _ = travail.ContinueWith(t => log(t.IsFaulted
-            ? $"« {request.Name} » a fini par echouer apres {chrono.ElapsedMilliseconds} ms : " +
-              $"{t.Exception?.GetBaseException().Message}"
-            : $"« {request.Name} » a fini par repondre apres {chrono.ElapsedMilliseconds} ms, trop tard."),
+    // Le fil continue sa vie ; son resultat, s il arrive, ne concerne plus personne — mais
+    // le TEMPS qu il aura mis nous interesse, lui : c est la seule mesure de ce que le SDK
+    // fait vraiment quand le client a deja renonce.
+    //
+    // Il est COMPTE a partir d ici, et decompte s il finit par revenir : c est ce compte qui
+    // dit si le SDK est simplement lent ou definitivement coince.
+    filsOrphelins.Abandonne();
+
+    _ = travail.ContinueWith(t =>
+        {
+            filsOrphelins.Revenu();
+            if (!filsOrphelins.Sature) plafondSignale = false;
+
+            log(t.IsFaulted
+                ? $"« {request.Name} » a fini par echouer apres {chrono.ElapsedMilliseconds} ms : " +
+                  $"{t.Exception?.GetBaseException().Message}"
+                : $"« {request.Name} » a fini par repondre apres {chrono.ElapsedMilliseconds} ms, trop tard.");
+        },
         TaskScheduler.Default);
 }
 
@@ -245,6 +319,8 @@ De100Message Handle(De100Message request) => request.Name switch
     De100Commands.Cancel => Cancel(request),
 
     De100Commands.PendingJobs => De100Protocol.Success(request, Driver().PendingJobIds),
+
+    De100Commands.OrderProgress => AvancementDeLaCommande(request),
 
     De100Commands.DnpSnapshot => De100Protocol.Success(request, EtatDesDnp()),
 
@@ -289,14 +365,33 @@ List<DnpPrinterInfo> EtatDesDnp()
 
     var lecture = Task.Run(() =>
     {
-        var pilote = new DnpDriver();
-        var etats = new List<DnpPrinterInfo>();
-        foreach (var port in pilote.ListPorts())
+        // SI LE SDK EST DEJA OCCUPE, ON NE FAIT PAS LA QUEUE : on rend la main tout de
+        // suite. Un tirage a la priorite sur un bandeau, et attendre ici ne ferait
+        // qu empiler des fils derriere un envoi qui peut durer trois minutes.
+        //
+        // Rendre une liste vide est exactement ce que fait deja une machine endormie :
+        // l application complete d apres le spouleur Windows, et le bandeau ne ment pas.
+        if (!Monitor.TryEnter(verrouDnp))
         {
-            try { etats.Add(pilote.GetPrinterInfo(port)); }
-            catch (Exception ex) { log($"Imprimante DNP du port {port} illisible : {ex.Message}"); }
+            log("SDK DNP occupe par un tirage : on ne l interroge pas maintenant.");
+            return new List<DnpPrinterInfo>();
         }
-        return etats;
+
+        try
+        {
+            var pilote = new DnpDriver();
+            var etats = new List<DnpPrinterInfo>();
+            foreach (var port in pilote.ListPorts())
+            {
+                try { etats.Add(pilote.GetPrinterInfo(port)); }
+                catch (Exception ex) { log($"Imprimante DNP du port {port} illisible : {ex.Message}"); }
+            }
+            return etats;
+        }
+        finally
+        {
+            Monitor.Exit(verrouDnp);
+        }
     });
 
     // Le relais ne rend QUE ce que le SDK a vu. Si la machine dort, il rend une liste
@@ -352,6 +447,15 @@ De100Message TirerSurDnp(De100Message request)
     if (!File.Exists(demande.ImagePath))
         return De100Protocol.Failure(request, $"Image introuvable : {demande.ImagePath}");
 
+    // TOUT L ENVOI SOUS LE MEME VERROU, decouverte comprise : c est ListPorts qui construit
+    // la table de ports du SDK, et un bandeau qui la reconstruirait au milieu de l envoi
+    // ferait exactement ce qui a tue le relais cinq fois le 12/08/2026. Voir verrouDnp.
+    lock (verrouDnp)
+        return TirerSurDnpSousVerrou(request, demande);
+}
+
+De100Message TirerSurDnpSousVerrou(De100Message request, De100DnpPrintRequest demande)
+{
     var pilote = new DnpDriver();
 
     var ports = pilote.ListPorts();
@@ -444,6 +548,20 @@ De100Message Cancel(De100Message request)
                  ?? throw new InvalidOperationException("Handle de commande manquant.");
     Driver().Cancel(handle);
     return De100Protocol.Success(request);
+}
+
+/// <summary>
+/// Ou en est une commande, comptee par la machine elle meme.
+///
+/// Une commande que le SDK ne reconnait plus rend NULL et non une erreur : ce releve ne
+/// sert qu a faire avancer une barre, et l appelant retombe sur les verdicts.
+/// </summary>
+De100Message AvancementDeLaCommande(De100Message request)
+{
+    var handle = De100Protocol.Payload<string>(request)
+                 ?? throw new InvalidOperationException("Handle de commande manquant.");
+
+    return De100Protocol.Success(request, Driver().OrderProgress(handle));
 }
 
 char MachineId(De100Message request)

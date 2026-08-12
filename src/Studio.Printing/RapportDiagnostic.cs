@@ -60,8 +60,22 @@ public static class RapportDiagnostic
     /// </param>
     /// <param name="destination">Chemin de l'archive à écrire.</param>
     /// <param name="note">Ce que l'opérateur a saisi pour décrire le problème.</param>
+    /// <param name="dossierCatalogue">
+    /// Dossier <c>catalog\</c> du poste, pour y prendre <c>products.json</c>.
+    ///
+    /// <b>Il manquait, et c'est ce qui a coûté le plus cher.</b> Le 12/08/2026, le poste
+    /// DESKTOP-KT88VDM n'imprimait ni sur sa DNP ni sur son DE100 : ses produits visaient
+    /// tous « Microsoft Print to PDF ». Le catalogue est LE fichier qui décide où part une
+    /// commande, et il fallait le déduire d'une taille de rendu dans le journal —
+    /// 1205 × 1795 px, soit 102 × 152 mm, soit le produit d'amorçage. Un rapport de
+    /// diagnostic qui ne le porte pas laisse chercher la panne du côté des machines.
+    ///
+    /// Les prix y figurent : ce sont ceux de la boutique qui envoie le rapport, elle les
+    /// connaît déjà, et ils ne concernent aucun client.
+    /// </param>
     public static Contenu Fabriquer(
-        string dossierJournaux, string dossierConfig, string destination, string note = "")
+        string dossierJournaux, string dossierConfig, string destination, string note = "",
+        string? dossierCatalogue = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
 
@@ -100,6 +114,25 @@ public static class RapportDiagnostic
                 catch (Exception)
                 {
                     // idem : un réglage illisible ne doit pas empêcher le rapport
+                }
+            }
+
+            // Le catalogue en dernier, et jamais au prix du reste : s'il est illisible ou
+            // absent, le rapport part quand même.
+            if (!string.IsNullOrWhiteSpace(dossierCatalogue))
+            {
+                var produits = Path.Combine(dossierCatalogue, "products.json");
+                try
+                {
+                    if (File.Exists(produits))
+                    {
+                        Ecrire(archive, "catalog/products.json", File.ReadAllText(produits));
+                        repris.Add("products.json");
+                    }
+                }
+                catch (Exception)
+                {
+                    // verrouillé par un enregistrement en cours : tant pis pour lui
                 }
             }
         }

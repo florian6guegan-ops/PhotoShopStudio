@@ -58,25 +58,57 @@ public static class ImagePipeline
         // trait de découpe, qui doit y tenir sans mordre sur les photos (voir
         // DrawCutBorders). Les repères de marge tombent avec lui — ils n'ont plus de marge
         // où vivre.
-        var gapPx = fullBleed ? TraitDeDecoupePx(dpi) : MmPx.ToPixels(gapMm, dpi);
+        // À fond perdu, l'écart ne se règle pas par produit : il vaut l'espace de coupe
+        // commun à toutes les planches. Le trait de découpe s'y dessine, bien plus fin —
+        // voir SheetSpec.EcartFondPerduMm, qu'il ne faut pas confondre avec CutLineMm.
+        var gapPx = fullBleed
+            ? MmPx.ToPixels(SheetSpec.EcartFondPerduMm, dpi)
+            : MmPx.ToPixels(gapMm, dpi);
         var tickPx = !fullBleed && cutMarks ? MmPx.ToPixels(3, dpi) : 0;
 
+        // LE PAPIER DEBOUT QUAND IL EN TIENT DAVANTAGE.
+        //
+        // On compose alors sur les cotes échangées, et l'on tourne la planche juste avant
+        // de l'écrire : le fichier garde le format que la machine attend, au pixel près.
+        // C'est ce qui donne quatre photos de 50 × 50 sur un 10×15 là où le sens couché n'en
+        // tient que trois dès qu'on garde la place d'écrire la date.
+        var reserveMinimale = SheetFooterLayout.ReserveMinimalePx(footer, dpi);
+
+        var debout = footer is not null
+                     && copies > IdSheetLayout.MaxCopies(
+                         sheetWidthPx, sheetHeightPx,
+                         cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
+                         gapPx, reserveMinimale)
+                     && copies <= IdSheetLayout.MaxCopies(
+                         sheetHeightPx, sheetWidthPx,
+                         cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
+                         gapPx, reserveMinimale);
+
+        // à partir d'ici, tout se compte sur la planche TELLE QU'ON LA COMPOSE
+        var plancheW = debout ? sheetHeightPx : sheetWidthPx;
+        var plancheH = debout ? sheetWidthPx : sheetHeightPx;
+
         var layout = IdSheetLayout.Layout(
-            sheetWidthPx, sheetHeightPx,
+            plancheW, plancheH,
             cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
             gapPx, copies, tickPx);
 
-        // la bande demande de la place : on refait la disposition en réservant le bas,
-        // sans quoi elle devrait tenir dans la marge résiduelle et sortirait illisible
+        // La bande demande de la place : on refait la disposition en réservant le bas, sans
+        // quoi elle devrait tenir dans la marge résiduelle et sortirait illisible.
+        //
+        // On ne réserve que le MINIMUM où une date s'écrit encore, et non la hauteur
+        // nominale : réserver 8 mm poussait le bloc vers le haut au point de lui faire
+        // perdre une rangée sur les formats carrés. La bande prend ensuite tout ce qui
+        // reste réellement — voir SheetFooterLayout.ReserveMinimalePx.
         if (footer is not null)
             layout = IdSheetLayout.Layout(
-                sheetWidthPx, sheetHeightPx,
+                plancheW, plancheH,
                 cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
                 gapPx, copies, tickPx,
-                bottomReserve: SheetFooterLayout.ReservePx(footer, dpi));
+                bottomReserve: reserveMinimale);
 
         using var cell = Render(cellRequest, dpi);
-        using var sheet = new MagickImage(MagickColors.White, (uint)sheetWidthPx, (uint)sheetHeightPx);
+        using var sheet = new MagickImage(MagickColors.White, (uint)plancheW, (uint)plancheH);
 
         // la densité AVANT de dessiner : une taille de police est exprimée en points, et
         // ImageMagick les convertit en pixels d'après la résolution de l'image. Posée
@@ -100,6 +132,11 @@ public static class ImagePipeline
         if (footer is not null)
             SheetFooterPainter.Draw(sheet, footer, layout.Cells.Max(c => c.Bottom), dpi);
 
+        // La planche a été composée debout : on la couche pour que le fichier retrouve le
+        // format attendu par la machine. Les photos s'y retrouvent tournées d'un quart de
+        // tour — sans conséquence, chacune redevient droite dès qu'elle est découpée.
+        if (debout) sheet.Rotate(90);
+
         MagickInit.Write(sheet, outputPath);
     }
 
@@ -120,21 +157,40 @@ public static class ImagePipeline
     /// tirages d'une même image, c'est un rendu et cinq recopies.
     /// </summary>
     /// <param name="cells">Les photos de cette planche, avec leur nombre de cases.</param>
+    /// <param name="footprint">
+    /// Taille d'une case SUR LA PLANCHE, quand elle diffère de celle à laquelle les photos
+    /// sont rendues. Null — tous les appelants d'origine — la déduit de la première case, et
+    /// rien ne change.
+    ///
+    /// <b>Pourquoi elle existe.</b> Le montage des agrandissements pose des tirages de
+    /// 24×30 dans une empreinte de 30×24 : c'est ce qui permet d'en mettre deux sur un
+    /// 40×60. Rendre la photo AU FORMAT DE L'EMPREINTE la recadrerait dans le mauvais sens ;
+    /// on la rend donc à son orientation, et c'est l'image rendue qu'on tourne d'un quart de
+    /// tour pour la poser. Le tirage découpé retrouve son sens dans la main de l'opérateur —
+    /// exactement ce que fait déjà la planche identité composée debout.
+    /// </param>
     public static void RenderCustomSheetToFile(
         IReadOnlyList<SheetCell> cells, double gapMm, bool cutMarks,
         int sheetWidthPx, int sheetHeightPx, string outputPath, int dpi = 300,
-        bool cutBorder = true)
+        bool cutBorder = true, (int Width, int Height)? footprint = null)
     {
         ArgumentNullException.ThrowIfNull(cells);
         if (cells.Count == 0)
             throw new ArgumentException("Une planche sans photo n'a rien à imprimer.", nameof(cells));
 
-        var cellW = cells[0].Request.TargetWidthPx;
-        var cellH = cells[0].Request.TargetHeightPx;
+        var (cellW, cellH) = footprint
+                             ?? (cells[0].Request.TargetWidthPx, cells[0].Request.TargetHeightPx);
 
-        // toutes les cases d'une grille uniforme font la même taille : une case qui
-        // dépasserait recouvrirait sa voisine sans que rien ne le signale
-        if (cells.Any(c => c.Request.TargetWidthPx != cellW || c.Request.TargetHeightPx != cellH))
+        // Toutes les cases d'une grille uniforme occupent la même empreinte : une case qui
+        // dépasserait recouvrirait sa voisine sans que rien ne le signale.
+        //
+        // Une photo rendue TRANSPOSÉE est admise — elle sera tournée à la pose — mais rien
+        // d'autre : une case de travers occupe la même place, une case d'une autre taille non.
+        static bool Convient(SheetCell c, int largeur, int hauteur) =>
+            (c.Request.TargetWidthPx == largeur && c.Request.TargetHeightPx == hauteur)
+            || (c.Request.TargetWidthPx == hauteur && c.Request.TargetHeightPx == largeur);
+
+        if (cells.Any(c => !Convient(c, cellW, cellH)))
             throw new ArgumentException(
                 "Toutes les photos d'une planche personnalisée doivent être à la même taille.",
                 nameof(cells));
@@ -160,6 +216,11 @@ public static class ImagePipeline
             {
                 var image = Render(cellule.Request, dpi);
                 rendues.Add(image);
+
+                // rendue de travers par rapport à l'empreinte : on la redresse SUR LA
+                // PLANCHE, sans toucher au cadrage. Un quart de tour est exact — aucun
+                // pixel n'est interpolé.
+                if (image.Width != (uint)cellW) image.Rotate(90);
 
                 for (var i = 0; i < cellule.Copies; i++, place++)
                 {
@@ -454,11 +515,13 @@ public static class ImagePipeline
             DrawCutBorder(tirage, pose.Frame, dpi);
             DrawCornerTicks(tirage, pose.Frame, dpi);
 
-            if (request.IccProfilePath is not null)
+            // Comme dans RenderInto : un profil absent ne prive que de la gestion des
+            // couleurs, jamais du tirage.
+            if (request.IccProfilePath is not null && Profil(request.IccProfilePath) is { } profil)
             {
                 tirage.RenderingIntent = RenderingIntent.Perceptual;
                 tirage.BlackPointCompensation = true;
-                tirage.TransformColorSpace(ColorProfiles.SRGB, Profil(request.IccProfilePath));
+                tirage.TransformColorSpace(ColorProfiles.SRGB, profil);
             }
 
             return tirage;
@@ -620,9 +683,14 @@ public static class ImagePipeline
             // gestion couleur chez nous : sRGB → profil imprimante (la correction du
             // pilote doit alors être désactivée dans le DEVMODE du produit, sinon elle
             // s'applique une seconde fois par-dessus la nôtre)
-            image.RenderingIntent = RenderingIntent.Perceptual;  // photos : dégradés et peaux préservés
-            image.BlackPointCompensation = true;                 // évite les noirs bouchés en dye-sub
-            image.TransformColorSpace(ColorProfiles.SRGB, Profil(request.IccProfilePath));
+            // Profil illisible ou absent : on n'applique RIEN et le tirage part quand même,
+            // en sRGB présumé. Voir Profil.
+            if (Profil(request.IccProfilePath) is { } profil)
+            {
+                image.RenderingIntent = RenderingIntent.Perceptual;  // photos : dégradés et peaux préservés
+                image.BlackPointCompensation = true;                 // évite les noirs bouchés en dye-sub
+                image.TransformColorSpace(ColorProfiles.SRGB, profil);
+            }
         }
     }
 
@@ -636,11 +704,42 @@ public static class ImagePipeline
     ///
     /// <see cref="ColorProfile"/> ne porte que les octets du profil et ne s'altère pas à
     /// l'usage : le même objet se partage entre fils sans risque.
+    ///
+    /// <b>Un profil manquant ne fait PLUS échouer le tirage.</b> Il levait, et la commande
+    /// mourait avec lui — pas un tirage moins juste : AUCUN tirage. Le poste
+    /// DESKTOP-KT88VDM y a perdu son après-midi du 12/08/2026 : son catalogue venait d'être
+    /// repris et réclamait <c>DS620-R0.icc</c>, que son pilote DNP avait installé sous le
+    /// nom <c>PD_DS620-R0.icc</c>. Une lettre de préfixe, et plus rien ne sortait.
+    ///
+    /// La gestion des couleurs est un RAFFINEMENT ; le tirage est le métier. Sans profil on
+    /// tire en sRGB présumé — c'est ce que faisait le logiciel avant qu'ils existent, et
+    /// c'est infiniment mieux que de rendre la main à l'opérateur devant son client.
     /// </summary>
-    private static ColorProfile Profil(string chemin) =>
-        Profils.GetOrAdd(chemin, c => new ColorProfile(File.ReadAllBytes(c)));
+    private static ColorProfile? Profil(string chemin)
+    {
+        // Null porté en valeur : ConcurrentDictionary ne mémorise pas les null, et l'on
+        // relirait le disque à chaque photo d'une enveloppe pour rater le même fichier.
+        var connu = Profils.GetOrAdd(chemin, c =>
+        {
+            try
+            {
+                return new ColorProfile(File.ReadAllBytes(c));
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"Profil couleur « {Path.GetFileName(c)} » illisible ({ex.Message}) — " +
+                            "tirage en sRGB présumé, sans gestion des couleurs.");
+                return null;
+            }
+        });
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ColorProfile>
+        return connu;
+    }
+
+    /// <summary>Journal optionnel, branché sur FileLog par l'application.</summary>
+    public static Action<string>? Log { get; set; }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ColorProfile?>
         Profils = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>

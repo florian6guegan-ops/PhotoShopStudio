@@ -44,14 +44,14 @@ public sealed class De100BridgeClient : IAsyncDisposable
     /// <summary>
     /// Délai par commande. Court pour tout ce qui interroge — l'écran attend la réponse,
     /// et un relais muet ne doit pas figer le bandeau des machines pendant des minutes —
-    /// long pour ce qui engage la machine.
+    /// long pour ce qui ENGAGE la machine.
+    ///
+    /// Le partage se lit dans <see cref="De100Commands.EngageLaMachine"/>, que le relais
+    /// applique aussi : c'est le plus court des deux délais qui décide, les tenir séparés
+    /// ne servait qu'à les laisser diverger.
     /// </summary>
-    private TimeSpan DelaiPour(string command) => command switch
-    {
-        De100Commands.Submit => SubmitTimeout,
-        De100Commands.Cancel => SubmitTimeout,
-        _ => _timeout,
-    };
+    internal TimeSpan DelaiPour(string command) =>
+        De100Commands.EngageLaMachine(command) ? SubmitTimeout : _timeout;
 
     private readonly ConcurrentDictionary<string, TaskCompletionSource<De100Message>> _pending = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -255,6 +255,13 @@ public sealed class De100BridgeClient : IAsyncDisposable
     public async Task CancelAsync(string orderHandle) =>
         await SendAsync<object>(De100Commands.Cancel, orderHandle);
 
+    /// <summary>
+    /// Où en est une commande, comptée par la machine elle-même. Null si le SDK ne
+    /// reconnaît plus ce handle.
+    /// </summary>
+    public Task<De100OrderProgress?> OrderProgressAsync(string orderHandle) =>
+        SendAsync<De100OrderProgress>(De100Commands.OrderProgress, orderHandle);
+
     /// <summary>Tirages encore suivis par le relais.</summary>
     public async Task<IReadOnlyList<string>> PendingJobsAsync() =>
         await SendAsync<List<string>>(De100Commands.PendingJobs) ?? [];
@@ -383,10 +390,12 @@ public sealed class De100BridgeClient : IAsyncDisposable
 
         var message = $"Le relais DE100 n'a pas répondu à « {command} » en {duree}.";
 
-        if (command is not (De100Commands.Submit or De100Commands.Cancel)) return message;
+        if (!De100Commands.EngageLaMachine(command)) return message;
+
+        var ou = command is De100Commands.DnpPrint ? "CE QUI SORT DE LA DNP" : "SUR LE MINILAB";
 
         return message + "\n\nLe tirage a peut-être malgré tout été pris par la machine : " +
-               "VÉRIFIEZ SUR LE MINILAB avant de réimprimer. Rien n'a été renvoyé automatiquement.";
+               $"VÉRIFIEZ {ou} avant de réimprimer. Rien n'a été renvoyé automatiquement.";
     }
 
     private async Task<T?> SendAsync<T>(string command, object? payload = null)

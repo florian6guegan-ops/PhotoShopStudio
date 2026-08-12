@@ -92,4 +92,54 @@ public static class CotesProduit
         || (Proche(attendu.A, y) && Proche(attendu.B, x));
 
     private static bool Proche(double a, double b) => Math.Abs(a - b) <= 1.0;
+
+    /// <summary>
+    /// Petit côté au-dessous duquel un produit ne peut pas être un papier, en millimètres.
+    ///
+    /// Le plus petit du catalogue de la boutique est le 8×10, qui mesure <b>80 × 102</b>.
+    /// Le seuil est posé bien en dessous : il ne s'agit pas de juger un format, seulement
+    /// d'attraper l'ordre de grandeur d'une saisie en centimètres — 40 × 50 ou 10 × 15
+    /// millimètres, soit un timbre.
+    ///
+    /// Les cases d'une planche d'identité (35 × 45) ne sont PAS concernées : ce sont des
+    /// cellules (<c>SheetCellWidthMm</c>), pas des produits.
+    /// </summary>
+    public const double PlusPetitPapierMm = 50;
+
+    /// <summary>
+    /// Ce qui cloche dans les cotes de ce produit, en une phrase — ou <c>null</c> si tout
+    /// va bien.
+    ///
+    /// <b>Pourquoi ce second point d'entrée.</b> <see cref="SiSaisiEnCentimetres"/> ne
+    /// parle que si le NOM porte un format : c'est ce qui lui donne sa précision, et c'est
+    /// aussi sa limite. Le poste DESKTOP-KT88VDM avait deux produits en centimètres, et un
+    /// seul était nommé « 40x50 » — l'autre s'appelait « E-PHOTO » et mesurait 10 × 15 mm.
+    /// Aucun format dans le libellé, donc rien à rapprocher, et il est passé au travers
+    /// pendant des semaines (constaté le 12/08/2026).
+    ///
+    /// On ajoute donc un filet qui ne demande aucun nom : <b>un papier ne fait pas cinq
+    /// centimètres</b>. Les deux règles se complètent — la première dit ce qu'il fallait
+    /// saisir, la seconde attrape ce qu'aucun nom ne trahissait.
+    /// </summary>
+    /// <remarks>
+    /// Ne corrige RIEN de lui-même. Un catalogue est le travail de l'exploitant : on le
+    /// signale, il tranche. Une correction automatique sur des cotes changerait ce qui sort
+    /// du papier sans que personne l'ait demandé.
+    /// </remarks>
+    public static string? Anomalie(string? nom, string? code, double largeurMm, double hauteurMm)
+    {
+        var libelle = string.IsNullOrWhiteSpace(nom) ? code : nom;
+
+        if (SiSaisiEnCentimetres(nom, code, largeurMm, hauteurMm) is { } voulu)
+            return $"« {libelle} » mesure {largeurMm:0.#} × {hauteurMm:0.#} mm, " +
+                   $"soit ce que son nom annonce en CENTIMÈTRES — il devrait sans doute " +
+                   $"mesurer {voulu.LargeurMm:0.#} × {voulu.HauteurMm:0.#} mm.";
+
+        if (largeurMm > 0 && hauteurMm > 0 && Math.Min(largeurMm, hauteurMm) < PlusPetitPapierMm)
+            return $"« {libelle} » mesure {largeurMm:0.#} × {hauteurMm:0.#} mm : " +
+                   "aucun papier ne fait cette taille. Des centimètres ont sans doute été " +
+                   "saisis à la place des millimètres.";
+
+        return null;
+    }
 }

@@ -371,6 +371,11 @@ public sealed class DiLandImporter
                     SourcePath: chemin,
                     Product: produit,
                     Quantity: Math.Max(1, photo.Quantity),
+                    // Le client a choisi sa finition à la borne : elle décide du ROULEAU,
+                    // donc de la machine DE100 qui recevra l'enveloppe. Sans elle le
+                    // tirage partait sur la première machine dont le rouleau avait la
+                    // bonne largeur, et un lustré sortait en brillant.
+                    Finish: ligne.Finish,
                     Crop: CropOf(photo),
                     // l'EXIF est déjà appliqué au rendu : reprendre l'angle de DiLand tel
                     // quel le compterait deux fois (voir QuartsDeTourResiduels)
@@ -416,12 +421,22 @@ public sealed class DiLandImporter
     /// Produit de la LIGNE d'où vient cette photo, et non le produit majoritaire de la
     /// commande : une commande mixte 10×15 + 13×18 doit s'ouvrir juste.
     /// </param>
+    /// <param name="Finition">
+    /// Finition demandée par le client sur CETTE ligne (voir <see cref="FinitionPapier"/>),
+    /// null s'il n'en a pas demandé.
+    ///
+    /// Elle voyage avec le cadrage pour la même raison que lui : le parcours « Modifier »
+    /// recopie les fichiers puis rescanne le dossier, et tout ce qui n'est pas porté ici
+    /// disparaît à l'ouverture. Sans elle, une commande lustrée s'ouvrait sans finition et
+    /// repartait sur la machine dont le rouleau avait la bonne LARGEUR.
+    /// </param>
     public sealed record CadrageBorne(
         CropSpec Crop,
         int QuartsDeTour,
         double RedressementDegres,
         int Quantite,
-        string? CodeProduit);
+        string? CodeProduit,
+        string? Finition = null);
 
     /// <summary>Ce qu'il faut pour ouvrir une commande de borne dans l'écran des photos.</summary>
     /// <param name="PhotosDirectory">Dossier où les photos ont été recopiées.</param>
@@ -510,7 +525,8 @@ public sealed class DiLandImporter
                     QuartsDeTourResiduels(photo, Path.Combine(destination, photo.FileName)),
                     photo.FineRotationDegrees,
                     Math.Max(1, photo.Quantity),
-                    produit?.Code));
+                    produit?.Code,
+                    ligne.Finish));
             }
         }
 

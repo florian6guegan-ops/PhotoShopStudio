@@ -44,7 +44,29 @@ public class MinilabRoutingTests : IDisposable
             return Task.FromResult(copies);
         }
 
-        public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
+        /// <summary>
+        /// Surface chargée machine par machine — le cas du DE100 de la boutique, dont les
+        /// deux machines portent justement des rouleaux différents (brillant d'un côté,
+        /// lustré de l'autre). Ce qui n'y figure pas retombe sur <see cref="SurfaceParDefaut"/>.
+        /// </summary>
+        public Dictionary<char, De100Surface> Surfaces { get; } = [];
+
+        /// <summary>
+        /// Ce que rend une machine dont l'essai ne dit rien de la surface. Null = elle ne
+        /// sait pas, le cas d'un pont qui ne décrit pas le média.
+        /// </summary>
+        public De100Surface? SurfaceParDefaut { get; set; } = De100Surface.Lustre;
+
+        /// <summary>Machines qui ne répondent pas quand on les interroge sur leur rouleau.</summary>
+        public HashSet<char> Muettes { get; } = [];
+
+        public De100Surface? LoadedSurface(char machineId)
+        {
+            if (Muettes.Contains(machineId))
+                throw new InvalidOperationException($"Minilab {machineId} : pas de réponse.");
+
+            return Surfaces.TryGetValue(machineId, out var surface) ? surface : SurfaceParDefaut;
+        }
 
         /// <summary>Rouleau chargé ; 0 par défaut = largeur inconnue, aucun contrôle.</summary>
         public int PaperWidthMm { get; set; }
@@ -93,6 +115,10 @@ public class MinilabRoutingTests : IDisposable
 
             Canceled.Add(orderHandle);
         }
+
+        /// <summary>Pas de machine, donc pas de compte de tirages : le suivi s'en passe.</summary>
+        public Task<De100OrderProgress?> OrderProgressAsync(string orderHandle) =>
+            Task.FromResult<De100OrderProgress?>(null);
     }
 
     private static Product Minilab(string code = "10x15", string? machine = null) => new()

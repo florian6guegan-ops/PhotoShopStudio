@@ -569,7 +569,8 @@ public partial class SettingsView : UserControl
             var chemin = Path.Combine(Path.GetTempPath(), RapportDiagnostic.NomPropose());
 
             var contenu = RapportDiagnostic.Fabriquer(
-                FileLog.LogsDir, App.Services.ConfigDir, chemin, RapportNoteBox.Text);
+                FileLog.LogsDir, App.Services.ConfigDir, chemin, RapportNoteBox.Text,
+                App.Services.CatalogDir);
 
             RapportEtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
             RapportEtatText.Text =
@@ -1102,6 +1103,17 @@ public partial class SettingsView : UserControl
         BiRefNetMatting.DossiersCherches.FirstOrDefault()
         ?? Path.Combine(App.Services.DataRoot, "models");
 
+    /// <summary>
+    /// La carte de ce poste peut-elle porter le modèle puissant ?
+    ///
+    /// Une carte qui n'annonce pas sa mémoire passe pour capable : on ne retire pas un
+    /// choix à quelqu'un sur un doute, et le repli sur la méthode couleur rattrape de
+    /// toute façon un modèle qui n'aurait pas tenu.
+    /// </summary>
+    private static bool LaCarteTientLeModelePuissant() =>
+        CarteGraphique.Principale() is not { MemoireGo: { } go } ||
+        go >= DetourageSettings.MemoireVideoMinimaleGo;
+
     private void DecrireLeMateriel()
     {
         var carte = CarteGraphique.Principale();
@@ -1113,12 +1125,22 @@ public partial class SettingsView : UserControl
             return;
         }
 
-        var assez = carte.MemoireGo is null ||
-                    carte.MemoireGo >= DetourageSettings.MemoireVideoMinimaleGo;
+        var assez = LaCarteTientLeModelePuissant();
+
+        // Le modèle puissant n'est PAS offert à une carte qui ne le portera pas. Le
+        // commentaire du XAML dit « rien de grisé », et il a raison sur le fond : ce qui
+        // avait piégé, c'était une case grise que rien n'expliquait. Elle l'est ici par la
+        // phrase qui suit, à l'endroit exact où le regard tombe — et le choix qu'on retire
+        // est celui dont on SAIT qu'il échouerait sur la deuxième photo d'une planche.
+        ReseauPuissantRadio.IsEnabled = assez;
 
         MaterielText.Foreground = (Brush)Application.Current.Resources[assez ? "OkBrush" : "TitleBrush"];
         MaterielText.Text = $"Carte de ce poste : {carte}." +
-                            (assez ? "" : " Le modèle puissant y est déconseillé.");
+                            (assez
+                                ? ""
+                                : $" Il lui faut {DetourageSettings.MemoireVideoMinimaleGo:0} Go de " +
+                                  "mémoire vidéo pour le modèle « portrait » : le choix est grisé " +
+                                  "ci-dessus, et le modèle « lite » reste le bon sur ce poste.");
     }
 
     private void DecrireLesModeles()
@@ -1148,6 +1170,19 @@ public partial class SettingsView : UserControl
         {
             InstallerModeleButton.Content = "Modèles installés";
             TelechargementText.Text = "";
+        }
+
+        // Sur une carte trop juste, on ne fait pas non plus télécharger 467 Mo pour un
+        // modèle qu'on vient de griser au-dessus. Le « lite » manquant, lui, reste offert :
+        // c'est celui qui tourne partout.
+        else if (leger is not null && !LaCarteTientLeModelePuissant())
+        {
+            InstallerModeleButton.IsEnabled = false;
+            InstallerModeleButton.Content = "Modèle installé";
+            TelechargementText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
+            TelechargementText.Text =
+                "Le modèle « portrait » n'est pas proposé ici : cette carte n'a pas la mémoire " +
+                "vidéo qu'il demande.";
         }
     }
 
@@ -1198,11 +1233,32 @@ public partial class SettingsView : UserControl
             FileLog.Write($"Modèle de détourage « {manquant} » : téléchargement impossible", ex);
 
             TelechargementText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
-            TelechargementText.Text =
-                $"Téléchargement impossible : {ex.Message}. Le détourage par couleur reste disponible.";
+            TelechargementText.Text = PourquoiLeModeleNArrivePas(manquant, ex);
 
             InstallerModeleButton.IsEnabled = true;
         }
+    }
+
+    /// <summary>
+    /// Ce qu'on dit à l'opérateur quand l'installation échoue.
+    ///
+    /// <b>« Response status code does not indicate success: 404 (Not Found) »</b> était ce
+    /// qu'il lisait — un message d'outil de développement, sous un bouton de boutique. Et
+    /// il désigne le cas le plus fréquent : le modèle n'a jamais été envoyé dans la
+    /// publication qui les porte. Ce n'est ni la faute du poste, ni celle du réseau, et
+    /// aucun nombre de tentatives n'y changera quoi que ce soit — il faut le dire.
+    /// </summary>
+    private static string PourquoiLeModeleNArrivePas(string manquant, Exception ex)
+    {
+        if (ex is System.Net.Http.HttpRequestException
+            { StatusCode: System.Net.HttpStatusCode.NotFound })
+            return $"« {manquant} » n'est pas encore publié : rien à télécharger pour l'instant, " +
+                   "et réessayer n'y changera rien. Le détourage marche avec le modèle déjà " +
+                   "installé, ou par la méthode couleur.";
+
+        // Le réseau coupé, le disque plein, le pare-feu de la boutique : ceux-là valent la
+        // peine d'être retentés, et le message d'origine dit lequel c'est.
+        return $"Téléchargement impossible : {ex.Message}. Le détourage par couleur reste disponible.";
     }
 
     /// <summary>Ce que va faire le détourage, tel que l'écran est réglé — en une phrase.</summary>

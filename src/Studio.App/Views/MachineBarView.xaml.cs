@@ -425,8 +425,11 @@ public partial class MachineBarView : UserControl
                 return;
             }
 
+            // « lustré » et non « Lustre » : c'est le mot du client et de l'opérateur, et
+            // celui que porteront la liste des machines et les avertissements de tirage.
+            // Trois orthographes pour un même rouleau sur un même écran, c'est une de trop.
             Papier = info.Media is { } media
-                ? $"{media.PaperWidthMm} mm · {media.Surface}"
+                ? $"{media.PaperWidthMm} mm · {PrintOrchestrator.Dire(media.Surface)}"
                 : "papier inconnu";
 
             // L'estimation porte sur le format QU'ON VA TIRER quand on le connaît, et non
@@ -663,7 +666,12 @@ public partial class MachineBarView : UserControl
                            $"{echecs}{reste}";
                 }
 
-                return $"Commande {t.Numero} — {t.Etape} {t.Detail}";
+                // Pendant l'envoi au minilab, le compte porte sur des pages REMISES et non
+                // sur du papier sorti : l'afficher revenait à annoncer « 20 / 20 » avant le
+                // premier tirage, puis à repartir de zéro.
+                return t.CompteDuPapierSorti
+                    ? $"Commande {t.Numero} — {t.Etape} {t.Detail}"
+                    : $"Commande {t.Numero} — {t.Etape}…";
             }
         }
 
@@ -672,7 +680,11 @@ public partial class MachineBarView : UserControl
         /// <summary>
         /// Une étape dont on ne connaît pas encore le total (le rendu qui démarre) doit
         /// montrer qu'il se passe quelque chose plutôt qu'une barre vide et immobile.
+        ///
+        /// L'envoi au minilab est dans le même cas : son compte ne dit rien du papier, et
+        /// une barre qu'il remplissait avant de retomber à zéro se lisait comme un recul.
         /// </summary>
-        public bool Indetermine => Travail is { Total: <= 0 };
+        public bool Indetermine =>
+            Travail is { Total: <= 0 } or { CompteDuPapierSorti: false };
     }
 }

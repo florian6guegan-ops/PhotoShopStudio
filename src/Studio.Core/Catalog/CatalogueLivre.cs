@@ -1,3 +1,5 @@
+using Studio.Core.Domain;
+
 namespace Studio.Core.Catalog;
 
 /// <summary>
@@ -76,7 +78,23 @@ public static class CatalogueLivre
                 File.Copy(cible, Path.Combine(dossierCatalogue, $"products.amorcage-{horodatage}.json"), overwrite: true);
             }
 
+            // CE QUE L'EXPLOITANT A AJOUTÉ LUI RESTE.
+            //
+            // Le catalogue d'amorçage se remplace sans regret — il n'imprime nulle part —,
+            // mais un produit créé À CÔTÉ est un vrai travail : le 40×50 de
+            // DESKTOP-KT88VDM avait été fabriqué à la main en dupliquant un 30×40. Le
+            // perdre à la faveur d'une reprise serait payer la correction du prix d'un
+            // dégât, et l'exploitant n'aurait aucune raison de faire le lien.
+            var ajoutes = reprise ? ProduitsAjoutes(cible, livre) : [];
+
             File.Copy(livre, cible, overwrite: true);
+
+            if (ajoutes.Count > 0)
+            {
+                var fusionne = ProductCatalog.Load(cible).All.ToList();
+                fusionne.AddRange(ajoutes);
+                ProductCatalog.Save(cible, fusionne);
+            }
 
             // Les réglages pilote capturés au dialogue. Sans eux, la planche d'identité
             // sort avec les réglages par défaut de la DS620 — mauvaise finition, mauvaise
@@ -164,13 +182,17 @@ public static class CatalogueLivre
             var dossierIcc = Path.Combine(dossierCatalogue, "icc");
             var importes = new List<string>();
 
+            // Relevé UNE fois : le dossier couleur de Windows en contient couramment
+            // plusieurs dizaines, et on le parcourrait sinon par profil réclamé.
+            var poses = Directory.EnumerateFiles(dossierCouleurWindows, "*.icc").ToList();
+
             foreach (var nom in reclames)
             {
                 var cible = Path.Combine(dossierIcc, nom);
                 if (File.Exists(cible)) continue;
 
-                var source = Path.Combine(dossierCouleurWindows, nom);
-                if (!File.Exists(source)) continue;
+                var source = TrouverLeProfil(poses, dossierCouleurWindows, nom);
+                if (source is null) continue;
 
                 Directory.CreateDirectory(dossierIcc);
                 File.Copy(source, cible);
@@ -185,6 +207,38 @@ public static class CatalogueLivre
             // pas d'empêcher le démarrage — le tirage part en sRGB présumé, comme avant
             return [];
         }
+    }
+
+    /// <summary>
+    /// Le fichier du dossier couleur qui correspond au profil réclamé, ou null.
+    ///
+    /// <b>Le nom exact ne suffit pas.</b> Le même profil DNP s'installe sous des noms
+    /// différents selon la version du pilote : <c>DS620-R0.icc</c> à Maisons-Alfort,
+    /// <c>PD_DS620-R0.icc</c> sur le poste DESKTOP-KT88VDM (constaté le 12/08/2026). Le
+    /// catalogue, lui, nomme un seul des deux — et le poste qui ne l'avait pas sous ce
+    /// nom-là s'est retrouvé sans gestion des couleurs, puis sans impression du tout tant
+    /// que le profil manquant faisait échouer le rendu.
+    ///
+    /// On accepte donc un PRÉFIXE de fabricant, et rien de plus : le nom réclamé doit
+    /// terminer celui du fichier, sur une frontière propre. Un profil qui se contenterait
+    /// de contenir le nom quelque part ne serait pas le même produit.
+    /// </summary>
+    private static string? TrouverLeProfil(
+        IEnumerable<string> poses, string dossierCouleurWindows, string nom)
+    {
+        var exact = Path.Combine(dossierCouleurWindows, nom);
+        if (File.Exists(exact)) return exact;
+
+        return poses.FirstOrDefault(chemin =>
+        {
+            var fichier = Path.GetFileName(chemin);
+            if (!fichier.EndsWith(nom, StringComparison.OrdinalIgnoreCase)) return false;
+
+            // « PD_DS620-R0.icc » convient ; « MONDS620-R0.icc » non — le préfixe doit se
+            // terminer par un séparateur, sinon on rapproche deux profils sans rapport.
+            var prefixe = fichier[..^nom.Length];
+            return prefixe.Length > 0 && (prefixe.EndsWith('_') || prefixe.EndsWith('-'));
+        });
     }
 
     /// <summary>
@@ -207,29 +261,45 @@ public static class CatalogueLivre
     }
 
     /// <summary>
-    /// Ce catalogue est-il celui d'amorçage, jamais touché depuis ?
+    /// Ce catalogue porte-t-il encore les produits d'amorçage INTACTS ?
     ///
-    /// Reconnu sur ses codes, à l'identique et sans rien de plus : dès qu'un produit a été
-    /// ajouté, retiré ou renommé, quelqu'un s'en est servi et le fichier lui appartient.
-    /// Les PRIX et les réglages, eux, ne comptent pas — on ne va pas garder un catalogue
-    /// d'amorçage sous prétexte que son 10×15 a été passé à 0,65 €, alors qu'il ne sait
-    /// toujours imprimer que sur « Microsoft Print to PDF ».
+    /// <b>Ce n'est plus « à l'identique et sans rien de plus ».</b> La reconnaissance
+    /// portait sur l'ensemble EXACT des codes (<c>SetEquals</c>), et c'était trop strict
+    /// d'un cran : elle se désarmait au premier produit ajouté — c'est-à-dire au premier
+    /// geste d'un poste neuf. Le poste <c>DESKTOP-KT88VDM</c> l'a payé, découvert le
+    /// 12/08/2026 : son opérateur avait dupliqué un 30×40 pour se faire un 40×50, la
+    /// reprise ne l'a donc plus jamais reconnu, et ses cinq produits d'amorçage sont restés
+    /// des semaines. <b>Toutes ses commandes partaient dans « Microsoft Print to PDF »</b>,
+    /// pendant qu'il cherchait la panne du côté de sa DNP et de son DE100.
     ///
-    /// Volontairement strict : dans le doute, on ne touche à rien.
+    /// On regarde donc les produits d'amorçage EUX-MÊMES, et non le contour de la liste :
+    /// s'ils sont tous là et qu'aucun n'a été retouché — même code, mêmes cotes, même
+    /// imprimante —, personne ne s'en est servi pour imprimer quoi que ce soit. Ce qui a
+    /// été ajouté À CÔTÉ ne prouve rien : <see cref="PoserSiAbsent"/> le conserve.
+    ///
+    /// Le PRIX ne compte toujours pas — on ne va pas garder un catalogue d'amorçage sous
+    /// prétexte que son 10×15 est passé à 0,65 €, alors qu'il ne sait toujours imprimer que
+    /// sur « Microsoft Print to PDF ». Le NOM non plus.
+    ///
+    /// Reste volontairement strict sur ce qui compte : dès qu'un de ces cinq produits vise
+    /// une vraie machine, l'exploitant a configuré son poste et le fichier lui appartient.
     /// </summary>
     public static bool EstLeCatalogueDAmorcage(string productsJson)
     {
         try
         {
-            var codes = ProductCatalog.Load(productsJson).All
-                .Select(p => p.Code)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var presents = ProductCatalog.Load(productsJson).All
+                .ToDictionary(p => p.Code, StringComparer.OrdinalIgnoreCase);
 
-            var amorcage = ProductCatalog.CreateDefaultProducts()
-                .Select(p => p.Code)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var amorcage = ProductCatalog.CreateDefaultProducts();
 
-            return codes.SetEquals(amorcage);
+            foreach (var attendu in amorcage)
+            {
+                if (!presents.TryGetValue(attendu.Code, out var trouve)) return false;
+                if (!EstIntact(trouve, attendu)) return false;
+            }
+
+            return true;
         }
         catch (Exception)
         {
@@ -237,4 +307,42 @@ public static class CatalogueLivre
             return false;
         }
     }
+
+    /// <summary>
+    /// Les produits du poste que le catalogue livré ne porte pas, et qui ne sont pas ceux
+    /// d'amorçage : autrement dit, ce que l'exploitant a créé de sa main.
+    ///
+    /// Rendu vide au moindre doute — une liste illisible ne doit pas empêcher la reprise,
+    /// qui reste le but principal.
+    /// </summary>
+    private static List<Product> ProduitsAjoutes(string catalogueDuPoste, string catalogueLivre)
+    {
+        try
+        {
+            var connus = ProductCatalog.Load(catalogueLivre).All
+                .Select(p => p.Code)
+                .Concat(ProductCatalog.CreateDefaultProducts().Select(p => p.Code))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return ProductCatalog.Load(catalogueDuPoste).All
+                .Where(p => !connus.Contains(p.Code))
+                .ToList();
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Ce produit est-il resté celui d'amorçage ?
+    ///
+    /// L'IMPRIMANTE d'abord, parce que c'est elle qui décide si une commande sort ou
+    /// non ; les COTES ensuite, parce qu'on ne configure pas un poste sans toucher au
+    /// format. Les deux ensemble ne se retrouvent pas par hasard sur un poste en service.
+    /// </summary>
+    private static bool EstIntact(Product trouve, Product amorcage) =>
+        string.Equals(trouve.PrinterName, amorcage.PrinterName, StringComparison.OrdinalIgnoreCase)
+        && Math.Abs(trouve.WidthMm - amorcage.WidthMm) < 0.01
+        && Math.Abs(trouve.HeightMm - amorcage.HeightMm) < 0.01;
 }

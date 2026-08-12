@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Studio.Core.Domain;
 using Studio.Printing;
+using Studio.Printing.Devices.Fuji;
 
 namespace Studio.App.Infrastructure;
 
@@ -190,6 +191,15 @@ public sealed class TravailImpression : ObservableObject
     }
 
     /// <summary>
+    /// Feuilles que cette commande doit encore sortir.
+    ///
+    /// Sert à la commande SUIVANTE sur la même machine : le minilab tire dans l'ordre où il
+    /// reçoit, donc ce qui reste ici tombera avant le premier tirage de la suivante, et ne
+    /// doit pas être compté pour elle.
+    /// </summary>
+    internal int RestantASortir => Math.Max(0, _attendus - Sortis);
+
+    /// <summary>
     /// Quand la machine a commencé à sortir du papier. Sert à deux choses : estimer ce
     /// qu'il reste, et MESURER le débit réel une fois la commande finie.
     /// </summary>
@@ -302,6 +312,14 @@ public sealed class TravailImpression : ObservableObject
     internal int VerdictsAttendus { get; private set; }
 
     /// <summary>
+    /// Handle de la commande côté minilab, ou null hors de ce circuit.
+    ///
+    /// C'est la clé qui permet de demander à la machine où en est CETTE commande, au lieu
+    /// de lire son compteur général et d'y attribuer tout ce qui sort.
+    /// </summary>
+    internal string? HandleMinilab { get; private set; }
+
+    /// <summary>
     /// Ce qui est réellement parti à la machine, quel que soit le circuit.
     ///
     /// <see cref="PhotosEnvoyees"/> ne vaut que pour le minilab : lui seul annonce une
@@ -326,7 +344,32 @@ public sealed class TravailImpression : ObservableObject
 
         PhotosEnvoyees = avancement.Faits;
         VerdictsAttendus = avancement.Verdicts;
+        if (avancement.Handle is { Length: > 0 } handle) HandleMinilab = handle;
+
+        // Le minilab est le seul circuit où l'envoi n'est PAS le tirage : il reçoit toute
+        // l'enveloppe en quelques secondes, puis met plusieurs minutes à la sortir. C'est
+        // le nombre de verdicts attendus qui le trahit — lui seul en annonce.
+        if (avancement.Verdicts > 0) _versMinilab = true;
     }
+
+    private bool _versMinilab;
+
+    /// <summary>
+    /// Vrai quand <see cref="Faits"/> compte du PAPIER SORTI, et non des pages remises.
+    ///
+    /// <b>Ce qui se passait sans cette distinction.</b> Sur le minilab, la barre se
+    /// remplissait pendant l'envoi — quelques secondes, aucun papier — puis
+    /// <see cref="CommencerLeTirage"/> remettait le compte à zéro pour le vrai tirage :
+    /// l'opérateur voyait « Envoi 20 / 20 », puis « 0 / 20 photo(s) sorties », puis une
+    /// remontée lente. Sur une commande d'une seule photo, « 1 / 1 » puis « 0 / 1 » puis
+    /// « 1 / 1 ». Le compte ne décalait pas, il RECULAIT.
+    ///
+    /// Les autres circuits — spouleur Windows, envoi direct DNP — remettent page par page
+    /// et ne sauront jamais dire ce qui est tombé : chez eux, ce qui est remis est le seul
+    /// avancement qu'on puisse montrer, et il ne recule pas.
+    /// </summary>
+    public bool CompteDuPapierSorti =>
+        !_versMinilab || Etape.StartsWith("Tirage", StringComparison.Ordinal);
 
     internal void Liberer() => _arret.Dispose();
 }
@@ -495,6 +538,15 @@ public sealed class SuiviImpressions : ObservableObject
             _note = attente.Message;
             FileLog.Write($"Impression : commande {travail.Numero} en attente — {attente.Message}");
         }
+        catch (PrintUnconfirmedException doute)
+        {
+            // Ni échec ni attente : on NE SAIT PAS si le tirage est sorti. Le message porte
+            // déjà la seule consigne utile — regarder le bac —, et il ne faut surtout pas
+            // le compléter par le « reste réimprimable » du cas général : c'est exactement
+            // la phrase qui fait réimprimer un tirage déjà tombé.
+            _note = doute.Message;
+            FileLog.Write($"Impression : commande {travail.Numero} sortie non confirmée — {doute.Message}");
+        }
         catch (OperationCanceledException)
         {
             _note = $"Commande {travail.Numero} arrêtée.";
@@ -555,10 +607,25 @@ public sealed class SuiviImpressions : ObservableObject
 
         travail.CommencerLeTirage(travail.PhotosEnvoyees, travail.VerdictsAttendus);
 
-        // Le compteur de la machine AVANT que cette commande ne sorte : tout ce qui
-        // s'ajoutera dessus, c'est elle. Relevé après CommencerLeTirage, donc au plus près
-        // du premier tirage.
-        var compteurDepart = await LireLeCompteur(travail.Machine);
+        // LE COMPTE DE LA MACHINE, POUR CETTE COMMANDE-LÀ.
+        //
+        // Il n'y a plus de point de départ à relever ni de soustraction à faire : le minilab
+        // tient un compteur par commande (ST_ORDER_INFO.printedNum), et c'est celui-là qu'on
+        // lui demande. Ce qu'il sort par ailleurs — une autre commande de Studio, DiLand sur
+        // la même machine — ne le touche pas.
+        //
+        // Le compteur GÉNÉRAL de la machine servait jusqu'ici, faute de mieux : il fallait
+        // en retrancher la valeur du départ, et tout ce qui passait entre-temps venait
+        // gonfler l'avancement. C'est ce que lit le pilote de DiLand depuis toujours, et
+        // c'est pourquoi son affichage, lui, ne décalait pas.
+        var parCommande = travail.HandleMinilab is { Length: > 0 };
+
+        if (!parCommande)
+            FileLog.Write($"Suivi : commande {travail.Numero} — pas de handle minilab, " +
+                          "l'avancement se lira sur les verdicts.");
+
+        // le dernier compte vu, pour le bilan de fin
+        De100OrderProgress? dernierEtat = null;
 
         // le bandeau montre une DURÉE qui s'écoule : sans battement, elle resterait figée
         // entre deux photos, et une commande d'A4 ne bouge que toutes les vingt secondes
@@ -576,18 +643,39 @@ public sealed class SuiviImpressions : ObservableObject
         // relais 32 bits (voir De100Protocol), et il ne faut pas le lui redemander.
         var lectureEnCours = false;
 
+        // Le premier relevé muet est DIT, une fois.
+        //
+        // Il ne l'était pas : pour éviter une ligne toutes les dix secondes, ce chemin
+        // avalait ses échecs sans un mot — et la commande 11-029 du 11/08/2026 est sortie
+        // sans que rien n'avance à l'écran ni ne s'écrive au journal. Un silence par
+        // relevé, oui ; un silence sur le premier, non.
+        var muetSignale = false;
+
         var releve = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         releve.Tick += async (_, _) =>
         {
-            if (compteurDepart is not { } depart) return;
+            if (!parCommande) return;
             if (lectureEnCours) return;
 
             lectureEnCours = true;
             try
             {
-                if (await LireLeCompteur(travail.Machine) is not { } maintenant) return;
+                var etat = await App.Services.Minilab.OrderProgressAsync(travail.HandleMinilab!);
+                if (etat is null)
+                {
+                    if (!muetSignale)
+                    {
+                        muetSignale = true;
+                        FileLog.Write(
+                            $"Suivi : commande {travail.Numero} — la machine ne dit rien de " +
+                            $"« {travail.HandleMinilab} ». L'avancement retombe sur les verdicts.");
+                    }
 
-                travail.NoterFeuillesSorties((int)(maintenant - depart));
+                    return;
+                }
+
+                dernierEtat = etat;
+                travail.NoterFeuillesSorties((int)etat.Printed);
                 Prevenir();
             }
             finally
@@ -626,6 +714,15 @@ public sealed class SuiviImpressions : ObservableObject
             battement.Stop();
             releve.Stop();
         }
+
+        // BILAN, une ligne par commande : ce que la machine a compté pour ELLE, et ce que
+        // l'écran en a montré. Les deux doivent coïncider — c'est le contrôle du suivi.
+        if (dernierEtat is { } etatFinal)
+            FileLog.Write(
+                $"Suivi : commande {travail.Numero} — la machine {travail.Machine} compte " +
+                $"{etatFinal.Printed}/{etatFinal.Total} tirage(s) pour cette commande " +
+                $"({De100JobTracker.Describe(etatFinal.Status)}), " +
+                $"{travail.Sortis}/{travail.Total} montrés à l'écran.");
 
         // LA MACHINE A RÉPONDU SUR TOUT, ET SANS ÉCHEC : l'enveloppe est close sur le
         // disque. C'est ce qui manquait — les verdicts arrivaient, le bandeau les montrait,

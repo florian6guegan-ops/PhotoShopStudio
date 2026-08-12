@@ -15,6 +15,15 @@ namespace Studio.Printing.Devices.Fuji;
 public sealed class De100Driver : IDisposable
 {
     private const int OrderHandleCapacity = 256;
+
+    /// <summary>
+    /// Handles dont le SDK a déjà dit qu'il ne les connaissait pas.
+    ///
+    /// Le relevé d'avancement passe toutes les dix secondes : sans cette mémoire, une
+    /// commande d'un quart d'heure écrirait cent fois la même ligne et noierait le journal —
+    /// or c'est ce journal qui sert à diagnostiquer les postes qu'on ne voit pas.
+    /// </summary>
+    private readonly HashSet<string> _handlesMuets = new(StringComparer.Ordinal);
     private const int ValueCapacity = 256;
     private const int MaxMagazines = 8;
 
@@ -86,6 +95,52 @@ public sealed class De100Driver : IDisposable
 
     /// <summary>Vrai si la machine est prête à recevoir des commandes.</summary>
     public bool IsReady(char machineId) => De100Interop.PIF_DevIsReady(machineId) == (int)PifResult.Ok;
+
+    /// <summary>
+    /// Où en est UNE commande : combien de ses tirages sont sortis, sur combien.
+    ///
+    /// <b>C'est le compte que la machine tient elle-même</b>, commande par commande
+    /// (<c>ST_ORDER_INFO.printedNum</c>). Studio suivait jusqu'ici le compteur GLOBAL de la
+    /// machine — celui des tirages depuis sa mise en service — et lui retranchait sa valeur
+    /// de départ : tout ce que la machine sortait par ailleurs venait donc gonfler
+    /// l'avancement de la commande en cours, et deux commandes lancées à la suite se
+    /// comptaient l'une l'autre. C'est ce champ-ci que lit le pilote de DiLand, dont
+    /// l'affichage ne décale pas.
+    ///
+    /// Null quand le SDK ne sait rien de ce handle : commande déjà purgée de sa file, ou
+    /// relais qui vient de redémarrer. L'appelant retombe alors sur les verdicts.
+    /// </summary>
+    /// <param name="orderHandle">Le handle rendu par <c>Submit</c>.</param>
+    public De100OrderProgress? OrderProgress(string orderHandle)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(orderHandle);
+
+        var info = new ST_ORDER_INFO();
+        var handle = new StringBuilder(orderHandle, OrderHandleCapacity);
+
+        // Jamais fatal : ce relevé ne sert qu'à faire avancer une barre. Une commande que
+        // le SDK ne reconnaît plus ne doit pas faire échouer un tirage qui, lui, se passe
+        // bien.
+        //
+        // Mais le CODE de refus se dit, une fois par handle. Il ne se disait pas, et c'est
+        // ce silence qui a laissé passer un défaut d'encodage pendant toute une journée :
+        // « la machine ne dit rien » aurait été « FileIoError » ou « InvalidParameter », et
+        // l'on aurait cherché du bon côté tout de suite.
+        var code = De100Interop.PIF_GetOrderInfo(handle, ref info);
+        if (code != (int)PifResult.Ok)
+        {
+            if (_handlesMuets.Add(orderHandle))
+                Log?.Invoke($"DE100 : la commande « {orderHandle} » est inconnue du SDK " +
+                            $"({(PifResult)code}). L'avancement retombera sur les verdicts.");
+
+            return null;
+        }
+
+        _handlesMuets.Remove(orderHandle);
+
+        return new De100OrderProgress(
+            info.printedNum, info.orderNum, (De100OrderStatus)info.status);
+    }
 
     /// <summary>
     /// Abonne le pilote aux notifications d'une machine. Sans cet appel, aucun tirage

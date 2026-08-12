@@ -2289,3 +2289,466 @@ minute d'écart ont donné des défauts DIFFÉRENTS — toute la planche pour l'
 haute pour l'autre. Un réglage figé donnerait le même défaut à chaque fois : ce qui varie
 tient donc au tampon, à la mécanique, ou aux deux. L'épreuve qui trancherait est d'imprimer
 le même fichier depuis DiLand.
+
+## Un délai dépassé n'est pas un refus : on NE se replie PAS sur le pilote
+
+Le repli sur le pilote Windows est la sécurité de l'envoi direct à la DNP : si le chemin
+direct échoue, la page part quand même, et c'est bien. **Sauf sur un délai dépassé**, où
+cette sécurité fabrique exactement ce qu'elle prétend éviter — un tirage en double.
+
+Commande 12-012, Créteil, 12/08/2026. Trois planches d'identité sur la DS620 :
+
+```
+12:25:31  relais · dnp-print lancé pour la planche 003
+12:25:41  relais · « dnp-print » sans reponse en 10 s ... On repond sans attendre
+12:25:41  app   · Envoi direct DNP indisponible : on passe par le pilote
+12:25:41  app   · Impression « Studio 12-012-1 » sur DP-DS620      ← la MÊME planche
+12:25:42  relais · Envoi direct DNP : 1 exemplaire(s) ... acceptes ← et la machine l'avait prise
+12:25:42  relais · « dnp-print » a fini par repondre apres 10831 ms, trop tard
+```
+
+**Le relais ne peut pas annuler ce qu'il a lancé.** `RepondreSansJamaisBloquer` répond
+« machine muette » passé le budget, mais le fil natif continue sa vie — c'est écrit dans son
+propre commentaire, et c'est irréductible : le SDK ne s'interrompt pas. Un délai dépassé ne
+dit donc jamais « rien n'est parti », il dit « je ne sais pas ».
+
+Trois règles en découlent, et elles sont indépendantes :
+
+1. **Le délai suit ce que la commande FAIT, pas la machine qu'elle vise.**
+   `De100Commands.EngageLaMachine` en tient la liste — `submit`, `cancel`, `dnp-print` — et
+   le relais comme le client s'y réfèrent. Ils en tenaient chacun une, elles ont divergé, et
+   `dnp-print` ne figurait dans aucune des deux : un envoi de papier se voyait accorder les
+   dix secondes d'une simple question. **Ne jamais réécrire cette liste en dur quelque part.**
+2. **Une DNP qui imprime répond lentement.** Ce n'est pas une panne, c'est son
+   fonctionnement — le commentaire de `EtatDesDnp` le disait déjà pour l'instantané. Mesuré
+   le 12/08/2026 : 8 457 ms à Maisons-Alfort et 10 831 ms à Créteil, pour la même planche
+   arrivant derrière deux autres. Toute commande de trois tirages ou plus est concernée.
+3. **`TimeoutException` sur `DnpPrintAsync` lève `PrintUnconfirmedException`** — jamais un
+   repli, jamais une mise en attente. L'enveloppe reste `Spooled`, c'est-à-dire « partie,
+   sortie non confirmée » : `PendingPrintQueue` ne la reprend pas toute seule, et la
+   réimprimer réclame un geste explicite. L'opérateur regarde le bac ; lui seul peut dire ce
+   qui est sorti.
+
+⚠ Le délai dépassé sur l'INTERROGATION qui précède (`dnp-snapshot`), lui, se replie
+normalement : à ce stade aucune image n'a été remise à la machine. La frontière est l'appel
+`DnpPrintAsync` lui-même, et c'est pour cela qu'il porte son propre `try`.
+
+C'est la règle que le minilab observait déjà — « rien n'est renvoyé automatiquement quand la
+sortie est douteuse », voir `SubmitTimeout` et `Expire`. Le circuit DNP ne la suivait pas.
+
+## Détourage : une panne de mémoire ne condamne ni la séance, ni le réseau
+
+Le fond était parfait au cadrage et ne l'était plus au récapitulatif des planches. Créteil,
+12/08/2026. Rien dans le rendu n'était en cause.
+
+**Pourquoi le récapitulatif refait le calcul.** Le masque est mis en cache sous l'empreinte
+`{photo}|{largeur}x{hauteur}` (`MasqueSujet`). L'aperçu du cadrage et la planche rendue à la
+taille d'impression n'ont pas les mêmes dimensions : ce sont deux entrées de cache
+différentes, donc **deux passages du réseau**. Le premier tenait, le second manquait de
+mémoire vidéo. Ce n'est pas un défaut du cache — deux tailles donnent deux masques — mais
+c'est ce qui fait du récapitulatif l'écran où la panne se voit.
+
+**Ce que le journal montrait, et qui disait tout :**
+
+```
+13:23:39  BiRefNet : échec du détourage (... DmlFusedNode_0_0 ...) — repli sur la méthode par couleur.
+13:23:48  BiRefNet : échec du détourage ([ErrorCode:Fail] ) — repli ...
+13:23:55  BiRefNet : échec du détourage ([ErrorCode:Fail] ) — repli ...
+13:23:58  BiRefNet : échec du détourage ([ErrorCode:Fail] ) — repli ...
+```
+
+Une vraie panne, puis des `Fail` secs en rafale : **la session morte n'était pas jetée**.
+Une seule panne de mémoire condamnait la séance entière, cadrage compris, jusqu'au
+redémarrage de l'application.
+
+Trois règles, désormais :
+
+1. **Une exécution ratée jette la session** (`EcarterEtReessayer`). Un CHARGEMENT raté, lui,
+   ne se retente toujours pas — recharger 490 Mo à chaque photo pour échouer pareil
+   bloquerait le comptoir. Ce sont deux échecs différents.
+2. **On ne retombe sur la couleur qu'en dernier recours.** Une panne de mémoire ne dit rien
+   du réseau, elle dit que CE modèle est trop gros pour cette carte : le modèle fautif est
+   écarté pour la séance et l'on repart sur le « lite », dont le contour reste sans commune
+   mesure avec la règle par couleur. `CalculerMasque` fait deux tours au plus.
+3. **L'opérateur l'apprend** (`DernierRepli`, affiché par `IdSheetRecapView`). Le repli
+   n'était visible que du journal, et l'écran ne montrait rien d'anormal — seulement un fond
+   moins propre qu'à l'écran d'avant.
+
+⚠ **Le seuil de mémoire vidéo était trop bas, et la comparaison est stricte.**
+`MemoireVideoMinimaleGo` valait 6 ; la GTX 1660 SUPER de Créteil annonce
+`qwMemorySize = 6 442 450 944`, soit **6,0 Go tout ronds**. `6 < 6` étant faux, le modèle
+puissant lui était offert — et il a échoué. Le seuil est passé à 8.
+
+⚠ **Griser un choix n'efface pas un réglage déjà enregistré.** `detourage.json` gardait
+`ModelePuissant: true`. `AppServices.ModelePourCetteCarte` convertit donc la demande en
+« lite » quand la carte est sous le seuil, plutôt que de laisser le poste gâcher une planche
+chaque matin pour un verdict connu d'avance. Une carte qui n'annonce pas sa mémoire garde le
+bénéfice du doute.
+
+⚠ **WMI ment sur la mémoire vidéo.** `Win32_VideoController.AdapterRAM` est un `uint32` : il
+rend « 4 Go » pour toute carte de 4 Go ou plus. C'est ce chiffre tronqué qui a d'abord fait
+croire à une carte de 4 Go à Créteil. `CarteGraphique` lit le registre pour cette raison —
+ne pas revenir à WMI.
+
+## La reprise du catalogue se juge sur les PRODUITS, pas sur le contour de la liste
+
+Un poste neuf démarre sur cinq produits d'amorçage qui pointent tous sur
+« Microsoft Print to PDF ». `CatalogueLivre.PoserSiAbsent` les remplace par le catalogue de
+la boutique — encore faut-il qu'il les reconnaisse.
+
+**La reconnaissance portait sur l'ensemble EXACT des codes** (`SetEquals`), et c'était trop
+strict d'un cran : elle se désarmait au premier produit ajouté, c'est-à-dire au premier geste
+d'un poste neuf. Le poste `DESKTOP-KT88VDM` l'a payé — découvert le 12/08/2026 :
+
+```
+2026-08-12 13:04:01 | Impression « Studio 12-001-1 » sur Microsoft Print to PDF :
+                      demandé 102×152 mm, page obtenue 102×152 mm
+```
+
+Son opérateur avait dupliqué un 30×40 pour se faire un 40×50. Un produit de plus, et la
+reprise ne l'a plus jamais reconnu : ses cinq produits d'amorçage sont restés des semaines,
+**toutes ses commandes partaient dans un PDF**, et il cherchait la panne du côté de sa DNP et
+de son DE100 — qui étaient parfaitement détectés, relais et SDK compris (`PIF_Open` en
+164 ms).
+
+**La règle, désormais** : les cinq produits d'amorçage sont-ils tous là et **intacts** —
+même imprimante, mêmes cotes ? Alors personne ne s'en est servi pour imprimer, quoi qu'on
+ait ajouté à côté. Le prix et le nom ne comptent pas ; **l'imprimante et les cotes, si** :
+on ne configure pas un poste sans toucher à l'une des deux.
+
+La limite qui protège un vrai catalogue reste entière, et elle est mieux placée : **dès
+qu'un de ces cinq produits vise une vraie machine**, l'exploitant a configuré son poste et
+le fichier lui appartient.
+
+⚠ **Ce qui a été ajouté à côté est CONSERVÉ** (`ProduitsAjoutes`). Le 40×50 fabriqué à la
+main est un vrai travail ; le perdre à la faveur d'une reprise serait payer la correction du
+prix d'un dégât, et l'exploitant n'aurait aucune raison de faire le lien. L'ancien fichier
+reste par ailleurs à côté, en `products.amorcage-<horodatage>.json`.
+
+⚠ **La reprise emporte aussi les `devmode-*.bin` du catalogue livré**, et ceux-là NE SONT PAS
+PORTABLES (voir la note sur les index de format papier). Un poste repris hérite donc du
+`dmPaperSize` de Maisons-Alfort, qui n'existe pas forcément chez lui : à contrôler sur le
+premier tirage. C'est le prix, connu, de la reprise automatique — et l'argument de plus pour
+résoudre un jour le format papier par son NOM.
+
+## Le rapport de diagnostic emporte le catalogue
+
+`products.json` vit dans `catalog\`, pas dans `config\` : il ne partait donc pas. Or c'est LE
+fichier qui décide où une commande s'imprime. Sans lui, le catalogue de `DESKTOP-KT88VDM` a
+dû être déduit d'une taille de rendu au journal — 1205 × 1795 px, soit 102 × 152 mm, soit
+exactement le produit d'amorçage.
+
+Les prix y figurent : ce sont ceux de la boutique qui envoie le rapport, elle les connaît, et
+ils ne concernent aucun client. La règle qui ne bouge pas reste celle des secrets —
+`mail.json` et `dropbox.json` ne partent jamais.
+
+## Un profil couleur manquant ne coûte que les couleurs, jamais le tirage
+
+`ImagePipeline.Profil` levait. Une `FileNotFoundException` sur un `.icc` remontait donc tout
+le rendu et emportait la commande entière — pas un tirage moins juste : **aucun tirage**.
+
+Le poste `DESKTOP-KT88VDM` y a perdu son après-midi du 12/08/2026. Son catalogue venait
+d'être repris et réclamait `DS620-R0.icc` ; son pilote DNP avait installé le même profil sous
+le nom `PD_DS620-R0.icc`. Une lettre de préfixe, et plus rien ne sortait :
+
+```
+Impression : commande 12-002 en échec | System.IO.FileNotFoundException:
+  Could not find file '...\catalog\icc\DS620-R0.icc'.
+```
+
+Deux règles en sortent :
+
+1. **La gestion des couleurs est un raffinement ; le tirage est le métier.** Profil absent ou
+   illisible → on tire en sRGB présumé, on l'écrit au journal, et la commande part. C'est ce
+   que faisait le logiciel avant que les profils existent. Les DEUX points d'appel sont
+   concernés — le rendu courant et le chemin Polaroid.
+2. **Le null est mémorisé dans le cache.** `ConcurrentDictionary` ne mémorise pas une absence
+   de valeur : sans un `ColorProfile?` porté explicitement, une enveloppe de quarante photos
+   relirait le disque quarante fois pour rater le même fichier, au milieu du rendu.
+
+⚠ **Le nom d'un profil n'est pas stable d'un pilote à l'autre.** Même fichier, deux noms :
+
+| Poste | Fichier posé par le pilote | Taille |
+|---|---|---|
+| Maisons-Alfort | `DS620-R0.icc` | 1 674 792 |
+| DESKTOP-KT88VDM | `PD_DS620-R0.icc` | 1 674 796 |
+
+`TrouverLeProfil` accepte donc un **préfixe de fabricant**, à condition qu'il se termine par
+`_` ou `-` : `PD_DS620-R0.icc` convient, `MONDS620-R0.icc` non. La limite compte — rapprocher
+deux profils sans rapport ferait sortir les couleurs d'une autre machine, et c'est le genre
+de défaut que personne ne voit venir.
+
+## Le format papier d'un DEVMODE se résout par son NOM
+
+Note qui REMPLACE « Les index de format du pilote ne se comparent pas entre postes » : le
+constat reste vrai, mais le correctif est fait.
+
+Le pilote DNP construit sa liste de formats à l'installation et les numérote à la suite. Le
+même papier n'a donc pas le même index d'un poste à l'autre — relevé le 12/08/2026, trois
+postes, même pilote, **même liste dans le même ordre** :
+
+| Poste | `(6x4)` | plage valide |
+|---|---|---|
+| Maisons-Alfort | **121** | 119–129 |
+| Créteil | **127** | 125–135 |
+| DESKTOP-KT88VDM | **147** | 145–155 |
+
+Le catalogue livré embarque le DEVMODE capturé à Maisons-Alfort. Les deux autres postes
+recevaient donc `dmPaperSize = 121`, un index qui **n'existe pas chez eux**, et le pilote
+faisait ce qu'il pouvait : la planche identité sortait dans une page trop grande. Chacun a
+été rustiné à la main, et le défaut revenait à la publication suivante.
+
+**Le nom, lui, est stable — et le DEVMODE le porte déjà**, dans `dmFormName` : « (6x4) »
+dans les trois cas. `DevMode.Apply` appelle donc `RecalerLeFormatPapier` avant toute chose :
+on relit le nom, on demande à `PrinterSettings.PaperSizes` comment CE poste le numérote, et
+l'on réécrit l'index.
+
+```
+DEVMODEW :  dmPaperSize (short) à 78     dmFormName (32 WCHAR) à 102
+```
+
+⚠ **Au moindre doute, les octets repartent INCHANGÉS** — pas de nom, format inconnu du pilote
+local, DEVMODE tronqué, imprimante muette. C'est le comportement d'avant, qui marchait sur le
+poste d'origine et n'a jamais empêché un tirage de partir. On ne remplace une incertitude que
+par une certitude.
+
+⚠ **Le tableau reçu n'est jamais modifié sur place** : il vient du catalogue et se partage
+d'un tirage à l'autre. Le recalage travaille sur une copie.
+
+Le recalage s'écrit au journal quand il a lieu — c'est la trace qui dira, la prochaine fois,
+que le poste n'était pas numéroté comme celui d'origine.
+
+## Les cotes du catalogue sont RELUES à chaque démarrage
+
+`CotesProduit` attrapait la saisie en centimètres — un « 40×50 » réglé sur 40 × 50 mm, qui
+sort un timbre. Mais elle ne parlait qu'**à la saisie** : un produit enregistré de travers
+avant qu'elle existe, ou saisi sur un poste qui n'avait pas encore la version, ne rencontrait
+plus jamais son garde-fou. Le poste `DESKTOP-KT88VDM` en portait deux depuis des semaines.
+
+Deux règles, et il faut les deux :
+
+1. **Le nom rapproché des cotes** — le rapport de DIX exact, qui ne s'invente pas. C'est la
+   plus précise : elle dit ce qu'il fallait saisir. Mais elle exige que le nom porte un
+   format, et c'est sa limite.
+2. **Le filet qui ne demande aucun nom** : `PlusPetitPapierMm = 50`. Le second produit de
+   KT88VDM s'appelait « E-PHOTO » et mesurait 10 × 15 mm — rien à rapprocher, donc rien de
+   signalé. Un papier ne fait pas cinq centimètres. Le plus petit du catalogue de la boutique
+   est le 8×10, qui mesure 80 × 102 : le seuil est bien en dessous, il n'a pas à juger un
+   format.
+
+⚠ Les **cases** d'une planche d'identité (35 × 45) ne sont pas concernées : ce sont des
+cellules (`SheetCellWidthMm`), pas des produits.
+
+**On ne corrige RIEN.** Le catalogue appartient à l'exploitant ; une correction automatique
+sur des cotes changerait ce qui sort du papier sans que personne l'ait demandé. On signale à
+deux endroits :
+
+- **au journal, à chaque démarrage** — donc emporté par le rapport de diagnostic. C'est ce
+  qui manquait pour voir le défaut à distance, et c'est là qu'il se lit en dix secondes ;
+- **dans la LISTE de l'écran Catalogue**, pas dans la fiche du produit : la fiche ne s'ouvre
+  que sur celui qu'on soupçonne déjà, or personne ne soupçonnait un produit au nom juste et
+  au prix juste. C'est en parcourant la liste qu'on doit buter dessus.
+
+## Le masque du sujet ne dépend PAS de la taille demandée
+
+`MasqueSujet` mémorisait sous une clé qui portait les dimensions de l'image. L'aperçu du
+cadrage et la planche rendue à la taille d'impression n'avaient donc pas la même clé, et le
+réseau repassait pour rien : **14 495 ms pour une seule photo**, relevés à Créteil le
+12/08/2026. C'est aussi ce second passage qui mettait la carte graphique en panne de mémoire
+— voir la note sur le repli du détourage.
+
+Or BiRefNet travaille sur une entrée **FIGÉE à 1024 × 1024** et ne remet à l'échelle qu'à la
+toute fin (`EnMasque`). Deux tailles de sortie donnent le même masque, à un
+redimensionnement près — et redimensionner un masque d'un canal coûte des millisecondes là
+où le réseau coûte des secondes.
+
+La clé est donc la PHOTO seule quand l'appelant la nomme. Sans nom, on retombe sur la
+signature des pixels, qui distingue d'elle-même deux tailles : le comportement d'avant.
+
+⚠ **La taille reste dans la clé du masque RETOUCHÉ** (`cleRetouchee`) : ce cache-là garde un
+masque déjà dilaté, adouci et déjà à l'échelle. Le rendre à une autre taille sortirait un
+masque aux mauvaises dimensions.
+
+⚠ **`DejaEnMemoire` ignore désormais les dimensions qu'on lui passe.** Les demander ferait
+afficher une barre d'attente au récapitulatif alors qu'il n'y a plus rien à attendre.
+
+## Les masques retouchés se gardent à QUATRE, comme les masques nus
+
+Le masque retouché — contour dilaté, bord adouci — n'avait qu'un seul emplacement, au motif
+qu'« on règle une photo à la fois ». C'est vrai d'un curseur, faux d'une planche : l'opérateur
+fait l'aller-retour entre les poses avant de choisir, et c'est précisément pour cela que les
+masques NUS s'en gardent quatre.
+
+Revenir à la pose précédente jetait donc le seul emplacement, et les curseurs y repayaient
+les 360 ms de dilatation et de flou. D'où **« les curseurs sont de nouveau lents PARFOIS »**,
+signalé à Créteil le 12/08/2026 : parfois, c'est-à-dire chaque fois qu'on change de photo.
+
+Les deux mémoires suivent maintenant le même va-et-vient, avec la même borne.
+
+## SDK Fuji : toute fonction qui passe une CHAÎNE veut CharSet.Unicode
+
+`PIF_GetOrderInfo` était déclarée sans `CharSet` — donc en ANSI, le défaut de .NET — alors
+que ses voisines qui reçoivent le même handle de commande (`PIF_CancelOrder`,
+`PIF_ExpressOrder`, `PIF_StartOrder`, `PIF_EndOrder`) sont en Unicode depuis toujours.
+
+Le handle partait en octets simples là où le SDK attend de l'UTF-16 : il ne retrouvait jamais
+la commande, `OrderProgress` rendait toujours `null`, et l'avancement retombait sur les
+verdicts — qui n'arrivent qu'à la fin, tous ensemble. **La barre restait à zéro d'un bout à
+l'autre du tirage, sur les trois boutiques**, le 12/08/2026 : six commandes minilab, six
+relevés muets, alors que la veille les sept commandes du même poste avançaient normalement.
+
+Rien ne plantait, rien n'était rouge. `InteropEncodageTests` lit désormais les ATTRIBUTS de
+chaque `DllImport` et attrapera la prochaine déclaration ajoutée à la va-vite.
+
+⚠ **Les paramètres `char` sont hors de cette règle**, et l'essai les exclut explicitement :
+`PIF_DevIsReady`, `PIF_DevGetPrinterInfo` et leurs voisines reçoivent un identifiant de
+machine — « A », « B » — que le SDK attend sur UN octet. Les passer en Unicode en enverrait
+deux et casserait la détection des machines, qui fonctionne depuis toujours.
+
+⚠ **Un refus du SDK se dit maintenant au journal**, une fois par handle : c'est ce silence
+qui a laissé passer le défaut d'encodage toute une journée. « La machine ne dit rien » ne
+disait pas POURQUOI.
+
+## Borner les appels perdus du relais — utile, mais ce n'était PAS la cause du plantage
+
+⚠ **Cette note a d'abord affirmé le contraire, et elle avait tort.** Le relais qui s'arrêtait
+en pleine commande à Créteil ne mourait pas de ses fils perdus : voir la note « Le SDK DNP
+n'est pas réentrant », qui porte la vraie cause et la preuve. La mesure a démenti le
+raisonnement — au moment du diagnostic, le relais tenait en **59 Mo et douze fils**, très loin
+des deux gigaoctets. Ce qui suit reste vrai, mais protège d'une panne jamais observée.
+
+Chaque délai dépassé laisse un fil bloqué dans un appel natif que le SDK ne rendra jamais —
+c'est écrit depuis toujours dans `RepondreSansJamaisBloquer`, et c'est irréductible : le SDK
+ne s'interrompt pas. Rien ne bornait pourtant leur nombre.
+
+Le relais est en **32 bits** : deux gigaoctets d'espace d'adressage, un mégaoctet de pile par
+fil. Laisser leur nombre courir n'est pas tenable sur un poste où le SDK se coince
+durablement.
+
+`FilsOrphelins` compte les appels partis sans retour. Au-delà de huit, on répond tout de
+suite sans rien lancer : le SDK est manifestement coincé, et lui envoyer du travail
+supplémentaire ne fait qu'avancer l'heure du crash. Le message le dit et invite à redémarrer.
+
+⚠ **La porte se ROUVRE quand un appel finit par revenir.** Sans ce décompte, un poste
+simplement lent resterait fermé jusqu'au redémarrage : on aurait remplacé un plantage par une
+panne. C'est le seul point délicat de la classe, et c'est celui que ses essais couvrent le
+plus.
+
+⚠ **Huit, et pas un plus grand nombre** : il s'agit d'encaisser une rafale du bandeau pendant
+qu'une machine imprime, pas de tolérer un SDK mort. Chaque unité de plus rapproche de la
+limite qu'on cherche à ne jamais atteindre.
+
+## Le SDK DNP n'est PAS réentrant — un seul appel à la fois
+
+`cspstat.dll` est une bibliothèque native de 2008 (elle tourne sur `MSVCR90`). Deux chemins
+du relais y entrent : `EtatDesDnp`, pour le bandeau, toutes les quelques secondes, et
+`TirerSurDnp`, pour un envoi. Comme `RepondreSansJamaisBloquer` donne un fil à chaque
+commande, **les deux pouvaient s'y trouver ensemble**.
+
+Le 12/08/2026 à Créteil : **cinq plantages du relais, zéro les six jours précédents**, tous
+avec la même signature —
+
+```
+Application défaillante : Studio.De100Host.exe
+Module défaillant       : MSVCR90.dll
+Exception code          : 0xc0000417   (paramètre invalide passé au CRT)
+Fault offset            : 0x0003523b   (le même à chaque fois)
+```
+
+Le premier arrive dix secondes après un envoi direct DNP. Un `0xc0000417` ne se rattrape
+pas : le CRT termine le processus sur-le-champ, sans exception observable côté managé — d'où
+un relais qui « s'arrête » sans rien écrire, en pleine commande, et des verdicts qui
+n'arrivent jamais.
+
+⚠ **Ce n'est PAS une fuite de mémoire ni une saturation de fils**, contrairement à ce que
+laissait croire le commentaire sur les fils orphelins. Mesuré au moment du diagnostic : le
+relais tenait en **59 Mo, 281 Mo de virtuel, douze fils** — très loin des deux gigaoctets d'un
+processus 32 bits. La piste était séduisante et fausse ; c'est le journal d'événements
+Windows qui a tranché, pas le raisonnement.
+
+⚠ **La fenêtre a été ouverte par le correctif de la 1.4.1** : `dnp-print` y est passé de dix
+secondes à trois minutes de budget. Le SDK reste donc occupé bien plus longtemps pendant que
+le bandeau continue de l'interroger. Le correctif reste juste — c'était la CONCURRENCE qu'il
+fallait borner, pas le délai.
+
+**La règle** : tout accès natif à la DNP passe par `verrouDnp`, découverte comprise — c'est
+`ListPorts` qui construit la table de ports du SDK, et la reconstruire au milieu d'un envoi
+est précisément ce qui tuait le processus.
+
+Le bandeau, lui, ne fait pas la queue : `Monitor.TryEnter` sans attente, et il rend une liste
+vide si un tirage occupe le SDK. C'est déjà ce que fait une machine endormie — l'application
+complète d'après le spouleur Windows, et rien ne ment à l'écran.
+
+## Monter les agrandissements sur une feuille : le RENDU change, jamais le prix
+
+Un agrandissement rendait un fichier par tirage. Deux 24×30 donnaient deux feuilles de 40×60,
+dont la moitié partait à la chute — alors que les deux tiennent sur une seule. Demandé par
+l'exploitant le 12/08/2026, pour le circuit **grand format uniquement** : le minilab plafonne
+à 210 mm de large, et la DNP a son propre cas (15×20 → deux 10×15) depuis la 1.3.15.
+
+### Le prix ne bouge pas, et c'est ce qui distingue le montage de la planche personnalisée
+
+Les deux mécaniques partagent la géométrie. Elles ne partagent PAS la politique de prix :
+
+| | Facturé sur | Décidé par |
+|---|---|---|
+| Planche « personnalisée » (impression rapide) | **le papier** — `CustomSheetLayout.Choose` départage au prix | le logiciel |
+| **Montage** (agrandissements) | **les tirages** — `UnitPrice × TotalPrints`, inchangé | l'opérateur |
+
+D'où deux champs distincts sur la ligne de commande : `CustomCellWidthMm` bascule `Total` sur
+le papier, `MontageSheetCode` ne touche à rien. ⚠ Les confondre ferait payer une feuille
+40×60 là où le client doit deux 24×30. C'est pourquoi le montage n'appelle **jamais**
+`Choose` — seulement `CapacityDetaillee` et `Distribute`.
+
+### C'est la FEUILLE qui se couche, pas la case
+
+Le calcul à la main disait qu'il fallait coucher la case : deux 24×30 debout font 600 mm de
+haut, et l'écart de 2 mm déborde d'un 40×60. Il oubliait que `Capacity` essaie aussi les
+**deux sens de la planche**. Feuille couchée, ses 600 mm de large accueillent deux tirages
+DEBOUT côte à côte : le cadrage portrait est gardé tel quel, et le fichier sort en 60 × 40.
+
+Conséquence pratique : `PlanMontage.LargeurMm`/`HauteurMm` donnent le sens de composition, et
+le rendu doit les employer — composer sur les cotes du catalogue donne une feuille où rien ne
+tient. Le pilote oriente ensuite la page ; il sait le faire.
+
+### La photo est rendue à SON sens, puis tournée à la pose
+
+Le circuit des agrandissements oriente sa toile par photo (`CropMath.OrientCanvas`) : un
+portrait sort en 24×30, un paysage en 30×24. Une empreinte, elle, est unique pour toute la
+grille.
+
+⚠ **On ne rend donc PAS la photo au format de l'empreinte** — ce serait la recadrer dans le
+mauvais sens, sur du papier cher, sans que rien ne le signale avant le client. Chaque photo
+est rendue à son orientation, et c'est l'IMAGE RENDUE qu'on tourne d'un quart de tour pour la
+poser (`RenderCustomSheetToFile`, paramètre `footprint`). Un quart de tour est exact, aucun
+pixel n'est interpolé, et le tirage découpé retrouve son sens dans la main de l'opérateur —
+c'est déjà ce que fait la planche identité composée debout.
+
+Bénéfice : une sélection **mêlant portraits et paysages** se monte sur la même feuille.
+
+### Rien ne change tant qu'il n'y a rien à gagner
+
+`MontageFeuille.MinimumUtile = 2` est la garde principale, et elle vit dans la géométrie
+plutôt que répétée chez chaque appelant :
+
+- une feuille qui ne porte qu'un tirage ne donne **aucun plan**, donc aucun candidat, donc
+  l'écran de choix ne s'affiche pas et le parcours est celui d'avant ;
+- un montage à une case par feuille n'est pas un montage, c'est un tirage avec des traits de
+  coupe en plus — une régression silencieuse pour tous les postes qui ne demandent rien.
+
+Au rendu, `PlanDeMontage` **se replie en silence** sur un fichier par tirage si la feuille a
+disparu du catalogue, a été désactivée, est passée sur une autre machine, ou est devenue trop
+petite. Le choix a pu être fait des heures avant le tirage, parfois avant une modification du
+catalogue : une commande déjà encaissée ne doit pas se refuser à sortir pour cette raison. Le
+journal dit ce qui s'est passé.
+
+### Le choix suit le format, et survit à une mise de côté
+
+Il est fait à un écran (`MontageFeuilleView`) intercalé entre la tuile de format et le choix
+des photos, **famille agrandissement seulement**, avec « une par feuille » en tête de liste —
+un opérateur qui découpe lui-même ne veut pas d'un montage, et ce geste doit rester à un clic.
+
+Le choix vaut pour CE format : une photo passée à un autre produit repart en tirage
+ordinaire, ce qui garde aussi la grille pleine — une ligne montée ne mélange qu'un format. Et
+il voyage dans `TravailEnAttente` : perdu à la reprise, il ferait ressortir la commande sur
+deux fois plus de papier sans que personne s'en aperçoive.

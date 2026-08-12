@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
 using Studio.Imaging;
@@ -56,6 +58,78 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private BitmapSource? _corrige;
 
     /// <summary>
+    /// La photo de départ de l'aperçu, désossée en pixels BGRA une bonne fois.
+    ///
+    /// <b>L'aperçu passait par un PNG à chaque mouvement de curseur</b> : l'écran encodait
+    /// la vignette, ImageMagick la décodait, corrigeait, réencodait, et l'écran redécodait.
+    /// Quatre compressions pour bouger un curseur — 300 des 950 ms que coûtait un réglage
+    /// (mesuré le 11/08/2026). Les mêmes pixels bruts se lisent en 6 ms et se rendent en 7.
+    ///
+    /// Le tableau ne change jamais après sa lecture : il se partage donc sans risque avec
+    /// le fil qui calcule, là où une image vivante demanderait un verrou.
+    /// </summary>
+    private byte[]? _departBgra;
+    private int _departLargeur;
+    private int _departHauteur;
+
+    /// <summary>L'image dont <see cref="_departBgra"/> a été tiré, pour savoir quand le refaire.</summary>
+    private BitmapSource? _departSource;
+
+    /// <summary>
+    /// Compteur des pixels de départ : il avance à chaque fois qu'ils sont relus.
+    ///
+    /// Il sert à nommer l'image auprès du détourage. Le chemin de la photo seul ne
+    /// suffirait pas — poser un fond blanc change les pixels sans changer le fichier, et
+    /// c'est l'ancien masque qui ressortirait.
+    /// </summary>
+    private int _departNumero;
+
+    /// <summary>
+    /// La minuterie qui fait avancer la barre du détourage, et le chronomètre qu'elle lit.
+    ///
+    /// Le détourage ne sait pas dire où il en est — c'est un passage de réseau de neurones,
+    /// opaque du début à la fin. La barre avance donc sur le TEMPS, rapporté à ce que ce
+    /// poste a mis la dernière fois. C'est une promesse, pas une mesure : elle s'arrête
+    /// juste avant le bout tant que le travail n'est pas fini, plutôt que d'annoncer une
+    /// fin qui n'est pas venue.
+    /// </summary>
+    private DispatcherTimer? _attenteTimer;
+    private readonly Stopwatch _attenteChrono = new();
+    private TimeSpan _attenteEstimee;
+    private string _attenteQuoi = "";
+
+    /// <summary>
+    /// Le recalcul d'aperçu en cours, à abandonner dès qu'un curseur rebouge.
+    ///
+    /// Jamais libéré explicitement : il ne porte pas de minuterie, et le libérer pendant
+    /// qu'un autre fil l'attend le ferait éclater. Le ramasse-miettes s'en charge.
+    /// </summary>
+    private CancellationTokenSource? _apercuCts;
+
+    /// <summary>
+    /// Un seul aperçu calculé à la fois.
+    ///
+    /// L'abandon ne suffit pas : un calcul déjà parti continue jusqu'au bout dans son fil.
+    /// Sans cette file, un glissement de curseur laissait derrière lui une dizaine de
+    /// calculs vivants — et, quand la correction du sujet est allumée, autant de détourages
+    /// menés de front sur la carte graphique.
+    /// </summary>
+    private readonly SemaphoreSlim _apercuFile = new(1, 1);
+
+    /// <summary>
+    /// Le temps qu'on laisse au curseur de se poser avant de recalculer, en millisecondes.
+    ///
+    /// Un glissement de souris produit des dizaines d'événements. Sans cette pause, chacun
+    /// lançait son calcul complet ; avec elle, seul le dernier — celui que l'opérateur
+    /// voulait voir — arrive au bout.
+    ///
+    /// Il valait 200 ms quand un aperçu coûtait presque une seconde. Le calcul étant
+    /// retombé sous les 100 ms, la pause peut suivre : c'est désormais elle qui se
+    /// remarquerait, pas le calcul.
+    /// </summary>
+    private const int DelaiDuCurseurMs = 60;
+
+    /// <summary>
     /// Redressement, en degrés — le « Tilt » de DiLand.
     ///
     /// Une photo d'identité prise à main levée penche presque toujours d'un demi-degré ou
@@ -83,19 +157,25 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </summary>
     private IdDocumentSpec _document = IdDocumentSpec.France;
 
-    /// <summary>Repères posés par l'opérateur : sommet du crâne et bas du menton.</summary>
+    /// <summary>
+    /// Repères du sommet du crâne et du bas du menton, posés par la détection du visage.
+    ///
+    /// Ils ne se voient plus — les anneaux qui les portaient ont été retirés le 11/08/2026,
+    /// ils gênaient la lecture du visage — mais ils font toujours tout le travail : c'est
+    /// d'eux que sortent la hauteur de tête, le cadre et le verdict de conformité.
+    /// </summary>
     private NormPoint? _crown;
     private NormPoint? _chin;
-    private string? _markerDrag;   // "Crown", "Chin", ou null
 
     /// <summary>
-    /// Axe vertical commun aux deux anneaux, en fraction de la largeur de l'image.
+    /// Axe vertical du visage, en fraction de la largeur de l'image.
     ///
-    /// Les anneaux ne mesurent qu'une HAUTEUR — du sommet du crâne au bas du menton — et
-    /// c'est elle seule qui fixe le cadre. Les laisser glisser latéralement ne changeait
-    /// donc rien à la mesure, mais faisait pencher l'axe du visage et donnait un cadrage
-    /// qui partait de travers pendant qu'on ajustait la hauteur. Ils restent alignés sur
-    /// cet axe ; c'est le cadre qu'on déplace pour recentrer le visage.
+    /// Les deux repères ne mesurent qu'une HAUTEUR — du sommet du crâne au bas du menton —
+    /// et c'est elle seule qui fixe le cadre. Ils partagent donc cet axe, et c'est le
+    /// cadre qu'on déplace pour recentrer le visage.
+    ///
+    /// Il est enregistré avec le travail : une reprise doit retrouver le cadrage tel qu'il
+    /// a été laissé, axe compris.
     /// </summary>
     private double _axeVisage = 0.5;
 
@@ -201,12 +281,28 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// Le calcul se fait en PIXELS et par <see cref="IdSheetLayout.MaxCopies"/> — celui-là
     /// même qui posera la grille au rendu. Compter en millimètres donnerait parfois une case
     /// de plus que la planche n'accepte, et l'impression échouerait après l'annonce du prix.
+    ///
+    /// <b>La bande basse est comptée avec.</b> Sans elle dans le calcul, les documents aux
+    /// petites cases — un passeport étranger de 26 × 32 contre 35 × 45 en France —
+    /// remplissaient la planche jusqu'en bas, et la date n'avait plus où être écrite : elle
+    /// disparaissait du tirage sans que rien ne le signale. Une photo de moins vaut mieux
+    /// qu'une planche sans date, qui ne prouve plus qu'elle est récente.
     /// </summary>
     private static int CapaciteDe(Product product, IdDocumentSpec document)
     {
         if (product.Sheet is not { } sheet) return 0;
 
-        return IdSheetLayout.MaxCopies(
+        // Ce que la bande exige VRAIMENT : la place d'écrire une date, pas sa hauteur
+        // nominale. Compter les 8 mm de la bande complète coûtait une rangée entière sur
+        // les formats carrés — six photos ramenées à trois sur un passeport américain.
+        var bande = sheet.DateStamp
+            ? SheetFooterLayout.ReserveMinimalePx(
+                SheetFooter.Pour(DateTime.Now, App.Services.Marque), product.Dpi)
+            : 0;
+
+        // La MEILLEURE des deux orientations : le rendu tournera le papier si le document
+        // y tient davantage — un carré de 50 mm passe de trois photos à quatre.
+        return IdSheetLayout.MeilleureCapacite(
             MmPx.ToPixels(product.WidthMm, product.Dpi),
             MmPx.ToPixels(product.HeightMm, product.Dpi),
             MmPx.ToPixels(document.WidthMm, product.Dpi),
@@ -214,7 +310,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             // l'écart RÉEL, celui que le rendu appliquera : à fond perdu il se réduit au
             // trait de découpe, et compter avec 2 mm annoncerait moins de photos que la
             // planche n'en porte (voir SheetSpec.LayoutGapMm)
-            MmPx.ToPixels(sheet.LayoutGapMm, product.Dpi));
+            MmPx.ToPixels(sheet.LayoutGapMm, product.Dpi),
+            bande).Copies;
     }
 
     private async Task LoadStripAsync()
@@ -330,6 +427,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // travail, lui, est repris de l'objet.
         _detoure = null;
         _corrige = null;
+
+        // les pixels de départ appartenaient à la photo précédente
+        _departBgra = null;
+        _departSource = null;
 
         EmptyText.Visibility = Visibility.Collapsed;
         Mouse.OverrideCursor = CurseurStudio.Attente;
@@ -563,67 +664,106 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         Redraw();
     }
 
-    // ----- anneaux de placement -----
+    // ----- poignées de cadrage -----
 
-    private void OnMarkerDown(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// Poignée saisie : les coins « 0 » haut-gauche, « 1 » haut-droit, « 2 » bas-gauche,
+    /// « 3 » bas-droit ; les côtés « H », « B », « G », « D ».
+    /// </summary>
+    private string? _poigneeDrag;
+
+    private void OnPoigneeDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not FrameworkElement anneau) return;
+        if (sender is not FrameworkElement poignee) return;
 
-        _markerDrag = anneau.Tag as string;
-        Stage.CaptureMouse();   // la souris peut sortir de l'anneau pendant le glissement
-        e.Handled = true;       // ne pas déclencher le déplacement du cadre
+        _poigneeDrag = poignee.Tag as string;
+        Stage.CaptureMouse();   // la souris sort du carré dès qu'on tire
+        e.Handled = true;       // sans quoi le cadre se déplacerait en même temps
     }
 
-    /// <summary>Déplace l'anneau saisi ; renvoie vrai si le glissement a été consommé.</summary>
-    private bool DeplacerRepere(Point positionStage)
+    /// <summary>
+    /// Redimensionne le cadre pendant qu'on tire un coin ; vrai si le geste a été consommé.
+    ///
+    /// <b>Le point opposé reste immobile</b>, comme dans n'importe quel outil de recadrage :
+    /// c'est ce qui permet de caler un bord puis d'ajuster l'autre. La dimension que la
+    /// souris commande suit le curseur, l'autre suit le format du document — on ne déforme
+    /// jamais une photo d'identité, même en tirant un côté.
+    /// </summary>
+    private bool TirerLaPoignee(Point positionStage)
     {
-        if (_markerDrag is null) return false;
+        if (_poigneeDrag is null || _displayBitmap is null) return false;
 
         var display = DisplayRect();
         if (display.IsEmpty || display.Width <= 0 || display.Height <= 0) return true;
 
-        // seule la hauteur suit la souris : les deux anneaux restent sur l'axe du visage
-        // (voir _axeVisage) et c'est le cadre, pas eux, qui se déplace latéralement
-        var y = Math.Clamp((positionStage.Y - display.Y) / display.Height, 0, 1);
-        var point = new NormPoint(_axeVisage, y);
+        // l'ancre est le point OPPOSÉ à celui qu'on tient : le coin d'en face pour un coin,
+        // le milieu du bord d'en face pour un côté
+        var (ancreX, ancreY) = _poigneeDrag switch
+        {
+            "0" => (1.0, 1.0),
+            "1" => (0.0, 1.0),
+            "2" => (1.0, 0.0),
+            "3" => (0.0, 0.0),
+            "H" => (0.5, 1.0),
+            "B" => (0.5, 0.0),
+            "G" => (1.0, 0.5),
+            _ => (0.0, 0.5),
+        };
 
-        if (_markerDrag == "Crown") _crown = point;
-        else _chin = point;
+        // Le haut et le bas se mesurent en HAUTEUR, tout le reste en largeur : c'est la
+        // dimension que la souris commande vraiment. L'autre s'en déduit par le format.
+        var surLaHauteur = _poigneeDrag is "H" or "B";
 
-        AutoCrop();
+        var (voulue, actuelle) = surLaHauteur
+            ? (Math.Abs(positionStage.Y - (display.Y + (_crop.Y + ancreY * _crop.Height) * display.Height)),
+               _crop.Height * display.Height)
+            : (Math.Abs(positionStage.X - (display.X + (_crop.X + ancreX * _crop.Width) * display.Width)),
+               _crop.Width * display.Width);
+
+        // un cadre réduit à rien n'a pas de facteur : on laisse le geste sans effet plutôt
+        // que de diviser par zéro
+        if (actuelle <= 1 || voulue <= 1) return true;
+
+        _crop = CropMath.ZoomDepuisUnCoin(
+            _crop, voulue / actuelle, ancreX, ancreY,
+            _displayBitmap.PixelWidth, _displayBitmap.PixelHeight, TargetAspect);
+
         Redraw();
         return true;
     }
 
-    private void PlacerAnneaux(Rect display)
+    /// <summary>Pose les carrés sur les coins du cadre et les encoches au milieu des côtés.</summary>
+    private void PlacerLesPoignees(Rect cropRect)
     {
-        var visible = _crown is not null && _chin is not null && !display.IsEmpty;
+        var visible = _displayBitmap is not null && !cropRect.IsEmpty;
         var etat = visible ? Visibility.Visible : Visibility.Collapsed;
-        CrownMarker.Visibility = ChinMarker.Visibility = etat;
-        CrownLabel.Visibility = ChinLabel.Visibility = MarkerAxis.Visibility = etat;
+
+        Poignee0.Visibility = Poignee1.Visibility =
+            Poignee2.Visibility = Poignee3.Visibility = etat;
+
+        PoigneeHaut.Visibility = PoigneeBas.Visibility =
+            PoigneeGauche.Visibility = PoigneeDroite.Visibility = etat;
+
         if (!visible) return;
 
-        var crane = new Point(display.X + _crown!.X * display.Width, display.Y + _crown.Y * display.Height);
-        var menton = new Point(display.X + _chin!.X * display.Width, display.Y + _chin.Y * display.Height);
+        Poser(Poignee0, cropRect.Left, cropRect.Top);
+        Poser(Poignee1, cropRect.Right, cropRect.Top);
+        Poser(Poignee2, cropRect.Left, cropRect.Bottom);
+        Poser(Poignee3, cropRect.Right, cropRect.Bottom);
 
-        Centrer(CrownMarker, crane);
-        Centrer(ChinMarker, menton);
+        var milieuX = cropRect.Left + cropRect.Width / 2;
+        var milieuY = cropRect.Top + cropRect.Height / 2;
 
-        Canvas.SetLeft(CrownLabel, crane.X + 30);
-        Canvas.SetTop(CrownLabel, crane.Y - 10);
-        Canvas.SetLeft(ChinLabel, menton.X + 30);
-        Canvas.SetTop(ChinLabel, menton.Y - 10);
+        Poser(PoigneeHaut, milieuX, cropRect.Top);
+        Poser(PoigneeBas, milieuX, cropRect.Bottom);
+        Poser(PoigneeGauche, cropRect.Left, milieuY);
+        Poser(PoigneeDroite, cropRect.Right, milieuY);
 
-        MarkerAxis.X1 = crane.X;
-        MarkerAxis.Y1 = crane.Y;
-        MarkerAxis.X2 = menton.X;
-        MarkerAxis.Y2 = menton.Y;
-    }
-
-    private static void Centrer(FrameworkElement anneau, Point centre)
-    {
-        Canvas.SetLeft(anneau, centre.X - anneau.Width / 2);
-        Canvas.SetTop(anneau, centre.Y - anneau.Height / 2);
+        static void Poser(FrameworkElement carre, double x, double y)
+        {
+            Canvas.SetLeft(carre, x - carre.Width / 2);
+            Canvas.SetTop(carre, y - carre.Height / 2);
+        }
     }
 
     private void OnGrayscaleChanged(object sender, RoutedEventArgs e)
@@ -709,6 +849,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         if (_current is null || _displayBitmap is null) return;
 
         Mouse.OverrideCursor = CurseurStudio.Attente;
+
+        // Le fond passe par le MÊME détourage que la correction du sujet, et il fait donc
+        // attendre pareil. Rien ne le disait : la photo restait immobile sous un curseur
+        // d'attente, sans que rien n'annonce combien de temps.
+        CommencerLAttente(GrayBackgroundCheck.IsChecked == true
+            ? "Pose du fond gris"
+            : "Pose du fond blanc");
+
         try
         {
             var chemin = _current.Path;
@@ -752,6 +900,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         finally
         {
             Mouse.OverrideCursor = null;
+            FinirLAttente();
 
             // le détourage vient de changer la base : l'aperçu corrigé est à refaire
             // par-dessus, sans quoi il montrerait encore l'ancien fond
@@ -821,7 +970,13 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private void MontrerLePanneauDeCorrection(bool ouvert)
     {
         CorrectionsPanel.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
-        CorrectionsColonne.Width = ouvert ? new GridLength(300) : new GridLength(0);
+
+        // le sujet partage la colonne : rouvrir « Corriger » le referme, et refermer
+        // « Corriger » rend la place à la photo quel que soit celui des deux qui était là
+        if (ouvert) SujetPanel.Visibility = Visibility.Collapsed;
+
+        var occupee = ouvert || SujetPanel.Visibility == Visibility.Visible;
+        CorrectionsColonne.Width = occupee ? new GridLength(300) : new GridLength(0);
 
         if (ouvert) RelireLesCorrections();
     }
@@ -900,11 +1055,162 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // en avoir vu une autre les retrouverait à neutre
         if (_current is not null) _current.Corrections = _corrections.Clone();
 
-        _ = RecalculerLApercuCorrigeAsync();
+        _ = RecalculerLApercuCorrigeAsync(DelaiDuCurseurMs);
     }
 
     private void OnIdCorrectionChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
         OnIdCorrectionChanged(sender, (RoutedEventArgs)e);
+
+    // ----- le sujet seul, sans le fond -----
+
+    /// <summary>
+    /// Ouvre le panneau du sujet à la place de celui des corrections.
+    ///
+    /// <b>Il remplace, il ne s'ajoute pas.</b> Les deux panneaux occupent la même colonne :
+    /// en ouvrir un second à côté rétrécirait la photo, qui est justement ce qu'on regarde
+    /// pendant qu'on règle. On revient aux corrections par ✕ ou par Échap.
+    /// </summary>
+    private void OnOuvrirLaSelectionDuSujet(object sender, RoutedEventArgs e)
+    {
+        CorrectionsPanel.Visibility = Visibility.Collapsed;
+        SujetPanel.Visibility = Visibility.Visible;
+        CorrectionsColonne.Width = new GridLength(300);
+
+        RelireLeSujet();
+    }
+
+    private void OnFermerLaSelectionDuSujet(object sender, RoutedEventArgs e)
+    {
+        SujetPanel.Visibility = Visibility.Collapsed;
+        MontrerLePanneauDeCorrection(true);
+    }
+
+    /// <summary>Repose les contrôles du sujet d'après les réglages de la photo courante.</summary>
+    private void RelireLeSujet()
+    {
+        var sujet = _corrections.Sujet;
+
+        _relectureDesCorrections = true;
+        try
+        {
+            IdSujetToggle.IsChecked = sujet.Actif;
+
+            IdSujetContourSlider.Value = sujet.ContourPx;
+            IdSujetAdoucirSlider.Value = sujet.AdoucissementPx;
+
+            IdSujetExpoSlider.Value = sujet.Exposure;
+            IdSujetContrasteSlider.Value = sujet.Contrast;
+            IdSujetOmbresSlider.Value = sujet.Shadows;
+            IdSujetHautesSlider.Value = sujet.Highlights;
+            IdSujetSaturationSlider.Value = sujet.Saturation;
+            IdSujetVibranceSlider.Value = sujet.Vibrance;
+            IdSujetClarteSlider.Value = sujet.Clarity;
+            IdSujetNettateSlider.Value = sujet.Sharpness;
+        }
+        finally
+        {
+            _relectureDesCorrections = false;
+        }
+
+        MettreLesEtiquettesDuSujet();
+    }
+
+    private void MettreLesEtiquettesDuSujet()
+    {
+        var sujet = _corrections.Sujet;
+
+        IdSujetContourLabel.Text = $"Contour   {sujet.ContourPx:+0;-0;0} px";
+        IdSujetAdoucirLabel.Text = $"Adoucir   {sujet.AdoucissementPx:0} px";
+
+        IdSujetExpoLabel.Text = $"Exposition   {sujet.Exposure:+0.00;-0.00;0} IL";
+        IdSujetContrasteLabel.Text = $"Contraste   {sujet.Contrast:+0;-0;0}";
+        IdSujetOmbresLabel.Text = $"Ombres   {sujet.Shadows:+0;-0;0}";
+        IdSujetHautesLabel.Text = $"Hautes lumières   {sujet.Highlights:+0;-0;0}";
+        IdSujetSaturationLabel.Text = $"Saturation   {sujet.Saturation:+0;-0;0}";
+        IdSujetVibranceLabel.Text = $"Vibrance   {sujet.Vibrance:+0;-0;0}";
+        IdSujetClarteLabel.Text = $"Clarté   {sujet.Clarity:+0;-0;0}";
+        IdSujetNettateLabel.Text = $"Netteté   {sujet.Sharpness:0}";
+
+        MettreLEtatDuSujet();
+    }
+
+    /// <summary>
+    /// La phrase du haut du panneau, qui dit ce qui se passe RÉELLEMENT.
+    ///
+    /// Elle existe parce que la découpe n'est pas la même partout : le réseau demande un
+    /// modèle installé ET allumé dans les Paramètres, faute de quoi c'est la méthode par
+    /// couleur qui découpe — elle marche, mais laisse un halo dans les cheveux. Sans cette
+    /// phrase, l'opérateur verrait ce halo sans savoir d'où il vient.
+    /// </summary>
+    private void MettreLEtatDuSujet()
+    {
+        if (!_corrections.Sujet.Actif)
+        {
+            IdSujetEtat.Text =
+                "Cochez « Corriger le sujet seul » pour détourer la personne et n'agir que sur elle.";
+            return;
+        }
+
+        // « installé » ne suffit pas : le réseau se coupe aussi depuis les Paramètres, et
+        // un poste qui l'a éteint découpe par la couleur sans que rien ne le dise.
+        var parLeReseau = BiRefNetMatting.Actif && BiRefNetMatting.EstInstalle;
+
+        IdSujetEtat.Text = parLeReseau
+            ? "Ces réglages ne touchent que la personne. Le fond reste tel quel."
+            : "Ces réglages ne touchent que la personne. Le détourage fin est éteint sur ce " +
+              "poste : la découpe suit le fond, et peut laisser un liseré dans les cheveux — " +
+              "« Adoucir » l'atténue.";
+    }
+
+    /// <summary>
+    /// Un réglage du sujet a bougé. Même mécanique que le panneau principal, et le même
+    /// report sur la photo : ces réglages lui appartiennent, pas à l'écran.
+    /// </summary>
+    private void OnIdSujetChanged(object sender, RoutedEventArgs e)
+    {
+        if (_relectureDesCorrections || !IsLoaded) return;
+
+        var sujet = _corrections.Sujet;
+
+        sujet.Actif = IdSujetToggle.IsChecked == true;
+
+        sujet.ContourPx = IdSujetContourSlider.Value;
+        sujet.AdoucissementPx = IdSujetAdoucirSlider.Value;
+
+        sujet.Exposure = IdSujetExpoSlider.Value;
+        sujet.Contrast = IdSujetContrasteSlider.Value;
+        sujet.Shadows = IdSujetOmbresSlider.Value;
+        sujet.Highlights = IdSujetHautesSlider.Value;
+        sujet.Saturation = IdSujetSaturationSlider.Value;
+        sujet.Vibrance = IdSujetVibranceSlider.Value;
+        sujet.Clarity = IdSujetClarteSlider.Value;
+        sujet.Sharpness = IdSujetNettateSlider.Value;
+
+        MettreLesEtiquettesDuSujet();
+
+        if (_current is not null) _current.Corrections = _corrections.Clone();
+
+        // Le report compte DOUBLE ici : chacun de ces curseurs passe par le détourage, et
+        // c'est ce panneau qui faisait tomber l'application quand on en glissait un.
+        _ = RecalculerLApercuCorrigeAsync(DelaiDuCurseurMs);
+    }
+
+    private void OnIdSujetChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+        OnIdSujetChanged(sender, (RoutedEventArgs)e);
+
+    /// <summary>
+    /// Remet le sujet à zéro — et lui seul. Les corrections d'ensemble ne bougent pas :
+    /// elles ne sont pas dans ce panneau.
+    /// </summary>
+    private void OnIdSujetReset(object sender, RoutedEventArgs e)
+    {
+        _corrections.Sujet = new CorrectionsSujet();
+
+        if (_current is not null) _current.Corrections = _corrections.Clone();
+
+        RelireLeSujet();
+        _ = RecalculerLApercuCorrigeAsync();
+    }
 
     private void OnIdCorrectionsReset(object sender, RoutedEventArgs e)
     {
@@ -915,9 +1221,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         var fondBlanc = _corrections.WhiteBackground;
         var fondGris = _corrections.GrayBackground;
 
+        // Le sujet est préservé pour la MÊME raison : il a son propre panneau, et son
+        // propre « remettre à zéro ». Un bouton n'efface que ce qu'il a sous les yeux.
+        var sujet = _corrections.Sujet;
+
         _corrections = new ImageAdjustments
         {
             Grayscale = noirEtBlanc, WhiteBackground = fondBlanc, GrayBackground = fondGris,
+            Sujet = sujet,
         };
 
         if (_current is not null) _current.Corrections = _corrections.Clone();
@@ -933,10 +1244,26 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// millisecondes, mais l'écran ne doit pas se figer pendant qu'un client regarde.
     /// Le TIRAGE, lui, refait tout en pleine résolution — c'est <see cref="ImagePipeline"/>
     /// qui applique les mêmes <see cref="ImageAdjustments"/>.
+    ///
+    /// <b>« Quelques millisecondes » ne vaut plus dès que la correction du sujet est
+    /// allumée</b> : elle demande un détourage, qui coûte des SECONDES. D'où le report et
+    /// la file ci-dessous — un calcul par curseur reposé, et un seul à la fois.
     /// </summary>
-    private async Task RecalculerLApercuCorrigeAsync()
+    /// <param name="delaiMs">
+    /// Le temps laissé au curseur de se poser. Zéro pour tout ce qui se déclenche d'un
+    /// seul geste — une case cochée, un bouton « remettre à zéro », un changement de
+    /// photo : il n'y a rien à attendre, et attendre s'y verrait.
+    /// </param>
+    private async Task RecalculerLApercuCorrigeAsync(int delaiMs = 0)
     {
         MontrerLesCorrections();
+
+        // Le calcul précédent ne sert plus à rien : ce qu'il montrera est déjà périmé.
+        // (On est sur le fil de l'écran, seul à toucher ce champ — pas de course ici.)
+        var precedent = _apercuCts;
+        var cts = new CancellationTokenSource();
+        _apercuCts = cts;
+        precedent?.Cancel();
 
         var depart = _detoure ?? _displayBitmap;
         if (depart is null) return;
@@ -949,18 +1276,82 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         }
 
         var reglages = _corrections.Clone();
-        var png = EnPng(depart);
+        var jeton = cts.Token;
+
+        // les pixels de départ ne se relisent qu'au changement de photo — ou de fond, qui
+        // en fabrique une autre
+        if (!ReferenceEquals(_departSource, depart))
+        {
+            _departBgra = EnBgra(depart, out _departLargeur, out _departHauteur);
+            _departSource = depart;
+
+            // Ce numéro nomme CES pixels-là, et il change dès qu'ils changent — c'est
+            // l'objet même de la ligne ci-dessus. Le détourage s'en sert pour reconnaître
+            // une image qu'il a déjà découpée, au lieu de la relire tout entière pour s'en
+            // assurer : 176 ms épargnées à chaque mouvement de curseur.
+            _departNumero++;
+        }
+
+        reglages.CleDeLaPhoto = $"{_current?.Path}#{_departNumero}";
+
+        var pixels = _departBgra!;
+        var largeur = _departLargeur;
+        var hauteur = _departHauteur;
+
+        // Y a-t-il quelque chose à attendre ? Seulement si le sujet est demandé ET que sa
+        // découpe n'est pas déjà en mémoire. Tous les autres aperçus se rendent en un
+        // dixième de seconde, et une barre qui apparaîtrait pour eux ne ferait que
+        // clignoter à chaque mouvement de curseur.
+        var vaDetourer = !reglages.Sujet.IsNeutral &&
+                         !MasqueSujet.DejaEnMemoire(reglages.CleDeLaPhoto, (uint)largeur, (uint)hauteur);
 
         try
         {
-            var octets = await Task.Run(() =>
-            {
-                using var image = new ImageMagick.MagickImage(png);
-                ImageAdjuster.Apply(image, reglages);
-                return image.ToByteArray(ImageMagick.MagickFormat.Png);
-            });
+            if (delaiMs > 0) await Task.Delay(delaiMs, jeton);
 
-            _corrige = ToBitmap(octets);
+            await _apercuFile.WaitAsync(jeton);
+            try
+            {
+                // Rien n'est calculé pour un aperçu déjà dépassé : c'est ICI que l'abandon
+                // paie, puisque la file a pu faire attendre quelques secondes.
+                jeton.ThrowIfCancellationRequested();
+
+                if (vaDetourer) CommencerLAttente("Détourage de la personne");
+
+                var octets = await Task.Run(() =>
+                {
+                    var lecture = new ImageMagick.PixelReadSettings(
+                        (uint)largeur, (uint)hauteur,
+                        ImageMagick.StorageType.Char, ImageMagick.PixelMapping.BGRA);
+
+                    using var image = new ImageMagick.MagickImage(pixels, lecture);
+                    ImageAdjuster.Apply(image, reglages);
+
+                    // la correction du sujet retire la couche alpha en chemin ; on la
+                    // remet opaque pour que la relecture rende bien quatre octets par pixel
+                    image.Alpha(ImageMagick.AlphaOption.Opaque);
+
+                    using var lus = image.GetPixels();
+                    return lus.ToByteArray(ImageMagick.PixelMapping.BGRA)
+                           ?? throw new InvalidOperationException("aperçu illisible");
+                }, jeton);
+
+                // un résultat arrivé après qu'un autre curseur a bougé ferait revenir à
+                // l'écran une correction que l'opérateur vient de quitter
+                if (jeton.IsCancellationRequested) return;
+
+                _corrige = DepuisBgra(octets, largeur, hauteur);
+            }
+            finally
+            {
+                FinirLAttente();
+                _apercuFile.Release();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // un curseur a rebougé : le calcul suivant montrera la suite
+            return;
         }
         catch (Exception ex)
         {
@@ -973,14 +1364,104 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         ApplyGrayscalePreview();
     }
 
-    private static byte[] EnPng(BitmapSource source)
-    {
-        var encodeur = new PngBitmapEncoder();
-        encodeur.Frames.Add(BitmapFrame.Create(source));
+    // ----- l'attente du détourage -----
 
-        using var flux = new MemoryStream();
-        encodeur.Save(flux);
-        return flux.ToArray();
+    /// <summary>
+    /// Combien de temps le détourage va prendre, au mieux de ce qu'on en sait.
+    ///
+    /// La dernière durée mesurée sur ce poste d'abord : elle tient compte de la carte, du
+    /// modèle installé et de la taille traitée. À défaut — au tout premier détourage depuis
+    /// le démarrage — les ordres de grandeur relevés sur la Quadro P2000 de l'atelier le
+    /// 03/08/2026, qui valent mieux que rien.
+    /// </summary>
+    private static TimeSpan EstimationDuDetourage() =>
+        MasqueSujet.DerniereDuree ??
+        (BiRefNetMatting.Actif && BiRefNetMatting.EstInstalle
+            ? TimeSpan.FromSeconds(4.3)
+            : TimeSpan.FromSeconds(1.2));
+
+    /// <summary>
+    /// Montre la barre et la fait avancer. Sans effet si l'attente est déjà affichée — un
+    /// aperçu abandonné puis relancé ne doit pas remettre la barre à zéro sous les yeux.
+    /// </summary>
+    /// <param name="quoi">
+    /// Ce qu'on attend, dit à l'opérateur : « Détourage de la personne », « Pose du fond ».
+    /// C'est le même calcul dessous, mais pas la même chose de son point de vue.
+    /// </param>
+    private void CommencerLAttente(string quoi)
+    {
+        if (_attenteTimer is not null) return;
+
+        _attenteQuoi = quoi;
+        _attenteEstimee = EstimationDuDetourage();
+        _attenteChrono.Restart();
+
+        AttenteBarre.Value = 0;
+        AttenteOverlay.Visibility = Visibility.Visible;
+        MettreLAttenteAJour();
+
+        _attenteTimer = new DispatcherTimer(DispatcherPriority.Render)
+        {
+            Interval = TimeSpan.FromMilliseconds(100),
+        };
+
+        _attenteTimer.Tick += (_, _) => MettreLAttenteAJour();
+        _attenteTimer.Start();
+    }
+
+    private void MettreLAttenteAJour()
+    {
+        var ecoule = _attenteChrono.Elapsed;
+        var estime = _attenteEstimee.TotalSeconds <= 0 ? 1 : _attenteEstimee.TotalSeconds;
+
+        // Jamais tout à fait au bout tant que ce n'est pas fini : une barre pleine devant un
+        // écran qui ne bouge pas ferait croire à un blocage.
+        AttenteBarre.Value = Math.Min(0.97, ecoule.TotalSeconds / estime);
+
+        var reste = _attenteEstimee - ecoule;
+
+        AttenteTexte.Text = reste > TimeSpan.Zero
+            ? $"{_attenteQuoi}… encore {Math.Max(1, Math.Ceiling(reste.TotalSeconds)):0} s"
+            : $"{_attenteQuoi}… un peu plus long que prévu sur cette photo.";
+    }
+
+    /// <summary>Range la barre. Appelée quoi qu'il arrive — fin normale, abandon ou panne.</summary>
+    private void FinirLAttente()
+    {
+        _attenteTimer?.Stop();
+        _attenteTimer = null;
+        _attenteChrono.Reset();
+
+        AttenteOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Les pixels d'une image d'écran, en BGRA — la disposition qu'attend WPF.</summary>
+    private static byte[] EnBgra(BitmapSource source, out int largeur, out int hauteur)
+    {
+        var lisible = source.Format == PixelFormats.Bgra32
+            ? source
+            : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+
+        largeur = lisible.PixelWidth;
+        hauteur = lisible.PixelHeight;
+
+        var parLigne = largeur * 4;
+        var octets = new byte[parLigne * hauteur];
+        lisible.CopyPixels(octets, parLigne, 0);
+        return octets;
+    }
+
+    /// <summary>
+    /// L'image d'écran correspondant à des pixels BGRA. Figée : elle est fabriquée sur le
+    /// fil de calcul et affichée sur celui de l'écran.
+    /// </summary>
+    private static BitmapSource DepuisBgra(byte[] bgra, int largeur, int hauteur)
+    {
+        var image = BitmapSource.Create(
+            largeur, hauteur, 96, 96, PixelFormats.Bgra32, null, bgra, largeur * 4);
+
+        image.Freeze();
+        return image;
     }
 
     /// <summary>Dit à l'opérateur que des corrections sont posées — sinon rien ne le montre.</summary>
@@ -990,8 +1471,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         // Changer de photo change les réglages : le panneau doit suivre. Sans cela, il
         // montrerait ceux de la photo précédente, et le premier curseur touché les
-        // reposerait sur la nouvelle.
+        // reposerait sur la nouvelle. Vaut pour les DEUX panneaux — celui du sujet porte
+        // des réglages qui appartiennent eux aussi à la photo.
         if (CorrectionsPanel.Visibility == Visibility.Visible) RelireLesCorrections();
+        if (SujetPanel.Visibility == Visibility.Visible) RelireLeSujet();
     }
 
     // ----- gabarit et dessin -----
@@ -1038,7 +1521,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         }
 
         PlacerGabaritVisage(cropRect);
-        PlacerAnneaux(display);
+        PlacerLesPoignees(cropRect);
         UpdateCompliance();
     }
 
@@ -1228,6 +1711,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             RedressementArme = false;
             e.Handled = true;
         }
+        else if (e.Key == Key.Escape && SujetPanel.Visibility == Visibility.Visible)
+        {
+            // Échap remonte d'un cran, il ne ferme pas tout : le sujet est un panneau
+            // OUVERT DEPUIS « Corriger », et l'on y revient plutôt que de se retrouver
+            // devant la photo nue sans savoir ce qu'on a fermé
+            SujetPanel.Visibility = Visibility.Collapsed;
+            MontrerLePanneauDeCorrection(true);
+            e.Handled = true;
+        }
         else if (e.Key == Key.Escape && _agrandi)
         {
             // le redressement d'abord : c'est un MODE, et Échap sort du plus imbriqué
@@ -1324,14 +1816,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private void OnStageMouseUp(object sender, MouseButtonEventArgs e)
     {
         _dragging = false;
-        _markerDrag = null;
+        _poigneeDrag = null;
         Stage.ReleaseMouseCapture();
     }
 
     private void OnStageMouseMove(object sender, MouseEventArgs e)
     {
-        // un anneau saisi a la priorité sur le déplacement du cadre
-        if (DeplacerRepere(e.GetPosition(Stage))) return;
+        // un coin saisi a la priorité sur le déplacement du cadre
+        if (TirerLaPoignee(e.GetPosition(Stage))) return;
 
         if (!_dragging) return;
         var pos = e.GetPosition(Stage);
@@ -1498,32 +1990,30 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // débordant — pouvait afficher une tête parfaitement dimensionnée et partir sans
         // un mot, pour sortir avec des bords vides. Signalé par les collègues le
         // 08/08/2026.
+        // ⚠ LE CONTRÔLE DE CONFORMITÉ AU GABARIT NE BLOQUE PLUS — retiré le 12/08/2026, à la
+        // demande de l'exploitant. Il s'appuyait sur la détection de visage
+        // (`IdPhotoFr.Check`) pour juger la hauteur de tête et le centrage, et il annonçait
+        // « mal cadré » sur des photos qui ne l'étaient pas — assez souvent pour qu'on
+        // réponde « oui » sans lire, ce qui vaut moins que rien : une boîte qu'on acquitte
+        // par réflexe ne protège de rien et fait perdre un geste à chaque planche.
+        //
+        // Le jugement RESTE À L'ÉCRAN, dans le bandeau de `UpdateCompliance` — hauteur de
+        // tête en millimètres, bornes de la norme, guide vert ou orange. C'est là qu'il est
+        // utile : pendant qu'on cadre, et sans rien exiger.
+        //
+        // CE QUI RESTE BLOQUANT, et il faut qu'il le reste : le cadre qui SORT DE LA PHOTO.
+        // Ce n'est pas une appréciation, c'est une mesure — le gabarit dépasse de l'image,
+        // et le tirage sortira avec des bords vides ou étirés. Aucun faux positif possible,
+        // et c'est le défaut que les collègues avaient signalé le 08/08/2026.
         var horsPhoto = _photos.Where(p => !p.Crop.IsValid).ToList();
 
-        var nonConformes = _photos
-            .Where(p => p.Crop.IsValid
-                        && p.Head is not null
-                        && !IdPhotoFr.Check(p.Crop, p.Head, _document).Compliant)
-            .ToList();
-
-        if (horsPhoto.Count > 0 || nonConformes.Count > 0)
+        if (horsPhoto.Count > 0)
         {
-            var motifs = new List<string>();
-
-            if (horsPhoto.Count > 0)
-                motifs.Add(
-                    $"Le cadre SORT DE LA PHOTO sur {horsPhoto.Count} photo(s) : " +
-                    $"{string.Join(", ", horsPhoto.Select(p => p.Name))}.\n" +
-                    "Elles sont trop serrées pour cette norme, et le tirage aura des bords vides.");
-
-            if (nonConformes.Count > 0)
-                motifs.Add(
-                    $"Le cadrage ne respecte pas le gabarit " +
-                    $"{_document.WidthMm:0.#}×{_document.HeightMm:0.#} sur {nonConformes.Count} " +
-                    $"photo(s) : {string.Join(", ", nonConformes.Select(p => p.Name))}.");
-
             var reponse = MessageBox.Show(
-                string.Join("\n\n", motifs) + "\n\nContinuer quand même ?",
+                $"Le cadre SORT DE LA PHOTO sur {horsPhoto.Count} photo(s) : " +
+                $"{string.Join(", ", horsPhoto.Select(p => p.Name))}.\n" +
+                "Elles sont trop serrées pour cette norme, et le tirage aura des bords vides." +
+                "\n\nContinuer quand même ?",
                 "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning,
                 MessageBoxResult.No);
 

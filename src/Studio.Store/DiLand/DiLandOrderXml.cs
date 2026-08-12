@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml;
+using Studio.Core.Domain;
 
 namespace Studio.Store.DiLand;
 
@@ -145,6 +146,10 @@ public static class DiLandOrderXml
                 Oid: ++numero,
                 ProductName: Texte(ligne, "Sys_Product_Alias"),
                 Price: (decimal)Reel(ligne, "Price"),
+                // Ici la finition s'écrit en toutes lettres — PaperType="Glossy" — là où
+                // la base la range en code numérique. Les deux doivent rendre le même nom :
+                // une commande ne peut pas changer de rouleau selon que DiLand tourne ou non.
+                Finish: FinitionPapier.DepuisDiLand(Texte(ligne, "PaperType")),
                 Photos: photos));
         }
 

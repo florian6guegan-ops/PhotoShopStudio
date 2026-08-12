@@ -88,6 +88,15 @@
                     <TextBlock x:Name="DetailText" Style="{StaticResource Hint}" FontSize="14"
                                VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
                                Margin="0,0,0,4"/>
+
+                    <!-- Le détourage a changé de méthode en cours de route. Ce n'est pas une
+                         erreur — la planche est bonne — mais son fond est moins fin que celui
+                         vu au cadrage, et l'opérateur doit l'apprendre ICI plutôt que devant
+                         le client. Masqué tant qu'il n'y a rien à dire. -->
+                    <TextBlock x:Name="RepliDetourageText" Style="{StaticResource Hint}" FontSize="14"
+                               Foreground="{StaticResource TitleBrush}"
+                               VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
+                               Margin="12,0,0,4" Visibility="Collapsed"/>
                 </WrapPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal"

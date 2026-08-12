@@ -81,6 +81,12 @@ public static class BiRefNetMatting
             _session?.Dispose();
             _session = null;
             _tentative = false;
+            _modeleCharge = null;
+
+            // Un modèle écarté faute de mémoire retrouve sa chance : l'exploitant vient de
+            // toucher aux réglages, et le poste a pu changer de carte entre-temps.
+            _modelesEcartes.Clear();
+            DernierRepli = null;
         }
     }
 
@@ -106,8 +112,36 @@ public static class BiRefNetMatting
     private static readonly float[] EcartType = [0.229f, 0.224f, 0.225f];
 
     private static readonly object Verrou = new();
+
+    /// <summary>
+    /// Un seul passage du réseau à la fois, tous appelants confondus.
+    ///
+    /// <b>Ce n'est pas une précaution de style.</b> Le commentaire de <see cref="Cote"/>
+    /// raconte déjà qu'à 1024 la carte de l'atelier (Quadro P2000, 4 Go) réussit une photo
+    /// et échoue la SUIVANTE faute de mémoire. Deux passages MENÉS EN MÊME TEMPS demandent
+    /// donc à la carte exactement ce qu'elle ne sait pas faire — et l'échec ne se rattrape
+    /// pas ici : un dépassement de mémoire dans DirectML se produit sous le code managé,
+    /// emporte le processus sans lever d'exception, et met parfois le pilote graphique à
+    /// terre avec lui (l'écran clignote, Windows le redémarre).
+    ///
+    /// L'aperçu d'identité en lançait un par mouvement de curseur. Le verrou fait la queue.
+    /// </summary>
+    private static readonly object VerrouExecution = new();
+
     private static InferenceSession? _session;
     private static bool _tentative;
+
+    /// <summary>Le fichier de modèle réellement chargé dans <see cref="_session"/>.</summary>
+    private static string? _modeleCharge;
+
+    /// <summary>
+    /// Modèles écartés pour la séance, faute de mémoire vidéo.
+    ///
+    /// Vidé par <see cref="Reinitialiser"/> : changer de réglage doit redonner sa chance à
+    /// un modèle, ne serait-ce que parce que le poste a pu changer de carte.
+    /// </summary>
+    private static readonly HashSet<string> _modelesEcartes =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Dossiers où l'on cherche le modèle, dans l'ordre.</summary>
     public static IReadOnlyList<string> DossiersCherches { get; set; } =
@@ -137,12 +171,38 @@ public static class BiRefNetMatting
         return null;
     }
 
-    /// <summary>L'ordre de recherche réel : le modèle demandé d'abord, puis les autres.</summary>
-    private static IEnumerable<string> OrdreDeRecherche() =>
-        ModelePrefere is { Length: > 0 } demande
+    /// <summary>
+    /// L'ordre de recherche réel : le modèle demandé d'abord, puis les autres — et jamais
+    /// ceux qu'une panne de mémoire a fait écarter pour la séance.
+    /// </summary>
+    /// <summary>
+    /// Le rang d'un modèle dans <see cref="ModelesAcceptes"/>, du plus léger au plus lourd.
+    /// Un modèle inconnu passe pour le plus lourd : on ne se replie jamais dessus.
+    /// </summary>
+    private static int IndexDuModele(string nomDeFichier)
+    {
+        for (var i = 0; i < ModelesAcceptes.Count; i++)
+            if (ModelesAcceptes[i].Equals(nomDeFichier, StringComparison.OrdinalIgnoreCase))
+                return i;
+
+        return int.MaxValue;
+    }
+
+    /// <remarks>
+    /// La liste est CONSTRUITE sous le verrou, et non rendue paresseusement : l'écran des
+    /// réglages l'interroge depuis le fil de l'interface pendant qu'un détourage peut
+    /// écarter un modèle sur un autre fil, et un <c>HashSet</c> lu en cours d'écriture lève.
+    /// </remarks>
+    private static List<string> OrdreDeRecherche()
+    {
+        var ordre = ModelePrefere is { Length: > 0 } demande
             ? new[] { demande }.Concat(ModelesAcceptes.Where(m =>
                 !m.Equals(demande, StringComparison.OrdinalIgnoreCase)))
-            : ModelesAcceptes;
+            : ModelesAcceptes.AsEnumerable();
+
+        lock (Verrou)
+            return ordre.Where(m => !_modelesEcartes.Contains(m)).ToList();
+    }
 
     /// <summary>
     /// Le fichier de modèle qui sera réellement chargé, ou null si aucun n'est installé.
@@ -167,23 +227,118 @@ public static class BiRefNetMatting
 
         if (!Actif) return null;
 
-        var session = Session();
-        if (session is null) return null;
+        // DEUX TOURS AU PLUS. Le premier peut tomber en panne de mémoire vidéo ; le second
+        // repart sur un modèle plus léger, qui vaut infiniment mieux que la règle par
+        // couleur. Au-delà il n'y a plus rien à tenter, et une boucle devant un client
+        // serait pire que le repli.
+        for (var essai = 0; essai < 2; essai++)
+        {
+            var session = Session();
+            if (session is null) return null;
 
-        try
-        {
-            return Executer(session, image);
+            // relevé AVANT l'exécution : c'est ce modèle-là qu'on écartera s'il échoue,
+            // et la session peut avoir changé entre-temps
+            var modele = _modeleCharge;
+
+            try
+            {
+                lock (VerrouExecution)
+                    return Executer(session, image);
+            }
+            catch (Exception ex)
+            {
+                if (!EcarterEtReessayer(modele, ex)) return null;
+            }
         }
-        catch (Exception ex)
+
+        return null;
+    }
+
+    /// <summary>
+    /// Range la session morte et dit s'il reste quelque chose à tenter.
+    ///
+    /// <b>La session ne survit pas à son échec</b>, et c'est tout l'objet de cette méthode.
+    /// Elle était conservée telle quelle : une seule panne de mémoire condamnait alors la
+    /// séance ENTIÈRE. Créteil l'a payé le 12/08/2026 — un premier échec à 13:23:39 sur un
+    /// <c>DmlFusedNode</c>, puis quatre appels de suite rendus en <c>[ErrorCode:Fail]</c>
+    /// sec, jusqu'au redémarrage de l'application. L'opérateur voyait un cadrage parfait
+    /// puis une planche détourée à la couleur, sans rien pour l'expliquer.
+    ///
+    /// <b>Et l'on ne retombe pas sur la couleur tant qu'il reste un modèle.</b> Une panne de
+    /// mémoire ne dit rien du réseau, elle dit que CE modèle est trop gros pour cette carte :
+    /// le « lite » tient là où le « portrait » déborde, et son contour reste très au-dessus
+    /// de la règle par couleur. Le modèle fautif est écarté pour la séance — le reprendre à
+    /// la photo suivante rejouerait la même panne, en faisant attendre à chaque fois.
+    /// </summary>
+    /// <returns>Vrai s'il faut refaire un tour avec un autre modèle.</returns>
+    /// <remarks>
+    /// Interne plutôt que privée : la règle de démotion ne se vérifie autrement qu'en
+    /// mettant une carte graphique à genoux devant un client, ce qui est précisément la
+    /// situation qu'elle existe pour rattraper.
+    /// </remarks>
+    internal static bool EcarterEtReessayer(string? modele, Exception ex)
+    {
+        lock (Verrou)
         {
-            Log?.Invoke($"BiRefNet : échec du détourage ({ex.Message}) — repli sur la méthode par couleur.");
-            return null;
+            _session?.Dispose();
+            _session = null;
+            _tentative = false;
+            _modeleCharge = null;
+
+            if (modele is not null) _modelesEcartes.Add(modele);
+
+            // UN REPLI NE SE FAIT QUE VERS PLUS LÉGER, et cette précision a coûté une
+            // journée à Créteil le 12/08/2026 : le « lite » y est tombé en panne de
+            // mémoire, et le seul modèle restant était le « portrait », DEUX FOIS ET DEMIE
+            // plus lourd. Le journal annonçait « on reprend avec un modèle plus léger » en
+            // chargeant le plus gros — qui a échoué à son tour, en faisant attendre.
+            //
+            // ModelesAcceptes est rangé du plus léger au plus lourd : un repli valable est
+            // donc un modèle de RANG INFÉRIEUR à celui qui vient d'échouer.
+            var rangFautif = modele is null
+                ? int.MaxValue
+                : IndexDuModele(modele);
+
+            var repli = OrdreDeRecherche()
+                .Where(m => IndexDuModele(m) < rangFautif)
+                .FirstOrDefault(m => CheminDuModele(m) is not null);
+
+            if (repli is not null)
+            {
+                DernierRepli =
+                    $"Le modèle « {modele} » a manqué de mémoire vidéo sur cette carte : " +
+                    $"Studio est repassé à « {repli} » pour la suite de la séance.";
+                Log?.Invoke($"BiRefNet : échec du détourage ({ex.Message}) — « {modele} » " +
+                            $"écarté pour la séance, on reprend avec « {repli} », plus léger.");
+                return true;
+            }
+
+            DernierRepli =
+                "Le détourage par réseau n'a pas pu s'exécuter : Studio est repassé à la " +
+                "méthode par couleur, dont le contour est moins fin.";
+            Log?.Invoke($"BiRefNet : échec du détourage ({ex.Message}) — plus aucun modèle " +
+                        "disponible, repli sur la méthode par couleur.");
+            return false;
         }
     }
 
     /// <summary>
-    /// La session, chargée une seule fois. Un échec n'est tenté qu'UNE fois : recharger un
-    /// modèle de 490 Mo à chaque photo pour échouer pareil bloquerait le comptoir.
+    /// Ce qu'il faudrait dire à l'opérateur, ou null s'il n'y a rien à signaler.
+    ///
+    /// <b>Le repli était visible du seul journal.</b> C'est la leçon déjà écrite pour les
+    /// messages d'erreur : ce qui n'est écrit nulle part ne se diagnostique pas, et ici
+    /// c'était pire — l'écran ne montrait aucune anomalie, seulement un fond moins propre
+    /// qu'à l'écran précédent. Les écrans d'identité lisent cette phrase et l'affichent.
+    /// </summary>
+    public static string? DernierRepli { get; private set; }
+
+    /// <summary>
+    /// La session, chargée une seule fois. Un CHARGEMENT raté n'est pas retenté : recharger
+    /// un modèle de 490 Mo à chaque photo pour échouer pareil bloquerait le comptoir.
+    ///
+    /// Une EXÉCUTION ratée, elle, se reprend — mais sur un autre modèle, jamais le même :
+    /// c'est <see cref="EcarterEtReessayer"/> qui rouvre la porte en remettant
+    /// <see cref="_tentative"/> à faux.
     /// </summary>
     private static InferenceSession? Session()
     {
@@ -225,7 +380,8 @@ public static class BiRefNetMatting
 
                 options.AppendExecutionProvider_DML(0);
                 _session = new InferenceSession(chemin, options);
-                Log?.Invoke("BiRefNet : chargé sur la carte graphique (DirectML).");
+                _modeleCharge = Path.GetFileName(chemin);
+                Log?.Invoke($"BiRefNet : « {_modeleCharge} » chargé sur la carte graphique (DirectML).");
                 return _session;
             }
             catch (Exception ex)

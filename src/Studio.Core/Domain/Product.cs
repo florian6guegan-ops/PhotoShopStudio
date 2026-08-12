@@ -12,6 +12,21 @@ public sealed class SheetSpec
     /// </summary>
     public const double CutLineMm = 0.2;
 
+    /// <summary>
+    /// Espace laissé entre deux cases d'une planche à fond perdu, en millimètres.
+    ///
+    /// <b>Distinct de <see cref="CutLineMm"/>, et il doit l'être.</b> Le trait de découpe
+    /// est ce qu'on DESSINE — deux dixièmes, l'épaisseur d'un trait fin ; l'écart est la
+    /// place qu'on LAISSE, et le trait s'y inscrit. Les deux ont longtemps valu la même
+    /// chose : les photos se touchaient presque, et un massicot qui dévie d'un demi-
+    /// millimètre entamait la voisine.
+    ///
+    /// Un millimètre donne au coup de lame la marge qui lui manquait, sans coûter la
+    /// moindre photo : vérifié format par format, de la planche française aux carrés
+    /// étrangers. Demandé par l'exploitant le 11/08/2026, les photos se touchant presque.
+    /// </summary>
+    public const double EcartFondPerduMm = 1;
+
     public int Copies { get; set; } = 6;
     public double CellWidthMm { get; set; } = 35;
     public double CellHeightMm { get; set; } = 45;
@@ -40,7 +55,7 @@ public sealed class SheetSpec
     /// annoncerait moins de photos que la planche n'en porte, et le client paierait un
     /// papier à moitié vide.
     /// </summary>
-    public double LayoutGapMm => FullBleed ? CutLineMm : GapMm;
+    public double LayoutGapMm => FullBleed ? EcartFondPerduMm : GapMm;
 
     /// <summary>
     /// Contour noir tracé autour de chaque photo. C'est le repère sur lequel on coupe :

@@ -116,4 +116,59 @@ public class CotesProduitTests
     {
         Assert.Null(Verdict("10x15", 250, 300));
     }
+
+    // ————— le filet qui ne demande aucun nom —————
+    //
+    // La règle ci-dessus ne parle que si le NOM porte un format. C'est ce qui lui donne sa
+    // précision, et c'est aussi sa limite : le poste DESKTOP-KT88VDM avait DEUX produits en
+    // centimètres, et un seul s'appelait « 40x50 ». L'autre s'appelait « E-PHOTO » et
+    // mesurait 10 × 15 mm — rien à rapprocher, donc rien de signalé, pendant des semaines.
+
+    /// <summary>Le second produit de KT88VDM : aucun format dans son nom, et pourtant.</summary>
+    [Fact]
+    public void Une_e_photo_de_dix_sur_quinze_millimetres_est_attrapee()
+    {
+        var dit = CotesProduit.Anomalie("E-PHOTO", "1", 10, 15);
+
+        Assert.NotNull(dit);
+        Assert.Contains("aucun papier", dit!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Le premier reste attrapé par la règle du nom, qui est plus précise.</summary>
+    [Fact]
+    public void Le_quarante_par_cinquante_est_attrape_avec_la_correction_proposee()
+    {
+        var dit = CotesProduit.Anomalie("40x50", "30x40-2", 40, 50);
+
+        Assert.NotNull(dit);
+        Assert.Contains("400", dit!);
+        Assert.Contains("500", dit!);
+    }
+
+    /// <summary>
+    /// AUCUN faux positif sur le catalogue réel : ce sont les 45 formats de la boutique qui
+    /// passeraient ici à chaque démarrage.
+    /// </summary>
+    [Theory]
+    [InlineData("8x10", 80, 102)]              // le plus petit de la boutique
+    [InlineData("10x15", 102, 152)]
+    [InlineData("Photos d'identité — planche 10×15", 156.1, 105)]
+    [InlineData("40x50", 400, 500)]
+    [InlineData("70x100", 700, 1000)]
+    [InlineData("A4", 210, 297)]
+    public void Le_catalogue_de_la_boutique_ne_declenche_aucune_anomalie(
+        string nom, double l, double h)
+    {
+        Assert.Null(CotesProduit.Anomalie(nom, null, l, h));
+    }
+
+    /// <summary>Des cotes absentes ne se jugent pas non plus par le filet.</summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 150)]
+    [InlineData(-10, -15)]
+    public void Des_cotes_nulles_ne_declenchent_pas_le_filet(double l, double h)
+    {
+        Assert.Null(CotesProduit.Anomalie("Sans format", "x", l, h));
+    }
 }

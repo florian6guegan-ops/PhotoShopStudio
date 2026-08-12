@@ -107,6 +107,40 @@ public static class CropMath
     }
 
     /// <summary>
+    /// Redimensionne le recadrage en laissant un coin À SA PLACE.
+    ///
+    /// <b>Ce que ça change par rapport à <see cref="Zoom"/>.</b> Le zoom travaille autour du
+    /// centre : c'est le geste de la molette, où l'on n'a rien saisi. Quand on tire un coin
+    /// à la souris, c'est le coin OPPOSÉ qu'on s'attend à voir rester immobile — sans quoi
+    /// le cadre fuit sous le curseur et il faut le rattraper au déplacement.
+    ///
+    /// Le format reste imposé : sur une photo d'identité, les proportions viennent du
+    /// document visé et ne se négocient pas. Tirer un coin change donc la TAILLE du cadre,
+    /// jamais sa forme — c'est pourquoi il n'y a pas d'encoche de côté ici, contrairement au
+    /// recadrage libre des tirages ordinaires.
+    /// </summary>
+    /// <param name="ancreX">
+    /// Abscisse du coin qui ne bouge pas, en fraction du cadre : 0 = bord gauche,
+    /// 1 = bord droit.
+    /// </param>
+    /// <param name="ancreY">Ordonnée du coin fixe, 0 en haut et 1 en bas.</param>
+    public static CropSpec ZoomDepuisUnCoin(
+        CropSpec crop, double factor, double ancreX, double ancreY,
+        int imageWidth, int imageHeight, double targetAspect)
+    {
+        // le zoom d'abord, avec toutes ses butées — on ne refait pas ici le bornage à
+        // l'image ni la limite de grossissement
+        var zoome = Zoom(crop, factor, imageWidth, imageHeight, targetAspect);
+
+        // …puis on ramène le point d'ancrage là où il était. Zoom a travaillé autour du
+        // centre, donc l'ancre a bougé de la moitié de ce que le cadre a gagné.
+        var dx = (crop.X + ancreX * crop.Width) - (zoome.X + ancreX * zoome.Width);
+        var dy = (crop.Y + ancreY * crop.Height) - (zoome.Y + ancreY * zoome.Height);
+
+        return ClampToBounds(zoome with { X = zoome.X + dx, Y = zoome.Y + dy });
+    }
+
+    /// <summary>
     /// Dimensions du canevas qu'un redressement produit : l'image tournée, coins vides
     /// compris.
     ///

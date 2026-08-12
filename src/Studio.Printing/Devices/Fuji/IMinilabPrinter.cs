@@ -37,8 +37,15 @@ public interface IMinilabPrinter
     /// <summary>
     /// Finition du papier réellement chargé dans la machine. Le tirage doit la déclarer :
     /// annoncer « brillant » sur du lustré donne un rendu faux.
+    ///
+    /// <b><c>null</c> = surface inconnue</b>, et l'on ne bloque alors rien — exactement
+    /// comme le 0 de <see cref="LoadedPaperWidthMm"/>. La distinction n'est pas
+    /// théorique : elle valait auparavant « brillant », si bien qu'une machine avare en
+    /// informations se déclarait chargée de brillant et faisait refuser toutes les
+    /// commandes lustrées d'une boutique. Une machine qui ne sait pas ne doit jamais
+    /// empêcher de tirer.
     /// </summary>
-    De100Surface LoadedSurface(char machineId);
+    De100Surface? LoadedSurface(char machineId);
 
     /// <summary>
     /// Largeur du rouleau réellement chargé, en millimètres. C'est elle qui décide des
@@ -80,6 +87,21 @@ public interface IMinilabPrinter
     /// allant vider la file SUR le minilab. Le SDK sait pourtant le faire.
     /// </summary>
     void Cancel(string orderHandle);
+
+    /// <summary>
+    /// Où en est une commande : combien de SES tirages sont sortis, sur combien.
+    ///
+    /// <b>C'est le compte de la machine, commande par commande.</b> Le bandeau suivait le
+    /// compteur global du minilab — celui des tirages depuis la mise en service — dont il
+    /// retranchait la valeur relevée au départ : tout ce que la machine sortait par
+    /// ailleurs venait gonfler l'avancement, et deux commandes lancées à la suite se
+    /// comptaient l'une l'autre. Le pilote de DiLand lit ce champ-ci, et son affichage ne
+    /// décale pas.
+    ///
+    /// Null quand le relais ne répond pas ou que le SDK ne connaît plus ce handle :
+    /// l'appelant retombe alors sur les verdicts, comme avant.
+    /// </summary>
+    Task<De100OrderProgress?> OrderProgressAsync(string orderHandle);
 }
 
 /// <summary>
@@ -94,6 +116,9 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
     private readonly HashSet<char> _subscribed = [];
     private readonly object _sync = new();
     private bool _connected;
+
+    /// <summary>La cause d'un avancement illisible n'est dite qu'une fois — voir OrderProgressAsync.</summary>
+    private bool _progressionMuette;
 
     public De100BridgePrinter(De100BridgeClient? client = null) => _client = client ?? new De100BridgeClient();
 
@@ -199,12 +224,12 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         return ready;
     }
 
-    public De100Surface LoadedSurface(char machineId)
+    public De100Surface? LoadedSurface(char machineId)
     {
         EnsureConnected();
 
         var info = _client.GetPrinterInfoAsync(machineId).GetAwaiter().GetResult();
-        return info?.Media?.Surface ?? De100Surface.Glossy;
+        return info?.Media?.Surface;
     }
 
     public int LoadedPaperWidthMm(char machineId)
@@ -272,6 +297,35 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
     {
         EnsureConnected();
         _client.CancelAsync(orderHandle).GetAwaiter().GetResult();
+    }
+
+    /// <inheritdoc/>
+    public async Task<De100OrderProgress?> OrderProgressAsync(string orderHandle)
+    {
+        if (string.IsNullOrEmpty(orderHandle)) return null;
+
+        try
+        {
+            if (!_client.IsConnected) await _client.ConnectAsync();
+            return await _client.OrderProgressAsync(orderHandle);
+        }
+        catch (Exception ex)
+        {
+            // Jamais fatal : l'appelant voit le null et retombe sur les verdicts.
+            //
+            // Mais PLUS JAMAIS muet non plus. Ce relevé revient toutes les dix secondes, et
+            // pour ne pas noyer le journal on avalait tout — y compris la raison pour
+            // laquelle il ne marchait pas du tout. La première cause est dite, une fois,
+            // puis on se tait : c'est ce qui manquait pour comprendre pourquoi la commande
+            // 11-029 du 11/08/2026 n'a jamais fait bouger le compteur.
+            if (!_progressionMuette)
+            {
+                _progressionMuette = true;
+                Log?.Invoke($"DE100 : avancement de « {orderHandle} » illisible — {ex.Message}");
+            }
+
+            return null;
+        }
     }
 
     /// <summary>

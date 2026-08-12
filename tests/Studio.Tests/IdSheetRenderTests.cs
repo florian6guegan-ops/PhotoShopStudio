@@ -276,24 +276,47 @@ public class IdSheetRenderTests : IDisposable
     /// La disposition d'une planche à fond perdu : les cases ne sont plus séparées que par
     /// le trait de découpe, et rien n'est réservé dans les marges.
     /// </summary>
+    /// <summary>
+    /// La disposition telle que le RENDU la calcule.
+    ///
+    /// L'écart est celui du fond perdu, et non l'épaisseur du trait : les deux ont
+    /// longtemps valu la même chose, mais l'écart est passé à un millimètre le 11/08/2026
+    /// pour donner au massicot la marge qui lui manquait. Les confondre ici ferait chercher
+    /// les cases là où elles ne sont plus.
+    /// </summary>
     private static SheetLayoutResult DispositionFondPerdu(int copies = 8, int reservePx = 0) =>
         IdSheetLayout.Layout(SheetW, SheetH, CellW, CellH,
-            ImagePipeline.TraitDeDecoupePx(Dpi), copies, tickLength: 0, bottomReserve: reservePx);
+            MmPx.ToPixels(SheetSpec.EcartFondPerduMm, Dpi), copies,
+            tickLength: 0, bottomReserve: reservePx);
 
     /// <summary>
-    /// À fond perdu, les photos sont JOINTIVES : l'écart se réduit à l'épaisseur du trait
-    /// de découpe, qui y tient tout entier. C'est ce qui permet de couper la planche d'un
-    /// trait de massicot d'un bord à l'autre.
+    /// À fond perdu, les photos ne sont séparées que de l'espace du massicot.
+    ///
+    /// <b>Elles étaient JOINTIVES</b> — l'écart valait l'épaisseur du trait, deux dixièmes
+    /// de millimètre — et c'était trop juste : un coup de lame qui dévie entame la voisine.
+    /// L'écart est passé à un millimètre le 11/08/2026, à la demande de l'exploitant, sans
+    /// qu'aucune planche y perde de photo.
+    ///
+    /// Ce qui compte n'a pas changé : l'écart reste petit devant une case, et sans commune
+    /// mesure avec les deux millimètres d'avant le fond perdu, qui dispersaient les photos
+    /// au milieu du blanc.
     /// </summary>
     [Fact]
-    public void A_fond_perdu_les_photos_sont_jointives()
+    public void A_fond_perdu_les_photos_ne_sont_separees_que_du_trait_de_coupe()
     {
         var disposition = DispositionFondPerdu();
 
         var ecart = disposition.Cells[1].X - disposition.Cells[0].Right;
 
-        Assert.Equal(ImagePipeline.TraitDeDecoupePx(Dpi), ecart);
-        Assert.True(ecart < MmPx.ToPixels(0.5, Dpi), "les photos doivent se toucher");
+        Assert.Equal(MmPx.ToPixels(SheetSpec.EcartFondPerduMm, Dpi), ecart);
+
+        // le trait de découpe tient dans cet écart, et de loin
+        Assert.True(ecart >= ImagePipeline.TraitDeDecoupePx(Dpi),
+            "le trait de découpe doit tenir dans l'écart");
+
+        // …qui reste une fraction de la case : on coupe la planche d'un trait, on ne
+        // disperse pas les photos
+        Assert.True(ecart < CellW / 10, "l'écart doit rester discret devant la case");
     }
 
     /// <summary>
@@ -374,7 +397,19 @@ public class IdSheetRenderTests : IDisposable
         var encreAvec = EncreSousLesPhotos(complete);
         var encreSans = EncreSousLesPhotos(DateSeule(moment));
 
-        Assert.True(encreAvec > encreSans * 2,
+        // Le seuil a suivi le dessin de la bande, deux fois le 11/08/2026 :
+        //
+        // 1. ×2 tant que le contenu grandissait avec la bande. Il a fallu le plafonner —
+        //    « PHOTOS CONFORMES » sortait en capitales d'un centimètre sur les planches à
+        //    peu de rangées — et la mention comme le QR déposent depuis moins d'encre ;
+        // 2. les deux planches réservent MAINTENANT la même hauteur (le minimum où une date
+        //    s'écrit, et non la hauteur de ce qu'elles portent), donc leurs photos tombent
+        //    au même endroit et leurs bandes ont la même taille. La comparaison est d'autant
+        //    plus serrée qu'elle porte sur la seule différence qui reste : ce qui est écrit.
+        //
+        // Ce que ce test protège n'a pas bougé — mention et code QR s'impriment bel et bien,
+        // et chargent la bande d'au moins moitié plus que la date seule.
+        Assert.True(encreAvec > encreSans * 1.4,
             $"la bande complète doit porter bien plus que la date ({encreAvec} contre {encreSans})");
     }
 
@@ -428,7 +463,12 @@ public class IdSheetRenderTests : IDisposable
 
         Assert.NotNull(pose);
         Assert.True(pose.Band.Y >= basPhotos);
-        Assert.Equal(SheetH, pose.Band.Bottom);
+
+        // La bande ne descend plus jusqu'au bord du fichier : elle s'arrête à la marge du
+        // massicot. Ce qui passait dessous partait au rognage — la date sortait amputée sur
+        // les planches serrées, et à six dixièmes de millimètre près sur la française
+        // (11/08/2026). C'est le pendant de la protection des côtés, qui existait déjà.
+        Assert.Equal(SheetH - MmPx.ToPixels(SheetFooterLayout.MargeBasseMm, Dpi), pose.Band.Bottom);
     }
 
     /// <summary>

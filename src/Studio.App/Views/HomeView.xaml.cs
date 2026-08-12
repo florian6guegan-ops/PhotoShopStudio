@@ -182,7 +182,10 @@ public partial class HomeView : UserControl
                 travail.KioskOid,
                 travail.AvecSousDossiers,
                 taille,
-                enAttente: travail),
+                enAttente: travail,
+                // le montage retenu revient avec le travail : sans lui, la reprise
+                // repartirait en un fichier par tirage, donc sur deux fois plus de papier
+                montageFeuille: travail.MontageSheetCode),
             $"{travail.Titre} — reprise");
     }
 
@@ -583,15 +586,25 @@ public partial class HomeView : UserControl
             {
                 if (Travail is not { } t) return _termine ? "Terminée" : "Préparation…";
 
-                return t.Etape.StartsWith("Tirage", StringComparison.Ordinal)
-                    ? $"{t.Sortis} / {t.Total} photo(s) sorties de l'imprimante"
-                    : $"{t.Etape} {t.Detail}";
+                if (t.Etape.StartsWith("Tirage", StringComparison.Ordinal))
+                    return $"{t.Sortis} / {t.Total} photo(s) sorties de l'imprimante";
+
+                // « Envoi au minilab 20 / 20 » se lit comme vingt photos sorties, alors
+                // que la machine n'a encore rien tiré : ce compte-là ne veut rien dire
+                // pour l'opérateur, et il retombait à zéro dès le tirage commencé.
+                return t.CompteDuPapierSorti ? $"{t.Etape} {t.Detail}" : $"{t.Etape}…";
             }
         }
 
         public double Fraction => Travail?.Fraction ?? (_termine ? 1 : 0);
 
-        public bool Indetermine => Travail is { Total: <= 0 };
+        /// <summary>
+        /// Barre qui défile plutôt que barre qui se remplit : tant qu'on ne connaît pas le
+        /// total, et tant que le compte ne porte pas sur du papier sorti. Une barre remplie
+        /// par l'envoi puis remise à zéro par le tirage se lisait comme un recul.
+        /// </summary>
+        public bool Indetermine =>
+            Travail is { Total: <= 0 } or { CompteDuPapierSorti: false };
 
         /// <summary>Vrai quand le tirage est allé à son terme : la ligne part à l'historique.</summary>
         public bool Close => _termine;

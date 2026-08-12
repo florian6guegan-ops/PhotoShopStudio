@@ -86,8 +86,14 @@ public sealed class PrinterNotReadyException(string message) : Exception(message
 /// finie. Les confondre faisait annoncer « 1 / 1 » sur une commande qui sortait deux
 /// photos. Zéro quand la question ne se pose pas.
 /// </param>
+/// <param name="Handle">
+/// Handle de la commande minilab, une fois qu'elle est partie. C'est par lui que le suivi
+/// demande à la MACHINE où elle en est, tirage par tirage — le seul compte qui ne mélange
+/// pas cette commande avec ce que le minilab sort par ailleurs.
+/// </param>
 public sealed record PrintProgress(
-    string Etape, int Faits, int Total, string? Machine = null, int Verdicts = 0)
+    string Etape, int Faits, int Total, string? Machine = null, int Verdicts = 0,
+    string? Handle = null)
 {
     public const string Rendu = "Préparation des photos";
     public const string Envoi = "Envoi au minilab";
@@ -106,6 +112,27 @@ public sealed record PrintProgress(
 /// comme une commande en échec.
 /// </summary>
 public sealed class PrintCanceledException(string message) : Exception(message);
+
+/// <summary>
+/// L'envoi est parti sans que la machine confirme l'avoir pris — <b>et l'on ne sait pas
+/// si elle l'a pris</b>.
+///
+/// C'est le cas le plus désagréable qui soit, et il mérite son propre type parce que les
+/// deux réflexes disponibles sont mauvais :
+///
+/// <list type="bullet">
+/// <item>le traiter en échec le renvoie par un autre chemin — c'est ce qui a sorti la
+/// planche 003 de la commande 12-012 en double le 12/08/2026 ;</item>
+/// <item>le traiter en attente le fait reprendre TOUT SEUL par
+/// <see cref="PendingPrintQueue"/>, ce qui revient au même en différé.</item>
+/// </list>
+///
+/// L'enveloppe reste donc à <see cref="SpoolState.Spooled"/> — « partie, sortie non
+/// confirmée » — et c'est l'opérateur qui tranche, en regardant ce qui est tombé dans le
+/// bac. La règle est celle qu'observe déjà le minilab : rien n'est jamais renvoyé
+/// automatiquement quand la sortie est douteuse.
+/// </summary>
+public sealed class PrintUnconfirmedException(string message) : Exception(message);
 
 /// <summary>
 /// Orchestration rendu → impression, avec la garantie anti-« replay storm » :
@@ -129,6 +156,20 @@ public sealed class PrintOrchestrator
     /// AVANT que la boîte d'agrandissement ne s'ouvre. Les deux attentes se confondaient.
     /// </summary>
     public Action<string>? Log { get; set; }
+
+    /// <summary>
+    /// Avertissement destiné à l'OPÉRATEUR, et non au journal : ce qui doit lui sauter aux
+    /// yeux pendant qu'il travaille, sans pour autant arrêter le tirage.
+    ///
+    /// Distinct de <see cref="Log"/>, qui n'écrit que dans un fichier — et un avertissement
+    /// qui ne va que dans un fichier n'avertit personne. L'application le pose dans le
+    /// bandeau des impressions, où il attend d'être acquitté au lieu de barrer l'écran
+    /// d'une boîte modale.
+    ///
+    /// Il sert aujourd'hui à la finition : le client a demandé du lustré, la machine a du
+    /// brillant, le tirage part quand même et l'opérateur doit pouvoir l'arrêter.
+    /// </summary>
+    public Action<string>? Avertir { get; set; }
 
     /// <summary>
     /// La marque portée sur la bande basse des planches identité — mention, logo, code QR.
@@ -368,6 +409,31 @@ public sealed class PrintOrchestrator
                 $"Commande {order.DisplayNumber} arrêtée. Les pages déjà remises au spouleur " +
                 "Windows peuvent encore sortir : videz la file de l'imprimante pour les retenir.");
         }
+        catch (PrintUnconfirmedException ex)
+        {
+            // ON NE RANGE PAS EN ATTENTE. L'enveloppe reste « Spooled », c'est-à-dire
+            // partie sans confirmation : la file de reprise ne la touchera pas, et la
+            // réimprimer réclamera un geste explicite de l'opérateur — les deux garanties
+            // qui manquaient le 12/08/2026.
+            //
+            // Le point de reprise est effacé pour la même raison : il ne décrit plus rien
+            // de sûr, et le laisser traîner ferait repartir l'enveloppe au mauvais rang le
+            // jour où quelqu'un la remet en attente.
+            var faites = ReadResumePoint(order, envelope)?.PagesRemises ?? deja;
+            ClearResumePoint(order, envelope);
+            _store.AppendEvent(order, "print-unconfirmed",
+                $"env={envelope.Number}, pages sorties={faites}, raison={ex.Message}");
+            Log?.Invoke($"Commande {order.DisplayNumber}/{envelope.Number} : sortie NON CONFIRMÉE " +
+                        $"après {faites} photo(s) — {ex.Message}");
+
+            throw new PrintUnconfirmedException(
+                $"Commande {order.DisplayNumber} interrompue : la DNP n'a pas confirmé le tirage " +
+                $"n° {faites + 1}.\n\n" +
+                "IL EST PEUT-ÊTRE SORTI QUAND MÊME — regardez ce qui est tombé dans le bac. " +
+                "Rien n'a été réimprimé automatiquement, et rien ne repartira tout seul.\n\n" +
+                $"{faites} photo(s) sont sorties à coup sûr. S'il en manque, reprenez la commande " +
+                "depuis « Commandes du jour ».");
+        }
         catch (Exception ex)
         {
             // Le spouleur a refusé en cours de route — bourrage, machine éteinte, câble.
@@ -462,6 +528,17 @@ public sealed class PrintOrchestrator
         // boutique le 01/08/2026.
         EnsurePaperFits(pages, machine, paperWidthMm, repli);
 
+        // La finition doit être celle du papier réellement chargé : annoncer « brillant »
+        // sur du lustré fausse le rendu. Lue ICI, avant le moindre envoi, pour que
+        // l'opérateur soit prévenu AVANT que le papier ne défile — c'est le seul moment où
+        // il peut encore arrêter le tirage.
+        var chargee = _minilab!.LoadedSurface(machine);
+        SignalerFinitionDifferente(pages, machine, chargee);
+
+        // Ce qu'on ANNONCE à la machine. Elle attend une valeur, toujours : une machine
+        // muette retombe donc sur le brillant, comme avant que l'inconnu se distingue.
+        var surface = chargee ?? De100Surface.Glossy;
+
         WriteSpoolState(order, envelope, SpoolState.Spooled);
         envelope.Status = EnvelopeStatus.Spooled;
         _store.Save(order);
@@ -474,10 +551,6 @@ public sealed class PrintOrchestrator
         if (!_enveloppesAuMinilab.TryGetValue(order.DisplayNumber, out var envoyees))
             _enveloppesAuMinilab[order.DisplayNumber] = envoyees = [];
         envoyees.Add(envelope.Number);
-
-        // la finition doit être celle du papier réellement chargé : annoncer « brillant »
-        // sur du lustré fausse le rendu
-        var surface = _minilab!.LoadedSurface(machine);
 
         var cible = machine.ToString();
         var jobs = new List<De100PrintJob>(pages.Count);
@@ -558,6 +631,12 @@ public sealed class PrintOrchestrator
 
         _store.AppendEvent(order, "minilab-submitted",
             $"env={envelope.Number}, machine={machine}, commande={handle}, tirages={jobs.Count}");
+
+        // Le handle remonte au suivi : c'est par lui qu'il ira demander à la MACHINE
+        // combien de tirages de CETTE commande sont sortis. Rapporté après l'envoi, une
+        // fois qu'il existe, et sans toucher aux comptes déjà annoncés.
+        progression?.Report(new PrintProgress(
+            PrintProgress.Envoi, feuilles, feuilles, cible, pages.Count, handle));
     }
 
     /// <summary>
@@ -727,6 +806,10 @@ public sealed class PrintOrchestrator
         // machine endormie à côté d'une machine prête mettrait la commande en attente
         Exception? muette = null;
 
+        // la finition que le client a demandée à la borne ; null au comptoir, et le choix
+        // se fait alors sur le seul format, comme avant
+        var voulue = SurfaceDemandee(pages);
+
         var choix = ChoisirSelonLeRouleau(
             pretes, defaut,
             machine =>
@@ -741,14 +824,29 @@ public sealed class PrintOrchestrator
                     throw;
                 }
             },
-            largeur => PagesTiennent(pages, largeur));
+            largeur => PagesTiennent(pages, largeur),
+            voulue is null
+                ? null
+                : machine =>
+                {
+                    try
+                    {
+                        return _minilab.LoadedSurface(machine) == voulue;
+                    }
+                    catch (Exception ex)
+                    {
+                        muette ??= ex;
+                        throw;
+                    }
+                });
 
         if (choix is not null)
         {
             if (choix.Value.Machine != defaut)
                 Log?.Invoke($"Minilab : machine {choix.Value.Machine} retenue " +
-                            $"({choix.Value.PaperWidthMm} mm) — le rouleau de {defaut} ne porte " +
-                            "pas ce format.");
+                            $"({choix.Value.PaperWidthMm} mm{(voulue is null ? "" : $", {voulue}")}) — " +
+                            $"le rouleau de {defaut} ne porte pas " +
+                            (voulue is null ? "ce format." : "ce format ou cette finition."));
             return (choix.Value.Machine, choix.Value.PaperWidthMm, null);
         }
 
@@ -845,23 +943,63 @@ public sealed class PrintOrchestrator
     /// 3. si aucun rouleau ne porte le format, on rend le PREMIER qui a répondu — c'est
     ///    lui qu'<see cref="EnsurePaperFits"/> nommera dans son refus, avec le rouleau à
     ///    charger. Rendre « rien » ferait perdre cette explication.
+    ///
+    /// <b>La finition passe AVANT le format</b> quand le client en a demandé une : elle se
+    /// cherche en premier passage, sur les machines qui portent aussi le format. Faute de
+    /// quoi une commande lustrée partait sur la première machine dont le rouleau avait la
+    /// bonne largeur — la A, en brillant — et le client repartait avec la mauvaise
+    /// surface sans que rien ne l'ait signalé.
     /// </summary>
     /// <param name="pretes">Machines prêtes, dans l'ordre où le relais les rend.</param>
     /// <param name="defaut">Machine que <see cref="ChooseMachine"/> aurait retenue seule.</param>
     /// <param name="largeurDuRouleau">Lecture du rouleau ; lève si la machine ne répond pas.</param>
     /// <param name="porteLeFormat">Vrai si un rouleau de cette largeur porte TOUTES les pages.</param>
+    /// <param name="porteLaFinition">
+    /// Vrai si cette machine a chargé la surface demandée ; lève si elle ne répond pas.
+    /// <c>null</c> = aucune finition demandée, et le choix se fait comme avant, sur le seul
+    /// format. C'est le cas de tout ce qui ne vient pas d'une borne.
+    ///
+    /// Quand une finition est demandée mais qu'aucune machine ne la porte, on retombe sur
+    /// le choix par le format : la machine rendue n'est pas la bonne, mais elle permet à
+    /// <see cref="EnsureSurfaceMatches"/> de refuser en nommant ce qui est chargé.
+    /// </param>
     /// <returns>La machine retenue et son rouleau ; null si aucune machine n'a répondu.</returns>
     internal static (char Machine, int PaperWidthMm)? ChoisirSelonLeRouleau(
         IReadOnlyList<char> pretes, char defaut,
-        Func<char, int> largeurDuRouleau, Func<int, bool> porteLeFormat)
+        Func<char, int> largeurDuRouleau, Func<int, bool> porteLeFormat,
+        Func<char, bool>? porteLaFinition = null)
     {
         ArgumentNullException.ThrowIfNull(pretes);
         ArgumentNullException.ThrowIfNull(largeurDuRouleau);
         ArgumentNullException.ThrowIfNull(porteLeFormat);
 
+        var ordre = pretes.OrderByDescending(m => m == defaut).ToList();
+
+        // Premier passage : la machine doit porter le format ET la finition demandée.
+        if (porteLaFinition is not null)
+        {
+            foreach (var machine in ordre)
+            {
+                int largeur;
+                bool finition;
+                try
+                {
+                    largeur = largeurDuRouleau(machine);
+                    finition = porteLaFinition(machine);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                // largeur inconnue : on ne bloque rien, comme EnsurePaperFits
+                if (finition && (largeur <= 0 || porteLeFormat(largeur))) return (machine, largeur);
+            }
+        }
+
         (char Machine, int PaperWidthMm)? repli = null;
 
-        foreach (var machine in pretes.OrderByDescending(m => m == defaut))
+        foreach (var machine in ordre)
         {
             int largeur;
             try
@@ -973,6 +1111,97 @@ public sealed class PrintOrchestrator
                 conseil);
         }
     }
+
+    /// <summary>
+    /// Prévient — <b>sans rien empêcher</b> — quand le client a demandé une finition que la
+    /// machine retenue n'a pas chargée.
+    ///
+    /// <b>Pourquoi prévenir plutôt que refuser.</b> Le tirage sort quand même : bloquer une
+    /// commande arrête la boutique, et l'opérateur est le seul à savoir si ce client-là
+    /// acceptera du brillant ou s'il faut changer le rouleau. Ce qu'on lui doit, c'est de
+    /// ne pas le laisser l'apprendre par le client : une finition fausse ne se voit pas au
+    /// sortir de la machine — le tirage est propre et au bon format — et sans ce message
+    /// personne ne s'en apercevrait avant l'ouverture de la pochette.
+    ///
+    /// Le message part par <see cref="Avertir"/>, qui le pose dans le bandeau des
+    /// impressions, et non par <see cref="Log"/> : un avertissement qui ne va que dans un
+    /// fichier journal n'avertit personne.
+    ///
+    /// Avec les rouleaux de la boutique — brillant sur une machine, lustré sur l'autre — il
+    /// ne devrait tomber qu'en panne réelle : machine endormie, rouleau vide, ou rouleaux
+    /// intervertis.
+    ///
+    /// Rien à dire quand aucune finition n'est demandée : c'est tout le comptoir, et le
+    /// rouleau chargé fait foi comme il l'a toujours fait.
+    /// </summary>
+    private void SignalerFinitionDifferente(List<RenderedPage> pages, char machine, De100Surface? chargee)
+    {
+        var voulue = SurfaceDemandee(pages);
+
+        // Surface inconnue : rien à signaler plutôt qu'une alerte fondée sur du vide,
+        // exactement comme EnsurePaperFits laisse passer une largeur nulle. Une machine
+        // dont le pont ne décrit pas le média imprime comme avant, sans bruit.
+        if (voulue is null || chargee is null || voulue == chargee) return;
+
+        // La machine d'à côté porte peut-être le rouleau : c'est l'information qui évite
+        // d'aller en démonter un pour rien. Cherchée seulement ici, quand ça diverge.
+        var ailleurs = AutreMachineAvecLaFinition(machine, voulue.Value);
+
+        var conseil = ailleurs is { } autre
+            ? $" La machine {autre} a chargé du {Dire(voulue.Value)} : arrêtez le tirage si le " +
+              "client y tient, et choisissez-la dans la liste « Minilab »."
+            : $" Arrêtez le tirage si le client y tient, et chargez un rouleau {Dire(voulue.Value)}.";
+
+        var message =
+            $"Commande {machine} : le client a demandé du {Dire(voulue.Value)}, le rouleau chargé " +
+            $"est en {Dire(chargee.Value)}. Le tirage part quand même." + conseil;
+
+        Log?.Invoke($"⚠ {message}");
+        Avertir?.Invoke(message);
+    }
+
+    /// <summary>
+    /// Une machine prête, autre que celle visée, qui aurait chargé cette surface — ou
+    /// null. Une machine muette est sautée sans bruit : on est déjà dans un chemin
+    /// d'échec, et une seconde panne n'a rien à y ajouter.
+    /// </summary>
+    private char? AutreMachineAvecLaFinition(char visee, De100Surface voulue)
+    {
+        foreach (var machine in _minilab!.ReadyMachines())
+        {
+            if (machine == visee) continue;
+
+            try
+            {
+                if (_minilab.LoadedSurface(machine) == voulue) return machine;
+            }
+            catch
+            {
+                // machine endormie ou injoignable : rien à proposer de son côté
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Le nom d'une surface tel qu'on le dit à l'opérateur. <c>De100Surface.Lustre</c>
+    /// affiché tel quel ne lui apprend rien : c'est un nom d'énumération anglais, lu dans
+    /// un message qu'on parcourt un tirage à la main.
+    ///
+    /// Publique parce que la barre du minilab décrit les mêmes rouleaux : elle affichait
+    /// « 152 mm Glossy » là où l'avertissement dit « brillant ».
+    /// </summary>
+    public static string Dire(De100Surface surface) => surface switch
+    {
+        De100Surface.Glossy or De100Surface.GlossyThick => FinitionPapier.Brillant.ToLowerInvariant(),
+        De100Surface.Lustre => FinitionPapier.Lustre.ToLowerInvariant(),
+        De100Surface.Matte or De100Surface.PhotoMatte => FinitionPapier.Mat.ToLowerInvariant(),
+        De100Surface.FineArtMatte => "mat fin",
+        De100Surface.Silk => "satiné",
+        De100Surface.Pearl => "nacré",
+        _ => surface.ToString().ToLowerInvariant(),
+    };
 
     /// <summary>
     /// Règle du minilab, isolée pour être vérifiable : le tirage sort si le côté qui se
@@ -1433,7 +1662,7 @@ public sealed class PrintOrchestrator
     /// contenir plusieurs produits — imprimante, DEVMODE et format diffèrent alors d'une
     /// page à l'autre.
     /// </summary>
-    private sealed record RenderedPage(
+    internal sealed record RenderedPage(
         string Path, int Copies, double WidthMm, double HeightMm, Product Product, string? Finish);
 
     /// <summary>
@@ -1485,6 +1714,17 @@ public sealed class PrintOrchestrator
             {
                 pages.AddRange(RenderCustomSheets(envelope, line, product, photosDir,
                     rendersDir, pages.Count, progression, total, ct));
+                continue;
+            }
+
+            // montage : plusieurs agrandissements du même format composés sur une feuille,
+            // que l'opérateur massicote. Rien ne change au prix, seulement au nombre de
+            // fichiers rendus. Sans plan — feuille absente, trop petite, hors circuit — on
+            // retombe sur le rendu d'avant, un fichier par tirage.
+            if (PlanDeMontage(line, product) is { } montage)
+            {
+                pages.AddRange(RenderMontage(envelope, line, product, montage,
+                    photosDir, rendersDir, pages.Count, progression, total, ct));
                 continue;
             }
 
@@ -1717,6 +1957,152 @@ public sealed class PrintOrchestrator
         }
     }
 
+    /// <summary>
+    /// Le plan de montage de cette ligne, ou <c>null</c> pour le rendu d'avant : un fichier
+    /// par tirage.
+    ///
+    /// <b>Tout ce qui cloche rend null, et rien n'échoue.</b> Une feuille disparue du
+    /// catalogue, désactivée, passée sur une autre machine, ou devenue trop petite pour deux
+    /// tirages : la commande sort quand même, comme elle serait sortie sans montage. Le
+    /// choix de la feuille a pu être fait des heures avant le tirage — parfois avant une
+    /// modification du catalogue — et une commande déjà encaissée ne doit pas se refuser à
+    /// sortir pour cette raison. Le journal dit ce qui s'est passé.
+    ///
+    /// ⚠ <b>Grand format uniquement.</b> Le minilab plafonne à 210 mm de large : deux 24×30
+    /// n'y tiendront jamais. La DNP a déjà son propre cas (15×20 → deux 10×15) depuis la
+    /// 1.3.15. Périmètre décidé par l'exploitant le 12/08/2026.
+    /// </summary>
+    private (PlanMontage Plan, Product Feuille)? PlanDeMontage(OrderLine line, Product product)
+    {
+        if (!line.IsMontage) return null;
+
+        if (product.Output != ProductOutput.ManualFile)
+        {
+            Log?.Invoke($"Montage ignoré pour {product.Code} : ce n'est pas un tirage grand format.");
+            return null;
+        }
+
+        var feuille = _catalog.Find(line.MontageSheetCode!);
+        if (feuille is null || feuille.Output != ProductOutput.ManualFile)
+        {
+            Log?.Invoke($"Montage ignoré : la feuille « {line.MontageSheetCode} » n'est plus au " +
+                        "catalogue grand format. Un fichier par tirage, comme avant.");
+            return null;
+        }
+
+        var papier = new PaperOption(feuille.Code, feuille.Name,
+            feuille.WidthMm, feuille.HeightMm, feuille.Dpi);
+
+        var plan = MontageFeuille.Pour(papier, product.WidthMm, product.HeightMm);
+        if (plan is null)
+        {
+            Log?.Invoke($"Montage ignoré : un {product.Name} ne tient pas deux fois sur un " +
+                        $"{feuille.Name}. Un fichier par tirage, comme avant.");
+            return null;
+        }
+
+        return (plan, feuille);
+    }
+
+    /// <summary>
+    /// Les feuilles d'une ligne montée : plusieurs tirages du même format composés côte à
+    /// côte, que l'opérateur massicote.
+    ///
+    /// <b>Chaque photo est rendue à SON orientation</b>, puis tournée d'un quart de tour si
+    /// l'empreinte est en travers — voir <see cref="MontageFeuille"/>. C'est ce qui permet
+    /// de monter deux 24×30 portrait sur un 40×60 (l'empreinte y est couchée) sans trahir le
+    /// cadrage posé à l'écran, et de mêler portraits et paysages sur la même feuille.
+    ///
+    /// Une feuille = une page à un exemplaire : les copies d'une photo sont des cases, pas
+    /// des tirages répétés.
+    /// </summary>
+    private IEnumerable<RenderedPage> RenderMontage(Envelope envelope, OrderLine line,
+        Product product, (PlanMontage Plan, Product Feuille) montage,
+        string photosDir, string rendersDir, int dejaFaites,
+        IProgress<PrintProgress>? progression, int total, CancellationToken ct)
+    {
+        var (plan, feuille) = montage;
+
+        // Tout se compte dans les pixels de la FEUILLE : c'est elle qu'on fabrique. Un
+        // format et sa feuille peuvent être déclarés à des résolutions différentes, et
+        // mélanger les deux poserait les cases à côté de leurs repères de coupe.
+        var dpi = feuille.Dpi;
+        var (empreinteW, empreinteH) =
+            MontageFeuille.EmpreintePixels(plan, product.WidthMm, product.HeightMm, dpi);
+
+        var feuilles = CustomSheetLayout.Distribute(
+            line.Items.Select(i => i.Quantity).ToList(), plan.ParFeuille);
+
+        for (var n = 0; n < feuilles.Count; n++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var output = Path.Combine(rendersDir,
+                $"env{envelope.Number:00}-{line.ProductCode}-montage-{n + 1:000}.png");
+
+            if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
+            {
+                var cellules = feuilles[n]
+                    .Select(place => new ImagePipeline.SheetCell(
+                        RequeteDeLaCase(line.Items[place.PhotoIndex], product, photosDir, dpi),
+                        place.Copies))
+                    .ToList();
+
+                ImagePipeline.RenderCustomSheetToFile(
+                    cellules, SheetSpec.DefaultGapMm, cutMarks: true,
+                    MmPx.ToPixels(plan.LargeurMm, dpi),
+                    MmPx.ToPixels(plan.HauteurMm, dpi),
+                    output, dpi,
+                    // la feuille se massicote : le contour est le seul repère utile
+                    cutBorder: true,
+                    footprint: (empreinteW, empreinteH));
+
+                Log?.Invoke($"Montage {Path.GetFileName(output)} : {feuilles[n].Sum(c => c.Copies)} " +
+                            $"× {product.Name} sur {feuille.Name} ({plan.ParFeuille} par feuille" +
+                            (plan.CelluleTournee ? ", posés en travers)" : ")"));
+            }
+
+            // La feuille porte les dimensions de la FEUILLE : c'est ce que l'écran grand
+            // format doit sortir à 100 %, et non le format du tirage qu'elle contient.
+            yield return new RenderedPage(output, 1, plan.LargeurMm, plan.HauteurMm,
+                feuille, line.Items[0].Finish);
+
+            progression?.Report(new PrintProgress(
+                PrintProgress.Rendu, Math.Min(total, dejaFaites + n + 1), total));
+        }
+    }
+
+    /// <summary>
+    /// La case d'une photo montée, <b>à l'orientation de la photo</b> et non à celle de
+    /// l'empreinte.
+    ///
+    /// C'est la même règle que le rendu ordinaire d'un agrandissement (voir
+    /// <see cref="RenderEnvelope"/>) : la toile suit la photo, un portrait sort en 24×30 et
+    /// un paysage en 30×24. Sans cela, un portrait posé dans une empreinte couchée serait
+    /// recadré en paysage — et sur un grand format, c'est du papier cher perdu.
+    /// </summary>
+    private RenderRequest RequeteDeLaCase(
+        OrderItem item, Product product, string photosDir, int dpi)
+    {
+        var sourcePath = Path.Combine(photosDir, item.FileName);
+
+        var (imgW, imgH) = ImagePipeline.GetOrientedSize(sourcePath, item.RotationQuarterTurns);
+        var (toileW, toileH) = CropMath.TiltedCanvas(imgW, imgH, item.FineRotationDegrees);
+
+        var (caseW, caseH) = CropMath.OrientCanvas(
+            MmPx.ToPixels(product.WidthMm, dpi), MmPx.ToPixels(product.HeightMm, dpi),
+            (int)Math.Round(toileW), (int)Math.Round(toileH), item.Crop);
+
+        return new RenderRequest(
+            sourcePath, caseW, caseH,
+            item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees,
+            item.FitOverride ?? product.DefaultFit,
+            MmPx.ToPixels(product.BorderMm, dpi),
+            AvecLaCorrectionDuProduit(item.Adjustments, product),
+            IccPath(product, item.Finish),
+            item.CutBorder);
+    }
+
     /// <summary>Profil ICC applicable : celui de la finition (média) l'emporte sur celui du produit.</summary>
     private string? IccPath(Product product, string? finish)
     {
@@ -1877,8 +2263,16 @@ public sealed class PrintOrchestrator
     ///    qui ne tombe pas juste ; l'envoi direct, lui, ne corrige rien — une image d'un
     ///    pixel de trop sortirait décalée. La planche identité était dans ce cas jusqu'au
     ///    06/08/2026 (1845 × 1239 au lieu de 1844 × 1240).
+    ///
+    /// <b>Et une condition qui n'en est pas une : le DÉLAI DÉPASSÉ.</b> Voir le bloc qui
+    /// l'attrape — c'est le seul incident dont on ne se relève pas par le pilote.
     /// </summary>
-    private bool EnvoyerDirectementALaDnp(Product product, RenderedPage page)
+    /// <remarks>
+    /// Interne plutôt que privée, comme <see cref="FinitionDnp"/> : la règle « on ne se
+    /// replie pas sur un délai dépassé » ne se vérifie autrement qu'en attendant qu'une
+    /// DNP soit lente devant un vrai client, et elle a déjà coûté une feuille.
+    /// </remarks>
+    internal bool EnvoyerDirectementALaDnp(Product product, RenderedPage page)
     {
         if (_minilab is null) return false;
         if (!product.PrinterName.StartsWith("DP-DS", StringComparison.OrdinalIgnoreCase)
@@ -1899,9 +2293,33 @@ public sealed class PrintOrchestrator
                 return false;
             }
 
-            var acceptes = _minilab
-                .DnpPrintAsync(page.Path, vues[0].PortNumber, (int)FinitionDnp(product, page.Finish), 1)
-                .GetAwaiter().GetResult();
+            // LE POINT DE NON-RETOUR, et il tient à cette accolade : à partir d'ici l'image
+            // est peut-être PARTIE, et le repli sur le pilote n'est plus une sécurité mais
+            // un doublon en puissance. L'interrogation qui précède, elle, n'engage rien —
+            // elle peut échouer, expirer, mentir : on se replie sans y penser.
+            int acceptes;
+            try
+            {
+                acceptes = _minilab
+                    .DnpPrintAsync(page.Path, vues[0].PortNumber, (int)FinitionDnp(product, page.Finish), 1)
+                    .GetAwaiter().GetResult();
+            }
+            catch (TimeoutException ex)
+            {
+                // Un délai dépassé ne dit pas « la machine n'a pas pris le tirage » : il
+                // dit « je ne sais pas ». L'appel natif, lui, continue sa vie dans le
+                // relais et aboutit souvent — commande 12-012 du 12/08/2026 : renoncement
+                // à 10 s, acceptation par la machine 1 s plus tard, et la planche est
+                // sortie deux fois parce qu'on l'avait entre-temps confiée au pilote.
+                //
+                // Se replier ici, c'est jouer une feuille à pile ou face. On arrête plutôt
+                // l'enveloppe et l'on laisse l'opérateur regarder le bac : lui seul peut
+                // dire ce qui est sorti, et ce qui manque se refait depuis « Commandes du
+                // jour ».
+                Log?.Invoke($"Envoi direct DNP sans réponse ({ex.Message}) : on NE se replie " +
+                            "PAS sur le pilote — le tirage est peut-être déjà parti.");
+                throw new PrintUnconfirmedException(ex.Message);
+            }
 
             if (acceptes >= 1)
             {
@@ -1913,10 +2331,18 @@ public sealed class PrintOrchestrator
             Log?.Invoke("La DNP a refusé l'envoi direct : on repasse par le pilote.");
             return false;
         }
+        catch (PrintUnconfirmedException)
+        {
+            // traversée telle quelle : le repli générique ci-dessous est précisément ce
+            // qu'elle interdit
+            throw;
+        }
         catch (Exception ex)
         {
             // Le repli n'est pas une politesse : sans lui, une panne du relais empêcherait
-            // d'imprimer du tout, alors que le pilote, lui, répond toujours.
+            // d'imprimer du tout, alors que le pilote, lui, répond toujours. Il reste bon
+            // pour tout ce qui est un ÉCHEC FRANC — relais absent, image introuvable,
+            // machine qui refuse : là, on sait que rien n'est parti.
             Log?.Invoke($"Envoi direct DNP indisponible ({ex.Message}) : on passe par le pilote.");
             return false;
         }
@@ -1942,26 +2368,78 @@ public sealed class PrintOrchestrator
     {
         var nom = finish ?? product.Finishes?.FirstOrDefault()?.Name ?? "";
 
-        // Sur les MOTS, pas sur la chaîne entière : « format » contient « mat », et une
-        // finition annoncée de travers coûte la feuille.
-        bool Dit(params string[] mots) =>
-            nom.Split(' ', '-', '_', ',', '(', ')')
-               .Any(mot => mots.Any(m => mot.StartsWith(m, StringComparison.OrdinalIgnoreCase)));
-
         // « Mat fin » avant « mat » : le second est contenu dans le premier. Deux mots,
         // donc cherché sur la chaîne entière.
-        if (nom.Contains("mat fin", StringComparison.OrdinalIgnoreCase)
-            || nom.Contains("fine matte", StringComparison.OrdinalIgnoreCase))
-            return Devices.Dnp.DnpOvercoat.FineMatte;
+        if (EstMatFin(nom)) return Devices.Dnp.DnpOvercoat.FineMatte;
 
         // « lust » couvre lustré, lustre et luster.
-        if (Dit("lust")) return Devices.Dnp.DnpOvercoat.Luster;
+        if (FinitionDit(nom, "lust")) return Devices.Dnp.DnpOvercoat.Luster;
 
-        if (Dit("mat")) return Devices.Dnp.DnpOvercoat.Matte;
+        if (FinitionDit(nom, "mat")) return Devices.Dnp.DnpOvercoat.Matte;
 
         // Brillant, et tout ce qu'on ne sait pas nommer : c'est ce que la file demande.
         return Devices.Dnp.DnpOvercoat.Glossy;
     }
+
+    /// <summary>
+    /// Reconnaissance d'une finition sur les MOTS de son nom, et non sur la chaîne
+    /// entière : « format » contient « mat », et une finition annoncée de travers coûte
+    /// la feuille.
+    /// </summary>
+    private static bool FinitionDit(string nom, params string[] mots) =>
+        nom.Split(' ', '-', '_', ',', '(', ')')
+           .Any(mot => mots.Any(m => mot.StartsWith(m, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>« Mat fin » se cherche sur la chaîne entière : c'est deux mots.</summary>
+    private static bool EstMatFin(string nom) =>
+        nom.Contains("mat fin", StringComparison.OrdinalIgnoreCase)
+        || nom.Contains("fine matte", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// La surface de papier qu'une finition nommée réclame au minilab — donc, en pratique,
+    /// LE ROULEAU, et par lui la machine qui recevra l'enveloppe.
+    ///
+    /// <b>Null veut dire « aucune exigence »</b>, et c'est le cas le plus courant : rien
+    /// au comptoir ne nomme de finition, et le rouleau chargé fait foi comme il l'a
+    /// toujours fait. C'est aussi ce qui distingue cette règle de
+    /// <see cref="FinitionDnp"/>, qui doit bien annoncer QUELQUE CHOSE à la machine et
+    /// retombe donc sur le brillant : ici, un nom qu'on ne sait pas traduire ne doit
+    /// surtout pas se transformer en exigence, sous peine de refuser des commandes que
+    /// l'on tirait sans rien dire hier.
+    ///
+    /// Les noms viennent du client par la borne (<see cref="FinitionPapier"/>) ou de la
+    /// main de l'opérateur dans le catalogue : la reconnaissance porte donc sur les mots,
+    /// pas sur une égalité de chaîne.
+    /// </summary>
+    /// <remarks>
+    /// <b>Publique</b>, et non seulement vérifiable comme <see cref="FinitionDnp"/> :
+    /// l'écran des photos s'en sert pour annoncer à l'opérateur la machine sur laquelle sa
+    /// commande partira. Il doit appliquer LA MÊME règle que le tirage — une seconde règle
+    /// écrite dans l'interface finirait par diverger, et la barre annoncerait une machine
+    /// pendant que le papier sortirait de l'autre.
+    /// </remarks>
+    public static De100Surface? FinitionMinilab(string? finish)
+    {
+        var nom = finish?.Trim();
+        if (string.IsNullOrEmpty(nom)) return null;
+
+        if (EstMatFin(nom)) return De100Surface.FineArtMatte;
+        if (FinitionDit(nom, "lust")) return De100Surface.Lustre;
+        if (FinitionDit(nom, "mat")) return De100Surface.Matte;
+        if (FinitionDit(nom, "brill", "gloss")) return De100Surface.Glossy;
+
+        return null;
+    }
+
+    /// <summary>
+    /// La surface que cette enveloppe réclame, ou null si elle n'en réclame aucune.
+    ///
+    /// Une enveloppe ne porte qu'une finition — <c>OrderService</c> les sépare justement
+    /// pour cela, puisqu'elle part d'un bloc sur une seule machine. La première page qui
+    /// en nomme une décide donc pour toutes.
+    /// </summary>
+    private static De100Surface? SurfaceDemandee(List<RenderedPage> pages) =>
+        pages.Select(p => FinitionMinilab(p.Finish)).FirstOrDefault(s => s is not null);
 
     /// <summary>
     /// La cadence d'une file d'impression, ou null quand on ne sait pas la lire.

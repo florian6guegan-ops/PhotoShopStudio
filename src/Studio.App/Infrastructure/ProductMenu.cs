@@ -17,7 +17,12 @@ public static class ProductMenu
     /// <param name="bouton">Le bouton sous lequel le menu s'ouvre.</param>
     /// <param name="produitActuel">Coché dans la liste, pour qu'on voie où l'on en est.</param>
     /// <param name="finitionActuelle">Idem pour la finition.</param>
-    /// <param name="choisi">Appelé avec le produit et la finition retenus (finition nulle si le produit n'en déclare pas).</param>
+    /// <param name="choisi">
+    /// Appelé avec le produit et la finition retenus. Un produit qui ne déclare pas de
+    /// finition rend <paramref name="finitionActuelle"/> telle quelle : la finition d'une
+    /// commande de borne ne vient pas du catalogue et ne doit pas se perdre en changeant
+    /// de format.
+    /// </param>
     /// <param name="personnalise">
     /// Appelé quand l'opérateur demande une taille qui n'est pas au catalogue. Null =
     /// l'entrée n'apparaît pas.
@@ -83,7 +88,12 @@ public static class ProductMenu
                     FontSize = 18,
                     IsChecked = produitActuel?.Code == produit.Code,
                 };
-                entree.Click += (_, _) => choisi(retenu, null);
+                // La finition en cours est CONSERVÉE, et non remise à zéro. Sur le DE100
+                // elle ne vient pas du catalogue mais du CLIENT, qui l'a choisie à la
+                // borne, et c'est elle qui décide du rouleau donc de la machine. La
+                // remettre à null ici faisait repartir une commande lustrée en brillant
+                // au premier changement de format fait au comptoir — sans un mot.
+                entree.Click += (_, _) => choisi(retenu, finitionActuelle);
                 menu.Items.Add(entree);
                 continue;
             }

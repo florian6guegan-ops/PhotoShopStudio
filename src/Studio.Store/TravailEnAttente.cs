@@ -194,6 +194,16 @@ public sealed class TravailEnAttente
     /// <summary>Papier imposé en taille personnalisée, ou vide pour « automatique ».</summary>
     public string? PaperCode { get; set; }
 
+    /// <summary>
+    /// Feuille de montage retenue pour les agrandissements, ou vide.
+    ///
+    /// Elle doit survivre à la mise en attente pour la même raison que le papier imposé :
+    /// c'est un choix que l'opérateur a fait à un écran qu'il ne reverra pas en reprenant, et
+    /// le perdre en silence ferait ressortir une commande en un fichier par tirage — donc sur
+    /// deux fois plus de papier — sans que rien ne le signale.
+    /// </summary>
+    public string? MontageSheetCode { get; set; }
+
     public List<PhotoEnAttente> Photos { get; set; } = [];
 
     /// <summary>

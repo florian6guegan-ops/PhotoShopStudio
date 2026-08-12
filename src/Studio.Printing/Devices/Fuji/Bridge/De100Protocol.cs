@@ -36,6 +36,15 @@ public static class De100Commands
     public const string Shutdown = "shutdown";
 
     /// <summary>
+    /// Où en est UNE commande, comptée par la machine elle-même.
+    ///
+    /// Charge utile : le handle rendu par <see cref="Submit"/>. C'est ce relevé qui fait
+    /// avancer la barre du bandeau, à la place du compteur global de la machine — lequel
+    /// comptait aussi ce que les autres commandes tiraient.
+    /// </summary>
+    public const string OrderProgress = "order-progress";
+
+    /// <summary>
     /// État des imprimantes DNP. Elles transitent par le même relais : leur SDK
     /// (<c>cspstat.dll</c>) est lui aussi en 32 bits.
     /// </summary>
@@ -50,6 +59,26 @@ public static class De100Commands
     /// le minilab, une commande à la fois.
     /// </summary>
     public const string DnpPrint = "dnp-print";
+
+    /// <summary>
+    /// La commande ENGAGE-T-ELLE une machine, ou se contente-t-elle de l'interroger ?
+    ///
+    /// <b>C'est le seul partage qui compte</b>, et il décide de deux choses des deux côtés
+    /// du tube : le délai accordé — généreux pour un envoi, court pour une question —, et
+    /// le ton du message d'expiration, qui doit dire « on ne sait pas si c'est parti »
+    /// plutôt que « échec ».
+    ///
+    /// <b>Pourquoi une méthode et non deux listes.</b> Le relais et le client en tenaient
+    /// chacun une, et elles ont divergé : <see cref="DnpPrint"/> figurait dans aucune des
+    /// deux. Un envoi direct à la DNP se voyait donc accorder les dix secondes d'une simple
+    /// question. Dépassé ce délai le relais répond « machine muette » SANS INTERROMPRE
+    /// l'appel natif, qui aboutit un instant plus tard ; l'application, elle, a déjà confié
+    /// la page au pilote Windows. La commande 12-012 du 12/08/2026 est sortie en double
+    /// par ce chemin. Deux listes qui doivent s'accorder finissent toujours par ne plus
+    /// s'accorder : il n'y en a plus qu'une.
+    /// </summary>
+    public static bool EngageLaMachine(string command) =>
+        command is Submit or Cancel or DnpPrint;
 }
 
 /// <summary>

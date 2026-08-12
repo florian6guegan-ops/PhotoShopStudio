@@ -204,6 +204,15 @@ public sealed record De100Supplies(
     public IEnumerable<De100Supply> InksBelow(int seuil) => Inks.Where(i => i.Level <= seuil);
 }
 
+/// <summary>
+/// Où en est une commande du minilab, telle que la MACHINE la compte.
+///
+/// <param name="Printed">Tirages de cette commande déjà sortis.</param>
+/// <param name="Total">Tirages que la commande porte en tout.</param>
+/// <param name="Status">État de la commande, pour savoir si elle avance encore.</param>
+/// </summary>
+public sealed record De100OrderProgress(uint Printed, uint Total, De100OrderStatus Status);
+
 /// <summary>Instantané complet d'une machine DE100 : état, papier, consommables, formats.</summary>
 /// <param name="MachineId">Identifiant machine (un caractère).</param>
 /// <param name="Status">État courant.</param>

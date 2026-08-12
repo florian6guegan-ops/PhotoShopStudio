@@ -55,6 +55,10 @@ public static class DevMode
     /// <summary>Applique des octets DEVMODE sauvegardés à un PrinterSettings.</summary>
     public static void Apply(PrinterSettings settings, byte[] devModeBytes)
     {
+        // LE FORMAT PAPIER SE RÉSOUT PAR SON NOM, jamais par l'index reçu. Voir
+        // RecalerLeFormatPapier : c'est la seule partie d'un DEVMODE qui ne voyage pas.
+        devModeBytes = RecalerLeFormatPapier(settings, devModeBytes);
+
         var hGlobal = NativeMethods.GlobalAlloc(0x0042 /* GHND */, (nuint)devModeBytes.Length);
         var ptr = NativeMethods.GlobalLock(hGlobal);
         Marshal.Copy(devModeBytes, 0, ptr, devModeBytes.Length);
@@ -69,6 +73,82 @@ public static class DevMode
             NativeMethods.GlobalFree(hGlobal);
         }
     }
+
+    /// <summary>
+    /// Réécrit <c>dmPaperSize</c> d'après <c>dmFormName</c>, tel que CE poste le numérote.
+    ///
+    /// <b>Un DEVMODE ne voyage pas.</b> Le pilote DNP construit sa liste de formats à
+    /// l'installation et les numérote à la suite ; le même papier n'a donc pas le même
+    /// index d'un poste à l'autre. Relevé le 12/08/2026, trois postes, même pilote, même
+    /// liste dans le même ordre :
+    ///
+    /// <list type="table">
+    /// <item><term>Maisons-Alfort</term><description><c>(6x4)</c> = 121</description></item>
+    /// <item><term>Créteil</term><description><c>(6x4)</c> = 127</description></item>
+    /// <item><term>DESKTOP-KT88VDM</term><description><c>(6x4)</c> = 147</description></item>
+    /// </list>
+    ///
+    /// Or le catalogue livré embarque le DEVMODE capturé à Maisons-Alfort. Les deux autres
+    /// postes recevaient donc un index qui n'existe pas chez eux — 121 pour une plage
+    /// valide de 145 à 155 sur le troisième — et le pilote faisait ce qu'il pouvait : la
+    /// planche sortait dans une page trop grande. Chacun a été rustiné à la main, et le
+    /// défaut revenait à la publication suivante.
+    ///
+    /// <b>Le nom, lui, est stable</b>, et le DEVMODE le porte déjà dans
+    /// <c>dmFormName</c> — « (6x4) » dans les trois cas. On le relit, on demande à CE
+    /// poste comment il numérote ce format, et l'on réécrit l'index avant d'appliquer.
+    ///
+    /// Au moindre doute — pas de nom, format inconnu du pilote local, DEVMODE trop court —
+    /// on rend les octets INCHANGÉS : le comportement d'avant, qui marchait sur le poste
+    /// d'origine et n'a jamais empêché un tirage de partir.
+    /// </summary>
+    internal static byte[] RecalerLeFormatPapier(PrinterSettings settings, byte[] devModeBytes)
+    {
+        // DEVMODEW : dmPaperSize (short) à 78, dmFormName (32 WCHAR) à 102.
+        const int offsetPaperSize = 78;
+        const int offsetFormName = 102;
+        const int tailleFormName = 32 * 2;
+
+        if (devModeBytes.Length < offsetFormName + tailleFormName) return devModeBytes;
+
+        var nom = System.Text.Encoding.Unicode
+            .GetString(devModeBytes, offsetFormName, tailleFormName)
+            .TrimEnd('\0')
+            .Trim();
+
+        if (nom.Length == 0) return devModeBytes;
+
+        int local;
+        try
+        {
+            local = settings.PaperSizes
+                .Cast<PaperSize>()
+                .FirstOrDefault(p => string.Equals(p.PaperName, nom, StringComparison.OrdinalIgnoreCase))
+                ?.RawKind ?? 0;
+        }
+        catch (Exception)
+        {
+            // imprimante absente ou pilote muet : on n'a rien de mieux que ce qu'on a reçu
+            return devModeBytes;
+        }
+
+        if (local == 0) return devModeBytes;
+
+        var recu = BitConverter.ToInt16(devModeBytes, offsetPaperSize);
+        if (recu == local) return devModeBytes;
+
+        // copie : les octets viennent du catalogue et peuvent être partagés entre tirages
+        var corrige = (byte[])devModeBytes.Clone();
+        BitConverter.GetBytes((short)local).CopyTo(corrige, offsetPaperSize);
+
+        Log?.Invoke($"Réglages pilote : format « {nom} » numéroté {recu} à l'enregistrement, " +
+                    $"{local} sur ce poste — index recalé.");
+
+        return corrige;
+    }
+
+    /// <summary>Journal optionnel, branché sur FileLog par l'application.</summary>
+    public static Action<string>? Log { get; set; }
 
     /// <summary>
     /// Ouvre le dialogue du pilote SANS bloquer le fil de l'interface.

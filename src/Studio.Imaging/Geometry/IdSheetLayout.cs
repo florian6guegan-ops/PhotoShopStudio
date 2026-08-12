@@ -20,11 +20,59 @@ public static class IdSheetLayout
     /// de l'opérateur avant d'appeler <see cref="Layout"/>, qui lèverait au-delà.
     /// Renvoie 0 si la cellule ne tient pas du tout.
     /// </summary>
-    public static int MaxCopies(int sheetWidth, int sheetHeight, int cellWidth, int cellHeight, int gap)
+    /// <param name="bottomReserve">
+    /// Hauteur qu'il faut laisser libre en bas — celle de la bande qui porte la date.
+    /// <b>Elle manquait ici</b>, et c'est ce qui privait de date les planches aux petites
+    /// cases : le compte remplissait la planche jusqu'en bas, <see cref="Layout"/> n'avait
+    /// plus où loger la bande, et elle disparaissait sans rien dire. Le format français
+    /// (35 × 45) laissait par chance assez de marge ; un passeport étranger de 26 × 32, non.
+    ///
+    /// La compter ici revient à sortir une rangée de la planche quand il le faut : une photo
+    /// de moins vaut mieux qu'une planche sans date, qui n'a plus de valeur pour prouver
+    /// qu'elle est récente.
+    /// </param>
+    public static int MaxCopies(int sheetWidth, int sheetHeight, int cellWidth, int cellHeight,
+        int gap, int bottomReserve = 0)
     {
         if (cellWidth <= 0 || cellHeight <= 0 || cellWidth > sheetWidth || cellHeight > sheetHeight)
             return 0;
-        return (sheetWidth + gap) / (cellWidth + gap) * ((sheetHeight + gap) / (cellHeight + gap));
+
+        var utile = sheetHeight - Math.Max(0, bottomReserve);
+
+        // Une planche trop courte pour porter à la fois une rangée et la bande garde la
+        // rangée : la bande est un plus, la photo est le produit.
+        if (utile < cellHeight) utile = sheetHeight;
+
+        return (sheetWidth + gap) / (cellWidth + gap) * ((utile + gap) / (cellHeight + gap));
+    }
+
+    /// <summary>
+    /// La meilleure des deux orientations du papier, et laquelle c'est.
+    ///
+    /// <b>Le papier n'a pas de sens imposé, les cases si.</b> Un carré de 50 mm ne tient
+    /// qu'une rangée sur les 105 mm d'un 10×15 couché dès qu'on garde la place d'écrire la
+    /// date — trois photos. Le même papier DEBOUT en tient deux rangées, donc quatre
+    /// photos, et la bande y respire. Rien ne justifiait de tirer toujours dans le même
+    /// sens : c'est de la géométrie, pas une habitude d'atelier.
+    ///
+    /// La planche est composée debout puis TOURNÉE avant l'envoi, pour que la machine
+    /// reçoive exactement le format qu'elle attend — voir
+    /// <c>ImagePipeline.RenderIdSheetToFile</c>. Les photos sortent alors couchées sur le
+    /// papier ; une fois découpées, elles sont droites, et c'est tout ce qui compte.
+    /// </summary>
+    /// <returns>
+    /// Le nombre de cases, et <c>Debout</c> à vrai quand il faut tourner le papier pour
+    /// l'obtenir. À capacité égale, on garde le sens du papier : l'opérateur massicote
+    /// toujours pareil.
+    /// </returns>
+    public static (int Copies, bool Debout) MeilleureCapacite(
+        int sheetWidth, int sheetHeight, int cellWidth, int cellHeight,
+        int gap, int bottomReserve = 0)
+    {
+        var couche = MaxCopies(sheetWidth, sheetHeight, cellWidth, cellHeight, gap, bottomReserve);
+        var debout = MaxCopies(sheetHeight, sheetWidth, cellWidth, cellHeight, gap, bottomReserve);
+
+        return debout > couche ? (debout, true) : (couche, false);
     }
 
     /// <summary>

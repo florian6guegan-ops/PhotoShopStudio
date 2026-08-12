@@ -76,12 +76,21 @@ public sealed record SheetFooter(
 /// <param name="Mention">Zone de la mention, centrée sur la planche.</param>
 /// <param name="Qr">Carré du code QR.</param>
 /// <param name="Logo">Zone du logo, alignée à droite.</param>
+/// <param name="CorpsDatePx">
+/// Corps auquel écrire la date, en pixels.
+///
+/// Il vient du CALCUL et n'est pas refait par le peintre : la date se resserre quand la
+/// bande est étroite — c'est ce qui lui permet de tenir dans les quelques millimètres que
+/// laisse une planche pleine — et la largeur réservée ici en dépend. Les deux doivent
+/// tomber sur la même valeur, sinon la date déborde de sa zone.
+/// </param>
 public sealed record FooterPlacement(
     PixelRect Band,
     PixelRect? Date,
     PixelRect? Mention,
     PixelRect? Qr,
-    PixelRect? Logo);
+    PixelRect? Logo,
+    int CorpsDatePx);
 
 /// <summary>
 /// Découpe de la bande basse. Fonctions pures, vérifiables au pixel — comme
@@ -101,6 +110,20 @@ public static class SheetFooterLayout
 
     /// <summary>Air laissé au-dessus et en dessous de ce que la bande porte.</summary>
     private const double MargeMm = 1.2;
+
+    /// <summary>
+    /// Hauteur utile d'une bande de taille NOMINALE, en millimètres.
+    ///
+    /// <b>C'est le plafond du corps de la mention.</b> La bande occupe tout ce qui reste
+    /// sous les photos, et elle peut être bien plus haute que sa taille nominale — une
+    /// planche de trois carrés de 50 mm laisse un tiers du papier libre. Le texte, taillé
+    /// en fraction de cette hauteur, y devenait énorme : « PHOTOS CONFORMES » en capitales
+    /// d'un centimètre sur une planche d'identité (constaté le 11/08/2026).
+    ///
+    /// La bande garde donc sa place, mais l'écriture garde la taille qu'elle a sur une
+    /// planche pleine — celle du format français, que l'exploitant juge la bonne.
+    /// </summary>
+    public const double HauteurUtileNominaleMm = HauteurMm - 2 * MargeMm;
 
     /// <summary>
     /// Air laissé à GAUCHE et à DROITE, plus large que l'autre — et il faut qu'il le soit.
@@ -160,6 +183,47 @@ public static class SheetFooterLayout
     };
 
     /// <summary>
+    /// Corps auquel la date reste lisible sur le papier quand la place est comptée.
+    ///
+    /// En dessous, on renonce : une date qu'il faut deviner ne prouve rien.
+    /// </summary>
+    public const double CorpsDateMinimalMm = 3.2;
+
+    /// <summary>
+    /// Le MINIMUM à garder libre en bas pour qu'une date puisse encore s'écrire.
+    ///
+    /// <b>C'est cette réserve-là qu'il faut opposer au nombre de photos</b>, et non la
+    /// hauteur nominale de la bande. Compter 8 mm pour décider combien de cases tiennent
+    /// coûtait une RANGÉE ENTIÈRE sur les formats carrés : deux rangées de 50 mm occupent
+    /// 100,2 mm d'un 10×15, il en reste 4,8, et la planche tombait de six photos à trois
+    /// (Albanie, États-Unis — signalé le 11/08/2026).
+    ///
+    /// La bande ne perd rien à cet arbitrage : <see cref="Place"/> lui donne ensuite tout
+    /// ce qui reste RÉELLEMENT sous les photos. Une planche française y trouve ses 15 mm et
+    /// sa mention ; une planche carrée y trouve 4,8 mm et n'y écrit que la date, plus
+    /// petite — mais elle l'écrit, au même endroit, sous les photos.
+    /// </summary>
+    public static int ReserveMinimalePx(SheetFooter? footer, int dpi) =>
+        footer is null ? 0 : MmPx.ToPixels(CorpsDateMinimalMm + 1.3 + MargeBasseMm, dpi);
+
+    /// <summary>
+    /// Air gardé sous la bande, hors d'atteinte du massicot de la machine.
+    ///
+    /// <b>C'est le pendant de <see cref="MargeBordMm"/>, qui manquait.</b> La planche est
+    /// tirée à fond perdu : la machine réclame l'image avec du débord qu'elle rogne
+    /// elle-même, près d'un millimètre et demi par bord. Les côtés sont protégés depuis le
+    /// 06/08/2026 — la date y perdait son premier chiffre — mais personne n'avait fait
+    /// pareil en bas, et le texte descendait jusqu'au bord du fichier : rogné sur les
+    /// formats serrés, à six dixièmes de millimètre près sur la planche française
+    /// (constaté le 11/08/2026).
+    ///
+    /// Deux millimètres et non quatre comme sur les côtés : au-dessus du rognage mesuré,
+    /// mais pas plus. Chaque millimètre pris ici se paie deux fois — en photos sur les
+    /// planches pleines, et en hauteur de bande, qui décide si la mention tient encore.
+    /// </summary>
+    public const double MargeBasseMm = 2;
+
+    /// <summary>
     /// Découpe la bande sous le bloc de photos.
     ///
     /// <paramref name="photosBottom"/> est le bas de la dernière rangée : la bande occupe
@@ -173,16 +237,32 @@ public static class SheetFooterLayout
     {
         ArgumentNullException.ThrowIfNull(footer);
 
-        var hauteur = sheetHeight - photosBottom;
-        var corpsDate = MmPx.ToPixels(CorpsDateMm, dpi);
+        // La bande s'arrête AVANT le bord : ce qui descend plus bas part au massicot de la
+        // machine. C'est la même protection qu'à gauche et à droite.
+        var hauteur = sheetHeight - photosBottom - MmPx.ToPixels(MargeBasseMm, dpi);
 
-        // pas même de quoi écrire la date : mordre sur les photos serait pire que se taire
-        if (hauteur < corpsDate + MmPx.ToPixels(1, dpi)) return null;
+        // La date s'écrit au corps de DiLand quand la place le permet, et se resserre
+        // jusqu'à son minimum lisible quand la planche est pleine — c'est ce qui permet à
+        // une planche de six carrés de 50 mm de porter sa date dans les 4,8 mm qui restent,
+        // là où un corps figé à 5 mm aurait coûté une rangée de photos.
+        var corpsDate = Math.Min(
+            MmPx.ToPixels(CorpsDateMm, dpi), hauteur - MmPx.ToPixels(1, dpi));
+
+        // pas même de quoi écrire une date lisible : mordre sur les photos serait pire que
+        // se taire
+        if (corpsDate < MmPx.ToPixels(CorpsDateMinimalMm, dpi)) return null;
 
         var band = new PixelRect(0, photosBottom, sheetWidth, hauteur);
         var marge = MmPx.ToPixels(MargeMm, dpi);
         var margeBord = MmPx.ToPixels(MargeBordMm, dpi);
-        var utile = hauteur - 2 * marge;
+
+        // La bande prend toute la place laissée sous les photos, mais ce qu'elle PORTE ne
+        // grandit pas indéfiniment avec elle : tout ici — mention, code QR, logo — est
+        // dimensionné sur cette hauteur utile, et une planche de trois carrés de 50 mm en
+        // laisse trois fois trop. « PHOTOS CONFORMES » y sortait en capitales d'un
+        // centimètre (11/08/2026). Au-delà du nominal, le contenu garde sa taille et se
+        // centre dans la bande.
+        var utile = Math.Min(hauteur - 2 * marge, MmPx.ToPixels(HauteurUtileNominaleMm, dpi));
 
         // Bande courte, ou rien d'autre à porter : la date reprend sa place d'avant, seule
         // et centrée. Une mention de 2 mm de haut ne se lit pas, et un QR de 2 mm ne se
@@ -191,9 +271,11 @@ public static class SheetFooterLayout
             return new FooterPlacement(
                 band,
                 Date: new PixelRect(0, photosBottom, sheetWidth, hauteur),
-                Mention: null, Qr: null, Logo: null);
+                Mention: null, Qr: null, Logo: null, CorpsDatePx: corpsDate);
 
-        var y = photosBottom + marge;
+        // centré dans la bande, et non collé sous les photos : quand la bande est plus
+        // haute que ce qu'elle porte, le texte doit respirer des deux côtés
+        var y = photosBottom + (hauteur - utile) / 2;
 
         // De droite à gauche : le logo puis le QR, tous deux carrés sur la hauteur utile.
         // Ils sont dimensionnés AVANT la mention parce qu'ils ne se compriment pas — un
@@ -231,7 +313,7 @@ public static class SheetFooterLayout
         if (!string.IsNullOrWhiteSpace(footer.Mention) && largeurMention > corpsDate)
             mention = new PixelRect(gauche, y, largeurMention, utile);
 
-        return new FooterPlacement(band, date, mention, qr, logo);
+        return new FooterPlacement(band, date, mention, qr, logo, corpsDate);
     }
 
     /// <summary>

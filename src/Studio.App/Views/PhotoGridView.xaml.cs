@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Printing;
 using Studio.Printing.Devices.Fuji;
 using Studio.Imaging;
 using Studio.Imaging.Geometry;
@@ -56,11 +57,18 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// borne et le remplace : c'est ce que l'OPÉRATEUR a décidé, il l'emporte sur ce que le
     /// client avait réglé.
     /// </param>
+    /// <param name="montageFeuille">
+    /// Montage des agrandissements : la feuille sur laquelle composer les tirages de
+    /// <paramref name="produitParDefaut"/>, ou null pour un fichier par tirage.
+    ///
+    /// Il ne s'applique QU'À ce format : l'opérateur qui change le produit d'une photo en
+    /// sort, et elle repart en tirage ordinaire. Voir <see cref="FeuilleDeMontagePour"/>.
+    /// </param>
     public PhotoGridView(
         string rootPath, string? produitParDefaut = null, long? commandeBorne = null,
         bool avecSousDossiers = true, CustomSize? taillePerso = null,
         IReadOnlyDictionary<string, DiLandImporter.CadrageBorne>? cadragesBorne = null,
-        TravailEnAttente? enAttente = null)
+        TravailEnAttente? enAttente = null, string? montageFeuille = null)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
@@ -69,6 +77,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         _cadragesBorne = cadragesBorne;
         _enAttente = enAttente;
         _produitParDefaut = produitParDefaut;
+        _montageFeuille = montageFeuille;
 
         // reprendre une commande en attente REMET À JOUR la même entrée, elle n'en crée pas
         // une seconde : sans cela, chaque aller-retour laisserait un doublon sur l'accueil
@@ -290,6 +299,27 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     private readonly string? _produitParDefaut;
 
     /// <summary>
+    /// Feuille de montage retenue à l'écran précédent, ou null. Elle vaut pour
+    /// <see cref="_produitParDefaut"/> et pour lui seul.
+    /// </summary>
+    private readonly string? _montageFeuille;
+
+    /// <summary>
+    /// La feuille sur laquelle monter les tirages de ce produit, ou null.
+    ///
+    /// <b>Le montage suit le FORMAT, pas la photo.</b> Il a été choisi pour un format précis,
+    /// à un écran où l'opérateur voyait combien de tirages tenaient sur la feuille. Une photo
+    /// passée à un autre produit — c'est un geste courant au comptoir — n'a rien à voir avec
+    /// ce choix et repart en tirage ordinaire, ce qui est aussi ce qui garde la grille pleine :
+    /// une ligne montée ne mélange qu'un seul format.
+    /// </summary>
+    private string? FeuilleDeMontagePour(Product produit) =>
+        _montageFeuille is not null && _produitParDefaut is not null
+        && produit.Code.Equals(_produitParDefaut, StringComparison.OrdinalIgnoreCase)
+            ? _montageFeuille
+            : null;
+
+    /// <summary>
     /// L'identité de CETTE préparation de commande, qu'elle ait déjà été mise de côté ou
     /// non. Fixe pour toute la vie de l'écran : deux mises en attente successives mettent à
     /// jour la même entrée au lieu d'en empiler deux sur l'accueil.
@@ -324,6 +354,13 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         photo.Product = EnTaillePersonnalisee
             ? _produitPerso
             : ProduitDuCatalogue(cadrage.CodeProduit) ?? DefaultProduct;
+
+        // 1 bis. la finition que le client a choisie à la borne. Hors de la liste des
+        //    quatre affectations sensibles : elle ne touche ni au cadre ni au recadrage,
+        //    et le passeur de Product ne l'efface pas. C'est elle qui décide du ROULEAU,
+        //    donc de la machine — sans elle, « Modifier » ouvrait la commande sans
+        //    finition et le tirage repartait sur le rouleau de la bonne largeur.
+        photo.Finish = cadrage.Finition;
 
         // 2. les quarts de tour
         photo.RotationQuarterTurns = cadrage.QuartsDeTour;
@@ -581,6 +618,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         CustomWidthMm = _taillePerso?.WidthMm ?? 0,
         CustomHeightMm = _taillePerso?.HeightMm ?? 0,
         PaperCode = PapierImpose,
+        MontageSheetCode = _montageFeuille,
         Photos = _photos
             // les planches d'index sont FABRIQUÉES par l'écran, pas trouvées dans le
             // dossier : les enregistrer ferait reprendre un fichier du cache qui aura pu
@@ -978,6 +1016,11 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     private void OnCartChanged()
     {
         UpdateSummary();
+
+        // la finition d'une photo a pu changer — de produit, de sélection : la machine
+        // annoncée doit suivre, sans quoi la barre resterait sur ce qu'elle disait à
+        // l'ouverture
+        RafraichirLAutomatique();
     }
 
     /// <summary>
@@ -1033,9 +1076,13 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 return;
             }
 
+            // retenues pour pouvoir réécrire la ligne « Automatique » quand la finition du
+            // panier change, sans réinterroger le minilab
+            _machinesEnLigne = etats.Where(e => e.Status != De100PrinterStatus.Offline).ToList();
+
             var choix = new List<MachineChoice>
             {
-                new(MachineChoice.Aucune, "Automatique — selon le rouleau"),
+                new(MachineChoice.Aucune, LibelleAutomatique()),
             };
             choix.AddRange(machines);
 
@@ -1074,7 +1121,99 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         var restant = info.Formats.FirstOrDefault(f => !f.Format.IsVariable);
         var suffixe = restant is null ? "" : $", ~{restant.RemainingPrints} × {restant.Format.Name}";
-        return $"{info.MachineId} — {media.PaperWidthMm} mm {media.Surface}{suffixe}";
+
+        // « brillant » et non « Glossy » : c'est le mot que l'opérateur emploie avec le
+        // client, et celui que porteront les avertissements du tirage
+        return $"{info.MachineId} — {media.PaperWidthMm} mm {PrintOrchestrator.Dire(media.Surface)}{suffixe}";
+    }
+
+    /// <summary>
+    /// Les machines en ligne au dernier chargement, gardées pour réécrire la ligne
+    /// « Automatique » sans réinterroger le minilab.
+    /// </summary>
+    private IReadOnlyList<De100PrinterInfo> _machinesEnLigne = [];
+
+    /// <summary>
+    /// La finition que le panier réclame, ou null s'il n'en réclame aucune — ou s'il en
+    /// mélange plusieurs.
+    ///
+    /// Le mélange rend null à dessein : la commande partira en DEUX enveloppes, sur deux
+    /// machines (voir <c>OrderService</c>), et annoncer une seule machine mentirait.
+    ///
+    /// <b>Les photos cochées, et TOUTES les photos tant que rien n'est coché.</b> C'est le
+    /// cas normal à l'ouverture d'une commande de borne : les cases restent volontairement
+    /// décochées, cet écran étant celui où l'opérateur contrôle avant d'engager du papier.
+    /// Ne regarder que la sélection laissait donc la barre sur « selon le rouleau » devant
+    /// vingt-et-une vignettes toutes marquées « Lustré » — ce qui était précisément
+    /// l'information qu'on venait chercher.
+    /// </summary>
+    private De100Surface? FinitionDuPanier()
+    {
+        var retenues = _photos.Where(p => p.Selected).ToList();
+        if (retenues.Count == 0) retenues = _photos;
+
+        var surfaces = retenues
+            .Select(p => PrintOrchestrator.FinitionMinilab(p.Finish))
+            .Where(s => s is not null)
+            .Distinct()
+            .ToList();
+
+        return surfaces.Count == 1 ? surfaces[0] : null;
+    }
+
+    /// <summary>
+    /// Ce que dit la ligne « Automatique » : non pas seulement qu'on laisse décider, mais
+    /// CE QUI SERA DÉCIDÉ.
+    ///
+    /// <b>Pourquoi nommer la machine sans la choisir.</b> Une commande de borne en lustré
+    /// part bien toute seule sur la machine lustrée, mais la barre affichait
+    /// « Automatique — selon le rouleau » : l'opérateur n'avait aucun moyen de le vérifier
+    /// avant d'engager le papier, et croyait le choix ignoré. Sélectionner la machine à sa
+    /// place serait pire : un choix IMPOSÉ court-circuite la recherche du bon rouleau, et
+    /// c'est exactement ce qui faisait refuser les 21×29,7 du 04/08/2026.
+    /// </summary>
+    private string LibelleAutomatique()
+    {
+        if (FinitionDuPanier() is not { } voulue) return "Automatique — selon le rouleau";
+
+        var nom = PrintOrchestrator.Dire(voulue);
+
+        var porteuse = _machinesEnLigne
+            .FirstOrDefault(m => m.Media is { } media && media.Surface == voulue);
+
+        return porteuse is null
+            ? $"Automatique — aucun rouleau {nom} chargé"
+            : $"Automatique — machine {porteuse.MachineId} ({nom})";
+    }
+
+    /// <summary>
+    /// Réécrit la ligne « Automatique » quand la finition du panier a changé — l'opérateur
+    /// qui bascule une photo de brillant à lustré doit voir la machine suivre.
+    ///
+    /// Ne touche à rien tant que le libellé ne change pas : reposer les lignes rejoue
+    /// <see cref="OnMachineChanged"/>, et le faire à chaque décochage d'une vignette
+    /// ferait clignoter la liste pour rien.
+    /// </summary>
+    private void RafraichirLAutomatique()
+    {
+        if (MachineCombo.ItemsSource is not List<MachineChoice> choix) return;
+        if (choix.Count == 0 || !choix[0].Automatique) return;
+
+        var libelle = LibelleAutomatique();
+        if (choix[0].Label == libelle) return;
+
+        // la sélection est repérée par la MACHINE et non par son rang : reposer les lignes
+        // remet l'index à -1, et un rang mémorisé désignerait la mauvaise ligne si la liste
+        // avait changé entre-temps
+        var retenue = (MachineCombo.SelectedItem as MachineChoice)?.Id;
+
+        var neuf = new List<MachineChoice> { new(MachineChoice.Aucune, libelle) };
+        neuf.AddRange(choix.Skip(1));
+
+        MachineCombo.ItemsSource = neuf;
+
+        var rang = retenue is null ? 0 : neuf.FindIndex(c => c.Id == retenue.Value);
+        MachineCombo.SelectedIndex = rang >= 0 ? rang : 0;
     }
 
     /// <summary>
@@ -1898,9 +2037,14 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         }
 
         var items = selected
-            .Select(p => new DraftItem(p.Path, produitDeLaLigne ?? p.Product!, p.Quantity, p.Crop,
-                p.RotationQuarterTurns, p.FineRotationDegrees, p.FitOverride, p.Adjustments, null,
-                p.Finish, p.CutBorder, planche))
+            .Select(p =>
+            {
+                var produit = produitDeLaLigne ?? p.Product!;
+                return new DraftItem(p.Path, produit, p.Quantity, p.Crop,
+                    p.RotationQuarterTurns, p.FineRotationDegrees, p.FitOverride, p.Adjustments, null,
+                    p.Finish, p.CutBorder, planche,
+                    MontageSheetCode: FeuilleDeMontagePour(produit));
+            })
             .ToList();
 
         PrintButton.IsEnabled = false;

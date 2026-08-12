@@ -644,7 +644,7 @@
                 <TextBlock Text="Signaler un problème" Style="{StaticResource Texte}"
                            FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"
-                           Text="Envoie les journaux de ce poste à celui qui suit le logiciel, pour qu'il puisse comprendre la panne. Aucune photo de client n'est jointe, et les mots de passe ne le sont jamais."/>
+                           Text="Envoie les journaux de ce poste, ses réglages et son catalogue de produits à celui qui suit le logiciel, pour qu'il puisse comprendre la panne. Aucune photo de client n'est jointe, et les mots de passe ne le sont jamais."/>
 
                 <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">

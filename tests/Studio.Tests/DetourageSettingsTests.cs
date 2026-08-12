@@ -14,6 +14,7 @@ namespace Studio.Tests;
 /// 9,5 s par photo pleine résolution contre 1,2 s pour la méthode par couleur. Une mise à
 /// jour ne doit pas allonger le détourage sans que personne l'ait demandé.
 /// </summary>
+[Collection(DetourageStatiqueCollection.Nom)]
 public class DetourageSettingsTests : IDisposable
 {
     private readonly string _dossier =

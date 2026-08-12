@@ -33,7 +33,14 @@ public sealed record DraftItem(
     ImageAdjustments Adjustments,
     /// <summary>Planches identité : nombre de photos sur la planche, null = celui du produit.</summary>
     int? SheetCopiesOverride = null,
-    /// <summary>Finition choisie (voir Product.Finishes), null = DEVMODE par défaut du produit.</summary>
+    /// <summary>
+    /// Finition choisie, null = DEVMODE par défaut du produit.
+    ///
+    /// Elle vient soit du catalogue (voir <c>Product.Finishes</c>, cas de la DNP, où elle
+    /// désigne un DEVMODE), soit du CLIENT quand la commande arrive d'une borne — et là
+    /// elle désigne un ROULEAU, donc la machine DE100 qui recevra l'enveloppe. Voir
+    /// <see cref="FinitionPapier"/>.
+    /// </summary>
     string? Finish = null,
     /// <summary>Contour noir de découpe, quand le tirage sort avec des marges blanches.</summary>
     bool CutBorder = false,
@@ -58,7 +65,15 @@ public sealed record DraftItem(
     /// papier : 10 € pour un document français, 15 € pour un étranger, sur le même produit.
     /// Voir <see cref="TarifsIdentite"/>.
     /// </summary>
-    decimal? UnitPriceOverride = null);
+    decimal? UnitPriceOverride = null,
+    /// <summary>
+    /// Montage : code de la FEUILLE sur laquelle composer les agrandissements, ou null pour
+    /// un fichier par tirage.
+    ///
+    /// ⚠ Sans effet sur le prix — voir <see cref="OrderLine.MontageSheetCode"/>. C'est toute
+    /// la différence avec <paramref name="CustomSheet"/>, qui, lui, facture le papier.
+    /// </summary>
+    string? MontageSheetCode = null);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -102,14 +117,23 @@ public sealed class OrderService
                 fileNames[item.SourcePath] = $"{++index:000}{Path.GetExtension(item.SourcePath).ToLowerInvariant()}";
         }
 
-        // une enveloppe par canal d'impression, une ligne par produit
+        // Une enveloppe par canal d'impression ET PAR FINITION, une ligne par produit.
+        //
+        // La finition entre dans le découpage parce qu'une enveloppe part d'un bloc sur UNE
+        // machine, et que sur le DE100 la finition, c'est le rouleau : deux machines, deux
+        // rouleaux, et l'on ne peut pas tirer du brillant et du lustré sur la même. La
+        // commande 10-013 du 10/08/2026 est exactement ce cas — un client a pris les deux
+        // dans le même panier — et elle serait partie entière sur une seule machine.
+        //
+        // Quand rien ne déclare de finition — tout le comptoir aujourd'hui — la clé est
+        // partout nulle et le découpage est celui d'avant, au groupe près.
         var envelopeNumber = 0;
-        foreach (var channelGroup in items.GroupBy(i => i.Product.Channel))
+        foreach (var channelGroup in items.GroupBy(i => (i.Product.Channel, i.Finish)))
         {
             var envelope = new Envelope
             {
                 Number = ++envelopeNumber,
-                PrinterChannel = channelGroup.Key,
+                PrinterChannel = channelGroup.Key.Channel,
             };
 
             foreach (var productGroup in channelGroup.GroupBy(i => i.Product.Code))
@@ -134,6 +158,11 @@ public sealed class OrderService
                     CustomCellWidthMm = planche?.CellWidthMm,
                     CustomCellHeightMm = planche?.CellHeightMm,
                     SheetCount = planche?.SheetCount ?? 0,
+                    // le montage suit le PRODUIT : toutes les photos d'une même ligne
+                    // partent sur la même feuille, sans quoi la grille serait à trous
+                    MontageSheetCode = productGroup
+                        .Select(i => i.MontageSheetCode)
+                        .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)),
                 };
                 foreach (var item in productGroup)
                 {

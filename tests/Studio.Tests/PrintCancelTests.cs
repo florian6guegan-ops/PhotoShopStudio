@@ -45,7 +45,7 @@ public class PrintCancelTests : IDisposable
         public Action<int>? ApresEnvoi { get; set; }
 
         public IReadOnlyList<char> ReadyMachines() => ['A'];
-        public De100Surface LoadedSurface(char machineId) => De100Surface.Lustre;
+        public De100Surface? LoadedSurface(char machineId) => De100Surface.Lustre;
         public int LoadedPaperWidthMm(char machineId) => 152;
 
         /// <summary>Aucune DNP : ces tests ne portent que sur le minilab.</summary>
@@ -74,6 +74,10 @@ public class PrintCancelTests : IDisposable
                 throw new InvalidOperationException($"Le minilab refuse d'annuler {orderHandle}.");
             Rappeles.Add(orderHandle);
         }
+
+        /// <summary>Pas de machine, donc pas de compte de tirages : le suivi s'en passe.</summary>
+        public Task<De100OrderProgress?> OrderProgressAsync(string orderHandle) =>
+            Task.FromResult<De100OrderProgress?>(null);
     }
 
     /// <summary>Recueille l'avancement sur le fil courant, dans l'ordre où il arrive.</summary>
@@ -261,8 +265,17 @@ public class PrintCancelTests : IDisposable
 
         Assert.Equal(3, rendu[^1].Faits);
         Assert.Equal(3, rendu[^1].Total);
-        Assert.Equal(3, envoi.Count);
+
+        // Trois pages annoncées une à une, PUIS un quatrième rapport une fois la commande
+        // acceptée : celui-là porte le handle du minilab. C'est par lui que le suivi
+        // demandera à la machine combien de tirages de cette commande sont sortis, au lieu
+        // de lire son compteur général et d'y attribuer tout ce qui passe.
+        Assert.Equal(4, envoi.Count);
         Assert.Equal("A", envoi[^1].Machine);
         Assert.Equal(1, envoi[^1].Fraction);
+
+        Assert.Null(envoi[0].Handle);
+        Assert.False(string.IsNullOrEmpty(envoi[^1].Handle),
+            "le handle de la commande doit remonter au suivi");
     }
 }

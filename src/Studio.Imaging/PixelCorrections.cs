@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 using Studio.Core.Domain;
 
@@ -276,9 +277,40 @@ public static class PixelCorrections
         var taille = (long)largeur * hauteur;
         if (taille == 0) return;
 
-        var plan = new float[taille];
-        var tampon = new float[taille];
+        // DEUX PLANS EMPRUNTÉS, JAMAIS ALLOUÉS.
+        //
+        // Ils pèsent quatre octets par pixel chacun — près de cinq mégaoctets sur un aperçu
+        // de 900 px, et bien plus sur un tirage. Alloués à chaque appel, ils partaient au
+        // ramasse-miettes aussitôt : en glissant le curseur de netteté, l'aperçu se refait
+        // une vingtaine de fois par seconde, soit quatre-vingts mégaoctets par seconde jetés
+        // dans le tas. Ce n'est pas le calcul qui saccadait, c'est le ramassage — signalé au
+        // comptoir le 11/08/2026 sur ce curseur précisément, le plus coûteux des deux.
+        //
+        // Le prêteur est partagé et sûr entre fils : le tirage rend ses pages en parallèle,
+        // et chacune passe par ici.
+        var prêteur = ArrayPool<float>.Shared;
+        var plan = prêteur.Rent((int)taille);
+        var tampon = prêteur.Rent((int)taille);
 
+        try
+        {
+            MasqueFlou(pixels, largeur, hauteur, d, sigma, gain, seuil, plan, tampon, taille);
+        }
+        finally
+        {
+            // sans effacer : tout ce qu'on relit est réécrit d'abord, et effacer cinq
+            // mégaoctets à chaque appel reviendrait à repayer ce qu'on vient d'économiser
+            prêteur.Return(plan);
+            prêteur.Return(tampon);
+        }
+    }
+
+    /// <inheritdoc cref="MasqueFlou(byte[], int, int, Disposition, double, double, double)"/>
+    private static void MasqueFlou(
+        byte[] pixels, int largeur, int hauteur, Disposition d,
+        double sigma, double gain, double seuil,
+        float[] plan, float[] tampon, long taille)
+    {
         var canaux = d.Couleur ? new[] { d.R, d.V, d.B } : new[] { d.R };
 
         foreach (var canal in canaux)
@@ -519,7 +551,10 @@ public static class PixelCorrections
     {
         if (rayon <= 0)
         {
-            Array.Copy(source, cible, source.Length);
+            // La LONGUEUR UTILE, et non celle des tableaux : ils sont empruntés à un
+            // prêteur qui les rend volontiers plus grands que demandé, et les deux n'ont
+            // aucune raison de faire la même taille.
+            Array.Copy(source, cible, (long)largeur * hauteur);
             return;
         }
 
@@ -561,7 +596,8 @@ public static class PixelCorrections
     {
         if (rayon <= 0)
         {
-            Array.Copy(source, cible, source.Length);
+            // longueur utile, comme au-dessus : les plans sont empruntés
+            Array.Copy(source, cible, (long)largeur * hauteur);
             return;
         }
 

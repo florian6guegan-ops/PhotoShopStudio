@@ -128,12 +128,20 @@ public partial class IdSheetRecapView : UserControl
     /// </summary>
     private int PppDApercu(Planche planche)
     {
-        var capacite = IdSheetLayout.MaxCopies(
+        // la bande basse compte dans la capacité, comme au rendu : sans elle ici, l'aperçu
+        // se croirait plus large qu'il ne sera et montrerait une case de trop
+        var bande = planche.Produit.Sheet?.DateStamp == true
+            ? SheetFooterLayout.ReserveMinimalePx(
+                SheetFooter.Pour(DateTime.Now, App.Services.Marque), PppApercuVoulu)
+            : 0;
+
+        var capacite = IdSheetLayout.MeilleureCapacite(
             MmPx.ToPixels(planche.Produit.WidthMm, PppApercuVoulu),
             MmPx.ToPixels(planche.Produit.HeightMm, PppApercuVoulu),
             MmPx.ToPixels(_document.WidthMm, PppApercuVoulu),
             MmPx.ToPixels(_document.HeightMm, PppApercuVoulu),
-            MmPx.ToPixels(planche.Produit.Sheet?.LayoutGapMm ?? SheetSpec.DefaultGapMm, PppApercuVoulu));
+            MmPx.ToPixels(planche.Produit.Sheet?.LayoutGapMm ?? SheetSpec.DefaultGapMm, PppApercuVoulu),
+            bande).Copies;
 
         return capacite >= planche.Copies ? PppApercuVoulu : planche.Produit.Dpi;
     }
@@ -143,27 +151,59 @@ public partial class IdSheetRecapView : UserControl
         var dossier = Path.Combine(App.Services.DataRoot, "cache", "identite",
             DateTime.Now.ToString("yyyyMMdd-HHmmss"));
 
-        for (var i = 0; i < _planches.Count; i++)
+        var aFaire = _planches.Where(p => !_apercus.ContainsKey(p.Rang)).ToList();
+        if (aFaire.Count == 0)
         {
-            var planche = _planches[i];
-            if (_apercus.ContainsKey(planche.Rang)) continue;
+            Afficher();
+            return;
+        }
 
-            EtatText.Text = _planches.Count == 1
-                ? "Préparation de la planche…"
-                : $"Préparation des planches… ({i + 1}/{_planches.Count})";
-            EtatText.Visibility = Visibility.Visible;
+        EtatText.Text = aFaire.Count == 1
+            ? "Préparation de la planche…"
+            : $"Préparation des planches… (0/{aFaire.Count})";
+        EtatText.Visibility = Visibility.Visible;
 
-            try
+        // TOUTES EN MÊME TEMPS, et non l'une après l'autre.
+        //
+        // Chaque planche coûte quelques centaines de millisecondes — le rendu d'une case
+        // puis autant de compositions —, et elles ne se doivent rien entre elles : elles
+        // portent des photos différentes et écrivent des fichiers différents. En file
+        // indienne, un récapitulatif de quatre planches faisait attendre quatre fois ce
+        // temps-là avant d'être complet. Le poste a de quoi les mener de front.
+        //
+        // Celle qu'on REGARDE reste prioritaire à l'affichage : chacune paraît dès qu'elle
+        // arrive, dans l'ordre où elles finissent.
+        var enCours = aFaire
+            .Select(planche => Task.Run(() =>
             {
-                var octets = await Task.Run(() => RendreUnePlanche(planche, dossier));
-                _apercus[planche.Rang] = ToBitmap(octets);
-            }
-            catch (Exception ex)
-            {
-                FileLog.Write($"Aperçu de planche impossible ({Path.GetFileName(planche.SourcePath)})", ex);
-            }
+                try
+                {
+                    return (planche.Rang, Octets: (byte[]?)RendreUnePlanche(planche, dossier));
+                }
+                catch (Exception ex)
+                {
+                    FileLog.Write(
+                        $"Aperçu de planche impossible ({Path.GetFileName(planche.SourcePath)})", ex);
+                    return (planche.Rang, Octets: null);
+                }
+            }))
+            .ToList();
 
-            if (i == _page) Afficher();
+        var faites = 0;
+
+        while (enCours.Count > 0)
+        {
+            var finie = await Task.WhenAny(enCours);
+            enCours.Remove(finie);
+
+            var (rang, octets) = await finie;
+            if (octets is not null) _apercus[rang] = ToBitmap(octets);
+
+            faites++;
+            if (aFaire.Count > 1)
+                EtatText.Text = $"Préparation des planches… ({faites}/{aFaire.Count})";
+
+            Afficher();
         }
 
         Afficher();
@@ -212,7 +252,44 @@ public partial class IdSheetRecapView : UserControl
             sheet.DateStamp ? SheetFooter.Pour(DateTime.Now, App.Services.Marque) : null,
             sheet.FullBleed);
 
-        return File.ReadAllBytes(feuille);
+        return AvecLeBonSens(feuille, planche, ppp);
+    }
+
+    /// <summary>
+    /// Redresse l'aperçu d'une planche tirée DEBOUT.
+    ///
+    /// Le fichier remis à la machine est toujours aux cotes du produit : une planche
+    /// composée verticalement en sort couchée, photos tournées d'un quart de tour. C'est ce
+    /// qu'il faut à la machine, mais pas ce qu'il faut à l'œil — l'opérateur vérifie ici un
+    /// cadrage et un compte de photos, et les juger la tête de côté n'a aucun sens.
+    ///
+    /// On la remet donc debout POUR L'AFFICHAGE seulement. Le tirage, lui, part du fichier
+    /// tel que la machine l'attend.
+    /// </summary>
+    private byte[] AvecLeBonSens(string feuille, Planche planche, int ppp)
+    {
+        var octets = File.ReadAllBytes(feuille);
+
+        var sheet = planche.Produit.Sheet ?? new SheetSpec();
+
+        var bande = sheet.DateStamp
+            ? SheetFooterLayout.ReserveMinimalePx(
+                SheetFooter.Pour(DateTime.Now, App.Services.Marque), ppp)
+            : 0;
+
+        var (_, debout) = IdSheetLayout.MeilleureCapacite(
+            MmPx.ToPixels(planche.Produit.WidthMm, ppp),
+            MmPx.ToPixels(planche.Produit.HeightMm, ppp),
+            MmPx.ToPixels(_document.WidthMm, ppp),
+            MmPx.ToPixels(_document.HeightMm, ppp),
+            MmPx.ToPixels(sheet.LayoutGapMm, ppp),
+            bande);
+
+        if (!debout) return octets;
+
+        using var image = new ImageMagick.MagickImage(octets);
+        image.Rotate(-90);
+        return image.ToByteArray(ImageMagick.MagickFormat.Png);
     }
 
     /// <summary>
@@ -286,6 +363,25 @@ public partial class IdSheetRecapView : UserControl
         TotalText.Text = $"{feuilles} planche{(feuilles > 1 ? "s" : "")} · {total:0.00} €" +
                          (feuilles > 1 ? $"  ({PrixDeLaPlanche:0.00} € la planche)" : "");
         ImprimerButton.IsEnabled = !_impressionLancee && feuilles > 0;
+
+        DireSiLeDetourageAChange();
+    }
+
+    /// <summary>
+    /// Signale que le détourage n'a pas pu tenir la méthode du cadrage.
+    ///
+    /// <b>C'est l'écran où le défaut se voit</b>, et c'était l'écran qui n'en disait rien.
+    /// La planche est rendue ici à la taille d'impression, donc sous une autre empreinte de
+    /// cache que l'aperçu du cadrage : le réseau repasse, et c'est là qu'il peut manquer de
+    /// mémoire. À Créteil, le 12/08/2026, le fond était parfait au cadrage et ne l'était
+    /// plus ici — sans un mot, le journal seul portant la trace du repli.
+    /// </summary>
+    private void DireSiLeDetourageAChange()
+    {
+        var repli = Studio.Imaging.BiRefNetMatting.DernierRepli;
+
+        RepliDetourageText.Text = repli ?? "";
+        RepliDetourageText.Visibility = repli is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnPremiere(object sender, RoutedEventArgs e) => AllerA(0);

@@ -55,8 +55,12 @@
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextBrush}" Text="{Binding Title}"/>
+                                    <!-- TextWrapping : la ligne porte désormais, le cas
+                                         échéant, la phrase qui explique des cotes douteuses.
+                                         Sans retour à la ligne elle serait coupée net. -->
                                     <TextBlock FontSize="17" Foreground="{StaticResource MutedBrush}"
-                                               Text="{Binding Details}" Margin="0,4,0,0"/>
+                                               Text="{Binding Details}" Margin="0,4,0,0"
+                                               TextWrapping="Wrap"/>
                                 </StackPanel>
                             </DockPanel>
                         </Border>

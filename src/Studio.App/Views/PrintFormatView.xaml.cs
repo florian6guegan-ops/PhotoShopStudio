@@ -53,11 +53,33 @@ public partial class PrintFormatView : UserControl
             return;
         }
 
+        var produit = ligne.Produit;
+
+        // Un agrandissement passe d'abord par le choix de la feuille : plusieurs tirages du
+        // même format tiennent souvent sur une seule, et la moitié du papier partait à la
+        // chute. L'écran ne s'affiche que s'il y a un montage possible — sinon on enchaîne
+        // comme avant, et le parcours ne change pas d'un écran.
+        if (_famille == PrintFamily.Enlargement)
+        {
+            MontageFeuilleView.Proposer(produit, feuille => VersLesPhotos(produit, ligne.Nom, feuille));
+            return;
+        }
+
+        VersLesPhotos(produit, ligne.Nom, null);
+    }
+
+    /// <param name="montageFeuille">
+    /// Feuille de montage retenue, ou null pour un fichier par tirage.
+    /// </param>
+    private static void VersLesPhotos(Product produit, string nom, string? montageFeuille)
+    {
         // le format est choisi : la sélection des photos démarre déjà sur ce produit
         Navigator.Go(new SourcePickerView((root, profond) =>
-            Navigator.Go(new PhotoGridView(root, ligne.Produit.Code, avecSousDossiers: profond),
-                $"{ligne.Nom} — choisir les photos")),
-            $"{ligne.Nom} — choisir le support");
+            Navigator.Go(
+                new PhotoGridView(root, produit.Code, avecSousDossiers: profond,
+                    montageFeuille: montageFeuille),
+                $"{nom} — choisir les photos")),
+            $"{nom} — choisir le support");
     }
 
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();

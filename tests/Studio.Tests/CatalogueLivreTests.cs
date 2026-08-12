@@ -180,12 +180,22 @@ public class CatalogueLivreTests : IDisposable
     }
 
     /// <summary>
-    /// Dès qu'un produit a été ajouté, le fichier appartient à quelqu'un : on n'y touche
-    /// plus. C'est la limite qui protège un poste qui s'est construit son catalogue à
-    /// partir de l'amorçage.
+    /// Un produit AJOUTÉ à côté ne bloque plus la reprise — et il n'est pas perdu.
+    ///
+    /// <b>Cet essai disait l'inverse, et il avait tort.</b> La règle d'origine — « dès qu'un
+    /// produit a été ajouté, le fichier appartient à quelqu'un » — protégeait un poste qui
+    /// se serait construit son catalogue à partir de l'amorçage. Sauf qu'ajouter un produit
+    /// ne prouve rien de tel : le poste DESKTOP-KT88VDM avait dupliqué un 30×40 pour se
+    /// faire un 40×50, et ses cinq produits d'amorçage sont restés intacts, tous pointés
+    /// sur « Microsoft Print to PDF ». La reprise, désarmée par ce seul ajout, ne s'est
+    /// jamais faite : pendant des semaines, TOUTES ses commandes sont parties dans un PDF
+    /// pendant qu'il cherchait la panne du côté de sa DNP et de son DE100 (12/08/2026).
+    ///
+    /// Ce que l'essai voulait vraiment protéger, c'est le travail de l'exploitant — et
+    /// c'est ce que vérifie la dernière ligne : « a-moi » survit à la reprise.
     /// </summary>
     [Fact]
-    public void Un_amorcage_auquel_on_a_ajoute_un_produit_n_est_plus_repris()
+    public void Un_produit_ajoute_ne_bloque_plus_la_reprise_et_survit()
     {
         PoserLeLivre("10x15", "13x18");
 
@@ -193,8 +203,75 @@ public class CatalogueLivreTests : IDisposable
         siens.Add(new Product { Code = "a-moi", Name = "À moi", Price = 3m });
         ProductCatalog.Save(Path.Combine(Donnees, "products.json"), siens);
 
+        Assert.True(CatalogueLivre.PoserSiAbsent(Donnees, Livre));
+
+        var apres = ProductCatalog.Load(Path.Combine(Donnees, "products.json"));
+        Assert.NotNull(apres.Find("10x15"));   // le catalogue livré est posé
+        Assert.NotNull(apres.Find("a-moi"));   // et ce qui avait été créé reste
+    }
+
+    /// <summary>
+    /// LA limite, et c'est la bonne : dès qu'un produit d'amorçage vise une vraie machine,
+    /// quelqu'un a configuré ce poste et le fichier lui appartient.
+    ///
+    /// C'est ce qui distingue « on a ajouté quelque chose » de « on s'en sert pour
+    /// imprimer » — et c'est la seule des deux qui se vérifie sans se tromper.
+    /// </summary>
+    [Fact]
+    public void Un_amorcage_dont_un_produit_vise_une_vraie_machine_n_est_plus_repris()
+    {
+        PoserLeLivre("10x15", "13x18");
+
+        var siens = ProductCatalog.CreateDefaultProducts();
+        siens[0].PrinterName = "DP-DS620";
+        ProductCatalog.Save(Path.Combine(Donnees, "products.json"), siens);
+
         Assert.False(CatalogueLivre.PoserSiAbsent(Donnees, Livre));
-        Assert.NotNull(ProductCatalog.Load(Path.Combine(Donnees, "products.json")).Find("a-moi"));
+        Assert.Equal("DP-DS620",
+            ProductCatalog.Load(Path.Combine(Donnees, "products.json")).Find("10x15")!.PrinterName);
+    }
+
+    /// <summary>
+    /// Et sur les COTES aussi : un format retouché est un poste qu'on a réglé.
+    /// </summary>
+    [Fact]
+    public void Un_amorcage_dont_un_format_a_ete_change_n_est_plus_repris()
+    {
+        PoserLeLivre("10x15");
+
+        var siens = ProductCatalog.CreateDefaultProducts();
+        siens[0].WidthMm = 156.1;
+        ProductCatalog.Save(Path.Combine(Donnees, "products.json"), siens);
+
+        Assert.False(CatalogueLivre.PoserSiAbsent(Donnees, Livre));
+    }
+
+    /// <summary>
+    /// Le cas exact de DESKTOP-KT88VDM, bout en bout : cinq produits d'amorçage intacts,
+    /// un produit maison à côté, et le catalogue de la boutique qui attend dans
+    /// l'installation. Après reprise, la planche identité doit viser la DS620.
+    /// </summary>
+    [Fact]
+    public void Le_poste_qui_imprimait_dans_un_PDF_repart_sur_les_bonnes_machines()
+    {
+        ProductCatalog.Save(Path.Combine(Livre, "products.json"), new[]
+        {
+            new Product
+            {
+                Code = "ID-FR-6", Name = "Photos d'identité — planche 10×15",
+                WidthMm = 156.1, HeightMm = 105, PrinterName = "DP-DS620", Price = 10m,
+            },
+        });
+
+        var siens = ProductCatalog.CreateDefaultProducts();
+        siens.Add(new Product { Code = "40x50", Name = "40×50", Price = 25m });
+        ProductCatalog.Save(Path.Combine(Donnees, "products.json"), siens);
+
+        Assert.True(CatalogueLivre.PoserSiAbsent(Donnees, Livre));
+
+        var apres = ProductCatalog.Load(Path.Combine(Donnees, "products.json"));
+        Assert.Equal("DP-DS620", apres.Find("ID-FR-6")!.PrinterName);
+        Assert.NotNull(apres.Find("40x50"));
     }
 
     /// <summary>

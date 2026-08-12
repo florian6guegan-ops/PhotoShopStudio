@@ -182,4 +182,47 @@ public class RapportDiagnosticTests : IDisposable
         Assert.Contains(Environment.MachineName, nom);
         Assert.EndsWith(".zip", nom);
     }
+
+    // ————— le catalogue —————
+
+    /// <summary>
+    /// Le catalogue doit partir avec le rapport : c'est LE fichier qui décide où une
+    /// commande s'imprime.
+    ///
+    /// Il manquait, et cela a coûté cher. Le 12/08/2026, le poste DESKTOP-KT88VDM
+    /// n'imprimait ni sur sa DNP ni sur son DE100 ; son rapport portait les journaux et les
+    /// réglages, mais pas <c>products.json</c>. Il a fallu déduire le catalogue d'une taille
+    /// de rendu — 1205 × 1795 px, soit 102 × 152 mm, soit le produit d'amorçage — pour
+    /// comprendre que tout partait dans « Microsoft Print to PDF ».
+    /// </summary>
+    [Fact]
+    public void Le_catalogue_part_avec_le_rapport()
+    {
+        var catalogue = Path.Combine(_racine, "catalog");
+        Directory.CreateDirectory(catalogue);
+        File.WriteAllText(Path.Combine(catalogue, "products.json"),
+            """[{"Code":"ID-FR-6","PrinterName":"Microsoft Print to PDF"}]""");
+
+        var contenu = RapportDiagnostic.Fabriquer(Logs, Config, Archive, "", catalogue);
+
+        Assert.Contains("catalog/products.json", Entrees(Archive));
+        Assert.Contains("Microsoft Print to PDF", Lire(Archive, "catalog/products.json"));
+        Assert.Contains("products.json", contenu.Fichiers);
+    }
+
+    /// <summary>
+    /// Un poste sans catalogue lisible doit quand même envoyer son rapport : le catalogue
+    /// est un plus, pas une condition.
+    /// </summary>
+    [Fact]
+    public void Un_catalogue_absent_n_empeche_pas_le_rapport()
+    {
+        var contenu = RapportDiagnostic.Fabriquer(
+            Logs, Config, Archive, "", Path.Combine(_racine, "catalogue-qui-n-existe-pas"));
+
+        Assert.True(File.Exists(Archive));
+        Assert.Contains("rapport.txt", Entrees(Archive));
+        Assert.DoesNotContain("catalog/products.json", Entrees(Archive));
+        Assert.True(contenu.Octets > 0);
+    }
 }

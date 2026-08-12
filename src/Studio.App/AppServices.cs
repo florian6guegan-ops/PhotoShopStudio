@@ -270,8 +270,41 @@ public sealed class AppServices
     private static void AppliquerLeDetourage(DetourageSettings reglages)
     {
         BiRefNetMatting.Actif = reglages.Actif;
-        BiRefNetMatting.ModelePrefere = reglages.ModeleDemande;
+        BiRefNetMatting.ModelePrefere = ModelePourCetteCarte(reglages);
         BiRefNetMatting.Reinitialiser();
+    }
+
+    /// <summary>
+    /// Le modèle qu'on demandera VRAIMENT au moteur, une fois la carte de ce poste
+    /// consultée.
+    ///
+    /// <b>Un réglage enregistré survit au seuil qui l'a autorisé.</b> Le choix du modèle
+    /// puissant est grisé dans Paramètres quand la carte est trop juste, mais griser
+    /// n'efface pas ce qui est déjà dans <c>detourage.json</c> — et le seuil, lui, a été
+    /// relevé le 12/08/2026 après l'échec de la GTX 1660 SUPER de Créteil, qui annonce
+    /// exactement les 6 Go que l'on exigeait.
+    ///
+    /// Sans cette conversion, ce poste redemanderait le modèle puissant à chaque séance,
+    /// échouerait sur la deuxième planche, et se ferait démoter par
+    /// <c>BiRefNetMatting</c> — une planche gâchée et une attente, tous les matins, pour un
+    /// verdict connu d'avance.
+    /// </summary>
+    private static string ModelePourCetteCarte(DetourageSettings reglages)
+    {
+        if (!reglages.ModelePuissant) return reglages.ModeleDemande;
+
+        // Une carte qui n'annonce pas sa mémoire garde le bénéfice du doute : on ne retire
+        // pas un choix sur une absence d'information, et le repli rattrape de toute façon.
+        if (CarteGraphique.Principale() is not { MemoireGo: { } go }) return reglages.ModeleDemande;
+        if (go >= DetourageSettings.MemoireVideoMinimaleGo) return reglages.ModeleDemande;
+
+        FileLog.Write(
+            $"Détourage : « {DetourageSettings.ModelePuissantFichier} » demandé, mais la carte " +
+            $"de ce poste n'a que {go:0.#} Go de mémoire vidéo pour " +
+            $"{DetourageSettings.MemoireVideoMinimaleGo:0} exigés — " +
+            $"« {DetourageSettings.ModeleLeger} » utilisé à sa place.");
+
+        return DetourageSettings.ModeleLeger;
     }
 
     /// <summary>
@@ -546,6 +579,23 @@ public sealed class AppServices
             FileLog.Write($"Profils ICC repris de Windows : {string.Join(", ", profils)}");
 
         var catalog = ProductCatalog.Load(productsJson);
+
+        // LE CATALOGUE EST RELU À CHAQUE DÉMARRAGE, et ses cotes avec lui.
+        //
+        // `CotesProduit` ne parlait qu'à la SAISIE. Un produit enregistré de travers avant
+        // qu'elle existe — ou saisi sur un poste qui n'avait pas encore la version — ne
+        // rencontrait plus jamais son garde-fou. Le poste DESKTOP-KT88VDM en portait deux
+        // depuis des semaines : un « 40×50 » de 40 × 50 mm et une « E-PHOTO » de 10 × 15,
+        // qui sortaient des timbres (12/08/2026).
+        //
+        // On ne corrige rien : le catalogue appartient à l'exploitant. Mais c'est écrit au
+        // journal, donc emporté par le rapport de diagnostic — c'est ce qui manquait pour
+        // le voir à distance, et c'est là que ça se lit en dix secondes.
+        foreach (var anomalie in catalog.All
+                     .Select(p => CotesProduit.Anomalie(p.Name, p.Code, p.WidthMm, p.HeightMm))
+                     .Where(a => a is not null))
+            FileLog.Write($"Catalogue, cotes douteuses : {anomalie}");
+
         var store = new OrderFolderStore(Path.Combine(dataRoot, "orders"));
         var counter = new DailyCounter(Path.Combine(dataRoot, "counters", "daily.json"));
 
@@ -573,6 +623,8 @@ public sealed class AppServices
         // C'est la seule trace qui permette de comprendre un réglage sans effet.
         BiRefNetMatting.Log = message => FileLog.Write(message);
         BackgroundRemoval.Log = message => FileLog.Write(message);
+        ImagePipeline.Log = message => FileLog.Write(message);
+        DevMode.Log = message => FileLog.Write(message);
         PdfPages.Log = message => FileLog.Write(message);
 
         // La correction des yeux rouges est demandée depuis le PIPELINE, qui reçoit une
@@ -595,6 +647,8 @@ public sealed class AppServices
             Printer = new PrintOrchestrator(catalog, store, Path.Combine(dataRoot, "catalog"), minilab)
             {
                 Log = message => FileLog.Write(message),
+                // Avertir est branché plus bas : il lui faut « services », qu'on est en
+                // train de construire.
             },
             Thumbnails = new ThumbnailService(Path.Combine(dataRoot, "cache")),
             Upload = new UploadServer(Path.Combine(dataRoot, "incoming")),
@@ -606,6 +660,10 @@ public sealed class AppServices
             TarifsIdentite = LoadConfig<TarifsIdentite>(
                 Path.Combine(dataRoot, "config", "tarifs-identite.json")),
         };
+
+        // Ce que l'orchestrateur veut faire savoir à l'opérateur PENDANT qu'il travaille —
+        // aujourd'hui la finition qui ne correspond pas au rouleau chargé.
+        services.Printer.Avertir = message => AvertirLOperateur(services, message);
 
         // Les boîtes de fichiers de Windows n'ont pas de service à qui demander : elles
         // s'ouvrent depuis n'importe quel écran. Le réglage leur est donc posé ici, une fois.
@@ -707,6 +765,25 @@ public sealed class AppServices
         return services;
     }
 
+    /// <summary>
+    /// Pose un avertissement dans le bandeau des impressions, depuis n'importe quel fil.
+    ///
+    /// Le saut vers le fil de l'interface n'est pas une précaution de principe : un tirage
+    /// s'exécute en tâche de fond, et c'est de là que l'avertissement part.
+    ///
+    /// Le bandeau plutôt qu'une boîte modale, pour la même raison qu'ailleurs : une boîte
+    /// barre l'écran et force une réponse immédiate, quand l'opérateur a justement besoin
+    /// de regarder ce qui sort de la machine avant de décider.
+    /// </summary>
+    private static void AvertirLOperateur(AppServices services, string message)
+    {
+        var repartiteur = System.Windows.Application.Current?.Dispatcher;
+        if (repartiteur is null)
+            services.Impressions.Informer(message);
+        else
+            repartiteur.BeginInvoke(() => services.Impressions.Informer(message));
+    }
+
     /// <summary>Le verdict du minilab, en français, pour le journal.</summary>
     private static string Verdict(De100JobOutcome issue) => issue switch
     {
@@ -736,6 +813,9 @@ public sealed class AppServices
             // le nouvel orchestrateur repart nu : sans ce report, les planches perdraient
             // leur bande dès qu'on touche au catalogue
             Marque = Marque,
+            // idem pour l'avertissement : un orchestrateur muet laisserait partir un
+            // tirage sur le mauvais rouleau sans que personne n'en sache rien
+            Avertir = message => AvertirLOperateur(this, message),
         };
 
         // la file tient l'ancien orchestrateur : la laisser en place ferait imprimer sur

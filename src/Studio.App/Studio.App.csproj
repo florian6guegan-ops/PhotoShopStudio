@@ -37,6 +37,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Le suivi d'impression avance par des méthodes internes, appelées par
+         l'orchestrateur et par les callbacks du minilab. C'est pourtant lui qui décide de
+         ce que l'opérateur lit pendant qu'une commande sort, et il n'avait aucun essai :
+         le compte a reculé pendant des semaines sans que rien ne le signale. Même
+         mécanique que Studio.Imaging, Studio.Printing et Studio.Store. -->
+    <InternalsVisibleTo Include="Studio.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Studio.Core\Studio.Core.csproj" />
     <ProjectReference Include="..\Studio.Imaging\Studio.Imaging.csproj" />
     <ProjectReference Include="..\Studio.Printing\Studio.Printing.csproj" />

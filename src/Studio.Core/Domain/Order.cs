@@ -110,15 +110,59 @@ public sealed class ImageAdjustments
     /// </summary>
     public bool RedEye { get; set; }
 
+    /// <summary>
+    /// Corrections réservées au SUJET détouré, qui épargnent le fond. Jamais nulle : une
+    /// bascule éteinte ne coûte rien, et un null obligerait chaque lecteur à s'en méfier.
+    ///
+    /// Absente des commandes enregistrées avant qu'elle n'existe : la désérialisation
+    /// laisse alors l'objet neuf construit ici, donc éteint, et ces commandes se retirent
+    /// exactement comme avant.
+    /// </summary>
+    public CorrectionsSujet Sujet { get; set; } = new();
+
+    /// <summary>
+    /// De quelle photo il s'agit, pour que le détourage reconnaisse une image déjà vue.
+    ///
+    /// <b>Pourquoi ce champ existe.</b> Le masque du sujet est mémorisé, et sa clé était
+    /// l'empreinte des pixels — sûre, mais elle coûte 176 ms sur une vignette d'aperçu
+    /// (mesuré le 11/08/2026), soit plus que la correction elle-même. Or l'écran SAIT de
+    /// quelle photo il parle : il n'a pas à la faire reconnaître à l'aveugle.
+    ///
+    /// Laissée nulle, on retombe sur l'empreinte des pixels : le tirage traverse des images
+    /// qu'aucun écran n'a nommées, et il vaut mieux payer que se tromper de masque. Toute
+    /// valeur posée ici doit changer dès que les PIXELS changent — un fond blanc posé, un
+    /// redressement — sans quoi c'est l'ancien masque qui ressortirait.
+    ///
+    /// Hors des données enregistrées : elle ne décrit pas la commande, seulement le chemin
+    /// par lequel l'écran y est arrivé.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? CleDeLaPhoto { get; set; }
+
     public bool IsNeutral =>
         !Grayscale && !WhiteBackground && !GrayBackground &&
         !AutoLevels && !AutoContrast && !AutoColor && !RedEye &&
         Exposure == 0 && Brightness == 0 && Contrast == 0 &&
         Highlights == 0 && Shadows == 0 && Whites == 0 && Blacks == 0 &&
         Temperature == 0 && Tint == 0 && Saturation == 0 && Vibrance == 0 &&
-        Clarity == 0 && Sharpness == 0;
+        Clarity == 0 && Sharpness == 0 &&
+        Sujet.IsNeutral;
 
-    public ImageAdjustments Clone() => (ImageAdjustments)MemberwiseClone();
+    /// <summary>
+    /// Copie indépendante, <b>sujet compris</b>.
+    ///
+    /// <c>MemberwiseClone</c> est une copie de SURFACE : sans la ligne qui suit, l'original
+    /// et sa copie partageraient le même objet <see cref="Sujet"/>, et bouger un curseur du
+    /// panneau « sujet » sur l'un le bougerait sur l'autre. C'est exactement ce que
+    /// l'aperçu fait à chaque frappe — il clone les réglages pour les passer à un fil de
+    /// fond — et le défaut serait passé pour un scintillement.
+    /// </summary>
+    public ImageAdjustments Clone()
+    {
+        var copie = (ImageAdjustments)MemberwiseClone();
+        copie.Sujet = Sujet.Clone();
+        return copie;
+    }
 }
 
 /// <summary>Une photo dans une ligne de commande, avec son recadrage et ses réglages.</summary>
@@ -186,6 +230,24 @@ public sealed class OrderLine
     /// <summary>Vrai quand la ligne est une planche à taille choisie.</summary>
     public bool IsCustomSheet => CustomCellWidthMm is > 0 && CustomCellHeightMm is > 0;
 
+    /// <summary>
+    /// Montage des agrandissements : code de la FEUILLE sur laquelle composer les tirages,
+    /// ou null pour un fichier par tirage — le comportement d'avant.
+    ///
+    /// <b>Ce n'est pas une planche personnalisée, et la différence est le PRIX.</b> Une
+    /// planche personnalisée est facturée au papier (voir <see cref="IsCustomSheet"/>) ;
+    /// un montage ne change que le RENDU. Deux 24×30 montés sur un 40×60 restent deux
+    /// 24×30 au ticket — l'économie de papier est celle de la boutique, elle ne se voit
+    /// pas du client. Décision de l'exploitant, 12/08/2026.
+    ///
+    /// C'est pourquoi ce champ vit à côté de <see cref="CustomCellWidthMm"/> et non dedans :
+    /// les deux mécaniques partagent la géométrie, jamais la politique de prix.
+    /// </summary>
+    public string? MontageSheetCode { get; set; }
+
+    /// <summary>Vrai quand les tirages de la ligne sont composés sur une feuille.</summary>
+    public bool IsMontage => !string.IsNullOrWhiteSpace(MontageSheetCode);
+
     /// <summary>Nombre de cases demandées, planches personnalisées comprises.</summary>
     public int TotalPrints => Items.Sum(i => i.Quantity);
 
@@ -197,6 +259,10 @@ public sealed class OrderLine
     /// posé dans <see cref="SheetCount"/> au moment où le logiciel choisit le papier — il ne
     /// se recalcule pas ici, sous peine de changer le prix d'une commande déjà encaissée si
     /// le catalogue bouge.
+    ///
+    /// ⚠ <see cref="MontageSheetCode"/> n'entre PAS dans ce calcul, et c'est voulu : monter
+    /// deux 24×30 sur une même feuille ne change pas ce que le client paie. Y toucher
+    /// reviendrait à facturer le papier, ce que l'exploitant a explicitement refusé.
     /// </summary>
     public decimal Total => UnitPrice * (IsCustomSheet ? Math.Max(1, SheetCount) : TotalPrints);
 

@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Studio.Core.Domain;
 
 namespace Studio.Store.DiLand;
 
@@ -92,13 +93,23 @@ public sealed record DiLandOrderPhoto(
 /// <param name="Oid">Identifiant interne DiLand.</param>
 /// <param name="ProductName">Nom du produit, par exemple « 10x15 ».</param>
 /// <param name="Price">Prix de la ligne tel que la borne l'a calculé.</param>
+/// <param name="Finish">
+/// Finition que le client a choisie à la borne (voir <see cref="FinitionPapier"/>) ;
+/// null quand il n'en a pas demandé, ou qu'on n'a pas su lire le code.
+///
+/// C'était la seule part du choix client que Studio ne reprenait pas : la commande
+/// arrivait sans finition, et le tirage partait sur la machine dont le rouleau avait la
+/// bonne LARGEUR — un lustré sortait en brillant sans un mot.
+/// </param>
 /// <param name="Photos">Photos de la ligne, dans l'ordre où la borne les a envoyées.</param>
 public sealed record DiLandOrderLine(
     long Oid,
     string ProductName,
     decimal Price,
+    string? Finish,
     IReadOnlyList<DiLandOrderPhoto> Photos)
 {
+
     /// <summary>
     /// Nombre de tirages de la ligne : c'est la somme des quantités, pas le nombre de
     /// photos. Un client qui demande deux exemplaires d'une photo compte pour deux.
@@ -330,13 +341,21 @@ public sealed class DiLandRepository
 
         using var connexion = OpenSnapshot();
 
-        var lignes = new List<(long Oid, string Produit, decimal Prix)>();
+        var lignes = new List<(long Oid, string Produit, decimal Prix, int Papier)>();
+
+        // PaperType porte la FINITION choisie à la borne. La colonne est lue SI ELLE
+        // EXISTE : c'est une colonne de DiLand, pas de nous, et le schéma change d'une
+        // version à l'autre. La nommer sans précaution ferait échouer la requête entière
+        // sur une installation qui ne l'a pas — et un magasin ne verrait plus AUCUNE
+        // commande de borne, pour une finition qu'il ne réclame peut-être même pas.
+        var papier = ColonneExiste(connexion, "OrderLine", "PaperType");
 
         using (var commande = connexion.CreateCommand())
         {
             // le nom du produit vit dans une autre table ; sans lui la ligne ne dit rien
-            commande.CommandText = """
-                SELECT l.Oid, COALESCE(p.Name, l.Description, ''), COALESCE(l.Price, 0)
+            commande.CommandText = $"""
+                SELECT l.Oid, COALESCE(p.Name, l.Description, ''), COALESCE(l.Price, 0),
+                       {(papier ? "COALESCE(l.PaperType, 0)" : "0")}
                 FROM OrderLine l
                 LEFT JOIN Product p ON p.Oid = l.Product
                 WHERE l."Order" = $commande AND l.GCRecord IS NULL
@@ -346,11 +365,14 @@ public sealed class DiLandRepository
 
             using var lecteur = commande.ExecuteReader();
             while (lecteur.Read())
-                lignes.Add((lecteur.GetInt64(0), lecteur.GetString(1), lecteur.GetDecimal(2)));
+                lignes.Add((lecteur.GetInt64(0), lecteur.GetString(1), lecteur.GetDecimal(2),
+                    lecteur.GetInt32(3)));
         }
 
         return lignes
-            .Select(l => new DiLandOrderLine(l.Oid, l.Produit, l.Prix, ReadPhotos(connexion, l.Oid)))
+            .Select(l => new DiLandOrderLine(
+                l.Oid, l.Produit, l.Prix, FinitionPapier.DepuisDiLand(l.Papier),
+                ReadPhotos(connexion, l.Oid)))
             .ToList();
     }
 
@@ -498,6 +520,33 @@ public sealed class DiLandRepository
                 .Select(i => lecteur.IsDBNull(i) ? "" : lecteur.GetValue(i).ToString() ?? "")]);
 
         return lignes;
+    }
+
+    /// <summary>
+    /// Vrai si cette table porte cette colonne, dans CETTE installation de DiLand.
+    ///
+    /// Studio lit une base qu'il n'a pas écrite et dont il ne maîtrise pas la version :
+    /// la boutique tourne sous DiLand Studio 2, un autre magasin sous la 3 ou la 4, et
+    /// les colonnes ne sont pas les mêmes d'une version à l'autre. Tout ce qui n'est pas
+    /// indispensable à lire une commande se demande donc ainsi, pour qu'une colonne
+    /// absente coûte une information et non la commande entière.
+    ///
+    /// La question est posée à chaque appel : elle tient dans une lecture de schéma déjà
+    /// en mémoire, et la mettre en cache obligerait à l'invalider à chaque copie de base.
+    /// </summary>
+    private static bool ColonneExiste(SqliteConnection connexion, string table, string colonne)
+    {
+        using var commande = connexion.CreateCommand();
+        commande.CommandText = $"PRAGMA table_info({table})";
+
+        using var lecteur = commande.ExecuteReader();
+        while (lecteur.Read())
+        {
+            if (string.Equals(lecteur.GetString(1), colonne, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private SqliteConnection OpenSnapshot()

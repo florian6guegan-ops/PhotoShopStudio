@@ -87,10 +87,24 @@ internal static class De100Interop
     [DllImport(Dll, CharSet = CharSet.Unicode)]
     internal static extern int PIF_ExpressOrder(StringBuilder orderHandle);
 
-    [DllImport(Dll)]
+    /// <summary>
+    /// ⚠ <b>CharSet.Unicode est OBLIGATOIRE</b>, comme pour toute fonction qui reçoit un
+    /// handle de commande — <c>PIF_CancelOrder</c> et <c>PIF_ExpressOrder</c> l'ont depuis
+    /// toujours. Il manquait ici, et le défaut de .NET est l'ANSI : le handle partait en
+    /// octets simples là où le SDK attend de l'UTF-16, et il ne retrouvait donc JAMAIS la
+    /// commande.
+    ///
+    /// Ce que ça coûtait : <c>OrderProgress</c> rendait toujours <c>null</c>, l'avancement
+    /// retombait sur les verdicts — qui n'arrivent qu'à la fin, tous ensemble — et la barre
+    /// restait à zéro d'un bout à l'autre de la commande. Constaté sur les trois boutiques
+    /// le 12/08/2026 : six commandes minilab, six relevés muets, alors que la veille les
+    /// sept commandes du même poste avançaient normalement avec l'ancien compteur global.
+    /// </summary>
+    [DllImport(Dll, CharSet = CharSet.Unicode)]
     internal static extern int PIF_GetOrderInfo(StringBuilder orderHandle, ref ST_ORDER_INFO orderInfo);
 
-    [DllImport(Dll)]
+    /// <summary>Même exigence d'encodage que <see cref="PIF_GetOrderInfo"/>.</summary>
+    [DllImport(Dll, CharSet = CharSet.Unicode)]
     internal static extern int PIF_GetPrintInfo(StringBuilder orderHandle, uint index, ref ST_PRINT_INFO printInfo);
 
     [DllImport(Dll)]
