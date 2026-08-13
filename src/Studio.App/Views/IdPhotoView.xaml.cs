@@ -606,6 +606,18 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         var reglages = _corrections.Clone();
         reglages.Grayscale = GrayscaleCheck.IsChecked == true;
         reglages.WhiteBackground = WhiteBackgroundCheck.IsChecked == true;
+
+        // ⚠ LE FOND GRIS MANQUAIT ICI, et lui seul. Sa jumelle ReglagesDe() le posait
+        // bien, donc la PLANCHE sortait détourée pendant que le COURRIEL partait avec le
+        // fond du studio — sans rien d'anormal à l'écran ni au journal. Le fond gris est
+        // arrivé après le blanc (commit d438034) et n'a été branché que sur le chemin du
+        // récapitulatif. Signalé depuis la boutique le 13/08/2026.
+        //
+        // Les deux méthodes doivent porter les MÊMES trois lignes : l'une lit l'écran,
+        // l'autre une photo du lot, mais elles décrivent le même résultat. Toute case
+        // ajoutée à cet écran est à poser des deux côtés — voir ReglagesDe().
+        reglages.GrayBackground = GrayBackgroundCheck.IsChecked == true;
+
         return reglages;
     }
 
