@@ -8,6 +8,11 @@ namespace Studio.Tests;
 /// photo. La DS620 sort plus sombre que le minilab sur le même fichier ; signalé par
 /// l'exploitant le 04/08/2026 sur les photos d'identité et les E-Photo.
 /// </summary>
+/// <remarks>
+/// Dans la collection : un de ces essais demande un fond blanc, qui écrit maintenant dans
+/// la mémoire des masques — voir <see cref="FondIdentiteTests"/>.
+/// </remarks>
+[Collection(DetourageStatiqueCollection.Nom)]
 public class PrintExposureTests
 {
     private static Product Produit(double exposition) => new()

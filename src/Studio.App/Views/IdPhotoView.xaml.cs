@@ -618,7 +618,48 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // ajoutée à cet écran est à poser des deux côtés — voir ReglagesDe().
         reglages.GrayBackground = GrayBackgroundCheck.IsChecked == true;
 
+        // Nomme la photo pour que le détourage se retrouve d'un écran à l'autre. Sans
+        // elle, le récapitulatif, l'impression et le courriel repayaient chacun un passage
+        // complet du réseau sur la même photo — voir CleDuFichier.
+        reglages.CleDeLaPhoto = CleDuFichier(_current?.Path);
+
         return reglages;
+    }
+
+    /// <summary>
+    /// Un nom stable pour les pixels d'un fichier, qui sert de clé au cache des masques de
+    /// détourage (voir <see cref="MasqueSujet.Nu"/>).
+    ///
+    /// <b>Le chemin ne suffit pas.</b> Une photo reprise à la borne, ou un fichier réécrit
+    /// sous le même nom, rendrait un masque qui n'est plus le sien — et le sujet sortirait
+    /// découpé sur la silhouette de quelqu'un d'autre. La taille et la date de dernière
+    /// écriture referment ce trou pour le prix d'un appel système.
+    ///
+    /// Volontairement DIFFÉRENTE de la clé de l'aperçu (<c>{chemin}#{_departNumero}</c>),
+    /// qui nomme les pixels réduits d'un aperçu précis. Celle-ci nomme le FICHIER, et c'est
+    /// ce qui permet au récapitulatif, à l'impression et au courriel de se partager un seul
+    /// détourage.
+    ///
+    /// Null si le fichier est illisible : on retombe alors sur l'empreinte des pixels, plus
+    /// lente mais toujours juste.
+    /// </summary>
+    private static string? CleDuFichier(string? chemin)
+    {
+        if (string.IsNullOrWhiteSpace(chemin)) return null;
+
+        try
+        {
+            var fichier = new FileInfo(chemin);
+            if (!fichier.Exists) return null;
+
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"{fichier.FullName}|{fichier.Length}|{fichier.LastWriteTimeUtc.Ticks}");
+        }
+        catch (Exception)
+        {
+            // chemin trop long, disque retiré, droits : l'empreinte des pixels prendra le relais
+            return null;
+        }
     }
 
     /// <summary>
@@ -2088,6 +2129,11 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         reglages.Grayscale = photo.NoirEtBlanc;
         reglages.WhiteBackground = photo.FondBlanc;
         reglages.GrayBackground = photo.FondGris;
+
+        // même clé que sa jumelle : c'est elle qui fait que la planche, l'impression et le
+        // courriel se partagent UN détourage au lieu d'en payer un chacun
+        reglages.CleDeLaPhoto = CleDuFichier(photo.Path);
+
         return reglages;
     }
 

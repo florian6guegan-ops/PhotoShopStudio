@@ -185,10 +185,8 @@ public static class MasqueSujet
                 return (MagickImage)pret.Clone();
             }
 
-        var brut = Brut(image, empreinte);
-        if (brut is null) return null;
-
-        var masque = new MagickImage(brut);
+        var masque = MasqueALaTaille(image, empreinte);
+        if (masque is null) return null;
 
         try
         {
@@ -249,37 +247,76 @@ public static class MasqueSujet
         cle ?? $"{image.Signature}|{image.Width}x{image.Height}";
 
     /// <summary>
-    /// Le masque mémorisé, remis à la taille de l'image si besoin.
-    ///
-    /// C'est ici que se paie le fait d'avoir sorti la taille de la clé. Le prix est un
-    /// <c>Resize</c> sur une image d'un canal — quelques millisecondes — contre un passage
-    /// de réseau de neurones. Le masque est un dégradé d'opacité : il se redimensionne sans
-    /// dommage, c'est même ce que fait déjà <c>EnMasque</c> en sortie de réseau.
-    /// </summary>
-    private static byte[] ALaTailleDe(byte[] octets, MagickImage image)
-    {
-        using var masque = new MagickImage(octets);
-        if (masque.Width == image.Width && masque.Height == image.Height) return octets;
-
-        masque.Resize(new MagickGeometry(image.Width, image.Height) { IgnoreAspectRatio = true });
-        return masque.ToByteArray(MagickFormat.Png);
-    }
-
-    /// <summary>
     /// Le masque nu rendu par le réseau, mémorisé. Les octets d'un PNG plutôt que l'image :
     /// une <see cref="MagickImage"/> gardée dans un dictionnaire serait à la merci du
     /// premier appelant qui la libère.
     /// </summary>
+    /// <summary>
+    /// Le masque du sujet TEL QUEL, sans contour élargi ni bord adouci — mais MÉMORISÉ.
+    ///
+    /// <b>C'est ce qui manquait au fond.</b> <c>BackgroundRemoval.PoserUnFond</c> appelait
+    /// le découpage en direct, hors de toute mémoire : chaque rendu qui pose un fond blanc
+    /// ou gris repayait un passage complet du réseau. L'aperçu du cadrage, le récapitulatif
+    /// de la planche, l'impression et le courriel faisaient donc QUATRE détourages de la
+    /// même photo, et un lot de quatre poses en faisait seize.
+    ///
+    /// La correction du 12/08/2026 — sortir la taille de la clé — n'avait réglé que la
+    /// correction du SUJET, seule à passer par <see cref="Calculer"/>. Le fond, lui, est
+    /// resté au plein tarif jusqu'au 13/08/2026.
+    ///
+    /// Rendu NU et non retouché, pour que le résultat soit au pixel près celui d'avant :
+    /// <see cref="Calculer"/> ajoute toujours un fondu d'au moins un demi-pixel, ce qui
+    /// aurait changé tous les fonds déjà tirés.
+    /// </summary>
+    /// <param name="cle">
+    /// De quelle photo il s'agit. Null pour laisser l'empreinte des pixels s'en charger —
+    /// sûr, mais elle relit toute l'image (176 ms) et distingue les tailles entre elles,
+    /// donc l'aperçu et la planche ne se partageraient rien.
+    /// </param>
+    public static MagickImage? Nu(MagickImage image, string? cle = null)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        return MasqueALaTaille(image, Empreinte(image, cle));
+    }
+
+    /// <summary>
+    /// Le masque mémorisé, décodé UNE fois et remis à la taille de l'image.
+    ///
+    /// <b>L'aller-retour PNG coûtait plus cher que le redimensionnement.</b> La mémoire
+    /// range des octets PNG ; les rendre à la bonne taille demandait de les décoder, de
+    /// redimensionner, de RÉENCODER en PNG — puis l'appelant décodait une troisième fois.
+    /// Sur un masque de 1800 × 2400, ces deux encodages de trop pesaient l'essentiel du
+    /// temps d'une reprise en mémoire : 1,85 s mesurées le 13/08/2026, là où le seul
+    /// redimensionnement se compte en dizaines de millisecondes.
+    /// </summary>
+    private static MagickImage? MasqueALaTaille(MagickImage image, string empreinte)
+    {
+        var octets = Brut(image, empreinte);
+        if (octets is null) return null;
+
+        var masque = new MagickImage(octets);
+        if (masque.Width != image.Width || masque.Height != image.Height)
+            masque.Resize(new MagickGeometry(image.Width, image.Height) { IgnoreAspectRatio = true });
+
+        return masque;
+    }
+
+    /// <summary>
+    /// Les octets du masque, tels qu'ils ont été rangés — À LA TAILLE OÙ ILS ONT ÉTÉ
+    /// CALCULÉS, et non à celle de l'image demandée. C'est à l'appelant de les remettre à
+    /// l'échelle, ce que fait <see cref="MasqueALaTaille"/> sans repasser par un PNG.
+    /// </summary>
     private static byte[]? Brut(MagickImage image, string empreinte)
     {
-        if (Deja(empreinte) is { } connu) return ALaTailleDe(connu, image);
+        if (Deja(empreinte) is { } connu) return connu;
 
         // Un seul calcul à la fois — et on redemande la mémoire une fois le tour venu :
         // pendant l'attente, celui qui passait devant a très probablement rangé LE masque
         // qu'on s'apprêtait à recalculer.
         lock (VerrouCalcul)
         {
-            if (Deja(empreinte) is { } entretemps) return ALaTailleDe(entretemps, image);
+            if (Deja(empreinte) is { } entretemps) return entretemps;
 
             // Le réseau d'abord quand il est allumé, la méthode par couleur ensuite —
             // le même ordre que pour poser un fond, et pour la même raison : la seconde

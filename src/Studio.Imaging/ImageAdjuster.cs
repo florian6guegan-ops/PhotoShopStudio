@@ -60,7 +60,10 @@ public static class ImageAdjuster
         if ((a.GrayBackground || a.WhiteBackground) && image is MagickImage photo)
             BackgroundRemoval.PoserUnFond(
                 photo,
-                a.GrayBackground ? BackgroundRemoval.GrisIdentite : MagickColors.White);
+                a.GrayBackground ? BackgroundRemoval.GrisIdentite : MagickColors.White,
+                // la MÊME clé que la correction du sujet ci-dessus : les deux veulent le
+                // même découpage, et sans elle le fond repayait le réseau à chaque rendu
+                a.CleDeLaPhoto);
 
         // Les yeux rouges AVANT le noir et blanc, et avant tout réglage de couleur : la
         // correction reconnaît une pupille au ROUGE qui y domine, et une image désaturée ou

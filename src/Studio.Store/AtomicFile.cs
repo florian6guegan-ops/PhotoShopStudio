@@ -41,7 +41,13 @@ public static class AtomicFile
     /// c'est précisément ce qui produisait le mirage, puisque pendant l'échange il rend faux
     /// lui aussi. Le seul test fiable est d'essayer d'ouvrir.
     /// </summary>
-    private const int EssaisAbsence = 3;
+    private const int EssaisAbsence = 6;
+
+    /// <summary>
+    /// Combien des <see cref="EssaisAbsence"/> se contentent de céder la main, avant que les
+    /// suivants ne dorment cinq millisecondes. Voir <see cref="ReadAllTextOrNull"/>.
+    /// </summary>
+    private const int EssaisSansAttendre = 3;
 
     /// <summary>
     /// Écrit le fichier d'un bloc.
@@ -73,6 +79,15 @@ public static class AtomicFile
         {
             try
             {
+                // ⚠ NE PAS remplacer par File.Move(tmp, path, overwrite: true). C'est
+                // tentant — MoveFileEx ne détache pas le nom de la cible, et supprimerait
+                // donc le « mirage » d'absence que ReadAllTextOrNull doit rattraper. Essayé
+                // le 13/08/2026, et c'est PIRE : nos lecteurs ouvrent avec FileShare.Delete,
+                // ce qui met la cible en « suppression différée » et rend son nom
+                // inutilisable tant qu'un lecteur la tient. Sous charge, 450 écritures
+                // ratées sur 750 tentatives, contre AUCUNE avec ReplaceFile — et une
+                // écriture ratée perd l'état d'une commande, là où un mirage ne coûte
+                // qu'une relecture.
                 if (File.Exists(path))
                     File.Replace(tmp, path, destinationBackupFileName: null, ignoreMetadataErrors: true);
                 else
@@ -106,6 +121,29 @@ public static class AtomicFile
     /// </summary>
     public static string? ReadAllTextOrNull(string path)
     {
+        // LE CAS COURANT D'ABORD, ET SANS EXCEPTION : un fichier qui n'a jamais existé.
+        // C'est celui de ResumePoint et SpoolState, sur le chemin d'impression, qui
+        // interrogent des fichiers pas encore écrits. Sans ce raccourci, ils paient les
+        // sept exceptions et les trois pauses de la reprise ci-dessous — 47 ms par appel
+        // mesurés le 13/08/2026, contre quelques microsecondes ici.
+        //
+        // ⚠ LE .tmp EST LA CONDITION, et il n'est pas décoratif. Tester la seule absence de
+        // la cible ramenait le mirage en force — 5 % des lectures sous charge, mesuré le
+        // 13/08/2026 : pendant l'échange, `File.Exists` rend faux pour la cible AUSSI, et
+        // le raccourci concluait « absent » alors qu'une écriture était en cours.
+        //
+        // Le .tmp, lui, n'existe QUE pendant qu'on écrit : sa présence dit « repasse par la
+        // reprise patiente », son absence dit « ce fichier n'existe vraiment pas ».
+        if (!File.Exists(path) && !File.Exists(path + ".tmp"))
+        {
+            // Un dernier regard après avoir cédé la main. Il reste une fenêtre étroite où
+            // le .tmp vient d'être consommé et où la cible n'est pas encore reparue : les
+            // deux tests ci-dessus y répondent faux alors que le fichier existe bel et
+            // bien. Un `Yield` coûte quelques microsecondes et divise ce reliquat.
+            Thread.Yield();
+            if (!File.Exists(path)) return null;
+        }
+
         var conflits = 0;
         var absences = 0;
 
@@ -143,7 +181,18 @@ public static class AtomicFile
             catch (FileNotFoundException)
             {
                 if (++absences > EssaisAbsence) return null;
-                Thread.Yield();
+
+                // Les premiers essais CÈDENT LA MAIN sans dormir : la fenêtre se compte en
+                // microsecondes sur une machine au repos, et un fichier vraiment absent —
+                // le cas courant de ResumePoint et SpoolState — ne doit rien payer.
+                //
+                // Les suivants dorment, parce que sur une machine CHARGÉE l'échange ne
+                // reprend pas la main en trois cycles : mesuré sur la suite d'essais
+                // complète, où huit fils tournent de front, un `Yield` seul laissait encore
+                // passer des mirages. Cinq millisecondes suffisent, et seul un fichier
+                // absent de peu les paie.
+                if (absences <= EssaisSansAttendre) Thread.Yield();
+                else Thread.Sleep(5);
             }
             // Conflit de partage : là il faut vraiment laisser passer l'autre.
             catch (IOException)

@@ -11,6 +11,13 @@ namespace Studio.Tests;
 /// couleur claire », et le blanc franc y est mal vu : une chemise blanche, des cheveux
 /// blancs ou une peau très claire s'y fondent, et la silhouette cesse de se détacher.
 /// </summary>
+/// <remarks>
+/// Dans la collection depuis le 13/08/2026 : poser un fond passe désormais par la mémoire
+/// des masques de <c>MasqueSujet</c>, qui n'en garde que quatre. Menés de front avec
+/// <see cref="MasqueReutiliseTests"/>, ces essais évinçaient les masques qu'il venait
+/// justement de ranger — et il tombait une fois sur deux, sans rien avoir de faux.
+/// </remarks>
+[Collection(DetourageStatiqueCollection.Nom)]
 public class FondIdentiteTests
 {
     /// <summary>Une image dont le pourtour est un fond de studio et le centre un « sujet ».</summary>

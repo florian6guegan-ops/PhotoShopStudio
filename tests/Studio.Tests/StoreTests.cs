@@ -85,22 +85,31 @@ public class StoreTests : IDisposable
     /// millisecondes — l'échange de <c>File.Replace</c> se croise vite quand les deux
     /// tournent en boucle.
     /// </summary>
+    /// <summary>
+    /// <b>Compté en ÉCRITURES, pas en secondes.</b> La première version tournait pendant une
+    /// seconde et exigeait plus de cent lectures pour se déclarer concluante : elle passait
+    /// seule et tombait dans la suite complète, où les autres essais lui prenaient le
+    /// processeur. Un essai qui dépend du temps CPU disponible ne mesure pas ce qu'il croit.
+    ///
+    /// Deux cents échanges réels traversent la fenêtre de <c>File.Replace</c> autant de fois
+    /// qu'il faut, que la machine soit chargée ou non.
+    /// </summary>
     [Fact]
     public async Task AtomicRead_PendantUnEchange_NeLevePas()
     {
+        const int echanges = 200;
+
         var path = Path.Combine(_root, "order.json");
         AtomicFile.WriteAllText(path, "{\"v\":0}");
 
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         var ecrivain = Task.Run(() =>
         {
-            var v = 0;
-            while (!stop.IsCancellationRequested)
-                AtomicFile.WriteAllText(path, $"{{\"v\":{++v}}}");
+            for (var v = 1; v <= echanges; v++)
+                AtomicFile.WriteAllText(path, $"{{\"v\":{v}}}");
         });
 
         var lectures = 0;
-        while (!stop.IsCancellationRequested)
+        while (!ecrivain.IsCompleted)
         {
             // jamais null, jamais tronqué : l'une ou l'autre des deux versions, entière
             var lu = AtomicFile.ReadAllTextOrNull(path);
@@ -110,8 +119,8 @@ public class StoreTests : IDisposable
             lectures++;
         }
 
-        await ecrivain;
-        Assert.True(lectures > 100, $"trop peu de lectures pour conclure : {lectures}");
+        await ecrivain;   // relève une écriture qui aurait échoué : c'est l'autre sens de la course
+        Assert.True(lectures > 0, "aucune lecture n'a eu lieu pendant les écritures");
     }
 
     /// <summary>

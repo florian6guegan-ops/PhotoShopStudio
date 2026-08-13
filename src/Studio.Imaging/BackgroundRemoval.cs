@@ -158,13 +158,27 @@ public static class BackgroundRemoval
     /// </summary>
     /// <param name="image">Image à traiter, déjà redressée (EXIF appliqué).</param>
     /// <param name="fond">Couleur à poser derrière le sujet.</param>
+    /// <param name="cle">
+    /// De quelle photo il s'agit, quand l'appelant le sait — voir <see cref="MasqueSujet.Nu"/>.
+    ///
+    /// <b>Sans elle, le fond repayait le réseau à CHAQUE rendu.</b> Ce découpage partait en
+    /// direct, hors de toute mémoire : l'aperçu, le récapitulatif, l'impression et le
+    /// courriel détouraient la même photo chacun de leur côté. Avec la clé, le premier
+    /// paie et les suivants reprennent son masque, remis à l'échelle en quelques
+    /// millisecondes — BiRefNet travaille de toute façon sur une entrée figée à 1024×1024,
+    /// le second passage n'apportait donc rien.
+    ///
+    /// Null retombe sur l'empreinte des pixels : sûr, mais elle distingue les tailles, donc
+    /// l'aperçu et la planche ne se partagent rien.
+    /// </param>
     /// <returns>Vrai si un fond a été posé.</returns>
-    public static bool PoserUnFond(ImageMagick.MagickImage image, ImageMagick.MagickColor fond)
+    public static bool PoserUnFond(
+        ImageMagick.MagickImage image, ImageMagick.MagickColor fond, string? cle = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(fond);
 
-        var masque = DecouperLeSujet(image);
+        var masque = MasqueSujet.Nu(image, cle);
         if (masque is null) return false;
 
         using (masque)
