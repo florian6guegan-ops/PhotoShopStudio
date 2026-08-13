@@ -46,6 +46,74 @@ public static class CadrageAutomatique
     }
 
     /// <summary>
+    /// Au-delà de cet angle, on ne redresse pas.
+    ///
+    /// Un vrai portrait de comptoir penche de deux ou trois degrés. Dix-huit, c'est déjà
+    /// une pose volontaire — ou une détection qui s'est trompée d'yeux. Redresser d'un tel
+    /// angle oblige la photo à grossir d'autant pour ne pas montrer de coin blanc, et l'on
+    /// perdrait en définition ce qu'on gagnerait en aplomb.
+    /// </summary>
+    public const double RedressementMaximalDegres = 12;
+
+    /// <summary>
+    /// Sous cet angle, on laisse tranquille : c'est du bruit de détection, pas une tête
+    /// penchée, et bouger la photo pour un demi-degré ne se voit pas.
+    /// </summary>
+    private const double RedressementMinimalDegres = 0.6;
+
+    /// <summary>
+    /// De combien redresser la photo pour remettre la LIGNE DES YEUX à l'horizontale.
+    ///
+    /// Rend un angle au format de <c>FineRotationDegrees</c> : positif = sens horaire,
+    /// comme <c>Rotate</c> de Magick et <c>RotateTransform</c> de WPF. Zéro quand il n'y a
+    /// rien à faire — pas deux yeux, angle négligeable, ou angle si grand qu'il ne peut
+    /// plus s'agir d'une tête penchée.
+    ///
+    /// <b>Le rapport de l'image est indispensable au calcul.</b> Les points du détecteur
+    /// sont NORMALISÉS : sur une photo 3:2, un décalage de 0,01 en largeur et 0,01 en
+    /// hauteur ne fait pas 45° mais 33,7°. Prendre l'angle sur les fractions brutes se
+    /// trompe donc d'autant plus que la photo est allongée — et toujours dans le même sens,
+    /// ce qui passerait pour un défaut du détecteur.
+    /// </summary>
+    /// <param name="yeux">Les points rendus par le détecteur, dans le repère du FICHIER.</param>
+    /// <param name="largeurPx">Largeur du fichier orienté.</param>
+    /// <param name="hauteurPx">Hauteur du fichier orienté.</param>
+    /// <param name="quartsDeTour">Quarts de tour posés par l'opérateur.</param>
+    public static double AngleDeRedressement(
+        IReadOnlyList<NormPoint>? yeux, int largeurPx, int hauteurPx, int quartsDeTour)
+    {
+        if (yeux is not { Count: 2 } || largeurPx <= 0 || hauteurPx <= 0) return 0;
+
+        // On raisonne sur la photo TELLE QU'ON LA VOIT : les quarts de tour déplacent les
+        // yeux, et échangent largeur et hauteur quand ils sont impairs.
+        var a = TournerAvecLaPhoto(yeux[0], quartsDeTour);
+        var b = TournerAvecLaPhoto(yeux[1], quartsDeTour);
+
+        var impair = (((quartsDeTour % 4) + 4) % 4) % 2 == 1;
+        var largeur = impair ? hauteurPx : largeurPx;
+        var hauteur = impair ? largeurPx : hauteurPx;
+
+        // de gauche à droite, pour que le signe veuille dire quelque chose
+        var (gauche, droite) = a.X <= b.X ? (a, b) : (b, a);
+
+        var dx = (droite.X - gauche.X) * largeur;
+        var dy = (droite.Y - gauche.Y) * hauteur;
+
+        // Deux yeux qui se superposent ne donnent pas de direction : un visage de profil,
+        // ou une détection qui a rendu deux fois le même point.
+        if (Math.Abs(dx) < 1 && Math.Abs(dy) < 1) return 0;
+
+        // Œil droit plus BAS que le gauche (dy > 0, l'axe Y descend) = tête penchée dans le
+        // sens horaire : on redresse donc dans l'autre sens.
+        var penche = Math.Atan2(dy, dx) * 180 / Math.PI;
+
+        if (Math.Abs(penche) > RedressementMaximalDegres) return 0;
+        if (Math.Abs(penche) < RedressementMinimalDegres) return 0;
+
+        return -penche;
+    }
+
+    /// <summary>
     /// Suit les quarts de tour que l'opérateur a donnés à la photo.
     ///
     /// La détection travaille sur le FICHIER, une fois son EXIF appliqué ; le cadre, lui,

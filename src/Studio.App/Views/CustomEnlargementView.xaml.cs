@@ -186,10 +186,19 @@ public partial class CustomEnlargementView : UserControl
             return;
         }
 
-        Navigator.Go(new SourcePickerView((root, profond) =>
-            Navigator.Go(new PhotoGridView(root, produit.Code, avecSousDossiers: profond),
-                $"{produit.Name} — choisir les photos")),
-            $"{produit.Name} — choisir le support");
+        // MÊME GESTE QU'AU CATALOGUE. Un agrandissement choisi dans la liste passe par le
+        // choix de la feuille (PrintFormatView) ; celui-ci, saisi à la main, ne le faisait
+        // pas — et c'est justement le cas où le montage rapporte le plus, puisqu'un format
+        // libre tombe rarement pile sur une feuille. Signalé depuis la boutique le
+        // 13/08/2026. L'écran ne s'affiche que si un montage est possible, donc un format
+        // qui ne tient pas deux fois garde exactement le parcours d'avant.
+        MontageFeuilleView.Proposer(produit, feuille =>
+            Navigator.Go(new SourcePickerView((root, profond) =>
+                Navigator.Go(
+                    new PhotoGridView(root, produit.Code, avecSousDossiers: profond,
+                        montageFeuille: feuille),
+                    $"{produit.Name} — choisir les photos")),
+                $"{produit.Name} — choisir le support"));
     }
 
     /// <summary>

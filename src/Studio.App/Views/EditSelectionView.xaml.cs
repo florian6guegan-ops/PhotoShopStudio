@@ -137,6 +137,7 @@ internal partial class EditSelectionView : UserControl
         if (!App.Services.Poste.CadrageAutoVisage) return;
 
         var faites = 0;
+        var redressees = 0;
 
         foreach (var photo in _photos.ToList())
         {
@@ -161,6 +162,27 @@ internal partial class EditSelectionView : UserControl
             if (_gesteOperateur || visage is null) continue;
             if (!ACadrerSurLeVisage(photo) || photo.Cadre is not { } cadre) continue;
 
+            // LE REDRESSEMENT D'ABORD, le cadre ensuite : l'angle change le canevas sur
+            // lequel les fractions du cadre se comptent (voir PhotoItem.FineRotationDegrees,
+            // qui reporte l'angle sur FramedCrop). Poser le cadre avant reviendrait à le
+            // poser sur une photo qui n'existe pas encore, et Contraindre le déplacerait
+            // juste après.
+            //
+            // On ne touche PAS à un redressement que l'opérateur a déjà donné : c'est un
+            // geste, et la règle de cet écran est de ne rien reprendre après un geste.
+            if (Math.Abs(photo.FineRotationDegrees) < 0.01)
+            {
+                var (largeur, hauteur) = photo.SourcePixels;
+                var redressement = CadrageAutomatique.AngleDeRedressement(
+                    visage.Eyes, largeur, hauteur, photo.RotationQuarterTurns);
+
+                if (Math.Abs(redressement) > 0.01)
+                {
+                    photo.FineRotationDegrees = Math.Round(redressement, 1);
+                    redressees++;
+                }
+            }
+
             var point = CadrageAutomatique.TournerAvecLaPhoto(
                 CadrageAutomatique.PointAViser(visage.Box, visage.Eyes),
                 photo.RotationQuarterTurns);
@@ -172,7 +194,9 @@ internal partial class EditSelectionView : UserControl
             faites++;
         }
 
-        if (faites > 0) FileLog.Write($"Cadrage automatique : cadre posé sur {faites} visage(s)");
+        if (faites > 0)
+            FileLog.Write($"Cadrage automatique : cadre posé sur {faites} visage(s)" +
+                          (redressees > 0 ? $", dont {redressees} redressé(s) sur la ligne des yeux" : ""));
     }
 
     /// <summary>Cette photo peut-elle recevoir le cadrage automatique ? Voir ci-dessus.</summary>

@@ -227,6 +227,17 @@ public sealed class OrderLine
     /// <summary>Hauteur de la case ; voir <see cref="CustomCellWidthMm"/>.</summary>
     public double? CustomCellHeightMm { get; set; }
 
+    /// <summary>
+    /// Marge blanche à l'intérieur de CHAQUE case, en millimètres — la famille « cadre
+    /// blanc » en taille libre. Null ou zéro = la photo remplit sa case, le comportement
+    /// d'origine.
+    ///
+    /// Elle vit sur la LIGNE et non sur le produit parce que le produit désigne ici le
+    /// PAPIER de la planche : lui poser une marge la mettrait autour de la feuille entière
+    /// au lieu de chaque tirage.
+    /// </summary>
+    public double? CustomCellBorderMm { get; set; }
+
     /// <summary>Vrai quand la ligne est une planche à taille choisie.</summary>
     public bool IsCustomSheet => CustomCellWidthMm is > 0 && CustomCellHeightMm is > 0;
 

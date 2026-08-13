@@ -585,9 +585,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             return;
         }
 
+        // revenirEnArriere : l'envoi ne doit pas emporter la photo en cours — l'opérateur
+        // enchaîne souvent sur la planche pour le même client. Voir MailSendView.
         Navigator.Go(
             new MailSendView([new MailSendView.PhotoAEnvoyer(
-                _current.Path, _crop, 0, _redressement, ReglagesRetenus())]),
+                    _current.Path, _crop, 0, _redressement, ReglagesRetenus())],
+                revenirEnArriere: true),
             "Envoyer les photos par courriel");
     }
 
@@ -1374,8 +1377,17 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// le démarrage — les ordres de grandeur relevés sur la Quadro P2000 de l'atelier le
     /// 03/08/2026, qui valent mieux que rien.
     /// </summary>
+    /// <summary>
+    /// Combien de temps le prochain détourage va durer, au mieux de ce qu'on en sait.
+    ///
+    /// <b>La MÉDIANE des dernières mesures, et non la dernière.</b> Celle-ci suffisait à
+    /// faire mentir la barre en permanence : le premier détourage d'une séance paie le
+    /// chargement du réseau et dure le double, un aperçu de cadrage est plus court qu'une
+    /// planche, et l'estimation suivante héritait de cette mesure-là. Voir
+    /// <see cref="MasqueSujet.DureeTypique"/>.
+    /// </summary>
     private static TimeSpan EstimationDuDetourage() =>
-        MasqueSujet.DerniereDuree ??
+        MasqueSujet.DureeTypique ??
         (BiRefNetMatting.Actif && BiRefNetMatting.EstInstalle
             ? TimeSpan.FromSeconds(4.3)
             : TimeSpan.FromSeconds(1.2));
@@ -1412,6 +1424,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private void MettreLAttenteAJour()
     {
         var ecoule = _attenteChrono.Elapsed;
+
+        // L'ESTIMATION S'ALLONGE QUAND ELLE EST DÉPASSÉE, au lieu de rester fausse. Une
+        // photo plus lourde que les précédentes fait déborder n'importe quelle médiane ;
+        // sans ce rattrapage, la barre restait collée à 0,97 et le texte annonçait
+        // « plus long que prévu » pendant des secondes, ce qui n'apprend rien à personne.
+        if (ecoule > _attenteEstimee)
+            _attenteEstimee = TimeSpan.FromSeconds(ecoule.TotalSeconds * 1.25);
+
         var estime = _attenteEstimee.TotalSeconds <= 0 ? 1 : _attenteEstimee.TotalSeconds;
 
         // Jamais tout à fait au bout tant que ce n'est pas fini : une barre pleine devant un
@@ -1420,9 +1440,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         var reste = _attenteEstimee - ecoule;
 
-        AttenteTexte.Text = reste > TimeSpan.Zero
-            ? $"{_attenteQuoi}… encore {Math.Max(1, Math.Ceiling(reste.TotalSeconds)):0} s"
-            : $"{_attenteQuoi}… un peu plus long que prévu sur cette photo.";
+        AttenteTexte.Text =
+            $"{_attenteQuoi}… encore {Math.Max(1, Math.Ceiling(reste.TotalSeconds)):0} s";
     }
 
     /// <summary>Range la barre. Appelée quoi qu'il arrive — fin normale, abandon ou panne.</summary>

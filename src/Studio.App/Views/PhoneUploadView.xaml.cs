@@ -101,22 +101,200 @@ public partial class PhoneUploadView : UserControl
         return image;
     }
 
-    private void RefreshCount()
+    /// <summary>Une photo reçue, telle que la bande d'aperçu la montre.</summary>
+    private sealed record Recue(string Chemin, string Nom, BitmapImage Vignette);
+
+    /// <summary>
+    /// Ce qui est déjà dans la bande, par chemin — pour ne relire que les NOUVEAUX fichiers.
+    /// Sans cela, chaque battement du minuteur redécoderait toute la série, et une session
+    /// d'une cinquantaine de photos passerait son temps à refabriquer des vignettes.
+    /// </summary>
+    private readonly HashSet<string> _connues = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly List<Recue> _recues = [];
+
+    /// <summary>Un aperçu ne demande pas la pleine définition — et le fichier vient du réseau.</summary>
+    private const int VignettePx = 240;
+
+    private bool _lectureEnCours;
+
+    private async void RefreshCount()
     {
         if (_session is null) return;
-        int count;
+
+        List<string> fichiers;
         try
         {
-            count = Directory.EnumerateFiles(_session.Folder).Count();
+            fichiers = Directory.EnumerateFiles(_session.Folder).OrderBy(f => f).ToList();
         }
         catch (IOException)
         {
             return;
         }
+
+        var count = fichiers.Count;
         CountText.Text = count == 0
             ? "En attente de photos…"
             : $"{count} photo{(count > 1 ? "s" : "")} reçue{(count > 1 ? "s" : "")} ✓";
+
         OpenButton.IsEnabled = count > 0;
+        SaveButton.IsEnabled = count > 0;
+
+        await AjouterLesNouvellesAsync(fichiers);
+    }
+
+    /// <summary>
+    /// Fabrique les vignettes des fichiers qui viennent d'arriver.
+    ///
+    /// <b>Un seul passage à la fois</b> : le minuteur bat toutes les 1,5 s, et un téléphone
+    /// qui envoie vingt photos d'un coup ferait démarrer la lecture suivante avant la fin
+    /// de la précédente — les mêmes fichiers seraient décodés deux fois et la bande aurait
+    /// des doublons.
+    ///
+    /// <b>Le décodage est hors du fil d'interface</b> : une photo de téléphone fait douze
+    /// mégapixels, et l'écran doit rester vivant pendant que le client envoie la suite.
+    /// </summary>
+    private async Task AjouterLesNouvellesAsync(IReadOnlyList<string> fichiers)
+    {
+        if (_lectureEnCours) return;
+
+        var nouvelles = fichiers.Where(f => !_connues.Contains(f)).ToList();
+        if (nouvelles.Count == 0) return;
+
+        _lectureEnCours = true;
+        try
+        {
+            foreach (var chemin in nouvelles)
+            {
+                // marqué AVANT la lecture : un fichier illisible ne doit pas être repris à
+                // chaque battement — le téléphone peut l'avoir laissé à moitié écrit
+                _connues.Add(chemin);
+
+                var vignette = await Task.Run(() => LireLaVignette(chemin));
+                if (vignette is null) continue;
+
+                _recues.Add(new Recue(chemin, Path.GetFileName(chemin), vignette));
+            }
+
+            ApercuList.ItemsSource = null;
+            ApercuList.ItemsSource = _recues;
+            ApercuScroll.Visibility = _recues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally
+        {
+            _lectureEnCours = false;
+        }
+    }
+
+    /// <summary>La vignette d'un fichier, ou null s'il n'est pas (encore) lisible.</summary>
+    private static BitmapImage? LireLaVignette(string chemin)
+    {
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;   // le fichier est relâché aussitôt
+            image.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            image.DecodePixelWidth = VignettePx;
+            image.UriSource = new Uri(chemin);
+            image.EndInit();
+            image.Freeze();                                 // passe le fil d'interface
+            return image;
+        }
+        catch (Exception)
+        {
+            // envoi encore en cours, format que WPF ne décode pas (HEIC brut) : la photo
+            // reste comptée et ouvrable, elle n'a simplement pas d'aperçu.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Copie les photos reçues dans un dossier choisi par l'opérateur — la clef USB du
+    /// client, le plus souvent.
+    ///
+    /// <b>Rien n'est déplacé ni effacé</b> : la session garde les siennes, et l'opérateur
+    /// peut enregistrer PUIS imprimer. Un nom déjà pris est suffixé plutôt qu'écrasé — deux
+    /// téléphones sortent volontiers un « IMG_0001.JPG » chacun.
+    /// </summary>
+    private async void OnSavePhotos(object sender, RoutedEventArgs e)
+    {
+        if (_session is null) return;
+
+        List<string> fichiers;
+        try
+        {
+            fichiers = Directory.EnumerateFiles(_session.Folder).OrderBy(f => f).ToList();
+        }
+        catch (IOException ex)
+        {
+            MessageBox.Show($"Les photos reçues sont illisibles : {ex.Message}",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        if (fichiers.Count == 0) return;
+
+        var boite = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = $"Où enregistrer les {fichiers.Count} photo(s) ?",
+        };
+
+        if (boite.ShowDialog() != true) return;
+
+        var destination = boite.FolderName;
+        SaveButton.IsEnabled = false;
+
+        try
+        {
+            var copiees = await Task.Run(() => Copier(fichiers, destination));
+
+            FileLog.Write($"Photos du téléphone enregistrées : {copiees} fichier(s) vers {destination}");
+            MessageBox.Show($"{copiees} photo(s) enregistrée(s) dans :\n{destination}",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Enregistrement des photos du téléphone impossible", ex);
+            MessageBox.Show(
+                $"Les photos n'ont pas pu être enregistrées : {ex.Message}\n\n" +
+                "Elles restent disponibles depuis cet écran.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            SaveButton.IsEnabled = true;
+        }
+    }
+
+    private static int Copier(IReadOnlyList<string> fichiers, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        var copiees = 0;
+        foreach (var source in fichiers)
+        {
+            File.Copy(source, CheminLibre(destination, Path.GetFileName(source)));
+            copiees++;
+        }
+
+        return copiees;
+    }
+
+    /// <summary>Le chemin demandé, ou le même suffixé « (2) », « (3) »… s'il est déjà pris.</summary>
+    private static string CheminLibre(string dossier, string nom)
+    {
+        var candidat = Path.Combine(dossier, nom);
+        if (!File.Exists(candidat)) return candidat;
+
+        var racine = Path.GetFileNameWithoutExtension(nom);
+        var extension = Path.GetExtension(nom);
+
+        for (var n = 2; ; n++)
+        {
+            candidat = Path.Combine(dossier, $"{racine} ({n}){extension}");
+            if (!File.Exists(candidat)) return candidat;
+        }
     }
 
     private void OnOpenPhotos(object sender, RoutedEventArgs e)

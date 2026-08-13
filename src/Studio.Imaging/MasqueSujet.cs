@@ -25,6 +25,13 @@ public static class MasqueSujet
     public static TimeSpan? DerniereDuree => BackgroundRemoval.DerniereDuree;
 
     /// <summary>
+    /// Durée à ANNONCER pour un détourage à venir : la médiane des dernières mesures.
+    /// Voir <see cref="BackgroundRemoval.DureeTypique"/> — c'est elle que la barre d'attente
+    /// doit suivre, et non la dernière mesure.
+    /// </summary>
+    public static TimeSpan? DureeTypique => BackgroundRemoval.DureeTypique;
+
+    /// <summary>
     /// Le masque de cette image est-il déjà en mémoire ? Autrement dit : y a-t-il quelque
     /// chose à attendre ?
     ///

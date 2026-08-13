@@ -2033,7 +2033,8 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
             produitDeLaLigne = retenue.Papier;
             planche = new CustomSheetSpec(
-                _taillePerso!.WidthMm, _taillePerso.HeightMm, retenue.Plan.Sheets);
+                _taillePerso!.WidthMm, _taillePerso.HeightMm, retenue.Plan.Sheets,
+                _taillePerso.BorderMm);
         }
 
         var items = selected

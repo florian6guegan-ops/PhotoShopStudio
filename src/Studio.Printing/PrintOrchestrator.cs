@@ -1930,7 +1930,11 @@ public sealed class PrintOrchestrator
                                 // la taille demandée est exacte : la photo remplit sa case,
                                 // le cadrage a été posé pour ce rapport dans l'écran d'édition
                                 item.FitOverride ?? FitMode.Fill,
-                                0,
+                                // …sauf en « cadre blanc » à taille libre, où la marge est
+                                // justement ce qu'on vend. Elle est portée par la LIGNE :
+                                // le produit désigne le papier de la planche, et la lui
+                                // demander mettrait le blanc autour de la feuille entière.
+                                MmPx.ToPixels(line.CustomCellBorderMm ?? 0, product.Dpi),
                                 AvecLaCorrectionDuProduit(item.Adjustments, product),
                                 IccPath(product, item.Finish)),
                             place.Copies);

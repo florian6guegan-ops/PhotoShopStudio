@@ -12,35 +12,42 @@
                    HorizontalAlignment="Center"/>
 
         <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="32">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="900">
-                <TextBlock Style="{StaticResource Hint}" TextAlignment="Center" Margin="0,0,0,8"
-                           Text="Sur quelle feuille sortent ces tirages ?"/>
-                <TextBlock x:Name="ExplicationText" Style="{StaticResource Hint}"
-                           TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,24"/>
+            <!-- La liste DOIT défiler. Elle ne le faisait pas, et le défaut ne se voyait
+                 qu'avec assez de feuilles au catalogue : au-delà de la hauteur de la carte,
+                 les dernières étaient hors d'atteinte et la molette ne répondait pas — rien
+                 n'était scrollable, l'opérateur croyait l'écran figé. Signalé le
+                 13/08/2026 depuis la boutique. -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="900">
+                    <TextBlock Style="{StaticResource Hint}" TextAlignment="Center" Margin="0,0,0,8"
+                               Text="Sur quelle feuille sortent ces tirages ?"/>
+                    <TextBlock x:Name="ExplicationText" Style="{StaticResource Hint}"
+                               TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,24"/>
 
-                <!-- « Une par feuille » est en tête et coché : c'est le comportement
-                     d'avant, et un opérateur qui découpe lui-même ne veut pas d'un
-                     montage. Il doit rester atteignable en un geste. -->
-                <ItemsControl x:Name="FeuillesList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Style="{StaticResource FlatButton}" Margin="0,4"
-                                    HorizontalContentAlignment="Left" MinWidth="620"
-                                    Tag="{Binding}" Click="OnFeuilleChoisie"
-                                    AutomationProperties.Name="{Binding Titre}">
-                                <StackPanel Margin="8,6">
-                                    <TextBlock Text="{Binding Titre}" FontSize="22"
-                                               FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}"/>
-                                    <TextBlock Text="{Binding Detail}" FontSize="16"
-                                               TextWrapping="Wrap" Margin="0,4,0,0"
-                                               Foreground="{StaticResource MutedBrush}"/>
-                                </StackPanel>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
+                    <!-- « Une par feuille » est en tête et coché : c'est le comportement
+                         d'avant, et un opérateur qui découpe lui-même ne veut pas d'un
+                         montage. Il doit rester atteignable en un geste. -->
+                    <ItemsControl x:Name="FeuillesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource FlatButton}" Margin="0,4"
+                                        HorizontalContentAlignment="Left" MinWidth="620"
+                                        Tag="{Binding}" Click="OnFeuilleChoisie"
+                                        AutomationProperties.Name="{Binding Titre}">
+                                    <StackPanel Margin="8,6">
+                                        <TextBlock Text="{Binding Titre}" FontSize="22"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextBrush}"/>
+                                        <TextBlock Text="{Binding Detail}" FontSize="16"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Foreground="{StaticResource MutedBrush}"/>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">

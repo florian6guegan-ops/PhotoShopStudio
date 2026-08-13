@@ -79,6 +79,60 @@ public class StoreTests : IDisposable
         Assert.Equal("contenu final", File.ReadAllText(path));
     }
 
+    /// <summary>
+    /// Le défaut d'Arcueil du 13/08/2026 : lire une commande pendant qu'on l'écrit levait
+    /// « used by another process ». Sans la reprise, ce test tombe en quelques dizaines de
+    /// millisecondes — l'échange de <c>File.Replace</c> se croise vite quand les deux
+    /// tournent en boucle.
+    /// </summary>
+    [Fact]
+    public async Task AtomicRead_PendantUnEchange_NeLevePas()
+    {
+        var path = Path.Combine(_root, "order.json");
+        AtomicFile.WriteAllText(path, "{\"v\":0}");
+
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var ecrivain = Task.Run(() =>
+        {
+            var v = 0;
+            while (!stop.IsCancellationRequested)
+                AtomicFile.WriteAllText(path, $"{{\"v\":{++v}}}");
+        });
+
+        var lectures = 0;
+        while (!stop.IsCancellationRequested)
+        {
+            // jamais null, jamais tronqué : l'une ou l'autre des deux versions, entière
+            var lu = AtomicFile.ReadAllTextOrNull(path);
+            Assert.NotNull(lu);
+            Assert.StartsWith("{\"v\":", lu);
+            Assert.EndsWith("}", lu);
+            lectures++;
+        }
+
+        await ecrivain;
+        Assert.True(lectures > 100, $"trop peu de lectures pour conclure : {lectures}");
+    }
+
+    /// <summary>
+    /// La contrepartie : la reprise ne doit PAS masquer un fichier réellement retenu —
+    /// un antivirus, une sauvegarde, un éditeur ouvert. Le budget est borné et l'erreur
+    /// remonte.
+    /// </summary>
+    [Fact]
+    public void AtomicRead_FichierVraimentRetenu_LeveQuandMeme()
+    {
+        var path = Path.Combine(_root, "retenu.json");
+        File.WriteAllText(path, "{}");
+
+        using var _ = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        Assert.Throws<IOException>(() => AtomicFile.ReadAllTextOrNull(path));
+    }
+
+    [Fact]
+    public void AtomicRead_FichierAbsent_RendNull() =>
+        Assert.Null(AtomicFile.ReadAllTextOrNull(Path.Combine(_root, "jamais-ecrit.json")));
+
     [Fact]
     public void ScanRecent_FindsSavedOrders()
     {

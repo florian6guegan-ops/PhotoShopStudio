@@ -47,6 +47,32 @@
                 <TextBlock x:Name="CountText" FontSize="26" FontWeight="Bold" TextAlignment="Center"
                            Margin="0,24,0,0" Foreground="{StaticResource OkBrush}"
                            Text="En attente de photos…"/>
+
+                <!-- APERÇU DES PHOTOS REÇUES. Un compteur ne dit pas si ce sont les bonnes
+                     photos, ni si le client s'est trompé d'album : l'opérateur devait ouvrir
+                     la grille pour le savoir, donc quitter l'écran du code QR — et le client
+                     qui envoyait la suite ne voyait plus rien. La bande défile
+                     horizontalement pour ne pas repousser les codes hors de l'écran. -->
+                <ScrollViewer x:Name="ApercuScroll" Visibility="Collapsed"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              MaxWidth="900" Margin="0,16,0,0">
+                    <ItemsControl x:Name="ApercuList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="White" CornerRadius="8" Padding="4" Margin="4">
+                                    <Image Source="{Binding Vignette}" Width="120" Height="120"
+                                           Stretch="Uniform"
+                                           ToolTip="{Binding Nom}"/>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
             </StackPanel>
         </Border>
 
@@ -57,6 +83,12 @@
                 <Button x:Name="OpenButton" DockPanel.Dock="Right" Style="{StaticResource BigButton}"
                         HorizontalAlignment="Right" IsEnabled="False" Click="OnOpenPhotos">
                     ➜  Ouvrir les photos reçues
+                </Button>
+                <Button x:Name="SaveButton" DockPanel.Dock="Right" Style="{StaticResource FlatButton}"
+                        MinWidth="260" Margin="0,0,12,0" HorizontalAlignment="Right"
+                        IsEnabled="False" Click="OnSavePhotos"
+                        AutomationProperties.Name="Enregistrer les photos">
+                    💾  Enregistrer les photos…
                 </Button>
             </DockPanel>
         </Border>

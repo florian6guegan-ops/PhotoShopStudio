@@ -140,6 +140,118 @@ public class CadrageAutomatiqueTests
         Assert.Equal(y, tourne.Y, 9);
     }
 
+    // — le redressement sur la ligne des yeux —
+
+    private static IReadOnlyList<NormPoint> Yeux(double xg, double yg, double xd, double yd) =>
+        [new NormPoint(xg, yg), new NormPoint(xd, yd)];
+
+    /// <summary>
+    /// Une tête penchée dans le sens horaire — l'œil droit plus bas que le gauche — se
+    /// redresse dans l'AUTRE sens. Se tromper de signe doublerait l'inclinaison au lieu de
+    /// l'annuler, et cela ne se verrait que sur le tirage.
+    /// </summary>
+    [Fact]
+    public void Une_tete_penchee_se_redresse_dans_lautre_sens()
+    {
+        // carré, pour que les fractions soient directement des pixels : 100 à droite,
+        // 10 vers le bas → environ 5,7° dans le sens horaire
+        var angle = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.50, 0.50, 0.51), 1000, 1000, 0);
+
+        Assert.True(angle < 0, $"attendu négatif (anti-horaire), obtenu {angle}");
+        Assert.Equal(-5.71, angle, 1);
+    }
+
+    /// <summary>
+    /// <b>Le rapport de l'image change l'angle</b>, et c'est le piège de ce calcul : les
+    /// points du détecteur sont normalisés. Les MÊMES fractions sur une photo 2:1 couchée
+    /// donnent un angle deux fois plus petit que sur un carré — la même différence
+    /// verticale couvre deux fois moins de pixels par rapport à l'horizontale.
+    ///
+    /// Prendre l'angle sur les fractions brutes se tromperait donc systématiquement, et
+    /// toujours dans le même sens : les photos les plus allongées seraient les plus
+    /// abîmées.
+    /// </summary>
+    [Fact]
+    public void Le_rapport_de_limage_entre_dans_le_calcul()
+    {
+        // 0,10 en largeur et 0,01 en hauteur : sous la limite de redressement des deux côtés
+        var carre = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.50, 0.50, 0.51), 1000, 1000, 0);
+
+        var couchee = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.50, 0.50, 0.51), 2000, 1000, 0);
+
+        Assert.Equal(-5.71, carre, 1);    // atan(10 / 100)
+        Assert.Equal(-2.86, couchee, 1);  // atan(10 / 200)
+    }
+
+    /// <summary>Sans deux yeux, il n'y a pas de ligne : on ne redresse rien.</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Sans_deux_yeux_on_ne_redresse_pas(int combien)
+    {
+        IReadOnlyList<NormPoint> yeux = combien == 0
+            ? []
+            : [new NormPoint(0.4, 0.5)];
+
+        Assert.Equal(0, CadrageAutomatique.AngleDeRedressement(yeux, 1000, 1000, 0));
+    }
+
+    /// <summary>
+    /// Un angle trop grand n'est plus une tête penchée : c'est une pose, ou une détection
+    /// qui s'est trompée. On ne touche à rien plutôt que de faire grossir la photo.
+    /// </summary>
+    [Fact]
+    public void Un_angle_trop_grand_est_ignore()
+    {
+        // 45°, très au-delà de la limite
+        Assert.Equal(0, CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.40, 0.50, 0.50), 1000, 1000, 0));
+    }
+
+    /// <summary>Un angle négligeable ne vaut pas la peine de bouger la photo.</summary>
+    [Fact]
+    public void Un_angle_negligeable_est_ignore()
+    {
+        // 1 px de dénivelé sur 100 : 0,57°, sous le seuil
+        Assert.Equal(0, CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.500, 0.50, 0.501), 1000, 1000, 0));
+    }
+
+    /// <summary>
+    /// L'ordre dans lequel le détecteur rend les deux yeux ne doit rien changer : c'est
+    /// celui de gauche qui sert d'origine, pas le premier de la liste.
+    /// </summary>
+    [Fact]
+    public void Lordre_des_yeux_ne_change_rien()
+    {
+        var normal = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.50, 0.50, 0.55), 1000, 1000, 0);
+
+        var inverse = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.50, 0.55, 0.40, 0.50), 1000, 1000, 0);
+
+        Assert.Equal(normal, inverse, 6);
+    }
+
+    /// <summary>
+    /// Un quart de tour ne doit pas retourner le redressement : la photo tourne, la tête
+    /// avec, et l'angle à corriger garde sa valeur.
+    /// </summary>
+    [Fact]
+    public void Le_redressement_suit_les_quarts_de_tour()
+    {
+        var droit = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.50, 0.50, 0.55), 1000, 1000, 0);
+
+        var tourne = CadrageAutomatique.AngleDeRedressement(
+            Yeux(0.40, 0.50, 0.50, 0.55), 1000, 1000, 1);
+
+        Assert.Equal(Math.Abs(droit), Math.Abs(tourne), 6);
+    }
+
     /// <summary>
     /// Une photo au rapport exact du tirage n'a aucun jeu : le cadrage automatique n'a
     /// rien à donner, et il ne doit surtout pas forcer.

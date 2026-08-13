@@ -60,6 +60,43 @@ public static class BackgroundRemoval
     public static TimeSpan? DerniereDuree { get; private set; }
 
     /// <summary>
+    /// Les dernières durées mesurées, pour en tirer une estimation qui ne saute pas.
+    ///
+    /// <b>La DERNIÈRE durée est un mauvais prédicteur</b>, et l'écran s'en servait seul :
+    /// un aperçu de cadrage et une planche pleine résolution ne demandent pas le même
+    /// travail, le premier passage d'une séance paie le chargement du réseau, et une photo
+    /// mal contrastée traîne. La barre annonçait donc « encore 4 s » puis restait plantée,
+    /// ou l'inverse — signalé depuis la boutique le 13/08/2026.
+    ///
+    /// Huit mesures : assez pour que la médiane ait un sens, assez peu pour suivre un
+    /// changement de modèle ou de taille dans la même séance.
+    /// </summary>
+    private static readonly Queue<TimeSpan> Dernieres = new();
+
+    private const int MesuresRetenues = 8;
+
+    /// <summary>
+    /// Durée à annoncer : la MÉDIANE des dernières mesures, ou null tant qu'aucune n'existe.
+    ///
+    /// La médiane et non la moyenne : un seul détourage anormalement long — le premier de
+    /// la séance, celui qui charge le réseau — tirerait la moyenne vers le haut pendant
+    /// tout le reste de la journée.
+    /// </summary>
+    public static TimeSpan? DureeTypique
+    {
+        get
+        {
+            lock (Dernieres)
+            {
+                if (Dernieres.Count == 0) return null;
+
+                var triees = Dernieres.OrderBy(d => d).ToList();
+                return triees[triees.Count / 2];
+            }
+        }
+    }
+
+    /// <summary>
     /// Le masque du sujet, par le meilleur moyen dont ce poste dispose.
     ///
     /// <b>C'est LE point de passage du détourage</b>, celui que partagent le fond blanc et
@@ -79,6 +116,13 @@ public static class BackgroundRemoval
         if (masque is null) return null;
 
         DerniereDuree = chrono.Elapsed;
+
+        lock (Dernieres)
+        {
+            Dernieres.Enqueue(chrono.Elapsed);
+            while (Dernieres.Count > MesuresRetenues) Dernieres.Dequeue();
+        }
+
         return masque;
     }
 

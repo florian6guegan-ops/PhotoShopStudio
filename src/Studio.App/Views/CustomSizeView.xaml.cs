@@ -15,11 +15,22 @@ namespace Studio.App.Views;
 /// Papier imposé par l'opérateur, ou null pour le choix automatique. Il l'emporte sur le
 /// calcul : c'est l'opérateur qui sait quel rouleau est chargé et ce qu'il veut vendre.
 /// </param>
-public sealed record CustomSize(double WidthMm, double HeightMm, string? PaperCode = null)
+/// <param name="BorderMm">
+/// Marge blanche à l'intérieur du tirage, en millimètres — la famille « cadre blanc » en
+/// taille libre. Zéro = la photo remplit sa case.
+///
+/// <b>La taille demandée reste celle du TIRAGE FINI</b>, marge comprise : un 10 × 15 à bord
+/// blanc occupe toujours 10 × 15 sur la planche, la photo se posant en retrait. C'est la
+/// même convention que les produits à bord blanc du catalogue, où <c>Product.WidthMm</c>
+/// donne le papier et <c>ImageArea</c> en retire deux fois la marge.
+/// </param>
+public sealed record CustomSize(
+    double WidthMm, double HeightMm, string? PaperCode = null, double BorderMm = 0)
 {
     /// <summary>Libellé en centimètres, l'unité du comptoir.</summary>
     public string Libelle =>
-        $"{WidthMm / 10:0.##} × {HeightMm / 10:0.##} cm".Replace('.', ',');
+        $"{WidthMm / 10:0.##} × {HeightMm / 10:0.##} cm".Replace('.', ',')
+        + (BorderMm > 0 ? " à bord blanc" : "");
 }
 
 /// <summary>
@@ -43,6 +54,7 @@ public partial class CustomSizeView : UserControl
 
     private readonly List<CustomSize> _recentes;
     private readonly Action<CustomSize>? _surValidation;
+    private readonly double _bordMm;
     private CustomSize? _taille;
 
     /// <param name="surValidation">
@@ -50,9 +62,15 @@ public partial class CustomSizeView : UserControl
     /// choix du dossier. Fourni, l'écran ne sert que de saisie et rend la main à l'appelant —
     /// c'est ainsi qu'on bascule en taille libre des photos DÉJÀ ouvertes, sans les perdre.
     /// </param>
-    public CustomSizeView(Action<CustomSize>? surValidation = null)
+    /// <param name="bordMm">
+    /// Marge blanche du tirage. Zéro pour l'impression rapide ; la marge de la famille pour
+    /// le cadre blanc, qui n'avait pas de « Personnalisé » du tout jusqu'au 13/08/2026 —
+    /// l'opérateur devait se contenter des formats du catalogue.
+    /// </param>
+    public CustomSizeView(Action<CustomSize>? surValidation = null, double bordMm = 0)
     {
         _surValidation = surValidation;
+        _bordMm = bordMm;
         InitializeComponent();
 
         _recentes = LireLesRecentes();
@@ -115,6 +133,16 @@ public partial class CustomSizeView : UserControl
             return;
         }
 
+        // Une marge qui mange tout le tirage ne rendrait qu'un rectangle blanc, et le
+        // calcul de la zone d'image passerait en négatif sans que rien ne proteste.
+        if (_bordMm > 0 && Math.Min(largeur, hauteur) <= 2 * _bordMm)
+        {
+            VerdictText.Text =
+                $"Un bord blanc de {_bordMm:0.#} mm ne laisse aucune image sur un tirage de " +
+                $"{largeur / 10:0.##} × {hauteur / 10:0.##} cm. Demandez un format plus grand.";
+            return;
+        }
+
         var papiers = PapiersDisponibles();
         if (papiers.Count == 0)
         {
@@ -134,14 +162,20 @@ public partial class CustomSizeView : UserControl
             return;
         }
 
-        _taille = new CustomSize(largeur, hauteur);
+        _taille = new CustomSize(largeur, hauteur, BorderMm: _bordMm);
         ContinuerButton.IsEnabled = true;
 
-        VerdictText.Text = plan.PerSheet == 1
+        VerdictText.Text = (plan.PerSheet == 1
             ? $"Une photo par planche {plan.Paper.Name} : à cette taille, il n'y a pas de place gagnée."
             : $"{plan.PerSheet} photos par planche {plan.Paper.Name}" +
               (plan.CellRotated ? " (photos posées en travers)." : ".") +
-              "\nLe papier se choisit à l'écran suivant : ici, c'est le moins cher qui est montré.";
+              "\nLe papier se choisit à l'écran suivant : ici, c'est le moins cher qui est montré.")
+            // La marge se DIT, parce qu'elle mange l'image : sans cette ligne, l'opérateur
+            // annonce un 9 × 13 et le client reçoit une photo de 8 × 12 dans du blanc.
+            + (_bordMm > 0
+                ? $"\nBord blanc de {_bordMm:0.#} mm : l'image occupe " +
+                  $"{(largeur - 2 * _bordMm) / 10:0.##} × {(hauteur - 2 * _bordMm) / 10:0.##} cm."
+                : "");
 
         ApercuList.ItemsSource = QuantitesTypes
             .Select(q => new ApercuRow(q, largeur, hauteur, papiers))
@@ -224,7 +258,11 @@ public partial class CustomSizeView : UserControl
     {
         _recentes.RemoveAll(t => Math.Abs(t.WidthMm - taille.WidthMm) < 0.05
                                  && Math.Abs(t.HeightMm - taille.HeightMm) < 0.05);
-        _recentes.Insert(0, taille);
+
+        // La marge n'est PAS retenue avec la taille : elle appartient à la famille, pas au
+        // format. Sans cela, un 9 × 13 demandé une fois en cadre blanc reviendrait bordé
+        // en impression rapide, où l'écran ne montre même pas la marge.
+        _recentes.Insert(0, taille with { BorderMm = 0 });
         if (_recentes.Count > MaximumRecentes) _recentes.RemoveRange(MaximumRecentes,
             _recentes.Count - MaximumRecentes);
 

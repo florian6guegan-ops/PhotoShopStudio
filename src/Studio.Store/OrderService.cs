@@ -10,7 +10,12 @@ namespace Studio.Store;
 /// commande : c'est lui qui fixe le prix, et un prix annoncé au client ne doit pas bouger
 /// parce que le catalogue a changé entre l'annonce et l'encaissement.
 /// </summary>
-public sealed record CustomSheetSpec(double CellWidthMm, double CellHeightMm, int SheetCount);
+/// <param name="CellBorderMm">
+/// Marge blanche à l'intérieur de chaque case — la famille « cadre blanc » en taille libre.
+/// Zéro = la photo remplit sa case, le comportement d'origine.
+/// </param>
+public sealed record CustomSheetSpec(
+    double CellWidthMm, double CellHeightMm, int SheetCount, double CellBorderMm = 0);
 
 /// <summary>
 /// Taille d'une case de planche identité, en millimètres : celle du document visé.
@@ -157,6 +162,7 @@ public sealed class OrderService
                                 ?? product.UnitPriceFor(Math.Max(factureSur, 1)),
                     CustomCellWidthMm = planche?.CellWidthMm,
                     CustomCellHeightMm = planche?.CellHeightMm,
+                    CustomCellBorderMm = planche?.CellBorderMm,
                     SheetCount = planche?.SheetCount ?? 0,
                     // le montage suit le PRODUIT : toutes les photos d'une même ligne
                     // partent sur la même feuille, sans quoi la grille serait à trous

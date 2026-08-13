@@ -26,15 +26,17 @@ public partial class PrintFormatView : UserControl
         {
             var lignes = PrintFamilyView.ProductsOf(_famille).Select(p => new FormatRow(p)).ToList();
 
-            // « Personnalisé » ferme les deux grilles où il a un sens, et ce n'est PAS le
-            // même geste des deux côtés :
+            // « Personnalisé » ferme les TROIS grilles, et ce n'est pas le même geste :
             //
             // - impression rapide : des planches composées sur un papier du minilab ;
-            // - agrandissements : un tirage unique en A2, A3… sorti en fichier pour l'Epson.
+            // - agrandissements : un tirage unique en A2, A3… sorti en fichier pour l'Epson ;
+            // - cadre blanc : une planche elle aussi, mais chaque tirage porte sa marge.
             //
-            // Le cadre blanc, lui, n'en a pas : sa marge est imposée par le format.
-            if (_famille is PrintFamily.Quick or PrintFamily.Enlargement)
-                lignes.Add(FormatRow.Personnalise(_famille));
+            // Le cadre blanc en était privé — « sa marge est imposée par le format » —, ce
+            // qui enfermait l'opérateur dans les seuls formats bordés du catalogue. La
+            // marge n'a pourtant pas besoin du format : elle se pose à l'intérieur de la
+            // case, quelle que soit sa taille. Demandé depuis la boutique le 13/08/2026.
+            lignes.Add(FormatRow.Personnalise(_famille));
 
             FormatsList.ItemsSource = lignes;
         };
@@ -48,6 +50,9 @@ public partial class PrintFormatView : UserControl
         {
             if (ligne.Famille == PrintFamily.Enlargement)
                 Navigator.Go(new CustomEnlargementView(), "Agrandissement personnalisé");
+            else if (ligne.Famille == PrintFamily.WhiteBorder)
+                Navigator.Go(new CustomSizeView(bordMm: MargeDuCadreBlanc()),
+                    "Taille personnalisée à bord blanc");
             else
                 Navigator.Go(new CustomSizeView(), "Taille personnalisée");
             return;
@@ -80,6 +85,26 @@ public partial class PrintFormatView : UserControl
                     montageFeuille: montageFeuille),
                 $"{nom} — choisir les photos")),
             $"{nom} — choisir le support");
+    }
+
+    /// <summary>
+    /// La marge du cadre blanc, telle que la boutique la pratique.
+    ///
+    /// Lue sur les produits bordés du catalogue plutôt qu'écrite en dur : c'est la valeur
+    /// que l'opérateur voit déjà sur ses formats, et une boutique qui borde à 4 mm ne doit
+    /// pas se retrouver avec 5 mm sur sa seule taille libre. La médiane, pour qu'un produit
+    /// mal saisi ne l'emporte pas sur les autres. Cinq millimètres à défaut — c'est la
+    /// marge dont parle <see cref="PrintFamily.WhiteBorder"/>.
+    /// </summary>
+    private static double MargeDuCadreBlanc()
+    {
+        var marges = PrintFamilyView.ProductsOf(PrintFamily.WhiteBorder)
+            .Select(p => p.BorderMm)
+            .Where(b => b > 0)
+            .OrderBy(b => b)
+            .ToList();
+
+        return marges.Count == 0 ? 5 : marges[marges.Count / 2];
     }
 
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();

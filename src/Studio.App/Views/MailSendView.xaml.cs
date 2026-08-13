@@ -39,14 +39,35 @@ public partial class MailSendView : UserControl
 
     private readonly IReadOnlyList<PhotoAEnvoyer> _photos;
     private readonly string? _nomClient;
+    private readonly bool _revenirEnArriere;
     private bool _envoiEnCours;
 
     /// <param name="photos">Les photos à envoyer. Le prix suit leur nombre.</param>
     /// <param name="nomClient">Nom porté sur la commande, s'il est connu.</param>
-    public MailSendView(IReadOnlyList<PhotoAEnvoyer> photos, string? nomClient = null)
+    /// <param name="revenirEnArriere">
+    /// <b>Rendre la main à l'écran appelant au lieu de retourner à l'accueil.</b>
+    ///
+    /// L'envoi finissait toujours par <c>Navigator.Home</c>, qui VIDE la pile d'écrans.
+    /// Depuis les photos d'identité, cela jetait la photo en cours : le client qui voulait
+    /// ses photos par courriel ET sa planche imprimée devait tout refaire — rechercher le
+    /// fichier, recadrer, régler. Signalé depuis la boutique le 13/08/2026.
+    ///
+    /// Or l'écran d'identité dit lui-même que les deux vont ensemble : « C'est une
+    /// prestation à part, facturée à la photo : elle n'imprime rien, et imprimer n'envoie
+    /// rien. Un client peut vouloir les deux, ou l'un des deux. »
+    ///
+    /// Le <see cref="Navigator"/> empile les instances vivantes : revenir en arrière rend
+    /// l'écran d'identité tel qu'il était, recadrage et corrections compris.
+    ///
+    /// Faux par défaut — depuis les commandes, l'envoi CLÔT le geste et l'accueil est la
+    /// bonne destination.
+    /// </param>
+    public MailSendView(IReadOnlyList<PhotoAEnvoyer> photos, string? nomClient = null,
+        bool revenirEnArriere = false)
     {
         _photos = photos;
         _nomClient = nomClient;
+        _revenirEnArriere = revenirEnArriere;
         InitializeComponent();
 
         Loaded += (_, _) =>
@@ -243,7 +264,10 @@ public partial class MailSendView : UserControl
                 $"Commande {commande.DisplayNumber} — {commande.Total:0.00} €",
                 "Envoi par courriel", MessageBoxButton.OK, MessageBoxImage.Information);
 
-            Navigator.Home(new HomeView(), "Studio Photo");
+            if (_revenirEnArriere)
+                Navigator.Back();
+            else
+                Navigator.Home(new HomeView(), "Studio Photo");
         }
         catch (Exception ex)
         {
