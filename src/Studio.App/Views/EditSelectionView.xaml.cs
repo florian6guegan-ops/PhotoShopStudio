@@ -509,6 +509,24 @@ internal partial class EditSelectionView : UserControl
     /// garder un résultat périmé : l'affichage saute les états intermédiaires plutôt que
     /// de prendre du retard sur la main de l'opérateur. C'est ce qui remplace l'ancien
     /// calcul en ligne, qui figeait l'écran à chaque cran de curseur.
+    ///
+    /// <b>PENDANT LE GESTE, ON COMPOSE SUR LA VIGNETTE.</b> L'aperçu fait jusqu'à
+    /// 1600 px de grand côté — 1356 × 2048 relevé au journal le 13/08/2026 — et le
+    /// recomposer dans ImageMagick à chaque cran de curseur coûtait des centaines de
+    /// millisecondes : la photo avançait par à-coups, un cran sur trois. C'est la
+    /// saccade signalée depuis la boutique sur les tirages DE100.
+    ///
+    /// <b>Le geste se reconnaît tout seul</b>, sans écouter les curseurs : si les réglages
+    /// ont bougé PENDANT le calcul, c'est que la main est encore dessus. La boucle le
+    /// savait déjà pour recommencer — elle s'en sert maintenant pour choisir sa source.
+    /// Dès que ça se calme, un dernier tour repasse en pleine définition, et c'est LUI seul
+    /// qui est mis en mémoire : la vignette composée ne doit jamais se retrouver dans
+    /// <see cref="_photosPretes"/>, sinon l'aperçu resterait flou une fois le geste fini.
+    ///
+    /// L'écran d'identité résout le même problème autrement, avec un tampon réduit gardé
+    /// d'avance (<c>_departBgra</c>). Ici la vignette est déjà chargée pour la bande du
+    /// bas : elle ne coûte rien, et c'est déjà elle que <see cref="MontrerSurface"/> montre
+    /// en attendant.
     /// </summary>
     private async void PreparerEnFond()
     {
@@ -517,15 +535,19 @@ internal partial class EditSelectionView : UserControl
 
         try
         {
-            int version;
-            do
-            {
-                version = _versionSurface;
+            // premier tour en pleine définition : un réglage isolé — une case cochée, un
+            // changement de photo — ne doit pas passer par une étape floue
+            var enPleinGeste = false;
 
+            while (true)
+            {
+                var version = _versionSurface;
                 var photo = _courante;
-                var source = _hautesDefinitions.TryGet(photo.Path, out var haute)
-                    ? haute
-                    : photo.SourceThumbnail;
+
+                var source = enPleinGeste || !_hautesDefinitions.TryGet(photo.Path, out var haute)
+                    ? photo.SourceThumbnail
+                    : haute;
+
                 if (source is null) return;
 
                 // instantané des réglages : l'opérateur continue de bouger les curseurs
@@ -536,14 +558,31 @@ internal partial class EditSelectionView : UserControl
                 var preparee = await Task.Run(
                     () => PhotoGridView.PhotoItem.ComposerPhoto(source, quarts, reglages));
 
-                // rien n'a bougé pendant le calcul : le résultat vaut, on le garde
-                if (version != _versionSurface) continue;
+                // ça a encore bougé : la main est sur le curseur, on recommence en réduit
+                if (version != _versionSurface)
+                {
+                    enPleinGeste = true;
+                    continue;
+                }
+
+                if (enPleinGeste)
+                {
+                    // le geste s'arrête. On montre TOUT DE SUITE ce qu'on vient de calculer
+                    // — l'opérateur voit le résultat de son dernier cran sans attendre — et
+                    // l'on refait un tour en pleine définition, qui le remplacera.
+                    if (ReferenceEquals(photo, _courante))
+                        Surface.Show(preparee, Cadre(photo), photo.FineRotationDegrees);
+
+                    enPleinGeste = false;
+                    continue;
+                }
 
                 _photosPretes.Set(photo.Cle, preparee);
                 if (ReferenceEquals(photo, _courante))
                     Surface.Show(preparee, Cadre(photo), photo.FineRotationDegrees);
+
+                return;
             }
-            while (version != _versionSurface);
         }
         catch (Exception ex)
         {
