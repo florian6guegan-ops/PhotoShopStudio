@@ -85,15 +85,30 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         InitializeComponent();
 
-        var choix = App.Services.Catalog.Enabled.Select(p => new ProductChoice(p)).ToList();
+        // LA TAILLE LIBRE FIGURE DANS LA LISTE, et pas seulement derrière « Modifier ».
+        // Elle n'était atteignable que depuis l'écran d'édition : au comptoir, l'opérateur
+        // qui vient de choisir ses photos cherche le format ICI, ne le trouve pas, et
+        // conclut que le logiciel ne sait pas le faire. Signalé le 13/08/2026.
+        //
+        // En QUEUE de liste : la première entrée est celle que la liste choisit par défaut,
+        // et ce doit rester un vrai format.
+        var choix = App.Services.Catalog.Enabled
+            .Select(p => (object)new ProductChoice(p))
+            .ToList();
+
+        choix.Add(new ChoixTailleLibre());
+        choix.Add(new ChoixAgrandissementLibre());
+
         ProductCombo.ItemsSource = choix;
 
         AttachShortcuts();
 
         var prechoisi = produitParDefaut is null
             ? -1
-            : choix.FindIndex(c => c.Product.Code.Equals(produitParDefaut, StringComparison.OrdinalIgnoreCase));
+            : choix.FindIndex(c => c is ProductChoice pc
+                                   && pc.Product.Code.Equals(produitParDefaut, StringComparison.OrdinalIgnoreCase));
         ProductCombo.SelectedIndex = prechoisi >= 0 ? prechoisi : 0;
+        _indexProduitPrecedent = ProductCombo.SelectedIndex;
 
         if (taillePerso is not null) PasserEnTaillePersonnalisee(taillePerso);
 
@@ -125,6 +140,37 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     {
         public string Label => $"{Product.Name} — {Product.Price:0.00} €";
     }
+
+    /// <summary>
+    /// Les deux entrées de la liste qui ne désignent PAS un produit mais ouvrent un écran.
+    ///
+    /// Elles portent un <c>Label</c> comme les autres — la liste affiche cette propriété —
+    /// et se reconnaissent à leur type, jamais à leur texte : celui-ci est de l'affichage,
+    /// et le comparer reviendrait à faire dépendre le comportement d'une formulation.
+    ///
+    /// Les deux sont distinctes, et ce n'est pas un détail : la taille libre compose des
+    /// planches sur du papier minilab, l'agrandissement sort un tirage unique en fichier
+    /// pour l'Epson. Les confondre enverrait un A2 au minilab, qui le refuserait.
+    /// </summary>
+    private sealed record ChoixTailleLibre
+    {
+        public string Label => "Personnalisé…  (taille au choix)";
+    }
+
+    private sealed record ChoixAgrandissementLibre
+    {
+        public string Label => "Agrandissement personnalisé…  (A2, A3…)";
+    }
+
+    /// <summary>
+    /// Où la liste était posée avant qu'on y choisisse une entrée d'ACTION.
+    ///
+    /// Ces entrées ne sont pas un format : après les avoir ouvertes, la liste doit retrouver
+    /// le produit d'avant. Sans cela, elle resterait sur « Personnalisé… », et
+    /// <c>DefaultProduct</c> — qui la lit — rendrait null : le bouton « Appliquer aux
+    /// cochées » ne ferait plus rien, sans rien dire.
+    /// </summary>
+    private int _indexProduitPrecedent;
 
     // — format personnalisé —
 
@@ -1619,6 +1665,26 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
     private void OnDefaultProductChanged(object sender, SelectionChangedEventArgs e)
     {
+        // Une entrée d'ACTION : on remet la liste où elle était, PUIS on ouvre l'écran.
+        // Remettre d'abord évite que « Personnalisé… » reste affiché pendant que l'autre
+        // écran est ouvert, et que l'opérateur qui revient en arrière croie son format
+        // choisi. La réaffectation rentre à nouveau ici, avec un vrai produit cette fois :
+        // il n'y a pas de boucle.
+        switch (ProductCombo.SelectedItem)
+        {
+            case ChoixTailleLibre:
+                ProductCombo.SelectedIndex = _indexProduitPrecedent;
+                DemanderUneTaillePersonnalisee();
+                return;
+
+            case ChoixAgrandissementLibre:
+                ProductCombo.SelectedIndex = _indexProduitPrecedent;
+                DemanderUnAgrandissement(AppliquerLAgrandissement);
+                return;
+        }
+
+        _indexProduitPrecedent = ProductCombo.SelectedIndex;
+
         AfficherLaSortie();
 
         // en taille personnalisée, cette liste ne désigne plus un produit mais le PAPIER de
@@ -1655,6 +1721,54 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         FileLog.Write($"Format « {DefaultProduct.Name} » appliqué à {cochees.Count} photo(s) cochée(s)");
         UpdateSummary();
+    }
+
+    /// <summary>
+    /// Pose l'agrandissement qui vient d'être saisi sur les photos COCHÉES — ou sur toutes
+    /// si rien n'est coché, parce qu'on ne demande pas un A2 pour ne l'appliquer à rien.
+    ///
+    /// Contrairement à la taille libre, il n'y a rien à enseigner à l'écran : un
+    /// agrandissement est un vrai produit du catalogue, créé à la validation de l'écran de
+    /// saisie. Il faut en revanche RELIRE la liste, que ce nouveau produit vient d'allonger.
+    /// </summary>
+    private void AppliquerLAgrandissement(Product produit)
+    {
+        if (produit is null || EnTaillePersonnalisee) return;
+
+        var cochees = _photos.Where(p => p.Selected).ToList();
+        var cibles = cochees.Count > 0 ? cochees : _photos.ToList();
+
+        foreach (var photo in cibles) photo.Product = produit;
+
+        FileLog.Write($"Agrandissement « {produit.Name} » sur {cibles.Count} photo(s)");
+
+        RelireLaListeDesProduits(produit.Code);
+        UpdateSummary();
+    }
+
+    /// <summary>
+    /// Refabrique la liste des formats et s'arrête sur celui-ci.
+    ///
+    /// Appelée après qu'un agrandissement a été ajouté au catalogue : sans elle, la liste
+    /// garde l'inventaire d'avant et le format qu'on vient de créer n'y figure pas — alors
+    /// même que les photos le portent déjà.
+    /// </summary>
+    private void RelireLaListeDesProduits(string codeARetenir)
+    {
+        var choix = App.Services.Catalog.Enabled
+            .Select(p => (object)new ProductChoice(p))
+            .ToList();
+
+        choix.Add(new ChoixTailleLibre());
+        choix.Add(new ChoixAgrandissementLibre());
+
+        ProductCombo.ItemsSource = choix;
+
+        var index = choix.FindIndex(c => c is ProductChoice pc
+                                         && pc.Product.Code.Equals(codeARetenir, StringComparison.OrdinalIgnoreCase));
+
+        ProductCombo.SelectedIndex = index >= 0 ? index : 0;
+        _indexProduitPrecedent = ProductCombo.SelectedIndex;
     }
 
     /// <summary>
