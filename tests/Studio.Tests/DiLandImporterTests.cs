@@ -188,8 +188,8 @@ public class DiLandImporterTests : IDisposable
     /// Le dossier d'une commande Studio porte son numéro du jour : sans journal, une
     /// deuxième reprise créerait un doublon au lieu d'écraser.
     ///
-    /// La commande reste affichée entre-temps — c'est voulu — mais le bouton « Reprendre »
-    /// ne doit plus rien créer.
+    /// Une commande lancée QUITTE la liste des bornes (voir <see cref="DiLandImporter.Pending"/>) ;
+    /// mais si l'on garde une référence obtenue avant, la reprendre ne doit plus rien créer.
     /// </summary>
     [Fact]
     public void Une_commande_n_est_reprise_qu_une_fois()
@@ -204,17 +204,39 @@ public class DiLandImporterTests : IDisposable
         Assert.Single(new OrderFolderStore(Path.Combine(_root, "orders")).ScanRecent());
     }
 
-    /// <summary>Le journal survit au redémarrage, sinon tout serait repris deux fois.</summary>
+    /// <summary>
+    /// Le journal survit au redémarrage : une commande déjà lancée ne réapparaît pas dans
+    /// les bornes, donc aucune reprise en double.
+    /// </summary>
     [Fact]
     public void Le_journal_survit_au_redemarrage()
     {
         var premier = Importateur();
-        premier.Import(premier.Pending().Single());
+        Assert.True(premier.Import(premier.Pending().Single()).Succeeded);
 
         var apresRedemarrage = Importateur();
 
-        Assert.False(apresRedemarrage.Import(apresRedemarrage.Pending().Single()).Succeeded);
+        // Lancée = sa commande Studio existe : elle a quitté la liste des bornes, et le
+        // journal l'a retenu par-delà le redémarrage.
+        Assert.Empty(apresRedemarrage.Pending());
         Assert.Single(new OrderFolderStore(Path.Combine(_root, "orders")).ScanRecent());
+    }
+
+    /// <summary>
+    /// Le défaut signalé le 13/08/2026 : une commande LANCÉE (sa commande Studio créée)
+    /// quitte la liste des bornes. Elle y restait « en cours », et ouvrir la commande
+    /// suivante la faisait réapparaître en orange « en attente », en invitant à un doublon.
+    /// Studio la suit désormais seul.
+    /// </summary>
+    [Fact]
+    public void Une_commande_lancee_quitte_la_liste_des_bornes()
+    {
+        var importateur = Importateur();
+        var borne = importateur.Pending().Single();
+
+        Assert.True(importateur.Import(borne).Succeeded);
+
+        Assert.Empty(importateur.Pending());
     }
 
     // — ouvrir pour retoucher —
@@ -289,19 +311,6 @@ public class DiLandImporterTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_root, "orders", borne.Date.Year.ToString())));
     }
 
-    /// <summary>Reprise n'est pas tirée : la commande reste à faire tant que rien n'est sorti.</summary>
-    [Fact]
-    public void Une_commande_reprise_reste_dans_la_liste_jusqu_au_tirage()
-    {
-        var importateur = Importateur();
-        var borne = importateur.Pending().Single();
-
-        importateur.Import(borne);
-
-        Assert.Equal([borne.Oid], importateur.Pending().Select(c => c.Oid));
-        Assert.Equal(KioskOrderStage.InProgress, importateur.StageOf(borne));
-    }
-
     /// <summary>Une fois le tirage sorti, la commande quitte la liste pour l'historique.</summary>
     [Fact]
     public void Le_tirage_fait_basculer_la_commande_dans_l_historique()
@@ -335,8 +344,12 @@ public class DiLandImporterTests : IDisposable
     }
 
     /// <summary>
-    /// Une enveloppe seulement envoyée au spouleur ne compte pas comme tirée : tant que
-    /// rien n'est sorti, la commande reste à faire.
+    /// Une enveloppe seulement envoyée au spouleur ne compte pas comme tirée : la commande
+    /// n'est pas CLÔTURÉE tant que rien n'est sorti — elle reste « en cours », pas « tirée »,
+    /// et ne bascule pas à l'historique.
+    ///
+    /// On vérifie l'ÉTAT et non la présence dans la liste des bornes : une commande lancée
+    /// en est déjà sortie (Studio la suit), voir <see cref="DiLandImporter.Pending"/>.
     /// </summary>
     [Fact]
     public void Une_enveloppe_seulement_envoyee_ne_ferme_pas_la_commande()
@@ -347,7 +360,8 @@ public class DiLandImporterTests : IDisposable
 
         Imprimer(EnvelopeStatus.Spooled);
 
-        Assert.Equal([borne.Oid], importateur.Pending().Select(c => c.Oid));
+        Assert.Equal(KioskOrderStage.InProgress, importateur.StageOf(borne));
+        Assert.Empty(importateur.History());
     }
 
     /// <summary>

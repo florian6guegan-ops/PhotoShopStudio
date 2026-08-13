@@ -1,7 +1,10 @@
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Studio.App.Infrastructure;
 using Studio.App.Views;
+using Studio.Core.Cloud;
 
 namespace Studio.App;
 
@@ -19,33 +22,138 @@ public partial class MainWindow : Window
             if (App.Services.Mode.IsKiosk)
             {
                 // borne : plein écran verrouillé, parcours client uniquement
-                WindowStyle = WindowStyle.None;
-                ResizeMode = ResizeMode.NoResize;
-                WindowState = WindowState.Maximized;
-                Topmost = true;
+                VerrouillerPleinEcran();
                 Navigator.Home(new KioskHomeView(), "Bienvenue");
                 return;
             }
 
-            Navigator.Home(new HomeView(), "Studio Photo");
-            CheckPendingPrints();
-            App.Services.RunMaintenanceInBackground();
-            try
+            if (App.Services.Mode.IsIdentite)
             {
-                // upload téléphone + API bornes disponibles dès le démarrage
-                FileLog.Write("Démarrage du serveur d'envoi…");
-                await App.Services.EnsureUploadServerAsync();
-                FileLog.Write("Serveur d'envoi démarré (port 8123)");
+                // poste identité : plein écran verrouillé sur le parcours identité. Le
+                // serveur d'envoi reste nécessaire — le client apporte souvent sa photo
+                // par téléphone. Sortie vers le Studio complet par le PIN (voir
+                // IdentiteHomeView → DeverrouillerVersOperateur).
+                VerrouillerPleinEcran();
+                Navigator.Home(new IdentiteHomeView(), "Photos d'identité");
+                await DemarrerServeurEnvoiAsync();
+                DemarrerVerificationMaj();   // le poste identité est tenu par le staff
+                return;
             }
-            catch (Exception ex)
-            {
-                FileLog.Write("Échec du démarrage du serveur d'envoi", ex);
-                MessageBox.Show(
-                    $"Serveur d'envoi non démarré : {ex.Message}\n" +
-                    "Le poste fonctionne, mais téléphone et bornes seront indisponibles.",
-                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+
+            await DemarrerOperateurAsync();
         };
+    }
+
+    // ----- notification de mise à jour -----
+
+    private readonly DispatcherTimer _majTimer = new() { Interval = TimeSpan.FromHours(3) };
+    private bool _majDemarree;
+
+    /// <summary>La version qui tourne, telle qu'elle a été compilée.</summary>
+    private static Version VersionInstallee =>
+        typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0);
+
+    /// <summary>
+    /// Lance la surveillance des mises à jour : une fois tout de suite, puis toutes les
+    /// trois heures. <b>Jamais en mode borne</b> — le bandeau ne doit pas s'afficher devant
+    /// un client, et cette méthode n'est appelée que pour l'opérateur et le poste identité.
+    ///
+    /// Un poste reste ouvert toute la journée, et des versions paraissent en journée : sans
+    /// la vérification périodique, l'opérateur ne verrait une correction que le lendemain.
+    /// </summary>
+    private void DemarrerVerificationMaj()
+    {
+        if (_majDemarree) return;   // identité puis déverrouillage : ne pas empiler
+        _majDemarree = true;
+
+        _majTimer.Tick += (_, _) => _ = VerifierMajEnFond();
+        _majTimer.Start();
+        _ = VerifierMajEnFond();
+    }
+
+    /// <summary>
+    /// Demande au dépôt s'il existe une version plus récente, et lève le bandeau le cas
+    /// échéant. <b>Rien n'est installé</b> : on annonce, l'opérateur décide dans les
+    /// Paramètres. Silencieux sur panne réseau — <see cref="MiseAJour.DernierePubliee"/> rend
+    /// null plutôt que de lever.
+    /// </summary>
+    private async Task VerifierMajEnFond()
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            var publiee = await new MiseAJour(client).DernierePubliee();
+
+            if (publiee is null || !MiseAJour.EstPlusRecente(publiee.Version, VersionInstallee))
+                return;
+
+            Dispatcher.Invoke(() =>
+            {
+                MajBannerText.Text = $"⬆  Mise à jour {publiee.Version.ToString(3)} disponible";
+                MajBanner.Visibility = Visibility.Visible;
+            });
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Vérification de mise à jour en fond impossible", ex);
+        }
+    }
+
+    private void OnMajBannerClicked(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+        Navigator.Go(new SettingsView(), "Paramètres");
+
+    /// <summary>Plein écran sans bordure, au premier plan : borne et poste identité.</summary>
+    private void VerrouillerPleinEcran()
+    {
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        WindowState = WindowState.Maximized;
+        Topmost = true;
+    }
+
+    /// <summary>
+    /// Bascule du mode identité verrouillé vers le Studio complet, le temps de la session.
+    ///
+    /// <b><c>mode.json</c> n'est pas touché</b> : au prochain démarrage, le poste repart en
+    /// identité. C'est voulu — le staff dépanne (un réglage, une réimpression) puis referme
+    /// le poste, sans avoir à reconfigurer quoi que ce soit.
+    /// </summary>
+    public async void DeverrouillerVersOperateur()
+    {
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanResize;
+        Topmost = false;
+        WindowState = WindowState.Maximized;
+        await DemarrerOperateurAsync();
+    }
+
+    /// <summary>Démarrage du poste opérateur : accueil complet, maintenance, serveur d'envoi.</summary>
+    private async Task DemarrerOperateurAsync()
+    {
+        Navigator.Home(new HomeView(), "Studio Photo");
+        CheckPendingPrints();
+        App.Services.RunMaintenanceInBackground();
+        DemarrerVerificationMaj();
+        await DemarrerServeurEnvoiAsync();
+    }
+
+    /// <summary>Le serveur d'envoi (upload téléphone + API bornes). Idempotent.</summary>
+    private async Task DemarrerServeurEnvoiAsync()
+    {
+        try
+        {
+            FileLog.Write("Démarrage du serveur d'envoi…");
+            await App.Services.EnsureUploadServerAsync();
+            FileLog.Write("Serveur d'envoi démarré (port 8123)");
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Échec du démarrage du serveur d'envoi", ex);
+            MessageBox.Show(
+                $"Serveur d'envoi non démarré : {ex.Message}\n" +
+                "Le poste fonctionne, mais téléphone et bornes seront indisponibles.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void OnNavigated(UserControl view, string title)
@@ -55,9 +163,9 @@ public partial class MainWindow : Window
         TitleText.Text = title;
 
         // Les deux boutons vont ensemble : sur l'accueil il n'y a ni retour à faire, ni
-        // accueil à rejoindre. En mode borne, aucun des deux — le parcours client est
-        // verrouillé et n'a pas d'accueil opérateur où revenir.
-        var horsAccueil = Navigator.CanGoBack && !App.Services.Mode.IsKiosk;
+        // accueil à rejoindre. En mode VERROUILLÉ (borne ou identité), pas d'accueil
+        // opérateur où revenir — la sortie se fait par le PIN, pas par ce bouton.
+        var horsAccueil = Navigator.CanGoBack && !App.Services.Mode.EstVerrouille;
         BackButton.Visibility = Navigator.CanGoBack ? Visibility.Visible : Visibility.Collapsed;
         HomeButton.Visibility = horsAccueil ? Visibility.Visible : Visibility.Collapsed;
     }

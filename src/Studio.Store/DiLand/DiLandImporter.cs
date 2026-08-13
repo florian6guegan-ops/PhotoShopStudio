@@ -97,9 +97,15 @@ public sealed class DiLandImporter
     }
 
     /// <summary>
-    /// Commandes de bornes à traiter — celles que personne n'a prises, et celles qui sont
-    /// en cours mais dont le tirage n'est pas sorti. De la plus ancienne à la plus récente :
-    /// on sert dans l'ordre d'arrivée.
+    /// Commandes de bornes à traiter — celles que personne n'a prises, et celles qu'on a
+    /// ouvertes sans encore les LANCER (leur commande Studio n'existe pas). De la plus
+    /// ancienne à la plus récente : on sert dans l'ordre d'arrivée.
+    ///
+    /// <b>Une commande LANCÉE quitte cette liste</b> — dès que sa commande Studio est créée.
+    /// Elle y restait auparavant « en cours » jusqu'à la sortie du tirage ; ouvrir la
+    /// commande suivante la faisait alors réapparaître en orange « en attente », et invitait
+    /// à la reprendre une seconde fois — un doublon de tirage. Studio la suit désormais seul,
+    /// dans « Commandes du jour » et le bandeau d'impression. Signalé le 13/08/2026.
     ///
     /// Volontairement léger : l'écran d'accueil appelle cette méthode sur le fil de
     /// l'interface pour afficher le nombre de commandes en attente. Lire le détail de
@@ -135,6 +141,8 @@ public sealed class DiLandImporter
                 .Where(c => !dossiersConnus.Contains(c.DirectoryName))
                 .Where(c => c.Date >= plancher))
             .Where(c => !Journal.IsClosed(c.Oid))
+            // Lancée = sa commande Studio existe : Studio la suit, elle sort des bornes.
+            .Where(c => Journal.Find(c.Oid)?.StudioOrderId is null)
             .OrderBy(c => c.Date)
             .TakeLast(limit)
             .ToList();

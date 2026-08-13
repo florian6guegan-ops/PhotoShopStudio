@@ -27,6 +27,16 @@ public sealed class ModeConfig
     public string StaffPin { get; set; } = "2468";
 
     public bool IsKiosk => Mode.Equals("borne", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Poste identité : plein écran verrouillé sur le parcours des photos d'identité, comme
+    /// une borne, mais tourné vers l'opérateur du comptoir plutôt que le client. Sortie vers
+    /// le Studio complet par le <see cref="StaffPin"/>.
+    /// </summary>
+    public bool IsIdentite => Mode.Equals("identite", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Les modes plein écran verrouillés : borne client ou poste identité.</summary>
+    public bool EstVerrouille => IsKiosk || IsIdentite;
 }
 
 /// <summary>Composition de l'application : chemins de données et services partagés.</summary>
