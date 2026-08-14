@@ -19,14 +19,33 @@
 
 param(
     [string]$Notes = "",
-    [switch]$Essai
+    [switch]$Essai,
+    # Publie STUDIO PHOTO IDENTITE (src\Studio.Identite) au lieu du Studio complet.
+    #
+    # L'archive part en PREVERSION, et ce n'est pas un detail : les postes cherchent leur
+    # mise a jour dans /releases/latest, que GitHub calcule en IGNORANT les preversions.
+    # Une publication d'Identite en version ordinaire deviendrait « la derniere », et son
+    # etiquette « identite-v1.5.9 » ne se lit pas comme un numero de version : MiseAJour
+    # rendrait null, et PLUS AUCUN poste Studio ne verrait de mise a jour - en silence.
+    [switch]$Identite
 )
 
 $ErrorActionPreference = 'Stop'
 
 $racine = Split-Path -Parent $PSScriptRoot
 $props = Join-Path $racine 'Directory.Build.props'
-$projet = Join-Path $racine 'src\Studio.App\Studio.App.csproj'
+
+if ($Identite) {
+    $projet = Join-Path $racine 'src\Studio.Identite\Studio.Identite.csproj'
+    $nomProduit = 'StudioIdentite'
+    $titreProduit = 'Studio Photo Identite'
+    $prefixeEtiquette = 'identite-v'
+} else {
+    $projet = Join-Path $racine 'src\Studio.App\Studio.App.csproj'
+    $nomProduit = 'StudioPhoto'
+    $titreProduit = 'Studio Photo'
+    $prefixeEtiquette = 'v'
+}
 
 # ---------------------------------------------------------------------------
 # 1. La version
@@ -39,9 +58,9 @@ if (-not $version) {
     throw "Aucune <Version> dans Directory.Build.props."
 }
 
-$etiquette = "v$version"
+$etiquette = "$prefixeEtiquette$version"
 Write-Host ""
-Write-Host "  Studio Photo - publication de la version $version"
+Write-Host "  $titreProduit - publication de la version $version"
 Write-Host "  ------------------------------------------------"
 Write-Host ""
 
@@ -77,7 +96,7 @@ if (-not $Essai) {
 # qu'on cherche a resoudre.
 # ---------------------------------------------------------------------------
 
-$publication = Join-Path $racine 'publish\StudioPhoto'
+$publication = Join-Path $racine "publish\$nomProduit"
 
 if (Test-Path $publication) { Remove-Item $publication -Recurse -Force }
 
@@ -179,7 +198,7 @@ if (Test-Path $vivant) {
 # 4. L'archive
 # ---------------------------------------------------------------------------
 
-$archive = Join-Path $racine "publish\StudioPhoto-$version.zip"
+$archive = Join-Path $racine "publish\$nomProduit-$version.zip"
 if (Test-Path $archive) { Remove-Item $archive -Force }
 
 Write-Host ""
@@ -242,16 +261,28 @@ if ($Essai) {
 # ---------------------------------------------------------------------------
 
 if (-not $Notes) {
-    $Notes = "Version $version de Studio Photo."
+    $Notes = "Version $version de $titreProduit."
 }
 
 Write-Host ""
 Write-Host "  Publication sur GitHub..."
 
-& gh release create $etiquette $archive --title "Version $version" --notes $Notes
+if ($Identite) {
+    # --prerelease : c'est ce qui tient l'archive d'Identite HORS de /releases/latest, donc
+    # hors du chemin de mise a jour des postes Studio. Voir le commentaire du parametre.
+    & gh release create $etiquette $archive `
+        --title "$titreProduit $version" --notes $Notes --prerelease
+} else {
+    & gh release create $etiquette $archive --title "Version $version" --notes $Notes
+}
 if ($LASTEXITCODE -ne 0) { throw "La publication a echoue. L'archive reste dans publish\." }
 
 Write-Host ""
-Write-Host "  Publie. Les postes verront la mise a jour dans Parametres."
+if ($Identite) {
+    Write-Host "  Publie en PREVERSION (invisible pour la mise a jour des postes Studio)."
+    Write-Host "  Archive : $etiquette / $nomProduit-$version.zip"
+} else {
+    Write-Host "  Publie. Les postes verront la mise a jour dans Parametres."
+}
 Write-Host "  Pensez a monter <Version> dans Directory.Build.props pour la prochaine fois."
 Write-Host ""
