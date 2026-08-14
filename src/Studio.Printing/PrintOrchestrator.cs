@@ -1887,12 +1887,79 @@ public sealed class PrintOrchestrator
     /// Chaque planche est une page à un exemplaire : les copies d'une même photo sont des
     /// cases de la planche, pas des tirages répétés.
     /// </summary>
+    /// <summary>
+    /// Le sens que les cadrages de la ligne dessinent : vrai debout, faux couché, null
+    /// quand ils ne s'accordent pas (ou qu'aucun ne se lit).
+    ///
+    /// Le cadrage est enregistré en FRACTIONS de la photo : son rapport ne se connaît qu'en
+    /// lisant les cotes du fichier. On les PING — l'en-tête suffit, l'image n'est pas
+    /// décodée.
+    ///
+    /// À égalité — moitié debout, moitié couché — on ne touche à rien : mieux vaut le sens
+    /// saisi qu'un arbitrage arbitraire qui surprendrait une planche sur deux.
+    /// </summary>
+    internal static bool? SensDesCadrages(OrderLine line, string photosDir)
+    {
+        var debout = 0;
+        var couche = 0;
+
+        foreach (var item in line.Items)
+        {
+            try
+            {
+                var info = new MagickImageInfo(Path.Combine(photosDir, item.FileName));
+
+                // les quarts de tour de l'opérateur comptent : ils changent la photo AVANT
+                // que le cadrage ne s'y applique
+                var (largeur, hauteur) = item.RotationQuarterTurns % 2 == 0
+                    ? ((double)info.Width, (double)info.Height)
+                    : ((double)info.Height, (double)info.Width);
+
+                var l = largeur * item.Crop.Width;
+                var h = hauteur * item.Crop.Height;
+                if (l <= 0 || h <= 0) continue;
+
+                if (h > l) debout++;
+                else if (l > h) couche++;
+            }
+            catch (Exception)
+            {
+                // fichier absent ou illisible : il se signalera au rendu, pas ici
+            }
+        }
+
+        if (debout == couche) return null;
+        return debout > couche;
+    }
+
     private IEnumerable<RenderedPage> RenderCustomSheets(Envelope envelope,
         OrderLine line, Product product, string photosDir, string rendersDir,
         int dejaFaites, IProgress<PrintProgress>? progression, int total, CancellationToken ct)
     {
         var celluleWmm = line.CustomCellWidthMm!.Value;
         var celluleHmm = line.CustomCellHeightMm!.Value;
+
+        // LE CADRAGE DÉCIDE DU SENS DE LA CASE.
+        //
+        // Le rendu tenait pour acquis que « le cadrage a été posé pour ce rapport ». Il ne
+        // l'est pas : l'écran de recadrage donne au cadre l'orientation de LA PHOTO, pendant
+        // que la planche prend celle du FORMAT SAISI. Les deux ne se parlaient jamais.
+        // Résultat à Créteil le 14/08/2026 (commandes 14-018 puis 14-027) : des portraits
+        // soigneusement cadrés debout, coulés dans des cases couchées de 80 × 65 mm, donc
+        // coupés en haut et en bas — deux fois, sur du papier.
+        //
+        // Le rectangle de cadrage EST l'expression de ce que l'opérateur veut voir sortir :
+        // c'est lui qui tranche, pas l'ordre dans lequel deux nombres ont été tapés.
+        if (SensDesCadrages(line, photosDir) is { } cadragesDebout
+            && cadragesDebout == celluleWmm > celluleHmm)
+        {
+            Log?.Invoke(
+                $"Planche personnalisée : cases remises {(cadragesDebout ? "debout" : "couchées")} " +
+                $"({celluleHmm:0.#} × {celluleWmm:0.#} mm au lieu de {celluleWmm:0.#} × {celluleHmm:0.#}) " +
+                "— c'est le sens des cadrages posés à l'écran.");
+
+            (celluleWmm, celluleHmm) = (celluleHmm, celluleWmm);
+        }
 
         var papier = new PaperOption(product.Code, product.Name, product.WidthMm, product.HeightMm, product.Dpi);
         var (parPlanche, pivotee, plancheTournee) =
