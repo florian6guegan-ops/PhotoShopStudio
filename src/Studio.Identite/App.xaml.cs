@@ -50,6 +50,12 @@ public partial class App : Application
             services.Mode.Mode = "identite";
 
             Studio.App.App.AmorcerServices(services);
+
+            // TOUT TIENT EN UNE PAGE, comme ID Maker : pas d'écran d'accueil, pas de
+            // parcours document → support → photos → cadrage. L'application OUVRE sur sa
+            // page de travail, et « Client suivant » en repose une neuve. Les deux seules
+            // sorties sont le choix des photos et les réglages.
+            AccueilStudio.PageDAccueil = () => new Studio.App.Views.IdPhotoView([]);
         }
         catch (Exception ex)
         {

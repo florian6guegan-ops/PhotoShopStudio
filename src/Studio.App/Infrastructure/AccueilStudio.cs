@@ -29,11 +29,30 @@ public static class AccueilStudio
     public static bool EnIdentiteVerrouille => App.Services.Mode.IsIdentite && !Deverrouille;
 
     /// <summary>
-    /// Ramène à l'accueil qui convient au poste : celui du parcours identité sur un poste
-    /// identité verrouillé, l'accueil opérateur partout ailleurs.
+    /// L'accueil que l'application HÔTE veut, quand elle en a un à elle.
+    ///
+    /// Studio Photo Identité n'a pas d'écran d'accueil : sa page de travail EST
+    /// l'application, comme sur ID Maker — on n'y navigue pas dans des menus. Elle pose
+    /// donc ici la fabrique de sa page, et « Client suivant » repart d'une page neuve
+    /// plutôt que d'une tuile « Commencer ».
+    ///
+    /// Null dans le Studio complet, qui garde ses deux accueils.
+    /// </summary>
+    public static Func<System.Windows.Controls.UserControl>? PageDAccueil { get; set; }
+
+    /// <summary>
+    /// Ramène à l'accueil qui convient au poste : celui que l'hôte a posé s'il en a un,
+    /// celui du parcours identité sur un poste identité verrouillé, l'accueil opérateur
+    /// partout ailleurs.
     /// </summary>
     public static void Rentrer()
     {
+        if (PageDAccueil is { } fabrique)
+        {
+            Navigator.Home(fabrique(), "Photos d'identité");
+            return;
+        }
+
         if (EnIdentiteVerrouille)
             Navigator.Home(new IdentiteHomeView(), "Photos d'identité");
         else

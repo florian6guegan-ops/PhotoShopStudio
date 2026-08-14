@@ -36,12 +36,49 @@ public partial class FenetreIdentite : Window
     {
         HoteEcran.Content = ecran;
         TitreEcran.Text = string.IsNullOrWhiteSpace(titre) ? "Photos d'identité" : titre;
-
-        // Sur l'accueil il n'y a pas de client suivant à appeler : on y est déjà.
-        BoutonClientSuivant.Visibility = ecran is IdentiteHomeView
-            ? Visibility.Collapsed
-            : Visibility.Visible;
     }
+
+    // ----- réglages, derrière le code staff -----
+
+    private string _pin = "";
+
+    private void OnReglages(object sender, RoutedEventArgs e)
+    {
+        _pin = "";
+        PinDots.Text = "";
+        PinPanel.Visibility = Visibility.Visible;
+    }
+
+    private void OnPinDigit(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not string chiffre) return;
+
+        _pin += chiffre;
+        PinDots.Text = new string('●', _pin.Length);
+
+        var attendu = Studio.App.App.Services.Mode.StaffPin;
+        if (_pin.Length < attendu.Length) return;
+
+        if (_pin == attendu)
+        {
+            PinPanel.Visibility = Visibility.Collapsed;
+            Navigator.Go(new CourrielSettingsView(), "Envoi par courriel");
+        }
+        else
+        {
+            _pin = "";
+            PinDots.Text = "✗";
+        }
+    }
+
+    private void OnPinClear(object sender, RoutedEventArgs e)
+    {
+        _pin = "";
+        PinDots.Text = "";
+    }
+
+    private void OnPinCancel(object sender, RoutedEventArgs e) =>
+        PinPanel.Visibility = Visibility.Collapsed;
 
     /// <summary>
     /// Repartir de zéro. C'est le geste le plus fréquent du comptoir — un client part, le

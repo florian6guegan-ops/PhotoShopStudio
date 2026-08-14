@@ -494,7 +494,24 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
 
-                        <TextBlock Style="{StaticResource TitreModule}" Text="PAPIER"/>
+                        <!-- LE DOCUMENT, en tête du panneau : c'est la première décision du
+                             comptoir, et elle était prise sur un ÉCRAN SÉPARÉ avant d'arriver
+                             ici. On ne change plus de page pour passer d'un passeport français
+                             à un visa américain — la carte s'ouvre, on choisit, on revient. -->
+                        <TextBlock Style="{StaticResource TitreModule}" Text="DOCUMENT"/>
+                        <Button x:Name="DocumentButton" Style="{StaticResource FlatButton}"
+                                MinWidth="0" MinHeight="54" Padding="12,6" HorizontalContentAlignment="Left"
+                                Click="OnChangerDeDocument"
+                                ToolTip="Changer de pays ou de format — les 274 normes officielles">
+                            <StackPanel>
+                                <TextBlock x:Name="DocumentText" FontSize="16" FontWeight="SemiBold"
+                                           Text="France · 35 × 45 mm"/>
+                                <TextBlock Text="Toucher pour changer de pays ou de format"
+                                           FontSize="11" Opacity="0.75"/>
+                            </StackPanel>
+                        </Button>
+
+                        <TextBlock Style="{StaticResource TitreModule}" Text="PAPIER" Margin="0,16,0,0"/>
                         <ComboBox x:Name="ProductCombo" FontSize="15" Padding="8,6"
                                   DisplayMemberPath="Label" Margin="0,0,0,8"
                                   SelectionChanged="OnProductChanged"/>
@@ -585,6 +602,14 @@
                                 MinHeight="46" Padding="12,0" FontSize="15" Margin="0,8,0,0"
                                 Click="OnSendByMail" IsEnabled="False"
                                 ToolTip="Envoie au client la photo entière, le cadrage en version légère et le cadrage en pleine résolution. Prestation facturée.">✉  Envoyer par e-mail</Button>
+
+                        <!-- LE SEUL DÉTOUR QUI RESTE, et il est justifié : choisir des
+                             photos, c'est parcourir une carte mémoire ou un téléphone, et
+                             cela ne tient pas dans un panneau. Tout le reste se fait ici. -->
+                        <Button x:Name="OuvrirButton" Style="{StaticResource FlatButton}" MinWidth="0"
+                                MinHeight="46" Padding="12,0" FontSize="15" Margin="0,8,0,0"
+                                Click="OnOuvrirDesPhotos"
+                                ToolTip="Carte mémoire, téléphone, dossier…">📂  Ouvrir des photos</Button>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

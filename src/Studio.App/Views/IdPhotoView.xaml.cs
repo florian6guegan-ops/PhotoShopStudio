@@ -234,6 +234,11 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             ? $"Photo d'identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
             : $"{_document.Country} — {_document.Document} ({_document.WidthMm:0.#}×{_document.HeightMm:0.#} mm)";
 
+        // La carte du panneau, qui dit la norme visée et s'ouvre pour en changer.
+        DocumentText.Text = _document.Country == "France"
+            ? $"France · {_document.WidthMm:0.#} × {_document.HeightMm:0.#} mm"
+            : $"{_document.Country} · {_document.Document} · {_document.WidthMm:0.#} × {_document.HeightMm:0.#} mm";
+
         // La capacité est celle du DOCUMENT visé, pas celle inscrite au produit : un
         // passeport espagnol (26 × 32) tient à douze sur le papier où le français (35 × 45)
         // tient à huit. Les papiers qui ne peuvent pas porter une seule case sont écartés
@@ -2033,6 +2038,55 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         var visibility = names.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         FinishCombo.Visibility = visibility;
         FinishLabel.Visibility = visibility;
+    }
+
+    // ----- les deux seules sorties de la page -----
+
+    /// <summary>
+    /// Changer de pays ou de format, sans quitter le travail en cours.
+    ///
+    /// La norme se choisissait sur un ÉCRAN qui précédait celui-ci : pour passer d'un
+    /// passeport français à un visa américain, il fallait tout recommencer depuis
+    /// l'accueil. Les photos déjà ouvertes sont reprises telles quelles — seul le gabarit
+    /// change, et c'est bien ce qu'on demande.
+    /// </summary>
+    private void OnChangerDeDocument(object sender, RoutedEventArgs e)
+    {
+        var chemins = _photos.Select(p => p.Path).ToList();
+
+        Navigator.Go(
+            new IdDocumentPickerView(document => Revenir(new IdPhotoView(chemins, document))),
+            "Choisir le document");
+    }
+
+    /// <summary>
+    /// Ouvrir d'autres photos : carte mémoire, téléphone, dossier.
+    ///
+    /// <b>C'est le seul détour qui reste, et il est justifié</b> — parcourir un support ne
+    /// tient pas dans un panneau. La norme en cours est emportée : on ne la redemande pas.
+    /// </summary>
+    private void OnOuvrirDesPhotos(object sender, RoutedEventArgs e)
+    {
+        var document = _document;
+
+        Navigator.Go(
+            new SourcePickerView((racine, profond) =>
+                Navigator.Go(new IdPhotoPickerView(racine, document, profond),
+                    $"{document.Country} — choisir les photos")),
+            "Choisir le support");
+    }
+
+    /// <summary>
+    /// Revient à la page de travail. Sur le poste identité elle EST l'application : la pile
+    /// se vide, sinon chaque changement de norme y laisserait un écran de plus. Dans le
+    /// Studio complet, le chemin d'où l'on vient doit rester praticable.
+    /// </summary>
+    private static void Revenir(IdPhotoView page)
+    {
+        if (AccueilStudio.EnIdentiteVerrouille)
+            Navigator.Home(page, "Photos d'identité");
+        else
+            Navigator.Go(page, "Photo d'identité");
     }
 
     // ----- impression -----
