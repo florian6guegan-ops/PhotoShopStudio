@@ -3,9 +3,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.Win32;
 using Studio.App.Infrastructure;
+using Studio.Core.Domain;
 using Studio.Core.Mail;
 using Studio.Printing;
+using Studio.Sources;
 
 namespace Studio.App.Views;
 
@@ -28,13 +31,86 @@ namespace Studio.App.Views;
 /// Il est derrière le code staff : voir <see cref="IdentiteHomeView"/>. Un client ne doit
 /// pas pouvoir lire le mot de passe du compte de la boutique.
 /// </summary>
-public partial class CourrielSettingsView : UserControl
+public partial class ReglagesIdentiteView : UserControl
 {
-    public CourrielSettingsView()
+    public ReglagesIdentiteView()
     {
         InitializeComponent();
-        Loaded += (_, _) => Montrer(App.Services.Mail);
+        Loaded += (_, _) =>
+        {
+            MontrerLaSource(App.Services.Identite);
+            Montrer(App.Services.Mail);
+        };
     }
+
+    // ----- d'où viennent les photos -----
+
+    private void MontrerLaSource(ReglagesIdentite reglages)
+    {
+        var fixe = !string.IsNullOrWhiteSpace(reglages.DossierPhotos);
+
+        DossierBox.Text = reglages.DossierPhotos;
+        DossierRadio.IsChecked = fixe;
+        CarteRadio.IsChecked = !fixe;
+
+        DireOuVontLesPhotos();
+    }
+
+    /// <summary>
+    /// Dit ce qui se passera vraiment au prochain « Ouvrir des photos » — et notamment
+    /// qu'aucune carte n'est insérée, plutôt que de laisser l'opérateur le découvrir devant
+    /// le client.
+    /// </summary>
+    private void DireOuVontLesPhotos()
+    {
+        if (DossierRadio.IsChecked == true)
+        {
+            var chemin = DossierBox.Text.Trim();
+
+            if (chemin.Length == 0)
+            {
+                SourceEtatText.Text = "Aucun dossier choisi : « Ouvrir des photos » proposera les supports.";
+                return;
+            }
+
+            SourceEtatText.Text = Directory.Exists(chemin)
+                ? $"« Ouvrir des photos » ouvrira {chemin}."
+                : $"Ce dossier n'existe pas (encore) : {chemin}. Tant qu'il manque, on retombera sur la carte mémoire.";
+            return;
+        }
+
+        var supports = RemovableDriveWatcher.GetDrives();
+        SourceEtatText.Text = supports.Count > 0
+            ? "Support détecté : " + string.Join(", ", supports.Select(d => $"{d.Label} ({d.RootPath})"))
+            : "Aucun support inséré pour l'instant — « Ouvrir des photos » proposera les supports du poste.";
+    }
+
+    private void OnSourceChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+
+        DossierBox.IsEnabled = DossierRadio.IsChecked == true;
+        ParcourirButton.IsEnabled = DossierRadio.IsChecked == true;
+        DireOuVontLesPhotos();
+    }
+
+    private void OnParcourir(object sender, RoutedEventArgs e)
+    {
+        var boite = new OpenFolderDialog { Title = "Dossier des photos d'identité" };
+        DossiersFavoris.Epingler(boite);
+
+        if (DossierBox.Text.Trim() is { Length: > 0 } depart && Directory.Exists(depart))
+            boite.InitialDirectory = depart;
+
+        if (boite.ShowDialog() != true) return;
+
+        DossierBox.Text = boite.FolderName;
+        DossierRadio.IsChecked = true;
+        DireOuVontLesPhotos();
+    }
+
+    private ReglagesIdentite SaisieSource() => new(
+        DossierRadio.IsChecked == true ? DossierBox.Text.Trim() : "");
 
     private void Montrer(MailSettings reglages)
     {
@@ -85,9 +161,12 @@ public partial class CourrielSettingsView : UserControl
 
     private void OnEnregistrer(object sender, RoutedEventArgs e)
     {
+        App.Services.SaveIdentite(SaisieSource());
+
         var reglages = Saisie();
         App.Services.SaveMail(reglages);
         DireOuEnEstLaConfiguration(reglages);
+        DireOuVontLesPhotos();
     }
 
     private async void OnEssai(object sender, RoutedEventArgs e)

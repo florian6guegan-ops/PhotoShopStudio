@@ -38,47 +38,16 @@ public partial class FenetreIdentite : Window
         TitreEcran.Text = string.IsNullOrWhiteSpace(titre) ? "Photos d'identité" : titre;
     }
 
-    // ----- réglages, derrière le code staff -----
-
-    private string _pin = "";
-
-    private void OnReglages(object sender, RoutedEventArgs e)
-    {
-        _pin = "";
-        PinDots.Text = "";
-        PinPanel.Visibility = Visibility.Visible;
-    }
-
-    private void OnPinDigit(object sender, RoutedEventArgs e)
-    {
-        if ((sender as Button)?.Tag is not string chiffre) return;
-
-        _pin += chiffre;
-        PinDots.Text = new string('●', _pin.Length);
-
-        var attendu = Studio.App.App.Services.Mode.StaffPin;
-        if (_pin.Length < attendu.Length) return;
-
-        if (_pin == attendu)
-        {
-            PinPanel.Visibility = Visibility.Collapsed;
-            Navigator.Go(new CourrielSettingsView(), "Envoi par courriel");
-        }
-        else
-        {
-            _pin = "";
-            PinDots.Text = "✗";
-        }
-    }
-
-    private void OnPinClear(object sender, RoutedEventArgs e)
-    {
-        _pin = "";
-        PinDots.Text = "";
-    }
-
-    private void OnPinCancel(object sender, RoutedEventArgs e) =>
-        PinPanel.Visibility = Visibility.Collapsed;
+    /// <summary>
+    /// Les réglages, SANS code.
+    ///
+    /// Ils étaient derrière le code staff, par prudence : le mot de passe du compte courriel
+    /// y figure. Mais ce logiciel n'est pas une borne face au client — c'est l'outil de
+    /// celui qui tient le comptoir, et lui demander un code pour changer le dossier des
+    /// photos, c'est un obstacle sans contrepartie. Retiré à la demande, le 14/08/2026.
+    /// </summary>
+    private void OnReglages(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesIdentiteView(), "Réglages");
 
     /// <summary>
     /// Repartir de zéro. C'est le geste le plus fréquent du comptoir — un client part, le

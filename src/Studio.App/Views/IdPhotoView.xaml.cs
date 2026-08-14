@@ -2069,11 +2069,40 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     {
         var document = _document;
 
+        // ON VA DIRECTEMENT AUX PHOTOS quand on sait où elles sont.
+        //
+        // Au comptoir, le client tend sa carte : l'écran « choisir le support » ne
+        // proposait alors qu'une chose, et il fallait quand même la toucher. Le réglage du
+        // poste tranche — un dossier fixe s'il en a un, la carte insérée sinon — et l'écran
+        // des supports ne reste que pour les cas où la question se pose vraiment.
+        if (DepartDesPhotos() is { } depart)
+        {
+            Navigator.Go(new IdPhotoPickerView(depart, document, avecSousDossiers: true),
+                $"{document.Country} — choisir les photos");
+            return;
+        }
+
         Navigator.Go(
             new SourcePickerView((racine, profond) =>
                 Navigator.Go(new IdPhotoPickerView(racine, document, profond),
                     $"{document.Country} — choisir les photos")),
             "Choisir le support");
+    }
+
+    /// <summary>
+    /// Le dossier où commencer, ou null quand il faut poser la question.
+    ///
+    /// Le dossier fixe l'emporte s'il existe ENCORE : un chemin réseau réglé il y a six mois
+    /// et devenu injoignable ne doit pas envoyer l'opérateur dans le vide — on retombe alors
+    /// sur la carte, qui est de toute façon ce qu'il a en main.
+    /// </summary>
+    private static string? DepartDesPhotos()
+    {
+        var reglages = App.Services.Identite;
+        if (reglages.DossierFixeUtilisable) return reglages.DossierPhotos;
+
+        var supports = RemovableDriveWatcher.GetDrives();
+        return supports.Count == 1 ? supports[0].RootPath : null;
     }
 
     /// <summary>

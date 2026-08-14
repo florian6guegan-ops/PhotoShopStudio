@@ -148,6 +148,18 @@ public sealed class AppServices
         _mail = reglages;
     }
 
+    private ReglagesIdentite? _identite;
+
+    /// <summary>Les réglages du poste identité — d'où viennent les photos, notamment.</summary>
+    public ReglagesIdentite Identite => _identite ??= ReglagesIdentite.Load(ConfigDir);
+
+    /// <summary>Enregistre les réglages du poste identité et les reprend aussitôt.</summary>
+    public void SaveIdentite(ReglagesIdentite reglages)
+    {
+        ReglagesIdentite.Save(ConfigDir, reglages);
+        _identite = reglages;
+    }
+
     private DropboxSettings? _dropbox;
 
     /// <summary>

@@ -47,7 +47,7 @@
                     <!-- Les réglages : l'une des deux seules sorties admises de la page. -->
                     <Button x:Name="BoutonReglages" Style="{StaticResource FlatButton}"
                             MinWidth="70" MinHeight="46" FontSize="19" Margin="10,0,0,0"
-                            ToolTip="Réglages — code staff"
+                            ToolTip="Réglages : d'où viennent les photos, et le compte d'envoi"
                             Click="OnReglages">⚙</Button>
                     <Button x:Name="BoutonQuitter" Style="{StaticResource FlatButton}"
                             MinWidth="70" MinHeight="46" FontSize="17" Margin="10,0,0,0"
@@ -61,32 +61,5 @@
              fenêtre-ci s'y abonne exactement comme le fait la fenêtre du Studio complet. -->
         <ContentControl x:Name="HoteEcran" Grid.Row="1"/>
 
-        <!-- Le pavé du code staff. Il garde le réglage du courriel, où vit le mot de passe
-             du compte de la boutique : un client ne doit pas pouvoir l'ouvrir. -->
-        <Border x:Name="PinPanel" Grid.RowSpan="2" Visibility="Collapsed" Background="#99000000">
-            <Border Background="{DynamicResource CardBrush}" CornerRadius="16" Padding="28"
-                    HorizontalAlignment="Center" VerticalAlignment="Center">
-                <StackPanel>
-                    <TextBlock Text="Code staff — réglages" Style="{StaticResource Texte}"
-                               FontSize="22" FontWeight="SemiBold" TextAlignment="Center"/>
-                    <TextBlock x:Name="PinDots" Style="{StaticResource Texte}"
-                               FontSize="34" TextAlignment="Center" Margin="0,10" MinHeight="44"/>
-                    <UniformGrid Columns="3" Rows="4">
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="1">1</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="2">2</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="3">3</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="4">4</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="5">5</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="6">6</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="7">7</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="8">8</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="9">9</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="20" Click="OnPinCancel">Annuler</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="28" Click="OnPinDigit" Tag="0">0</Button>
-                        <Button Style="{StaticResource FlatButton}" MinWidth="88" MinHeight="72" Margin="4" FontSize="20" Click="OnPinClear">⌫</Button>
-                    </UniformGrid>
-                </StackPanel>
-            </Border>
-        </Border>
     </Grid>
 </Window>

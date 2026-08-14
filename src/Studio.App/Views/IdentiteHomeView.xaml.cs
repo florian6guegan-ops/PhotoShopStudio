@@ -62,7 +62,7 @@ public partial class IdentiteHomeView : UserControl
     private void OnCourriel(object sender, RoutedEventArgs e) =>
         DemanderLeCode(
             "Code staff — réglage du courriel",
-            () => Navigator.Go(new CourrielSettingsView(), "Envoi par courriel"));
+            () => Navigator.Go(new ReglagesIdentiteView(), "Envoi par courriel"));
 
     private void DemanderLeCode(string titre, Action apres)
     {
