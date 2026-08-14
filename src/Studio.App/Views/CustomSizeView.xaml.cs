@@ -204,25 +204,31 @@ public partial class CustomSizeView : UserControl
         _taille = new CustomSize(largeur, hauteur, BorderMm: _bordMm);
         ContinuerButton.IsEnabled = true;
 
-        // LE SENS, DIT EN TOUTES LETTRES QUAND IL NE SERA PAS RESPECTÉ.
+        // LE SENS SUIT LES CADRAGES, ET L'ÉCRAN LE DIT.
         //
-        // « photos posées en travers » était la seule mention, glissée entre parenthèses au
-        // milieu d'une phrase sur le papier : personne ne pouvait comprendre que son
-        // CADRAGE allait être repris dans l'autre sens et coupé. C'est ce qui a gâché la
-        // commande 14-018 de Créteil le 14/08/2026.
-        var avertissementSens = plan.CellRotated
-            ? $"\n\n⚠ Vos photos seront posées EN TRAVERS de la planche : le cadrage que vous " +
-              $"ferez sera repris couché, donc coupé en haut et en bas. Pour garder le sens, " +
-              $"appuyez sur « {(hauteur > largeur ? "Couchée" : "Debout")} » — la taille " +
-              $"devient {Math.Max(largeur, hauteur) / 10:0.##} × {Math.Min(largeur, hauteur) / 10:0.##} cm " +
-              $"ou l'inverse, et le rendement est souvent le même."
-            : "";
+        // Depuis la 1.5.16, ce n'est plus l'ordre des deux nombres qui décide du sens des
+        // cases mais le CADRAGE posé sur chaque photo (voir PrintOrchestrator.SensDesCadrages).
+        // L'opérateur n'a donc rien à choisir ici — mais cet écran annonce un nombre de
+        // photos par planche, donc un PRIX, et il l'annonçait d'après le sens saisi : faux
+        // dès que l'autre sens n'a pas le même rendement.
+        //
+        // On regarde donc les DEUX sens. Même rendement : on rassure, il n'y a rien à faire.
+        // Rendements différents : on donne les deux, puisqu'on ne saura qu'au cadrage.
+        var autre = CustomSheetLayout.Choose(1, hauteur, largeur, papiers);
+        var memeRendement = autre is null || autre.PerSheet == plan.PerSheet;
+
+        var motDuSens = memeRendement
+            ? "\nLe sens des photos suivra vos cadrages — vous n'avez pas à le choisir ici."
+            : $"\n⚠ Le sens des photos suivra vos cadrages, et le rendement en dépend : " +
+              $"{plan.PerSheet} par planche en {(largeur > hauteur ? "couché" : "debout")}, " +
+              $"{autre!.PerSheet} en {(largeur > hauteur ? "debout" : "couché")}. " +
+              "Annoncez le prix une fois les photos cadrées.";
 
         VerdictText.Text = (plan.PerSheet == 1
             ? $"Une photo par planche {plan.Paper.Name} : à cette taille, il n'y a pas de place gagnée."
             : $"{plan.PerSheet} photos par planche {plan.Paper.Name}." +
               "\nLe papier se choisit à l'écran suivant : ici, c'est le moins cher qui est montré.")
-            + avertissementSens
+            + motDuSens
             // La marge se DIT, parce qu'elle mange l'image : sans cette ligne, l'opérateur
             // annonce un 9 × 13 et le client reçoit une photo de 8 × 12 dans du blanc.
             + (_bordMm > 0
