@@ -120,12 +120,26 @@ public partial class MainWindow : Window
     /// </summary>
     public async void DeverrouillerVersOperateur()
     {
+        _deverrouille = true;
         WindowStyle = WindowStyle.SingleBorderWindow;
         ResizeMode = ResizeMode.CanResize;
         Topmost = false;
         WindowState = WindowState.Maximized;
         await DemarrerOperateurAsync();
     }
+
+    /// <summary>
+    /// Vrai quand le staff a ouvert le Studio complet par le PIN. <c>mode.json</c> dit
+    /// toujours « identite », mais la SESSION est passée en opérateur : le bouton Accueil ne
+    /// doit plus reboucler sur l'accueil identité.
+    /// </summary>
+    private bool _deverrouille;
+
+    /// <summary>
+    /// Poste identité ENCORE verrouillé : le parcours doit revenir à l'accueil identité, pas
+    /// à l'accueil opérateur.
+    /// </summary>
+    private bool EnIdentiteVerrouille => App.Services.Mode.IsIdentite && !_deverrouille;
 
     /// <summary>Démarrage du poste opérateur : accueil complet, maintenance, serveur d'envoi.</summary>
     private async Task DemarrerOperateurAsync()
@@ -162,12 +176,14 @@ public partial class MainWindow : Window
         ScreenHost.Content = view;
         TitleText.Text = title;
 
-        // Les deux boutons vont ensemble : sur l'accueil il n'y a ni retour à faire, ni
-        // accueil à rejoindre. En mode VERROUILLÉ (borne ou identité), pas d'accueil
-        // opérateur où revenir — la sortie se fait par le PIN, pas par ce bouton.
-        var horsAccueil = Navigator.CanGoBack && !App.Services.Mode.EstVerrouille;
+        // En BORNE (client), aucun bouton d'accueil : le parcours est verrouillé et la
+        // sortie se fait par le PIN. Partout ailleurs — opérateur ET poste identité — le
+        // bouton ramène au point de départ. En identité verrouillée il retourne à l'accueil
+        // IDENTITÉ, ce qui donne le « client suivant » qui manquait.
+        var horsAccueil = Navigator.CanGoBack && !App.Services.Mode.IsKiosk;
         BackButton.Visibility = Navigator.CanGoBack ? Visibility.Visible : Visibility.Collapsed;
         HomeButton.Visibility = horsAccueil ? Visibility.Visible : Visibility.Collapsed;
+        HomeButton.Content = EnIdentiteVerrouille ? "⌂ Client suivant" : "⌂ Accueil";
     }
 
     private void OnBackClicked(object sender, RoutedEventArgs e) => Navigator.Back();
@@ -197,7 +213,13 @@ public partial class MainWindow : Window
         // « En attente » avec la commande et son heure, juste sous les yeux de celui qui
         // vient d'appuyer. Une boîte de dialogue à chaque retour serait un clic de plus,
         // cinquante fois par jour.
-        Navigator.Home(new HomeView(), "Studio Photo");
+        //
+        // En poste identité verrouillé, on revient à l'accueil IDENTITÉ — le Studio complet
+        // reste derrière le PIN.
+        if (EnIdentiteVerrouille)
+            Navigator.Home(new IdentiteHomeView(), "Photos d'identité");
+        else
+            Navigator.Home(new HomeView(), "Studio Photo");
     }
 
     /// <summary>
