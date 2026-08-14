@@ -46,6 +46,16 @@ public static class BackgroundRemoval
     /// <summary>Adoucissement final du masque, en fraction de sa taille.</summary>
     private const double AdoucissementRelatif = 0.004;
 
+    /// <summary>
+    /// La part de l'image qu'un détourage par couleur doit AU MOINS garder pour qu'on y
+    /// croie, en opacité moyenne du masque (0 = tout est fond, 1 = rien n'est fond).
+    ///
+    /// Un sujet d'identité occupe la moitié du cadre ou davantage ; un portrait en pied,
+    /// nettement moins. <b>Un dixième</b> est donc très bas exprès : on ne veut refuser que
+    /// l'absurde — la photo entière prise pour du fond —, pas arbitrer un cadrage.
+    /// </summary>
+    private const double PartMinimaleDuSujet = 0.10;
+
     /// <summary>Journal optionnel, branché sur FileLog par l'application.</summary>
     public static Action<string>? Log { get; set; }
 
@@ -257,6 +267,27 @@ public static class BackgroundRemoval
         Cv2.Threshold(alpha, alpha, 0.0, 0.0, ThresholdTypes.Tozero);
 
         RestreindreAuFondConnecte(alpha, w, h);
+
+        // ⚠ UN MASQUE QUI NE GARDE PRESQUE RIEN N'EST PAS UN DÉTOURAGE.
+        //
+        // Arcueil, 14/08/2026 : « le fond blanc fait blanc sur toute la photo ». Le modèle
+        // de détourage n'était pas installé sur ce poste, on se rabattait donc sur cette
+        // découpe par COULEUR — et sur une photo dont le fond n'est pas uni, elle prend
+        // toute l'image pour du fond. Le client repart avec un rectangle blanc.
+        //
+        // Rien ne le rattrapait ensuite : PoserUnFond fait confiance au masque qu'on lui
+        // rend. On préfère NE RIEN FAIRE — c'est déjà la règle affichée de cette méthode,
+        // « on préfère ne rien faire qu'abîmer la photo », elle manquait simplement de ce
+        // dernier contrôle.
+        var garde = Cv2.Mean(alpha).Val0;
+        if (garde < PartMinimaleDuSujet)
+        {
+            Log?.Invoke(
+                $"Détourage par couleur abandonné : il ne resterait que {garde * 100:0.#} % de " +
+                "l'image, le fond n'est pas assez uni pour être reconnu. La photo est laissée " +
+                "telle quelle — installez le modèle de détourage dans Paramètres pour ces photos-là.");
+            return null;
+        }
 
         using var octets8 = new Mat();
         alpha.ConvertTo(octets8, MatType.CV_8UC1, 255.0);
