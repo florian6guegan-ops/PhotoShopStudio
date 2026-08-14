@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="Studio.App.Views.IdPhotoView"
+<UserControl x:Class="Studio.App.Views.IdPhotoView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
@@ -82,6 +82,12 @@
                 <ColumnDefinition Width="*"/>
                 <!-- Le panneau des corrections, replié. Il s'ouvre SUR PLACE : voir plus bas. -->
                 <ColumnDefinition x:Name="CorrectionsColonne" Width="0"/>
+                <!-- LE PANNEAU PERMANENT, à droite. Les réglages vivaient dans une barre au
+                     BAS de l'écran : sur une photo d'identité, l'œil fait donc l'aller-retour
+                     entre le cadrage, en haut, et le papier ou le fond, en bas — cinquante
+                     fois par jour. Ils sont ici à hauteur de la photo, tous visibles à la
+                     fois, comme sur ID Maker. C'est la maquette validée le 14/08/2026. -->
+                <ColumnDefinition Width="360"/>
             </Grid.ColumnDefinitions>
 
             <!-- Bande de choix de la photo -->
@@ -473,6 +479,115 @@
                     </StackPanel>
                 </ScrollViewer>
             </Border>
+
+            <!-- ===== LE PANNEAU PERMANENT (maquette ID Maker) =====
+
+                 Tout ce qui décide de la planche, à hauteur de la photo et visible d'un
+                 seul coup d'œil : le papier, ce qu'on tire, le fond, l'affichage, les
+                 corrections, puis les actions. Ces contrôles vivaient dans une barre au bas
+                 de l'écran — mêmes noms, mêmes gestionnaires, seulement déplacés.
+
+                 L'ordre suit la maquette et le geste du comptoir : on choisit le document
+                 et le papier, on regarde la planche, on traite le fond, puis on imprime. -->
+            <Border Grid.Column="3" Background="{StaticResource CardBrush}" CornerRadius="12"
+                    Padding="12" Margin="10,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+
+                        <TextBlock Style="{StaticResource TitreModule}" Text="PAPIER"/>
+                        <ComboBox x:Name="ProductCombo" FontSize="15" Padding="8,6"
+                                  DisplayMemberPath="Label" Margin="0,0,0,8"
+                                  SelectionChanged="OnProductChanged"/>
+                        <TextBlock x:Name="FinishLabel" Text="Finition" Style="{StaticResource Hint}"
+                                   FontSize="13" Visibility="Collapsed"/>
+                        <ComboBox x:Name="FinishCombo" FontSize="15" Padding="8,6"
+                                  Margin="0,4,0,0" Visibility="Collapsed"/>
+
+                        <!-- Ce que le lot représente : muet sur une photo seule, où il ne
+                             dirait que ce que les deux compteurs disent déjà. -->
+                        <TextBlock x:Name="LotText" Style="{StaticResource Valeur}" FontSize="16"
+                                   HorizontalAlignment="Left" TextAlignment="Left" Margin="0,10,0,0"/>
+
+                        <TextBlock Style="{StaticResource TitreModule}" Text="LA PLANCHE" Margin="0,16,0,0"/>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Photos" Style="{StaticResource Hint}"
+                                       FontSize="14" VerticalAlignment="Center"
+                                       ToolTip="Nombre de photos sur une planche"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Style="{StaticResource BoutonModule}" Click="OnCopiesMinus">−</Button>
+                                <TextBlock x:Name="CopiesText" Text="6" Style="{StaticResource Valeur}"
+                                           FontSize="19" MinWidth="42"/>
+                                <Button Style="{StaticResource BoutonModule}" Click="OnCopiesPlus">+</Button>
+                            </StackPanel>
+                        </Grid>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Planches" Style="{StaticResource Hint}"
+                                       FontSize="14" VerticalAlignment="Center"
+                                       ToolTip="Nombre de tirages identiques de CETTE photo"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Style="{StaticResource BoutonModule}" Click="OnQuantityMinus">−</Button>
+                                <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}"
+                                           FontSize="19" MinWidth="42"/>
+                                <Button Style="{StaticResource BoutonModule}" Click="OnQuantityPlus">+</Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource TitreModule}" Text="FOND &amp; SUJET" Margin="0,16,0,0"/>
+                        <CheckBox x:Name="WhiteBackgroundCheck" Style="{StaticResource CaseCochable}"
+                                  Margin="0,0,0,6"
+                                  ToolTip="Remplace le fond de studio par du blanc franc. Le sujet n'est jamais entamé : seul est effacé ce qui ressemble au fond et touche le bord de la photo."
+                                  Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
+                            <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="14"/>
+                        </CheckBox>
+                        <!-- Le gris est le fond que les textes attendent : sur du blanc
+                             franc, une chemise blanche ou des cheveux blancs se fondent et
+                             la silhouette ne se détache plus. Les deux cases sont exclusives. -->
+                        <CheckBox x:Name="GrayBackgroundCheck" Style="{StaticResource CaseCochable}"
+                                  ToolTip="Même détourage, posé sur un gris clair conforme aux normes. À préférer au blanc quand le sujet porte du clair ou a les cheveux blancs : la silhouette se détache."
+                                  Checked="OnGrayBackgroundChanged" Unchecked="OnGrayBackgroundChanged">
+                            <TextBlock Text="Fond gris" Style="{StaticResource Texte}" FontSize="14"/>
+                        </CheckBox>
+
+                        <TextBlock Style="{StaticResource TitreModule}" Text="AFFICHAGE" Margin="0,16,0,0"/>
+                        <CheckBox x:Name="GrayscaleCheck" Style="{StaticResource CaseCochable}"
+                                  Checked="OnGrayscaleChanged" Unchecked="OnGrayscaleChanged">
+                            <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="14"/>
+                        </CheckBox>
+
+                        <TextBlock Style="{StaticResource TitreModule}" Text="CORRECTIONS" Margin="0,16,0,0"/>
+                        <!-- Les mêmes corrections que sur les tirages : une photo d'identité
+                             prise au comptoir est sous-exposée ou tire au jaune comme une autre. -->
+                        <Button x:Name="CorrectButton" Style="{StaticResource FlatButton}" MinWidth="0"
+                                MinHeight="42" Padding="12,0" FontSize="15" Click="OnCorrect"
+                                ToolTip="Exposition, contraste, température… les mêmes réglages que sur les tirages.">🎚  Corriger</Button>
+                        <TextBlock x:Name="CorrectionsText" Style="{StaticResource Hint}" FontSize="12"
+                                   Margin="0,6,0,0"/>
+                        <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="42"
+                                Padding="12,0" FontSize="15" Margin="0,8,0,0" Click="OnRedetect"
+                                ToolTip="Refaire le cadrage automatique">↻  Cadrage automatique</Button>
+
+                        <!-- LES ACTIONS, en bas et dans l'ordre où elles se décident.
+                             L'envoi est une prestation à part, facturée à la photo : il
+                             n'imprime rien, et l'impression ne l'envoie pas. -->
+                        <Button x:Name="PrintButton" Style="{StaticResource BigButton}"
+                                MinHeight="58" MinWidth="0" FontSize="19" Padding="12,8"
+                                Margin="0,20,0,0" Click="OnPrint" IsEnabled="False"
+                                ToolTip="Imprimer la planche">🖨  Imprimer la planche</Button>
+                        <Button x:Name="MailButton" Style="{StaticResource FlatButton}" MinWidth="0"
+                                MinHeight="46" Padding="12,0" FontSize="15" Margin="0,8,0,0"
+                                Click="OnSendByMail" IsEnabled="False"
+                                ToolTip="Envoie au client la photo entière, le cadrage en version légère et le cadrage en pleine résolution. Prestation facturée.">✉  Envoyer par e-mail</Button>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
         </Grid>
 
         <!-- Barre d'action.
@@ -483,135 +598,16 @@
              donc PAR-DESSUS le bouton Imprimer dès que la fenêtre rétrécissait. Ici les
              réglages occupent la place restante et se replient en plusieurs lignes ; les
              boutons d'action gardent la leur en toutes circonstances. -->
+        <!-- LA BARRE DU BAS, réduite à ce qui la justifie : le verdict de conformité.
+
+             Elle portait le papier, les compteurs, le fond, les corrections et les trois
+             boutons d'action. Tout cela est remonté dans le panneau de droite, à hauteur de
+             la photo — voir la maquette. Ce qui reste est une PHRASE, sur toute la largeur :
+             la coincer entre deux blocs de boutons la tronquait. -->
         <Border x:Name="BarreReglages" Grid.Row="2" Background="{StaticResource CardBrush}"
-                CornerRadius="12" Padding="10,8" Margin="0,8,0,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Le verdict de conformité sur toute la largeur : c'est une phrase, pas
-                     une étiquette, et la coincer entre deux blocs de boutons la tronquait. -->
-                <TextBlock x:Name="ComplianceText" Grid.Row="0" Grid.ColumnSpan="2"
-                           Style="{StaticResource Texte}" FontSize="14" FontWeight="SemiBold"
-                           Margin="0,0,0,5" TextWrapping="Wrap"/>
-
-                <WrapPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-
-                    <!-- Sur quoi ça s'imprime -->
-                    <Border Style="{StaticResource Module}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource TitreModule}" Text="PAPIER"/>
-                            <StackPanel Orientation="Horizontal">
-                                <ComboBox x:Name="ProductCombo" MinWidth="250" FontSize="15" Padding="8,4"
-                                          DisplayMemberPath="Label" VerticalAlignment="Center"
-                                          SelectionChanged="OnProductChanged"/>
-                                <TextBlock x:Name="FinishLabel" Text="Finition" Style="{StaticResource Hint}"
-                                           FontSize="13" VerticalAlignment="Center" Margin="12,0,6,0"
-                                           Visibility="Collapsed"/>
-                                <ComboBox x:Name="FinishCombo" MinWidth="130" FontSize="15" Padding="8,4"
-                                          VerticalAlignment="Center" Visibility="Collapsed"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Combien. Les deux compteurs ensemble et sous un même titre : ils
-                         se ressemblent et ne disent pas la même chose, les séparer les
-                         rendait indiscernables. -->
-                    <Border Style="{StaticResource Module}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource TitreModule}" Text="QUANTITÉ"/>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Photos" Style="{StaticResource Hint}" FontSize="13"
-                                           VerticalAlignment="Center" Margin="0,0,6,0"
-                                           ToolTip="Nombre de photos sur une planche"/>
-                                <Button Style="{StaticResource BoutonModule}" Click="OnCopiesMinus">−</Button>
-                                <TextBlock x:Name="CopiesText" Text="6" Style="{StaticResource Valeur}"
-                                           FontSize="19" MinWidth="36"/>
-                                <Button Style="{StaticResource BoutonModule}" Click="OnCopiesPlus">+</Button>
-
-                                <TextBlock Text="Planches" Style="{StaticResource Hint}" FontSize="13"
-                                           VerticalAlignment="Center" Margin="16,0,6,0"
-                                           ToolTip="Nombre de tirages identiques de CETTE photo"/>
-                                <Button Style="{StaticResource BoutonModule}" Click="OnQuantityMinus">−</Button>
-                                <TextBlock x:Name="QuantityText" Text="1" Style="{StaticResource Valeur}"
-                                           FontSize="19" MinWidth="36"/>
-                                <Button Style="{StaticResource BoutonModule}" Click="OnQuantityPlus">+</Button>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Ce qui touche aux PIXELS : les deux cases et les curseurs. Elles
-                         étaient dispersées entre les compteurs et le bouton d'impression,
-                         alors qu'elles font toutes la même chose — changer l'image. -->
-                    <Border Style="{StaticResource Module}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource TitreModule}" Text="IMAGE"/>
-                            <StackPanel Orientation="Horizontal">
-                                <CheckBox x:Name="GrayscaleCheck" Style="{StaticResource CaseCochable}" VerticalAlignment="Center"
-                                          Checked="OnGrayscaleChanged" Unchecked="OnGrayscaleChanged">
-                                    <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="14"/>
-                                </CheckBox>
-                                <CheckBox x:Name="WhiteBackgroundCheck" Style="{StaticResource CaseCochable}" VerticalAlignment="Center" Margin="16,0,0,0"
-                                          ToolTip="Remplace le fond de studio par du blanc franc. Le sujet n'est jamais entamé : seul est effacé ce qui ressemble au fond et touche le bord de la photo."
-                                          Checked="OnWhiteBackgroundChanged" Unchecked="OnWhiteBackgroundChanged">
-                                    <TextBlock Text="Fond blanc" Style="{StaticResource Texte}" FontSize="14"/>
-                                </CheckBox>
-                                <!-- Le gris est le fond que les textes attendent : sur du
-                                     blanc franc, une chemise blanche ou des cheveux blancs
-                                     se fondent et la silhouette ne se détache plus. Les
-                                     deux cases sont exclusives. -->
-                                <CheckBox x:Name="GrayBackgroundCheck" Style="{StaticResource CaseCochable}" VerticalAlignment="Center" Margin="16,0,0,0"
-                                          ToolTip="Même détourage, posé sur un gris clair conforme aux normes. À préférer au blanc quand le sujet porte du clair ou a les cheveux blancs : la silhouette se détache."
-                                          Checked="OnGrayBackgroundChanged" Unchecked="OnGrayBackgroundChanged">
-                                    <TextBlock Text="Fond gris" Style="{StaticResource Texte}" FontSize="14"/>
-                                </CheckBox>
-                                <!-- Les mêmes corrections que sur les tirages : une photo
-                                     d'identité prise au comptoir est sous-exposée ou tire
-                                     au jaune comme une autre. -->
-                                <Button x:Name="CorrectButton" Style="{StaticResource FlatButton}" MinWidth="120"
-                                        MinHeight="34" Padding="12,0" Margin="16,0,0,0" FontSize="14"
-                                        Click="OnCorrect"
-                                        ToolTip="Exposition, contraste, température… les mêmes réglages que sur les tirages.">🎚  Corriger</Button>
-                                <TextBlock x:Name="CorrectionsText" Style="{StaticResource Hint}" FontSize="12"
-                                           VerticalAlignment="Center" Margin="8,0,0,0" MaxWidth="200"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </WrapPanel>
-
-                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal"
-                            VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
-                    <!-- Ce que le lot représente : muet sur une photo seule, où il ne
-                         dirait que ce que les deux compteurs disent déjà. -->
-                    <TextBlock x:Name="LotText" Style="{StaticResource Valeur}" FontSize="15"
-                               VerticalAlignment="Center" Margin="0,0,12,0"/>
-                    <!-- Ces trois boutons héritaient des 76 px de « BigButton », et
-                         imposaient donc leur hauteur à TOUTE la barre : c'était à eux
-                         seuls le tiers de l'enflure. -->
-                    <Button Style="{StaticResource FlatButton}" MinWidth="110" MinHeight="44"
-                            Padding="14,0" FontSize="15" Click="OnRedetect"
-                            ToolTip="Refaire le cadrage automatique">↻ Auto</Button>
-                    <!-- L'envoi est une prestation à part, facturée à la photo : il
-                         n'imprime rien et l'impression ne l'envoie pas. -->
-                    <Button x:Name="MailButton" Style="{StaticResource FlatButton}" MinWidth="150"
-                            MinHeight="44" Padding="14,0" FontSize="15"
-                            Margin="10,0,0,0" Click="OnSendByMail" IsEnabled="False"
-                            ToolTip="Envoie au client la photo entière, le cadrage en version légère et le cadrage en pleine résolution. Prestation facturée.">✉  Envoyer</Button>
-                    <!-- « Suivant » et non « Imprimer » : la planche se regarde AVANT le
-                         papier. Refaire une planche identité coûte une feuille et un
-                         client qui attend. -->
-                    <Button x:Name="PrintButton" Style="{StaticResource BigButton}" Margin="10,0,0,0"
-                            MinHeight="50" MinWidth="170" FontSize="20" Padding="18,8"
-                            Click="OnPrint" IsEnabled="False"
-                            ToolTip="Voir les planches telles qu'elles sortiront, puis imprimer">Suivant  →</Button>
-                </StackPanel>
-            </Grid>
+                CornerRadius="12" Padding="12,8" Margin="0,8,0,0">
+            <TextBlock x:Name="ComplianceText" Style="{StaticResource Texte}"
+                       FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
         </Border>
     </Grid>
 </UserControl>
