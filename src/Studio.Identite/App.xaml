@@ -4,26 +4,53 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <!-- Le thème du Studio : les écrans réutilisés y cherchent leurs pinceaux
-                     et leurs gabarits de contrôles. Sans lui, ils sortent en noir sur noir. -->
+                <!-- Le thème du Studio : les écrans réutilisés y cherchent leurs gabarits de
+                     boutons, de listes et de champs. Sans lui, ils sortent sans habillage. -->
                 <ResourceDictionary Source="pack://application:,,,/Studio.App;component/Theme.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- LA PALETTE D'IDENTITÉ, posée PAR-DESSUS celle du Studio.
+            <!-- ================= LA PALETTE DE LA MAQUETTE =================
 
-                 Accent sarcelle (#0E8A8F) et non le bleu du Studio : c'est la décision de
-                 la maquette validée le 14/08/2026, et elle distingue les deux logiciels au
-                 premier coup d'œil sur un poste qui pourrait porter les deux.
+                 Studio Photo est SOMBRE, dans l'esprit de DiLand. Studio Photo Identité est
+                 CLAIR et sarcelle : c'est la maquette validée le 14/08/2026, et c'est ce qui
+                 fait qu'on reconnaît ID Maker au premier coup d'œil.
 
-                 Seules les CLÉS existantes sont reposées : tout écran réutilisé suit sans
-                 qu'on le touche. -->
-            <SolidColorBrush x:Key="AccentBrush" Color="#0E8A8F"/>
+                 Ces clés existent toutes dans Theme.xaml ; elles sont simplement REPOSÉES
+                 ici. Les gabarits du thème les lisent en DynamicResource, exprès pour ça :
+                 aucune vue n'a été touchée, et le Studio garde sa palette d'origine.
+
+                 ⚠ Un pinceau qu'on ajoute ici doit exister dans Theme.xaml, sinon le
+                 gabarit qui le lit ne trouve rien et le contrôle sort transparent. -->
+
+            <!-- fonds : « ground », « panel » et « panel-2 » de la maquette -->
+            <SolidColorBrush x:Key="PageBrush"      Color="#E9EDF1"/>
+            <SolidColorBrush x:Key="CardBrush"      Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="PanelBrush"     Color="#F3F6F9"/>
+            <SolidColorBrush x:Key="FieldBrush"     Color="#FFFFFF"/>
+
+            <!-- ecriture : « ink » et « muted » -->
+            <SolidColorBrush x:Key="TextBrush"      Color="#172029"/>
+            <SolidColorBrush x:Key="MutedBrush"     Color="#63707E"/>
+
+            <!-- l'accent sarcelle, la marque du logiciel -->
+            <SolidColorBrush x:Key="AccentBrush"     Color="#0E8A8F"/>
             <SolidColorBrush x:Key="AccentDarkBrush" Color="#0A6E72"/>
-            <SolidColorBrush x:Key="TitleBrush" Color="#26BCC2"/>
+            <!-- les titres d'écran ne sont plus orangés : sur fond clair, l'accent suffit -->
+            <SolidColorBrush x:Key="TitleBrush"      Color="#0A6E72"/>
 
-            <!-- Le cadre de l'application, aux valeurs de la maquette. -->
-            <SolidColorBrush x:Key="ScenePinceau" Color="#141C26"/>
-            <SolidColorBrush x:Key="LignePinceau" Color="#28333F"/>
+            <!-- traits et etats, versions claires : « line » et « line-strong » -->
+            <SolidColorBrush x:Key="LigneBrush"          Color="#DCE3EA"/>
+            <SolidColorBrush x:Key="SeparatorBrush"      Color="#DCE3EA"/>
+            <SolidColorBrush x:Key="InactifFondBrush"    Color="#EEF2F6"/>
+            <SolidColorBrush x:Key="InactifTexteBrush"   Color="#A6B2BE"/>
+
+            <!-- verdicts : « ok » et « warn » -->
+            <SolidColorBrush x:Key="OkBrush"     Color="#2E9E5B"/>
+            <SolidColorBrush x:Key="DangerBrush" Color="#D2453B"/>
+
+            <!-- LA SCÈNE RESTE SOMBRE, et c'est voulu : la maquette pose la photo sur
+                 « stage » #141C26. Un fond clair derrière une photo lui fait concurrence. -->
+            <SolidColorBrush x:Key="SceneBrush" Color="#141C26"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

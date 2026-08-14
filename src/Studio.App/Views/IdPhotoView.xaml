@@ -136,7 +136,7 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="#263238" CornerRadius="12" ClipToBounds="True">
+            <Border Grid.Row="0" Background="{DynamicResource SceneBrush}" CornerRadius="12" ClipToBounds="True">
                 <Grid x:Name="Stage" Background="Transparent"
                       MouseLeftButtonDown="OnStageMouseDown" MouseLeftButtonUp="OnStageMouseUp"
                       MouseMove="OnStageMouseMove" MouseWheel="OnStageWheel"
