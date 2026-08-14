@@ -120,7 +120,7 @@ public partial class MainWindow : Window
     /// </summary>
     public async void DeverrouillerVersOperateur()
     {
-        _deverrouille = true;
+        AccueilStudio.Deverrouille = true;
         WindowStyle = WindowStyle.SingleBorderWindow;
         ResizeMode = ResizeMode.CanResize;
         Topmost = false;
@@ -129,17 +129,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Vrai quand le staff a ouvert le Studio complet par le PIN. <c>mode.json</c> dit
-    /// toujours « identite », mais la SESSION est passée en opérateur : le bouton Accueil ne
-    /// doit plus reboucler sur l'accueil identité.
-    /// </summary>
-    private bool _deverrouille;
-
-    /// <summary>
     /// Poste identité ENCORE verrouillé : le parcours doit revenir à l'accueil identité, pas
-    /// à l'accueil opérateur.
+    /// à l'accueil opérateur. L'état vit dans <see cref="AccueilStudio"/>, avec les seize
+    /// autres écrans qui rentrent à l'accueil.
     /// </summary>
-    private bool EnIdentiteVerrouille => App.Services.Mode.IsIdentite && !_deverrouille;
+    private static bool EnIdentiteVerrouille => AccueilStudio.EnIdentiteVerrouille;
 
     /// <summary>Démarrage du poste opérateur : accueil complet, maintenance, serveur d'envoi.</summary>
     private async Task DemarrerOperateurAsync()
@@ -215,11 +209,8 @@ public partial class MainWindow : Window
         // cinquante fois par jour.
         //
         // En poste identité verrouillé, on revient à l'accueil IDENTITÉ — le Studio complet
-        // reste derrière le PIN.
-        if (EnIdentiteVerrouille)
-            Navigator.Home(new IdentiteHomeView(), "Photos d'identité");
-        else
-            Navigator.Home(new HomeView(), "Studio Photo");
+        // reste derrière le PIN. C'est AccueilStudio qui tranche, pour tout le monde.
+        AccueilStudio.Rentrer();
     }
 
     /// <summary>

@@ -440,7 +440,7 @@ public partial class IdSheetRecapView : UserControl
     private void OnRetour(object sender, RoutedEventArgs e) => Navigator.Back();
 
     private void OnAnnuler(object sender, RoutedEventArgs e) =>
-        Navigator.Home(new HomeView(), "Studio Photo");
+        AccueilStudio.Rentrer();
 
     // ----- impression -----
 
@@ -455,62 +455,14 @@ public partial class IdSheetRecapView : UserControl
     {
         if (_impressionLancee) return;
 
-        var aTirer = _planches.Where(p => p.Quantite > 0).ToList();
-        if (aTirer.Count == 0)
-        {
-            MessageBox.Show(
-                "Toutes les planches sont à zéro : il n'y a rien à imprimer.\n\n" +
-                "Remontez la quantité d'au moins une planche.",
-                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        var services = App.Services;
-
-        var articles = aTirer
-            .Select(p => new DraftItem(
-                p.SourcePath, p.Produit, p.Quantite, p.Crop, 0, p.RedressementDegres,
-                null, p.Reglages, p.Copies, p.Finition,
-                // la case suit le DOCUMENT, jamais celle inscrite au produit
-                SheetCell: new SheetCellSize(_document.WidthMm, _document.HeightMm),
-                // et le PRIX aussi : c'est le document qui le fixe, pas le papier
-                UnitPriceOverride: PrixDeLaPlanche))
-            .ToList();
-
         _impressionLancee = true;
         ImprimerButton.IsEnabled = false;
-        Mouse.OverrideCursor = CurseurStudio.Attente;
 
-        try
-        {
-            var commande = await Task.Run(() => services.Orders.CreateOrder("Operateur", articles));
+        // Le tirage lui-même vit dans TirageIdentite : le poste identité imprime sans passer
+        // par cet écran, et les deux chemins doivent produire exactement la même commande.
+        if (await TirageIdentite.LancerAsync(_planches, _document, _attenteId)) return;
 
-            // La planche est passée en caisse : ce qui attendait en son nom n'a plus
-            // d'objet. Le laisser ferait proposer « Reprendre » sur l'accueil pour une
-            // planche déjà tirée, et on la tirerait deux fois.
-            if (_attenteId is { } attente) services.CommandesEnAttente.Effacer(attente);
-
-            Mouse.OverrideCursor = null;
-
-            services.Impressions.Lancer(commande,
-                imprimer: (avancement, arret) =>
-                {
-                    foreach (var enveloppe in commande.Envelopes)
-                        services.Printer.PrintEnvelope(commande, enveloppe,
-                            progression: avancement, ct: arret);
-                });
-
-            Navigator.Home(new HomeView(), "Studio Photo");
-        }
-        catch (Exception ex)
-        {
-            Mouse.OverrideCursor = null;
-            FileLog.Write("Échec de la création de la commande (planches identité)", ex);
-            MessageBox.Show($"Commande impossible à créer : {ex.Message}",
-                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Error);
-
-            _impressionLancee = false;
-            ImprimerButton.IsEnabled = true;
-        }
+        _impressionLancee = false;
+        ImprimerButton.IsEnabled = true;
     }
 }

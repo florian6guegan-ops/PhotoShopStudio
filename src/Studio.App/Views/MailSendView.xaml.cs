@@ -267,7 +267,7 @@ public partial class MailSendView : UserControl
             if (_revenirEnArriere)
                 Navigator.Back();
             else
-                Navigator.Home(new HomeView(), "Studio Photo");
+                AccueilStudio.Rentrer();
         }
         catch (Exception ex)
         {

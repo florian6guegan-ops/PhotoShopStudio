@@ -109,7 +109,7 @@ public partial class PrintFormatView : UserControl
 
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();
 
-    private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Home(new HomeView(), "Studio Photo");
+    private void OnCancel(object sender, RoutedEventArgs e) => AccueilStudio.Rentrer();
 
     /// <param name="Produit">
     /// Null pour la tuile « Personnalisé » : elle ne désigne aucun produit du catalogue, le

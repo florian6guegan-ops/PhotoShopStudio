@@ -552,7 +552,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             "rouvrira telle que vous la laissez.",
             "En attente", MessageBoxButton.OK, MessageBoxImage.Information);
 
-        Navigator.Home(new HomeView(), "Studio Photo");
+        AccueilStudio.Rentrer();
     }
 
     /// <summary>
@@ -2238,7 +2238,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                         services.DiLandImport.MarkPrinted(borne, order.Id);
                 });
 
-            Navigator.Home(new HomeView(), "Studio Photo");
+            AccueilStudio.Rentrer();
         }
         catch (Exception ex)
         {
@@ -2280,7 +2280,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 "Les fichiers d'agrandissement n'ont pas été trouvés. La commande reste dans " +
                 "« Agrandissements », d'où elle peut être tirée.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
-            Navigator.Home(new HomeView(), "Studio Photo");
+            AccueilStudio.Rentrer();
             return;
         }
 
@@ -2330,7 +2330,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 }
             }
 
-            Navigator.Home(new HomeView(), "Studio Photo");
+            AccueilStudio.Rentrer();
         }
 
         Suivant(0);

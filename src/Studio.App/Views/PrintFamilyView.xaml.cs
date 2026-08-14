@@ -91,5 +91,5 @@ public partial class PrintFamilyView : UserControl
 
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();
 
-    private void OnCancel(object sender, RoutedEventArgs e) => Navigator.Home(new HomeView(), "Studio Photo");
+    private void OnCancel(object sender, RoutedEventArgs e) => AccueilStudio.Rentrer();
 }

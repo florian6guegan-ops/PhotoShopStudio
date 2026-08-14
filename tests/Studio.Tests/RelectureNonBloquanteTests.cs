@@ -125,15 +125,19 @@ public class RelectureNonBloquanteTests
     public async Task Une_demande_pendant_une_lecture_en_cours_est_ignoree()
     {
         var relecture = Relecture();
+        using var demarree = new ManualResetEventSlim(false);
         using var porte = new ManualResetEventSlim(false);
         var lectures = 0;
 
         var premiere = relecture.Demander(
-            () => { Interlocked.Increment(ref lectures); porte.Wait(); return 7; },
+            () => { Interlocked.Increment(ref lectures); demarree.Set(); porte.Wait(); return 7; },
             _ => { });
 
-        // le temps que la première prenne le verrou
-        while (!relecture.EnCours) await Task.Delay(5);
+        // Attendre que la lecture ait VRAIMENT commencé, et pas seulement que le verrou soit
+        // pris : le verrou se prend sur le fil appelant, le comptage sur le fil de fond. Se
+        // fier au verrou faisait échouer ce test une fois sur plusieurs, la seconde demande
+        // arrivant avant que la première n'ait compté.
+        demarree.Wait(TimeSpan.FromSeconds(5));
 
         await relecture.Demander(() => { Interlocked.Increment(ref lectures); return 7; }, _ => { });
         Assert.Equal(1, lectures);

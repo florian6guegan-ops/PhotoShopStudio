@@ -124,5 +124,5 @@ public partial class MontageFeuilleView : UserControl
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();
 
     private void OnCancel(object sender, RoutedEventArgs e) =>
-        Navigator.Home(new HomeView(), "Studio Photo");
+        AccueilStudio.Rentrer();
 }

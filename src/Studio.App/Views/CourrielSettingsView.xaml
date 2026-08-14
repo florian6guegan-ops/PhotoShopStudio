@@ -1,0 +1,87 @@
+<UserControl x:Class="Studio.App.Views.CourrielSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}"
+                   Text="Envoi des photos par courriel"/>
+
+        <TextBlock Grid.Row="1" Style="{StaticResource Hint}" Margin="0,0,0,16" TextWrapping="Wrap"
+                   Text="Le compte qui envoie les photos aux clients. Avec Gmail, il faut un mot de passe D'APPLICATION — pas celui du compte : Google refuse le mot de passe ordinaire pour l'envoi. Il se crée sur le compte Google, validation en deux étapes activée."/>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Texte}" FontSize="19"
+                               VerticalAlignment="Center" Margin="0,0,18,12" Text="Adresse qui envoie"/>
+                    <TextBox x:Name="ExpediteurBox" Grid.Row="0" Grid.Column="1" FontSize="20"
+                             Padding="12,10" Margin="0,0,0,12"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Texte}" FontSize="19"
+                               VerticalAlignment="Center" Margin="0,0,18,12" Text="Mot de passe d'application"/>
+                    <PasswordBox x:Name="MotDePasseBox" Grid.Row="1" Grid.Column="1" FontSize="20"
+                                 Padding="12,10" Margin="0,0,0,12"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Texte}" FontSize="19"
+                               VerticalAlignment="Center" Margin="0,0,18,12" Text="Nom affiché chez le client"/>
+                    <TextBox x:Name="NomBox" Grid.Row="2" Grid.Column="1" FontSize="20"
+                             Padding="12,10" Margin="0,0,0,12"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource Texte}" FontSize="19"
+                               VerticalAlignment="Center" Margin="0,0,18,12" Text="Serveur"/>
+                    <Grid Grid.Row="3" Grid.Column="1" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ServeurBox" Grid.Column="0" FontSize="20" Padding="12,10"/>
+                        <TextBlock Grid.Column="1" Style="{StaticResource Texte}" FontSize="19"
+                                   VerticalAlignment="Center" Margin="18,0,10,0" Text="Port"/>
+                        <TextBox x:Name="PortBox" Grid.Column="2" FontSize="20" Padding="12,10" MinWidth="110"/>
+                    </Grid>
+
+                    <CheckBox x:Name="ActifCheck" Grid.Row="4" Grid.Column="1" FontSize="19"
+                              Foreground="{StaticResource TextBrush}" Margin="0,4,0,0"
+                              Click="OnActifChanged"
+                              Content="Envoi par courriel actif"/>
+
+                    <TextBlock x:Name="EtatText" Grid.Row="5" Grid.Column="1" Style="{StaticResource Texte}"
+                               FontSize="18" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="3" Style="{StaticResource Hint}" Margin="0,14,0,0" TextWrapping="Wrap"
+                   Text="Les mots joints aux photos se règlent dans le Studio complet (Paramètres → Messages prédéfinis)."/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Style="{StaticResource FlatButton}" MinWidth="180" MinHeight="52" FontSize="19"
+                    Click="OnRetour">Retour</Button>
+            <Button x:Name="EssaiButton" Style="{StaticResource FlatButton}" MinWidth="220" MinHeight="52"
+                    FontSize="19" Margin="12,0,0,0" Click="OnEssai">Essai d'envoi</Button>
+            <Button Style="{StaticResource BigButton}" MinWidth="240" MinHeight="52" FontSize="19"
+                    Margin="12,0,0,0" Click="OnEnregistrer">Enregistrer</Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

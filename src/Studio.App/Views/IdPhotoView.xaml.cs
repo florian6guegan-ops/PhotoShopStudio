@@ -1348,7 +1348,23 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             _departNumero++;
         }
 
-        reglages.CleDeLaPhoto = $"{_current?.Path}#{_departNumero}";
+        // LA MÊME CLÉ QUE LE RÉCAPITULATIF ET LE TIRAGE, quand c'est la même photo.
+        //
+        // Cet écran nommait ses pixels `chemin#numéro`, un compteur de session ; le
+        // récapitulatif, l'impression et le courriel les nomment `chemin|taille|date`
+        // (CleDuFichier). Les deux ne se rencontraient JAMAIS. Le masque calculé pendant que
+        // l'opérateur cadre — celui qu'il vient de regarder à l'écran — était donc jeté, et
+        // le récapitulatif repayait un passage complet du réseau sur la même photo. C'est
+        // précisément ce que la mémoire des masques existe pour éviter : elle ignore la
+        // TAILLE depuis le 12/08/2026, exprès pour qu'un masque d'aperçu serve la planche
+        // pleine résolution.
+        //
+        // Le compteur reste indispensable quand la photo affichée n'est PLUS celle du
+        // fichier : la sélection du sujet fabrique une image déjà découpée (`_detoure`), et
+        // ranger SON masque sous la clé du fichier empoisonnerait le tirage.
+        reglages.CleDeLaPhoto = _detoure is null
+            ? CleDuFichier(_current?.Path)
+            : $"{_current?.Path}#{_departNumero}";
 
         var pixels = _departBgra!;
         var largeur = _departLargeur;
@@ -1358,8 +1374,11 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // découpe n'est pas déjà en mémoire. Tous les autres aperçus se rendent en un
         // dixième de seconde, et une barre qui apparaîtrait pour eux ne ferait que
         // clignoter à chaque mouvement de curseur.
+        // sans clé (fichier illisible, chemin trop long), on ne peut rien affirmer : mieux
+        // vaut annoncer une attente qui n'aura pas lieu que figer l'écran sans un mot
         var vaDetourer = !reglages.Sujet.IsNeutral &&
-                         !MasqueSujet.DejaEnMemoire(reglages.CleDeLaPhoto, (uint)largeur, (uint)hauteur);
+                         (reglages.CleDeLaPhoto is null ||
+                          !MasqueSujet.DejaEnMemoire(reglages.CleDeLaPhoto, (uint)largeur, (uint)hauteur));
 
         try
         {
@@ -2026,7 +2045,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// planche : ni la disposition, ni le nombre de vignettes, ni l'horodatage. Voir
     /// <see cref="IdSheetRecapView"/>, qui porte désormais l'impression.
     /// </summary>
-    private void OnPrint(object sender, RoutedEventArgs e)
+    private async void OnPrint(object sender, RoutedEventArgs e)
     {
         // ne jamais sortir en silence : sans produit planche activé, le bouton semblait mort
         if (ProductCombo.SelectedItem is not ProductChoice choice)
@@ -2106,6 +2125,22 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 finition,
                 p.Rang))
             .ToList();
+
+        // POSTE IDENTITÉ : on imprime, sans écran intermédiaire.
+        //
+        // Le récapitulatif existe pour le Studio complet, où le bouton d'impression est au
+        // bout d'un parcours de tirages et où la planche ne se voit nulle part avant le
+        // papier. Sur le poste identité, l'écran ne fait QUE des planches, l'opérateur en
+        // sort cinquante par jour, et un écran de confirmation de plus est exactement ce qui
+        // sépare ce logiciel de la fluidité d'ID Maker. La planche se regarde dans le
+        // panneau, puis on imprime.
+        if (AccueilStudio.EnIdentiteVerrouille)
+        {
+            PrintButton.IsEnabled = false;
+            if (!await TirageIdentite.LancerAsync(planches, _document, _attenteId))
+                PrintButton.IsEnabled = true;
+            return;
+        }
 
         Navigator.Go(
             new IdSheetRecapView(planches, _document,

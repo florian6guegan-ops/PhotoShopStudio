@@ -240,7 +240,7 @@ public partial class IdPhotoPickerView : UserControl
     private void OnRetour(object sender, RoutedEventArgs e) => Navigator.Back();
 
     private void OnAnnuler(object sender, RoutedEventArgs e) =>
-        Navigator.Home(new HomeView(), "Studio Photo");
+        AccueilStudio.Rentrer();
 
     private sealed class Vignette : ObservableObject
     {
