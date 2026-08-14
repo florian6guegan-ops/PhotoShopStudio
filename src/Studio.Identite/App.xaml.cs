@@ -55,7 +55,10 @@ public partial class App : Application
             // parcours document → support → photos → cadrage. L'application OUVRE sur sa
             // page de travail, et « Client suivant » en repose une neuve. Les deux seules
             // sorties sont le choix des photos et les réglages.
-            AccueilStudio.PageDAccueil = () => new Studio.App.Views.IdPhotoView([]);
+            // Et elle s'ouvre SUR LA CARTE quand elle est là : le client la tend, on
+            // l'insère, les photos sont à l'écran. « Client suivant » repasse par ici, donc
+            // il relit la carte lui aussi — celle du client suivant, justement.
+            AccueilStudio.PageDAccueil = Studio.App.Views.IdPhotoView.Ouverture;
         }
         catch (Exception ex)
         {

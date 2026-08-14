@@ -2090,6 +2090,19 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     /// <summary>
+    /// La page telle qu'elle doit S'OUVRIR : directement sur les photos quand on sait où
+    /// elles sont — la carte du client, ou le dossier réglé sur le poste.
+    ///
+    /// Sur Studio Photo Identité, cette page EST l'application. Ouvrir sur une bande vide
+    /// et attendre un appui sur « Ouvrir des photos » alors que la carte est déjà dans le
+    /// lecteur, c'est un geste de plus à chaque client, cinquante fois par jour.
+    /// </summary>
+    public static IdPhotoView Ouverture() =>
+        DepartDesPhotos() is { } depart
+            ? new IdPhotoView(depart, avecSousDossiers: true)
+            : new IdPhotoView([]);
+
+    /// <summary>
     /// Le dossier où commencer, ou null quand il faut poser la question.
     ///
     /// Le dossier fixe l'emporte s'il existe ENCORE : un chemin réseau réglé il y a six mois

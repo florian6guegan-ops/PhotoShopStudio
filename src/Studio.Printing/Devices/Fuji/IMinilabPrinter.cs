@@ -115,6 +115,61 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
     private readonly De100BridgeClient _client;
     private readonly HashSet<char> _subscribed = [];
     private readonly object _sync = new();
+
+    /// <summary>
+    /// LA LISTE DES MACHINES, MÉMORISÉE — sans quoi un poste SANS minilab paie une minute
+    /// à chaque fois qu'on la lui demande.
+    ///
+    /// Mesuré sur kodakidpc (Arcueil), qui n'a qu'une DNP : « list-machines » répond en
+    /// <b>61 secondes</b>, trois fois de suite au journal du 14/08/2026. Ce n'est pas un
+    /// délai que Studio impose — le relais RÉPOND, au bout d'une minute : c'est le SDK Fuji
+    /// qui cherche un minilab qui n'existe pas, et il cherche longtemps.
+    ///
+    /// Deux durées de mémoire, et l'écart est voulu : une réponse VIDE est celle qui coûte
+    /// cher, et c'est aussi celle qui ne changera pas — un poste sans minilab n'en gagne pas
+    /// un en cours de journée. Une réponse pleine se rafraîchit vite, parce qu'une machine
+    /// éteinte ou rallumée, ça arrive.
+    /// </summary>
+    private IReadOnlyList<char>? _machinesConnues;
+    private DateTime _machinesLues = DateTime.MinValue;
+
+    private static readonly TimeSpan MemoireMachinesPresentes = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MemoireAucuneMachine = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Les machines du relais, sans les redemander tant que la réponse tient encore.
+    ///
+    /// ⚠ La mémoire est vidée par <see cref="OublierLesMachines"/> dès qu'un tirage part ou
+    /// qu'on se reconnecte : c'est là qu'un branchement a pu changer, et c'est le seul
+    /// moment où se tromper coûterait quelque chose.
+    /// </summary>
+    private async Task<IReadOnlyList<char>> MachinesAsync()
+    {
+        var memoire = _machinesConnues is { Count: 0 }
+            ? MemoireAucuneMachine
+            : MemoireMachinesPresentes;
+
+        if (_machinesConnues is { } connues && DateTime.UtcNow - _machinesLues < memoire)
+            return connues;
+
+        var lues = await _client.ListMachinesAsync();
+
+        _machinesConnues = lues;
+        _machinesLues = DateTime.UtcNow;
+
+        if (lues.Count == 0)
+            Log?.Invoke("Minilab : aucune machine sur ce poste — on ne redemandera pas " +
+                        $"avant {MemoireAucuneMachine.TotalMinutes:0} minutes.");
+
+        return lues;
+    }
+
+    /// <summary>Vide la mémoire des machines : un branchement a pu changer.</summary>
+    private void OublierLesMachines()
+    {
+        _machinesConnues = null;
+        _machinesLues = DateTime.MinValue;
+    }
     private bool _connected;
 
     /// <summary>La cause d'un avancement illisible n'est dite qu'une fois — voir OrderProgressAsync.</summary>
@@ -175,9 +230,11 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         {
             if (_connected && _client.IsConnected) return;
 
-            // Le relais est neuf : ce qu'on lui avait demandé ne tient plus.
+            // Le relais est neuf : ce qu'on lui avait demandé ne tient plus. La liste des
+            // machines non plus — c'est justement au rebranchement qu'elle peut changer.
             aReabonner = [.. _subscribed];
             _subscribed.Clear();
+            OublierLesMachines();
 
             _client.ConnectAsync().GetAwaiter().GetResult();
             _connected = true;
@@ -214,7 +271,7 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         EnsureConnected();
 
         var ready = new List<char>();
-        foreach (var machine in _client.ListMachinesAsync().GetAwaiter().GetResult())
+        foreach (var machine in MachinesAsync().GetAwaiter().GetResult())
         {
             // une machine hors ligne se déclare parfois « prête » : on vérifie son état
             var info = _client.GetPrinterInfoAsync(machine).GetAwaiter().GetResult();
@@ -269,7 +326,7 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
     {
         if (!_client.IsConnected) await _client.ConnectAsync();
 
-        var machines = await _client.ListMachinesAsync();
+        var machines = await MachinesAsync();
         var etats = new List<De100PrinterInfo>();
         foreach (var machine in machines)
         {
