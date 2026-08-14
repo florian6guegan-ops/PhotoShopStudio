@@ -41,8 +41,10 @@ public class XamlResourceTests
         var fichiers = FichiersXaml(racine).ToList();
         Assert.NotEmpty(fichiers);
 
-        // les ressources d'App.xaml sont visibles depuis toutes les vues
-        var globales = ClesDe(Path.Combine(racine, "App.xaml"));
+        // Les ressources du THÈME sont visibles depuis toutes les vues. Elles étaient dans
+        // App.xaml ; elles vivent dans Theme.xaml depuis le 14/08/2026, que les DEUX
+        // applications du dépôt fusionnent — le Studio complet et Studio Photo Identité.
+        var globales = ClesDe(Path.Combine(racine, "Theme.xaml"));
         Assert.Contains("PageTitle", globales);
 
         var manquantes = new List<string>();

@@ -1,0 +1,59 @@
+<Window x:Class="Studio.Identite.FenetreIdentite"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Studio Photo Identité"
+        WindowState="Maximized" WindowStyle="None"
+        Background="{StaticResource PageBrush}"
+        FontFamily="Segoe UI"
+        MinWidth="1024" MinHeight="700">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- EN-TÊTE, façon maquette : fin, la marque à gauche, « Client suivant » à droite.
+             Il ne porte PAS de bouton Retour permanent : le parcours d'identité va toujours
+             de l'avant, et le retour appartient à chaque écran. -->
+        <Border Grid.Row="0" Background="{StaticResource CardBrush}" Padding="16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="34" Height="34" CornerRadius="9"
+                            Background="{StaticResource AccentBrush}">
+                        <TextBlock Text="🪪" FontSize="18" Foreground="White"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="TitreEcran" Text="Photos d'identité"
+                                   Foreground="{StaticResource TextBrush}"
+                                   FontSize="20" FontWeight="Bold"/>
+                        <TextBlock Text="STUDIO PHOTO" Foreground="{StaticResource MutedBrush}"
+                                   FontSize="11" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BoutonClientSuivant" Style="{StaticResource FlatButton}"
+                            MinWidth="200" MinHeight="46" FontSize="17"
+                            ToolTip="Repartir de zéro pour le client suivant"
+                            Click="OnClientSuivant">⌂  Client suivant</Button>
+                    <Button x:Name="BoutonQuitter" Style="{StaticResource FlatButton}"
+                            MinWidth="70" MinHeight="46" FontSize="17" Margin="10,0,0,0"
+                            ToolTip="Fermer Studio Photo Identité"
+                            Click="OnQuitter">✕</Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- L'écran courant. Le Navigator du Studio est un simple événement : cette
+             fenêtre-ci s'y abonne exactement comme le fait la fenêtre du Studio complet. -->
+        <ContentControl x:Name="HoteEcran" Grid.Row="1"/>
+    </Grid>
+</Window>

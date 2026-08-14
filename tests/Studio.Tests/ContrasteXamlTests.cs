@@ -30,7 +30,12 @@ public class ContrasteXamlTests
         throw new DirectoryNotFoundException("Dossier src/Studio.App introuvable.");
     }
 
-    private static string AppXaml() => File.ReadAllText(Path.Combine(RacineApp(), "App.xaml"));
+    /// <summary>
+    /// Le thème vit dans <c>Theme.xaml</c> depuis le 14/08/2026 : Studio Photo Identité est
+    /// une autre application sur le même moteur, et elle fusionne le même dictionnaire.
+    /// C'est donc là que se trouvent les styles implicites, plus dans <c>App.xaml</c>.
+    /// </summary>
+    private static string AppXaml() => File.ReadAllText(Path.Combine(RacineApp(), "Theme.xaml"));
 
     /// <summary>
     /// Un style SANS clé : c'est ce qui le rend implicite, donc appliqué aux contrôles que

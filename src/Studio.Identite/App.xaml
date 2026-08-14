@@ -1,0 +1,29 @@
+<Application x:Class="Studio.Identite.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Le thème du Studio : les écrans réutilisés y cherchent leurs pinceaux
+                     et leurs gabarits de contrôles. Sans lui, ils sortent en noir sur noir. -->
+                <ResourceDictionary Source="pack://application:,,,/Studio.App;component/Theme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- LA PALETTE D'IDENTITÉ, posée PAR-DESSUS celle du Studio.
+
+                 Accent sarcelle (#0E8A8F) et non le bleu du Studio : c'est la décision de
+                 la maquette validée le 14/08/2026, et elle distingue les deux logiciels au
+                 premier coup d'œil sur un poste qui pourrait porter les deux.
+
+                 Seules les CLÉS existantes sont reposées : tout écran réutilisé suit sans
+                 qu'on le touche. -->
+            <SolidColorBrush x:Key="AccentBrush" Color="#0E8A8F"/>
+            <SolidColorBrush x:Key="AccentDarkBrush" Color="#0A6E72"/>
+            <SolidColorBrush x:Key="TitleBrush" Color="#26BCC2"/>
+
+            <!-- Le cadre de l'application, aux valeurs de la maquette. -->
+            <SolidColorBrush x:Key="ScenePinceau" Color="#141C26"/>
+            <SolidColorBrush x:Key="LignePinceau" Color="#28333F"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

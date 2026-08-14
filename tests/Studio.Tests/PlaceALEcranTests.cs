@@ -62,17 +62,23 @@ public class PlaceALEcranTests
         return (FrameworkElement)XamlReader.Parse(xaml);
     }
 
-    /// <summary>Le contenu de <c>Application.Resources</c>, brut, prêt à être injecté.</summary>
+    /// <summary>
+    /// Le contenu du thème, brut, prêt à être injecté dans les ressources d'une vue.
+    ///
+    /// Il vivait dans <c>Application.Resources</c> d'<c>App.xaml</c> ; il est dans
+    /// <c>Theme.xaml</c> depuis le 14/08/2026, pour que Studio Photo Identité — une autre
+    /// application sur le même moteur — puisse le fusionner lui aussi.
+    /// </summary>
     private static string StylesDeLApplication()
     {
-        var app = File.ReadAllText(CheminDuDepot("src/Studio.App/App.xaml"));
+        var theme = File.ReadAllText(CheminDuDepot("src/Studio.App/Theme.xaml"));
 
-        var debut = app.IndexOf("<Application.Resources>", StringComparison.Ordinal)
-                    + "<Application.Resources>".Length;
-        var fin = app.IndexOf("</Application.Resources>", StringComparison.Ordinal);
+        // le corps du dictionnaire : après la balise ouvrante, avant la fermante
+        var debut = theme.IndexOf('>', theme.IndexOf("<ResourceDictionary", StringComparison.Ordinal)) + 1;
+        var fin = theme.LastIndexOf("</ResourceDictionary>", StringComparison.Ordinal);
 
-        Assert.True(debut > 0 && fin > debut, "App.xaml n'a pas la forme attendue.");
-        return app[debut..fin];
+        Assert.True(debut > 0 && fin > debut, "Theme.xaml n'a pas la forme attendue.");
+        return theme[debut..fin];
     }
 
     private static string CheminDuDepot(string relatif)

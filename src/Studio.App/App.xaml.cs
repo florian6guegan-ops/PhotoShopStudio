@@ -7,6 +7,21 @@ public partial class App : Application
 {
     public static AppServices Services { get; private set; } = null!;
 
+    /// <summary>
+    /// Pose les services quand ce n'est PAS cette application-ci qui démarre.
+    ///
+    /// Studio Photo Identité est une autre application, dans le même dépôt et sur le même
+    /// moteur : elle réutilise les écrans d'ici, et tous appellent <see cref="Services"/>.
+    /// Son propre démarrage compose les services puis les dépose ici. Il n'y a qu'un seul
+    /// <c>Application</c> par processus — celui d'Identité — mais un champ statique se
+    /// partage très bien.
+    /// </summary>
+    public static void AmorcerServices(AppServices services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        Services = services;
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
