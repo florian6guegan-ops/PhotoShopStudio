@@ -27,6 +27,22 @@ public partial class App : Application
         DispatcherUnhandledException += OnUnhandledException;
         Studio.Printing.BitmapPrinter.Log = message => FileLog.Write(message);
 
+        // UN SEUL des deux logiciels à la fois : ils se disputent le relais des machines, et
+        // celui qui perd n'imprime plus — sans un mot. Voir UnSeulLogiciel.
+        if (UnSeulLogiciel.LAutreQuiTourne("Studio.Identite") is { } autre)
+        {
+            MessageBox.Show(
+                $"{autre} est déjà ouvert sur ce poste.\n\n" +
+                "Les deux logiciels pilotent les imprimantes par le même relais, et ouverts " +
+                "en même temps ils se le disputent : les tirages cessent de partir.\n\n" +
+                $"Fermez {autre}, puis rouvrez celui-ci.",
+                "Studio Photo Identité", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+            FileLog.Write($"Ouverture refusée : {autre} tourne déjà sur ce poste.");
+            Shutdown(2);
+            return;
+        }
+
         var racine = AppServices.RacineDonneesParDefaut();
 
         FileLog.LogsDir = Path.Combine(racine, "logs");

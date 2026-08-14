@@ -29,6 +29,22 @@ public partial class App : Application
         DispatcherUnhandledException += OnUnhandledException;
         Studio.Printing.BitmapPrinter.Log = message => Infrastructure.FileLog.Write(message);
 
+        // UN SEUL des deux logiciels à la fois : ils se disputent le relais des machines, et
+        // celui qui perd n'imprime plus — sans un mot. Voir Infrastructure.UnSeulLogiciel.
+        if (Infrastructure.UnSeulLogiciel.LAutreQuiTourne("Studio.App") is { } autre)
+        {
+            MessageBox.Show(
+                $"{autre} est déjà ouvert sur ce poste.\n\n" +
+                "Les deux logiciels pilotent les imprimantes par le même relais, et ouverts " +
+                "en même temps ils se le disputent : les tirages cessent de partir.\n\n" +
+                $"Fermez {autre}, puis rouvrez celui-ci.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+            Infrastructure.FileLog.Write($"Ouverture refusée : {autre} tourne déjà sur ce poste.");
+            Shutdown(2);
+            return;
+        }
+
         // Le journal et les modèles de détourage visaient chacun « D:\PhotoStudioData »
         // de leur côté. Sur un poste sans disque D:, le premier écrivait dans le vide et
         // le second ne trouvait jamais rien — sans que rien ne le dise. Ils suivent
