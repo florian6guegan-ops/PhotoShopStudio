@@ -35,8 +35,19 @@ public partial class HomeView : UserControl
     /// <summary>Période de relecture des bornes : une commande doit apparaître toute seule.</summary>
     private static readonly TimeSpan Periode = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// Le temps qu'on accorde au dépôt DiLand avant de le dire muet. Sous les cinq secondes
+    /// après lesquelles Windows déclare une fenêtre figée — voir
+    /// <see cref="RelectureNonBloquante"/>.
+    /// </summary>
+    private static readonly TimeSpan Plafond = TimeSpan.FromSeconds(3);
+
+    /// <summary>Ce que le XAML affiche quand la liste est vide, et rien d'autre à signaler.</summary>
+    private const string ListeVide = "Aucune commande de borne en attente.";
+
     private readonly ObservableCollection<CommandeBorne> _lignes = [];
     private readonly DispatcherTimer _minuteur;
+    private readonly RelectureNonBloquante _relecture = new(Plafond);
 
     public HomeView()
     {
@@ -217,23 +228,74 @@ public partial class HomeView : UserControl
     ///
     /// Reconstruire ferait perdre l'avancement affiché sur une ligne en cours de tirage, et
     /// ferait sauter la liste sous la main de l'opérateur toutes les quinze secondes.
+    ///
+    /// <b>La lecture ne se fait plus ici</b> : elle touche le dépôt DiLand, et un dépôt qui
+    /// ne répond pas figeait toute l'application. Elle part en fond, l'affichage se fait au
+    /// retour. Voir <see cref="RelectureNonBloquante"/>.
     /// </summary>
     private void RafraichirBornes()
     {
-        List<DiLandOrder> commandes;
-        try
+        // relevé sur le fil de l'interface, AVANT de partir en fond : la lecture s'en sert
+        // pour ne résumer que ce que la liste ne porte pas encore
+        var deja = _lignes.Select(l => l.Oid).ToHashSet();
+
+        _ = _relecture.Demander(
+            () => Lire(deja),
+            Poser,
+            enRetard: () =>
+            {
+                FileLog.Write($"Accueil : le dépôt DiLand n'a pas répondu en " +
+                              $"{Plafond.TotalSeconds:0} s — la lecture des bornes continue en fond.");
+                Indisponible("Commandes des bornes — le dépôt DiLand ne répond pas.");
+            },
+            enEchec: ex =>
+            {
+                // DiLand absent ou dépôt illisible : le reste de l'accueil doit rester utilisable
+                FileLog.Write("Accueil : lecture des commandes de bornes impossible", ex);
+                Indisponible("Commandes des bornes indisponibles — dépôt DiLand illisible.");
+            });
+    }
+
+    private void Indisponible(string message)
+    {
+        KioskEmpty.Text = message;
+        KioskEmpty.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Ce qu'une relecture rapporte du dépôt, prêt à poser sur la liste.</summary>
+    private sealed record LectureBornes(
+        List<DiLandOrder> Commandes,
+        Dictionary<long, DiLandImporter.KioskOrderSummary> Resumes);
+
+    /// <summary>
+    /// La part qui touche le disque — <b>jamais sur le fil de l'interface</b>.
+    ///
+    /// Le résumé lit lui aussi le dépôt : il se fait ici, et seulement pour les commandes que
+    /// la liste ne porte pas encore. Le laisser à l'affichage aurait ramené le blocage par la
+    /// petite porte, une ligne à la fois.
+    /// </summary>
+    private static LectureBornes Lire(HashSet<long> deja)
+    {
+        var importateur = App.Services.DiLandImport;
+        var commandes = importateur.Pending().ToList();
+
+        var resumes = new Dictionary<long, DiLandImporter.KioskOrderSummary>();
+        foreach (var commande in commandes)
         {
-            commandes = App.Services.DiLandImport.Pending().ToList();
-        }
-        catch (Exception ex)
-        {
-            // DiLand absent ou dépôt illisible : le reste de l'accueil doit rester utilisable
-            FileLog.Write("Accueil : lecture des commandes de bornes impossible", ex);
-            KioskEmpty.Text = "Commandes des bornes indisponibles — dépôt DiLand illisible.";
-            KioskEmpty.Visibility = Visibility.Visible;
-            return;
+            if (deja.Contains(commande.Oid)) continue;
+            resumes[commande.Oid] = importateur.Summarize(commande);
         }
 
+        return new LectureBornes(commandes, resumes);
+    }
+
+    /// <summary>Pose sur la liste ce que la lecture a rapporté. Fil de l'interface.</summary>
+    private void Poser(LectureBornes lecture)
+    {
+        // l'opérateur a quitté l'accueil pendant la lecture : plus rien à mettre à jour
+        if (!IsLoaded) return;
+
+        var commandes = lecture.Commandes;
         var vues = commandes.Select(c => c.Oid).ToHashSet();
 
         // les commandes tirées ou retirées s'en vont ; celles qui impriment restent, même
@@ -244,7 +306,13 @@ public partial class HomeView : UserControl
         foreach (var commande in commandes)
         {
             if (_lignes.Any(l => l.Oid == commande.Oid)) continue;
-            _lignes.Add(Construire(commande));
+
+            // Sans résumé, la commande est apparue dans la liste pendant la lecture puis en
+            // est repartie (une reprise abandonnée, par exemple) : la résumer ICI toucherait
+            // le disque sur le fil de l'interface. Elle reviendra au tour suivant, résumée.
+            if (!lecture.Resumes.TryGetValue(commande.Oid, out var resume)) continue;
+
+            _lignes.Add(new CommandeBorne(commande, resume));
         }
 
         // remise en ordre : les plus récentes en haut, comme elles arrivent
@@ -255,20 +323,15 @@ public partial class HomeView : UserControl
             if (actuel != i) _lignes.Move(actuel, i);
         }
 
+        // le dépôt a fini par répondre : le message d'indisponibilité laissé par un tour
+        // précédent n'a plus lieu d'être
+        KioskEmpty.Text = ListeVide;
         KioskEmpty.Visibility = _lignes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         KioskTitle.Text = _lignes.Count == 0
             ? "Commandes des bornes"
             : $"Commandes des bornes ({_lignes.Count})";
 
         MettreAJourAgrandissements();
-    }
-
-    private CommandeBorne Construire(DiLandOrder commande)
-    {
-        var importateur = App.Services.DiLandImport;
-        var resume = importateur.Summarize(commande);
-
-        return new CommandeBorne(commande, resume);
     }
 
     // ----- suivi de l'impression, pour colorer et faire avancer la barre -----
