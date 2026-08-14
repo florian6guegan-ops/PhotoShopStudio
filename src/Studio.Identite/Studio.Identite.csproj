@@ -26,6 +26,18 @@
     <ApplicationIcon>..\Studio.App\Assets\studio-photo.ico</ApplicationIcon>
     <AssemblyName>Studio.Identite</AssemblyName>
     <RootNamespace>Studio.Identite</RootNamespace>
+
+    <!-- DÉMARRAGE : le code est compilé D'AVANCE à la publication.
+
+         Une application autonome sans ReadyToRun fait compiler par le processeur, au
+         premier lancement, tout ce qu'elle exécute — et WPF en exécute beaucoup avant
+         d'afficher quoi que ce soit. C'est ce qui fait qu'un logiciel .NET « met du temps
+         à s'ouvrir » là où ID Maker paraît instantané. L'archive grossit ; le démarrage
+         y gagne bien davantage.
+
+         Sans effet sur la compilation de tous les jours : cela ne joue qu'au publish. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,6 +45,12 @@
     <Content Include="..\..\models\face_detection_yunet_2023mar.onnx"
              Link="models\face_detection_yunet_2023mar.onnx"
              CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- L'ÉCRAN D'ATTENTE. WPF l'affiche dès le lancement du processus et le fait
+         disparaître de lui-même quand la fenêtre paraît — sans une ligne de code. Entre le
+         double-clic et la fenêtre, l'opérateur n'avait rien du tout devant un client, et
+         c'est exactement là que se joue l'impression d'instantanéité. -->
+    <SplashScreen Include="..\Studio.App\Assets\studio-photo.png" Link="studio-photo.png" />
   </ItemGroup>
 
   <ItemGroup>
