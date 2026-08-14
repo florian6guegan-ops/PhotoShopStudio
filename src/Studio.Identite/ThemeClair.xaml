@@ -1,0 +1,35 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- LA PALETTE CLAIRE — celle de la maquette validée le 14/08/2026.
+
+         Studio Photo est SOMBRE, dans l'esprit de DiLand. Studio Photo Identité est clair et
+         sarcelle : c'est ce qui fait qu'on y reconnaît ID Maker au premier coup d'œil.
+
+         Ces clés existent toutes dans le thème du Studio ; elles sont simplement REPOSÉES.
+         Les gabarits les lisent en DynamicResource, exprès pour ça. -->
+
+    <SolidColorBrush x:Key="PageBrush"      Color="#E9EDF1"/>
+    <SolidColorBrush x:Key="CardBrush"      Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="PanelBrush"     Color="#F3F6F9"/>
+    <SolidColorBrush x:Key="FieldBrush"     Color="#FFFFFF"/>
+
+    <SolidColorBrush x:Key="TextBrush"      Color="#172029"/>
+    <SolidColorBrush x:Key="MutedBrush"     Color="#63707E"/>
+
+    <SolidColorBrush x:Key="AccentBrush"     Color="#0E8A8F"/>
+    <SolidColorBrush x:Key="AccentDarkBrush" Color="#0A6E72"/>
+    <SolidColorBrush x:Key="TitleBrush"      Color="#0A6E72"/>
+
+    <SolidColorBrush x:Key="LigneBrush"          Color="#DCE3EA"/>
+    <SolidColorBrush x:Key="SeparatorBrush"      Color="#DCE3EA"/>
+    <SolidColorBrush x:Key="InactifFondBrush"    Color="#EEF2F6"/>
+    <SolidColorBrush x:Key="InactifTexteBrush"   Color="#A6B2BE"/>
+
+    <SolidColorBrush x:Key="OkBrush"     Color="#2E9E5B"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="#D2453B"/>
+
+    <!-- LA SCÈNE RESTE SOMBRE, et c'est voulu, même en clair : un fond clair derrière une
+         photo lui fait concurrence. La maquette la pose sur « stage » #141C26. -->
+    <SolidColorBrush x:Key="SceneBrush" Color="#141C26"/>
+</ResourceDictionary>

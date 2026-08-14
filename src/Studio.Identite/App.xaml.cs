@@ -59,6 +59,12 @@ public partial class App : Application
             // l'insère, les photos sont à l'écran. « Client suivant » repasse par ici, donc
             // il relit la carte lui aussi — celle du client suivant, justement.
             AccueilStudio.PageDAccueil = Studio.App.Views.IdPhotoView.Ouverture;
+
+            AppliquerLaPalette(services.Identite.ModeSombre);
+
+            // l'écran des réglages est celui du Studio : il ne connaît pas cette
+            // application, il demande simplement à qui sait faire
+            Habillage.Appliquer = AppliquerLaPalette;
         }
         catch (Exception ex)
         {
@@ -70,6 +76,34 @@ public partial class App : Application
         }
 
         new FenetreIdentite().Show();
+    }
+
+    /// <summary>
+    /// Pose la palette claire ou sombre, sans redémarrer.
+    ///
+    /// Les gabarits du thème lisent leurs pinceaux en <c>DynamicResource</c> : remplacer le
+    /// dictionnaire de palette suffit, tous les écrans ouverts suivent. C'est ce qui permet
+    /// à l'écran des réglages de montrer le résultat pendant qu'on coche la case, au lieu
+    /// de demander de relancer.
+    ///
+    /// ⚠ La palette est TOUJOURS le dernier dictionnaire fusionné : c'est ce qui lui donne
+    /// le dernier mot sur les couleurs du thème du Studio.
+    /// </summary>
+    public static void AppliquerLaPalette(bool sombre)
+    {
+        var dictionnaires = Current.Resources.MergedDictionaries;
+
+        var voulue = new Uri(sombre ? "ThemeSombre.xaml" : "ThemeClair.xaml", UriKind.Relative);
+
+        for (var i = dictionnaires.Count - 1; i >= 0; i--)
+        {
+            var source = dictionnaires[i].Source?.OriginalString ?? "";
+            if (source.EndsWith("ThemeClair.xaml", StringComparison.OrdinalIgnoreCase)
+                || source.EndsWith("ThemeSombre.xaml", StringComparison.OrdinalIgnoreCase))
+                dictionnaires.RemoveAt(i);
+        }
+
+        dictionnaires.Add(new ResourceDictionary { Source = voulue });
     }
 
     /// <summary>

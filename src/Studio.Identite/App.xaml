@@ -7,50 +7,13 @@
                 <!-- Le thème du Studio : les écrans réutilisés y cherchent leurs gabarits de
                      boutons, de listes et de champs. Sans lui, ils sortent sans habillage. -->
                 <ResourceDictionary Source="pack://application:,,,/Studio.App;component/Theme.xaml"/>
+
+                <!-- La PALETTE vient par-dessus, et elle est posée au démarrage par
+                     App.AppliquerLaPalette : claire ou sombre, selon le réglage du poste.
+                     Celle-ci est le défaut, pour que le concepteur d'écran voie quelque
+                     chose de juste et que rien ne soit transparent si le démarrage échoue. -->
+                <ResourceDictionary Source="ThemeClair.xaml"/>
             </ResourceDictionary.MergedDictionaries>
-
-            <!-- ================= LA PALETTE DE LA MAQUETTE =================
-
-                 Studio Photo est SOMBRE, dans l'esprit de DiLand. Studio Photo Identité est
-                 CLAIR et sarcelle : c'est la maquette validée le 14/08/2026, et c'est ce qui
-                 fait qu'on reconnaît ID Maker au premier coup d'œil.
-
-                 Ces clés existent toutes dans Theme.xaml ; elles sont simplement REPOSÉES
-                 ici. Les gabarits du thème les lisent en DynamicResource, exprès pour ça :
-                 aucune vue n'a été touchée, et le Studio garde sa palette d'origine.
-
-                 ⚠ Un pinceau qu'on ajoute ici doit exister dans Theme.xaml, sinon le
-                 gabarit qui le lit ne trouve rien et le contrôle sort transparent. -->
-
-            <!-- fonds : « ground », « panel » et « panel-2 » de la maquette -->
-            <SolidColorBrush x:Key="PageBrush"      Color="#E9EDF1"/>
-            <SolidColorBrush x:Key="CardBrush"      Color="#FFFFFF"/>
-            <SolidColorBrush x:Key="PanelBrush"     Color="#F3F6F9"/>
-            <SolidColorBrush x:Key="FieldBrush"     Color="#FFFFFF"/>
-
-            <!-- ecriture : « ink » et « muted » -->
-            <SolidColorBrush x:Key="TextBrush"      Color="#172029"/>
-            <SolidColorBrush x:Key="MutedBrush"     Color="#63707E"/>
-
-            <!-- l'accent sarcelle, la marque du logiciel -->
-            <SolidColorBrush x:Key="AccentBrush"     Color="#0E8A8F"/>
-            <SolidColorBrush x:Key="AccentDarkBrush" Color="#0A6E72"/>
-            <!-- les titres d'écran ne sont plus orangés : sur fond clair, l'accent suffit -->
-            <SolidColorBrush x:Key="TitleBrush"      Color="#0A6E72"/>
-
-            <!-- traits et etats, versions claires : « line » et « line-strong » -->
-            <SolidColorBrush x:Key="LigneBrush"          Color="#DCE3EA"/>
-            <SolidColorBrush x:Key="SeparatorBrush"      Color="#DCE3EA"/>
-            <SolidColorBrush x:Key="InactifFondBrush"    Color="#EEF2F6"/>
-            <SolidColorBrush x:Key="InactifTexteBrush"   Color="#A6B2BE"/>
-
-            <!-- verdicts : « ok » et « warn » -->
-            <SolidColorBrush x:Key="OkBrush"     Color="#2E9E5B"/>
-            <SolidColorBrush x:Key="DangerBrush" Color="#D2453B"/>
-
-            <!-- LA SCÈNE RESTE SOMBRE, et c'est voulu : la maquette pose la photo sur
-                 « stage » #141C26. Un fond clair derrière une photo lui fait concurrence. -->
-            <SolidColorBrush x:Key="SceneBrush" Color="#141C26"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -411,6 +411,56 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     /// <summary>
+    /// Met la photo À L'ABRI du retrait de la carte.
+    ///
+    /// <b>Ce que ça règle.</b> La photo était lue sur son support jusqu'au bout — carte du
+    /// client, téléphone, clé. L'opérateur cadre, corrige, détoure, et si la carte quitte le
+    /// lecteur avant l'impression, tout est perdu : plus de pixels à relire. Au comptoir, un
+    /// client qui reprend sa carte pendant qu'on travaille, c'est un geste banal. Signalé
+    /// depuis Arcueil le 14/08/2026.
+    ///
+    /// La copie se fait à l'OUVERTURE, pas au chargement de la bande : recopier une carte
+    /// de quatre cents photos pour en tirer une seule serait absurde. Une photo ouverte,
+    /// une copie — c'est-à-dire une poignée par client.
+    ///
+    /// Le nom du fichier du client est conservé (avec une empreinte courte contre les
+    /// collisions) : c'est lui qu'on lit dans la commande et dans les messages.
+    ///
+    /// <b>Un échec de copie n'arrête rien</b> : on continue à lire depuis le support, comme
+    /// avant. Perdre la mise à l'abri est ennuyeux ; perdre la photo à l'écran le serait
+    /// bien davantage.
+    /// </summary>
+    private static async Task MettreALAbriAsync(StripItem item)
+    {
+        var source = item.Path;
+
+        // déjà chez nous : rien à copier (une reprise, ou une photo déjà mise à l'abri)
+        if (source.StartsWith(App.Services.DataRoot, StringComparison.OrdinalIgnoreCase)) return;
+
+        try
+        {
+            var dossier = Path.Combine(App.Services.CacheDir, "travail",
+                DateTime.Now.ToString("yyyyMMdd"));
+            Directory.CreateDirectory(dossier);
+
+            var empreinte = Math.Abs(source.GetHashCode()).ToString("x8");
+            var copie = Path.Combine(dossier,
+                $"{Path.GetFileNameWithoutExtension(source)}-{empreinte}{Path.GetExtension(source)}");
+
+            if (!File.Exists(copie))
+                await Task.Run(() => File.Copy(source, copie, overwrite: true));
+
+            item.SuivreLaCopie(copie);
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write(
+                $"Photo « {item.Name} » non mise à l'abri : elle reste lue depuis son support, " +
+                "et sera perdue si celui-ci est retiré avant l'impression", ex);
+        }
+    }
+
+    /// <summary>
     /// Ouvre une photo dans la scène de cadrage, en DÉPOSANT d'abord le travail fait sur
     /// la précédente.
     ///
@@ -442,6 +492,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         try
         {
+            await MettreALAbriAsync(item);
+
             var path = item.Path;
             var bytes = await Task.Run(() => App.Services.Thumbnails.GetJpeg(path, 1600));
             _displayBitmap = ToBitmap(bytes);
@@ -2510,10 +2562,27 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         private bool _selected;
         private int _quantite = 1;
 
-        public StripItem(string path) => Path = path;
+        public StripItem(string path)
+        {
+            Path = path;
+            Name = System.IO.Path.GetFileName(path);
+        }
 
-        public string Path { get; }
-        public string Name => System.IO.Path.GetFileName(Path);
+        /// <summary>
+        /// Où lire les pixels. Change une fois, quand la photo est mise à l'abri du retrait
+        /// de la carte — voir <c>MettreALAbriAsync</c>.
+        /// </summary>
+        public string Path { get; private set; }
+
+        /// <summary>
+        /// Le nom que l'opérateur reconnaît. Figé à l'ouverture : il doit rester celui du
+        /// fichier du client, pas celui de la copie de travail — c'est lui qu'on retrouve
+        /// dans la commande et dans les messages d'erreur.
+        /// </summary>
+        public string Name { get; }
+
+        /// <summary>La photo est désormais lue depuis la copie locale.</summary>
+        public void SuivreLaCopie(string chemin) => Path = chemin;
 
         /// <summary>Rang dans le lot, à partir de 1 — celui de l'écran de sélection.</summary>
         public int Rang { get; init; }

@@ -234,4 +234,90 @@ public class MiseAJourTests
         Assert.Contains(MiseAJour.Depot, MiseAJour.UrlDerniereVersion);
         Assert.StartsWith("https://", MiseAJour.UrlDerniereVersion);
     }
+
+    // ===== UN DÉPÔT, DEUX APPLICATIONS =====
+    //
+    // Studio Photo est publié en « v1.5.19 », Studio Photo Identité en
+    // « identite-v1.5.19 » — et ce dernier en PRÉVERSION, ce qui le tient hors de
+    // /releases/latest pour que les postes du Studio ne le voient jamais. Chacun doit
+    // donc trouver les siennes, et seulement les siennes.
+
+    /// <summary>Deux publications d'Identité et une du Studio, comme GitHub les rend.</summary>
+    private const string ListeDeDeuxLogiciels = """
+    [
+      { "tag_name": "v1.5.19", "name": "Version 1.5.19", "body": "le Studio",
+        "draft": false, "prerelease": false,
+        "assets": [ { "name": "StudioPhoto-1.5.19.zip", "size": 253000000,
+                      "browser_download_url": "https://exemple/StudioPhoto-1.5.19.zip" } ] },
+      { "tag_name": "identite-v1.5.18", "name": "Identité 1.5.18", "body": "l'avant-derniere",
+        "draft": false, "prerelease": true,
+        "assets": [ { "name": "StudioIdentite-1.5.18.zip", "size": 257000000,
+                      "browser_download_url": "https://exemple/StudioIdentite-1.5.18.zip" } ] },
+      { "tag_name": "identite-v1.5.19", "name": "Identité 1.5.19", "body": "la bonne",
+        "draft": false, "prerelease": true,
+        "assets": [ { "name": "StudioIdentite-1.5.19.zip", "size": 258000000,
+                      "browser_download_url": "https://exemple/StudioIdentite-1.5.19.zip" } ] }
+    ]
+    """;
+
+    [Fact]
+    public void La_liste_rend_la_plus_recente_du_prefixe_demande()
+    {
+        var version = MiseAJour.LireLaListe(ListeDeDeuxLogiciels, "identite-v");
+
+        Assert.NotNull(version);
+        Assert.Equal(new Version(1, 5, 19), version.Version);
+        Assert.Contains("StudioIdentite-1.5.19.zip", version.Url);
+    }
+
+    /// <summary>
+    /// Le point qui compte : la publication du STUDIO ne doit jamais être proposée au poste
+    /// identité, ni l'inverse. Elles vivent dans le même dépôt.
+    /// </summary>
+    [Fact]
+    public void La_liste_ignore_les_publications_de_l_autre_logiciel()
+    {
+        var identite = MiseAJour.LireLaListe(ListeDeDeuxLogiciels, "identite-v");
+        Assert.DoesNotContain("StudioPhoto", identite!.Url);
+    }
+
+    /// <summary>
+    /// Les PRÉVERSIONS sont acceptées ici, à l'inverse de la dernière publication : c'est
+    /// sous cette forme qu'Identité est publié, exprès.
+    /// </summary>
+    [Fact]
+    public void Une_preversion_est_acceptee_dans_la_liste()
+    {
+        Assert.NotNull(MiseAJour.LireLaListe(ListeDeDeuxLogiciels, "identite-v"));
+    }
+
+    [Fact]
+    public void Un_brouillon_est_ecarte()
+    {
+        const string liste = """
+        [ { "tag_name": "identite-v9.9.9", "draft": true, "prerelease": true,
+            "assets": [ { "name": "StudioIdentite-9.9.9.zip", "size": 1,
+                          "browser_download_url": "https://exemple/x.zip" } ] } ]
+        """;
+
+        Assert.Null(MiseAJour.LireLaListe(liste, "identite-v"));
+    }
+
+    /// <summary>Une publication sans archive n'est pas installable : on ne la propose pas.</summary>
+    [Fact]
+    public void Une_publication_sans_archive_est_ecartee()
+    {
+        const string liste = """
+        [ { "tag_name": "identite-v9.9.9", "draft": false, "prerelease": true, "assets": [] } ]
+        """;
+
+        Assert.Null(MiseAJour.LireLaListe(liste, "identite-v"));
+    }
+
+    [Fact]
+    public void Une_liste_illisible_ne_leve_pas()
+    {
+        Assert.Null(MiseAJour.LireLaListe("{ pas du json", "identite-v"));
+        Assert.Null(MiseAJour.LireLaListe("", "identite-v"));
+    }
 }

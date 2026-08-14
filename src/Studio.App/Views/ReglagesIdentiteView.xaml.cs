@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using Studio.App.Infrastructure;
+using Studio.Core.Cloud;
 using Studio.Core.Domain;
 using Studio.Core.Mail;
 using Studio.Printing;
@@ -53,7 +54,27 @@ public partial class ReglagesIdentiteView : UserControl
         DossierRadio.IsChecked = fixe;
         CarteRadio.IsChecked = !fixe;
 
+        // La case n'a de sens que sur un poste qui porte deux palettes — voir Habillage.
+        HabillagePanel.Visibility = Habillage.EstReglable ? Visibility.Visible : Visibility.Collapsed;
+        SombreCheck.IsChecked = reglages.ModeSombre;
+
+        // La mise à jour d'Identité ne concerne qu'Identité : le Studio complet a la sienne
+        // dans Paramètres, et sur une autre suite de publications.
+        MajPanel.Visibility = EstIdentite ? Visibility.Visible : Visibility.Collapsed;
+        MajVersionText.Text = $"Version installée : {VersionInstallee.ToString(3)}";
+
         DireOuVontLesPhotos();
+    }
+
+    /// <summary>
+    /// Le mode sombre s'applique TOUT DE SUITE, avant même d'enregistrer : on choisit un
+    /// habillage en le regardant, pas en lisant son nom. L'enregistrement suit avec le
+    /// bouton, comme le reste de l'écran.
+    /// </summary>
+    private void OnModeSombre(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        Habillage.Appliquer?.Invoke(SombreCheck.IsChecked == true);
     }
 
     /// <summary>
@@ -110,7 +131,8 @@ public partial class ReglagesIdentiteView : UserControl
     }
 
     private ReglagesIdentite SaisieSource() => new(
-        DossierRadio.IsChecked == true ? DossierBox.Text.Trim() : "");
+        DossierPhotos: DossierRadio.IsChecked == true ? DossierBox.Text.Trim() : "",
+        ModeSombre: SombreCheck.IsChecked == true);
 
     private void Montrer(MailSettings reglages)
     {
@@ -206,6 +228,127 @@ public partial class ReglagesIdentiteView : UserControl
         {
             Mouse.OverrideCursor = null;
             EssaiButton.IsEnabled = true;
+        }
+    }
+
+    // ----- mise à jour -----
+
+    /// <summary>
+    /// L'exécutable qui tourne. C'est lui qui dit de QUEL logiciel il s'agit — et donc
+    /// quelle suite de publications le concerne.
+    /// </summary>
+    private static string Executable =>
+        Path.GetFileName(Environment.ProcessPath) ?? "Studio.App.exe";
+
+    private static bool EstIdentite =>
+        Executable.Equals("Studio.Identite.exe", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Un dépôt, deux applications, deux suites d'étiquettes : <c>v1.5.19</c> pour le
+    /// Studio, <c>identite-v1.5.19</c> pour Identité — cette dernière en préversion, donc
+    /// hors de « la dernière publication ». Voir <see cref="MiseAJour.PrefixeEtiquette"/>.
+    /// </summary>
+    private static MiseAJour Verificateur(System.Net.Http.HttpClient client) =>
+        new(client) { PrefixeEtiquette = EstIdentite ? "identite-v" : "v" };
+
+    private static Version VersionInstallee =>
+        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
+
+    private VersionPubliee? _majProposee;
+
+    private async void OnChercherLaMaj(object sender, RoutedEventArgs e)
+    {
+        MajChercherButton.IsEnabled = false;
+        MajInstallerButton.Visibility = Visibility.Collapsed;
+        MajEtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
+        MajEtatText.Text = "Recherche…";
+
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            var publiee = await Verificateur(client).DernierePubliee();
+
+            if (publiee is null)
+            {
+                MajEtatText.Text = "Aucune version publiée n'a pu être lue. Vérifiez la " +
+                                   "connexion à Internet — l'application continue de fonctionner.";
+                return;
+            }
+
+            if (!MiseAJour.EstPlusRecente(publiee.Version, VersionInstallee))
+            {
+                MajEtatText.Foreground = (Brush)Application.Current.Resources["OkBrush"];
+                MajEtatText.Text = "Cette version est à jour.";
+                return;
+            }
+
+            _majProposee = publiee;
+            MajEtatText.Foreground = (Brush)Application.Current.Resources["TitleBrush"];
+            MajEtatText.Text =
+                $"Version {publiee.Version.ToString(3)} disponible ({publiee.TailleLisible}).\n\n" +
+                publiee.Notes;
+            MajInstallerButton.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Mise à jour (poste identité) : recherche impossible", ex);
+            MajEtatText.Text = "Recherche impossible : " + ex.Message;
+        }
+        finally
+        {
+            MajChercherButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Télécharge, prépare, puis ferme l'application : le script reprend la main et la
+    /// relance une fois les fichiers remplacés. On demande confirmation — elle va se fermer,
+    /// peut-être au milieu d'un client.
+    /// </summary>
+    private async void OnInstallerLaMaj(object sender, RoutedEventArgs e)
+    {
+        if (_majProposee is not { } version) return;
+
+        var reponse = MessageBox.Show(
+            $"Installer la version {version.Version.ToString(3)} ?\n\n" +
+            "L'application va se fermer, se mettre à jour, puis se rouvrir toute seule.\n" +
+            "Terminez ce que vous êtes en train de faire avant de continuer.",
+            "Mise à jour", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+
+        if (reponse != MessageBoxResult.OK) return;
+
+        MajInstallerButton.IsEnabled = false;
+        MajEtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
+        MajEtatText.Text = "Téléchargement…";
+
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+
+            var travail = Path.Combine(Path.GetTempPath(), "studio-maj-identite");
+            var archive = await Verificateur(client).Telecharger(version, travail);
+
+            var installe = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            var script = MiseAJour.PreparerLInstallation(
+                archive, installe, Path.Combine(installe, Executable));
+
+            FileLog.Write($"Mise à jour (poste identité) : installation de {version.Version} lancée");
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = script,
+                UseShellExecute = true,
+                CreateNoWindow = false,
+            });
+
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Mise à jour (poste identité) : installation impossible", ex);
+            MajEtatText.Foreground = (Brush)Application.Current.Resources["DangerBrush"];
+            MajEtatText.Text = "Installation impossible : " + ex.Message;
+            MajInstallerButton.IsEnabled = true;
         }
     }
 

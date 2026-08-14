@@ -1,0 +1,37 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- LA PALETTE SOMBRE — les valeurs « dark » de la maquette validée le 14/08/2026.
+
+         Demandée depuis Arcueil : un comptoir en contre-jour, ou une fin de journée, et
+         l'écran clair fatigue. Ce n'est pas la palette du Studio (bleu) mais la MÊME que le
+         mode clair d'Identité, retournée : l'accent sarcelle reste, plus lumineux pour tenir
+         sur du sombre.
+
+         Mêmes clés que la palette claire, aux mêmes places : il n'y a que des couleurs qui
+         changent, aucune vue n'est au courant. -->
+
+    <SolidColorBrush x:Key="PageBrush"      Color="#0D131A"/>
+    <SolidColorBrush x:Key="CardBrush"      Color="#161F29"/>
+    <SolidColorBrush x:Key="PanelBrush"     Color="#1B2530"/>
+    <SolidColorBrush x:Key="FieldBrush"     Color="#1B2530"/>
+
+    <SolidColorBrush x:Key="TextBrush"      Color="#E7ECF1"/>
+    <SolidColorBrush x:Key="MutedBrush"     Color="#8C99A6"/>
+
+    <SolidColorBrush x:Key="AccentBrush"     Color="#26BCC2"/>
+    <SolidColorBrush x:Key="AccentDarkBrush" Color="#0E8A8F"/>
+    <SolidColorBrush x:Key="TitleBrush"      Color="#3FD0D6"/>
+
+    <SolidColorBrush x:Key="LigneBrush"          Color="#28333F"/>
+    <SolidColorBrush x:Key="SeparatorBrush"      Color="#28333F"/>
+    <SolidColorBrush x:Key="InactifFondBrush"    Color="#141C24"/>
+    <SolidColorBrush x:Key="InactifTexteBrush"   Color="#5A6875"/>
+
+    <SolidColorBrush x:Key="OkBrush"     Color="#43B472"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="#E06A60"/>
+
+    <!-- La scène est encore un cran plus sombre que la page : la photo doit rester la
+         chose la plus lumineuse de l'écran. -->
+    <SolidColorBrush x:Key="SceneBrush" Color="#080C11"/>
+</ResourceDictionary>

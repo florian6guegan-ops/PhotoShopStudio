@@ -14,7 +14,13 @@ namespace Studio.Core.Domain;
 /// sur un poste où les photos arrivent toujours au même endroit — un dossier réseau, un
 /// dossier de dépôt du téléphone.
 /// </param>
-public sealed record ReglagesIdentite(string DossierPhotos = "")
+/// <param name="ModeSombre">
+/// L'habillage sombre, au choix du poste.
+///
+/// Demandé depuis Arcueil : un comptoir en contre-jour, ou une fin de journée, et l'écran
+/// clair fatigue. Faux par défaut — c'est la maquette validée qui est claire.
+/// </param>
+public sealed record ReglagesIdentite(string DossierPhotos = "", bool ModeSombre = false)
 {
     /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
     public const string FileName = "identite.json";

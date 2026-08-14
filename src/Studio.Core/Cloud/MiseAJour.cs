@@ -71,6 +71,24 @@ public sealed class MiseAJour
     public static string UrlDerniereVersion =>
         $"https://api.github.com/repos/{Depot}/releases/latest";
 
+    /// <summary>Adresse de la LISTE des publications, préversions comprises.</summary>
+    public static string UrlDesPublications =>
+        $"https://api.github.com/repos/{Depot}/releases?per_page=30";
+
+    /// <summary>
+    /// Le préfixe d'étiquette des versions de CE logiciel-ci.
+    ///
+    /// <b>Un dépôt, deux applications.</b> Studio Photo est publié en <c>v1.5.19</c>,
+    /// Studio Photo Identité en <c>identite-v1.5.19</c> — et ce dernier en PRÉVERSION, ce
+    /// qui le tient volontairement hors de <c>/releases/latest</c> pour que les postes du
+    /// Studio ne le voient jamais (voir <c>tools\Publier.ps1 -Identite</c>).
+    ///
+    /// Chaque application cherche donc les siennes : « v » passe par la dernière
+    /// publication, comme depuis toujours ; tout autre préfixe parcourt la LISTE, où les
+    /// préversions figurent.
+    /// </summary>
+    public string PrefixeEtiquette { get; init; } = "v";
+
     /// <summary>
     /// La version publiée, ou <c>null</c> s'il n'y en a pas d'exploitable.
     ///
@@ -82,16 +100,92 @@ public sealed class MiseAJour
     {
         try
         {
-            using var reponse = await _client.GetAsync(UrlDerniereVersion, ct);
+            var liste = PrefixeEtiquette != "v";
+
+            using var reponse = await _client.GetAsync(
+                liste ? UrlDesPublications : UrlDerniereVersion, ct);
             if (!reponse.IsSuccessStatusCode) return null;
 
             var json = await reponse.Content.ReadAsStringAsync(ct);
-            return Lire(json);
+            return liste ? LireLaListe(json, PrefixeEtiquette) : Lire(json);
         }
         catch (Exception)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// La plus récente des publications qui portent <paramref name="prefixe"/>.
+    ///
+    /// Les PRÉVERSIONS sont acceptées ici, à l'inverse de <see cref="Lire"/> : c'est
+    /// précisément sous cette forme qu'est publiée l'application Identité, pour rester
+    /// invisible aux postes du Studio. Les brouillons, eux, restent écartés — ils n'ont pas
+    /// d'archive téléchargeable.
+    ///
+    /// On ne se fie pas à l'ordre rendu par GitHub : on garde le plus grand NUMÉRO.
+    /// </summary>
+    public static VersionPubliee? LireLaListe(string json, string prefixe)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
+
+            VersionPubliee? meilleure = null;
+
+            foreach (var publication in document.RootElement.EnumerateArray())
+            {
+                if (Vrai(publication, "draft")) continue;
+
+                var etiquette = Texte(publication, "tag_name");
+                if (!etiquette.StartsWith(prefixe, StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (LireLaVersion(etiquette[prefixe.Length..]) is not { } version) continue;
+                if (meilleure is not null && version <= meilleure.Version) continue;
+
+                if (Archive(publication) is not { } archive) continue;
+
+                meilleure = new VersionPubliee(
+                    version,
+                    Texte(publication, "name") is { Length: > 0 } titre ? titre : etiquette,
+                    Texte(publication, "body"),
+                    archive.Url,
+                    archive.Octets);
+            }
+
+            return meilleure;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>L'archive d'une publication, ou null s'il n'y en a pas.</summary>
+    private static (string Url, long Octets)? Archive(JsonElement publication)
+    {
+        if (!publication.TryGetProperty("assets", out var pieces)
+            || pieces.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var piece in pieces.EnumerateArray())
+        {
+            var nom = Texte(piece, "name");
+            if (!nom.EndsWith(ExtensionArchive, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var url = Texte(piece, "browser_download_url");
+            if (url.Length == 0) continue;
+
+            var octets = piece.TryGetProperty("size", out var taille)
+                && taille.TryGetInt64(out var valeur) ? valeur : 0;
+
+            return (url, octets);
+        }
+
+        return null;
     }
 
     /// <summary>
