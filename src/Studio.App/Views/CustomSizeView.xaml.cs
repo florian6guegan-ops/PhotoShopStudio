@@ -110,6 +110,45 @@ public partial class CustomSizeView : UserControl
 
     private void OnTailleTapee(object sender, TextChangedEventArgs e) => Recalculer();
 
+    // ----- le sens de la photo -----
+
+    private void OnPortrait(object sender, RoutedEventArgs e) => ImposerLeSens(debout: true);
+
+    private void OnPaysage(object sender, RoutedEventArgs e) => ImposerLeSens(debout: false);
+
+    /// <summary>
+    /// Range la largeur et la hauteur dans le sens demandé.
+    ///
+    /// <b>Le sens se décidait par le seul ORDRE des deux nombres</b>, et rien ne le disait.
+    /// « 8 × 6,5 » donne des photos couchées, « 6,5 × 8 » des photos debout : celui qui
+    /// pense « du 8 sur 6,5 » sans y voir un sens obtient un cadrage coupé en travers.
+    /// Arrivé à Créteil le 14/08/2026, commande 14-018 — deux portraits repris couchés, et
+    /// rien à l'écran ne permettait de s'en apercevoir avant le papier.
+    ///
+    /// Les deux nombres ne sont pas retapés : on les remet dans l'ordre.
+    /// </summary>
+    private void ImposerLeSens(bool debout)
+    {
+        var largeur = LireCm(LargeurBox.Text);
+        var hauteur = LireCm(HauteurBox.Text);
+        if (largeur <= 0 || hauteur <= 0) return;
+
+        var petit = Math.Min(largeur, hauteur);
+        var grand = Math.Max(largeur, hauteur);
+
+        var (voulueL, voulueH) = debout ? (petit, grand) : (grand, petit);
+
+        // Un seul des deux champs change le plus souvent : les réécrire tous les deux
+        // déclencherait deux recalculs, dont un sur une taille intermédiaire absurde.
+        var texteL = EcrireCm(voulueL);
+        var texteH = EcrireCm(voulueH);
+
+        if (LargeurBox.Text != texteL) LargeurBox.Text = texteL;
+        if (HauteurBox.Text != texteH) HauteurBox.Text = texteH;
+    }
+
+    private static string EcrireCm(double cm) => cm.ToString("0.##", CultureInfo.CurrentCulture);
+
     private void OnTailleRecente(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is CustomSize taille) Poser(taille);
@@ -165,11 +204,25 @@ public partial class CustomSizeView : UserControl
         _taille = new CustomSize(largeur, hauteur, BorderMm: _bordMm);
         ContinuerButton.IsEnabled = true;
 
+        // LE SENS, DIT EN TOUTES LETTRES QUAND IL NE SERA PAS RESPECTÉ.
+        //
+        // « photos posées en travers » était la seule mention, glissée entre parenthèses au
+        // milieu d'une phrase sur le papier : personne ne pouvait comprendre que son
+        // CADRAGE allait être repris dans l'autre sens et coupé. C'est ce qui a gâché la
+        // commande 14-018 de Créteil le 14/08/2026.
+        var avertissementSens = plan.CellRotated
+            ? $"\n\n⚠ Vos photos seront posées EN TRAVERS de la planche : le cadrage que vous " +
+              $"ferez sera repris couché, donc coupé en haut et en bas. Pour garder le sens, " +
+              $"appuyez sur « {(hauteur > largeur ? "Couchée" : "Debout")} » — la taille " +
+              $"devient {Math.Max(largeur, hauteur) / 10:0.##} × {Math.Min(largeur, hauteur) / 10:0.##} cm " +
+              $"ou l'inverse, et le rendement est souvent le même."
+            : "";
+
         VerdictText.Text = (plan.PerSheet == 1
             ? $"Une photo par planche {plan.Paper.Name} : à cette taille, il n'y a pas de place gagnée."
-            : $"{plan.PerSheet} photos par planche {plan.Paper.Name}" +
-              (plan.CellRotated ? " (photos posées en travers)." : ".") +
+            : $"{plan.PerSheet} photos par planche {plan.Paper.Name}." +
               "\nLe papier se choisit à l'écran suivant : ici, c'est le moins cher qui est montré.")
+            + avertissementSens
             // La marge se DIT, parce qu'elle mange l'image : sans cette ligne, l'opérateur
             // annonce un 9 × 13 et le client reçoit une photo de 8 × 12 dans du blanc.
             + (_bordMm > 0
