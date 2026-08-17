@@ -362,9 +362,27 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                         .ToList(),
                     ct);
 
+            // ⚠ QUI ENTRE DANS LE LOT, ET QUI N'EST QUE MONTRÉ.
+            //
+            // Les photos venues de l'écran de sélection ONT ÉTÉ CHOISIES : l'opérateur les a
+            // désignées une à une, elles partent donc à une planche chacune.
+            //
+            // Celles d'une carte mémoire, NON. La bande les montre toutes — c'est son rôle,
+            // et l'opérateur y cherche celle du client — mais rien n'a encore été demandé.
+            // Elles entrent dans le lot en s'ouvrant (voir ReprendreDeLaPhoto).
+            //
+            // Sans cette distinction, ouvrir Studio Photo Identité sur une carte de
+            // quatre-vingts photos et toucher « Imprimer » sortait QUATRE-VINGTS PLANCHES.
+            // Signalé depuis Arcueil le 17/08/2026.
+            var choisiesDavance = _cheminsImposes is not null;
+
             var rang = 0;
             foreach (var file in files)
-                _photos.Add(new StripItem(file) { Rang = ++rang });
+                _photos.Add(new StripItem(file)
+                {
+                    Rang = ++rang,
+                    Quantite = LotIdentite.QuantiteDeDepart(choisiesDavance),
+                });
             PhotoStrip.ItemsSource = _photos;
 
             // le travail mis de côté est reposé AVANT toute ouverture : ouvrir d'abord
@@ -600,7 +618,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         });
 
         Redresser(photo.Redressement);
-        SetQuantity(photo.Quantite);
+
+        // OUVRIR UNE PHOTO, C'EST LA CHOISIR : elle entre dans le lot à une planche.
+        //
+        // Aux ouvertures SUIVANTES (`Prete`), on respecte ce que l'opérateur a réglé — zéro
+        // compris. C'est ainsi qu'il retire du lot une photo ouverte par erreur en
+        // parcourant la carte, et sans cela le zéro qu'il vient de poser reviendrait à 1
+        // dès qu'il regarde une autre photo puis revient.
+        SetQuantity(LotIdentite.QuantiteALOuverture(photo.Quantite, photo.Prete));
 
         // 0 = jamais réglée : on part de ce que le raccourci a demandé, ou de la planche
         // pleine à défaut — comme au choix du papier
@@ -637,10 +662,19 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </summary>
     private void AnnoncerLeLot()
     {
-        var planches = _photos.Sum(p => Math.Max(1, p.Quantite));
+        // On compte ce qui va SORTIR, pas ce que la bande montre. Le `Math.Max(1, …)` d'avant
+        // comptait une planche pour chaque photo de la carte : la phrase annonçait
+        // « 80 photos · 80 planches » alors que l'opérateur n'en avait choisi qu'une — et
+        // l'impression, elle, les sortait vraiment.
+        var planches = _photos.Sum(p => p.Quantite);
+        var retenues = _photos.Count(p => LotIdentite.EstRetenue(p.Quantite));
+
         LotText.Text = _photos.Count <= 1
             ? ""
-            : $"{_photos.Count} photos · {planches} planche{(planches > 1 ? "s" : "")}";
+            // Les deux nombres, parce qu'ils ne disent pas la même chose : ce que la carte
+            // porte, et ce qu'on a retenu dessus.
+            : $"{retenues} photo{(retenues > 1 ? "s" : "")} retenue{(retenues > 1 ? "s" : "")} " +
+              $"sur {_photos.Count} · {planches} planche{(planches > 1 ? "s" : "")}";
     }
 
     /// <summary>
@@ -2137,9 +2171,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private void OnQuantityMinus(object sender, RoutedEventArgs e) => SetQuantity(_quantity - 1);
     private void OnQuantityPlus(object sender, RoutedEventArgs e) => SetQuantity(_quantity + 1);
 
+    /// <summary>
+    /// Planches identiques de la photo affichée. <b>Le plancher est ZÉRO, pas un</b> : c'est
+    /// ainsi qu'on retire du lot une photo qu'on a ouverte pour la regarder. Le récapitulatif
+    /// admet zéro depuis toujours (<c>IdSheetRecapView.Quantite</c>, borné 0..20) ; cet
+    /// écran-ci l'interdisait, si bien qu'une photo ouverte ne pouvait plus jamais en sortir.
+    /// </summary>
     private void SetQuantity(int value)
     {
-        _quantity = Math.Clamp(value, 1, 20);
+        _quantity = Math.Clamp(value, 0, 20);
         QuantityText.Text = _quantity.ToString();
 
         // la vignette porte « ×N » : sans ce report, la bande annoncerait encore l'ancienne
@@ -2403,7 +2443,9 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // Ce n'est pas une appréciation, c'est une mesure — le gabarit dépasse de l'image,
         // et le tirage sortira avec des bords vides ou étirés. Aucun faux positif possible,
         // et c'est le défaut que les collègues avaient signalé le 08/08/2026.
-        var horsPhoto = _photos.Where(p => !p.Crop.IsValid).ToList();
+        // Sur les photos RETENUES seulement : celles que la bande ne fait que montrer n'ont
+        // pas de cadre à juger, et les signaler ferait lire un avertissement sans objet.
+        var horsPhoto = _photos.Where(p => LotIdentite.EstRetenue(p.Quantite) && !p.Crop.IsValid).ToList();
 
         if (horsPhoto.Count > 0)
         {
@@ -2420,18 +2462,40 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         var finition = FinishCombo.SelectedItem as string;
 
+        // ⚠ ON N'IMPRIME QUE CE QUI A ÉTÉ RETENU.
+        //
+        // Cette ligne fabriquait une planche pour CHAQUE photo de la bande, et le
+        // `Math.Max(1, p.Quantite)` remontait à une planche celles que l'opérateur n'avait
+        // jamais ouvertes — donc jamais demandées. Sur Studio Photo Identité, qui s'ouvre
+        // directement sur la carte du client, la bande porte toute la carte : toucher
+        // « Imprimer » sortait quatre-vingts planches. Signalé depuis Arcueil le 17/08/2026.
+        //
+        // Le garde-fou existait pourtant en aval — TirageIdentite laisse de côté les planches
+        // à zéro exemplaire, c'est écrit dans sa documentation — mais ce Math.Max le
+        // désarmait : plus aucune planche n'arrivait à zéro.
         var planches = _photos
+            .Where(p => LotIdentite.EstRetenue(p.Quantite))
             .Select(p => new IdSheetRecapView.Planche(
                 p.Path,
                 p.Crop,
                 p.Redressement,
                 ReglagesDe(p),
                 p.Copies > 0 ? p.Copies : choice.Capacite,
-                Math.Max(1, p.Quantite),
+                p.Quantite,
                 choice.Product,
                 finition,
                 p.Rang))
             .ToList();
+
+        if (planches.Count == 0)
+        {
+            MessageBox.Show(
+                "Aucune photo n'est retenue : il n'y a rien à imprimer.\n\n" +
+                "Ouvrez la photo du client dans la bande de gauche — elle entre alors dans " +
+                "le lot — ou remontez le compteur « Planches ».",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
 
         // POSTE IDENTITÉ : on imprime, sans écran intermédiaire.
         //
