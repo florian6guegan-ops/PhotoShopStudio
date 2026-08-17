@@ -22,6 +22,20 @@ Studio.Logo.Logo.Ecrire(
     Path.Combine(sortie, "studio-photo.ico"),
     Path.Combine(sortie, "studio-photo.png"));
 
+// L'icône de STUDIO PHOTO IDENTITÉ, dans les ressources de son propre projet.
+//
+// Les deux logiciels portaient la même — sur un poste qui a les deux raccourcis, rien ne
+// les distinguait. Elle va donc chez lui et non dans les Assets du Studio : les deux
+// projets sont voisins, leurs ressources n'ont pas à se mélanger.
+var sortieIdentite = Path.GetFullPath(Path.Combine(sortie, "..", "..", "Studio.Identite", "Assets"));
+Directory.CreateDirectory(sortieIdentite);
+
+Studio.Logo.LogoIdentite.Ecrire(
+    Path.Combine(sortieIdentite, "studio-identite.ico"),
+    Path.Combine(sortieIdentite, "studio-identite.png"));
+
+Console.WriteLine($"Logo Identité écrit dans {sortieIdentite}");
+
 // Le curseur d'attente : le même diaphragme, qui tourne. Versionné comme l'icône, et
 // refait ici pour la même raison — il doit suivre la marque quand elle change.
 Studio.Logo.CurseurAttente.Ecrire(Path.Combine(sortie, "studio-attente.ani"));

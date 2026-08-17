@@ -23,7 +23,11 @@
     <UseWPF>true</UseWPF>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
-    <ApplicationIcon>..\Studio.App\Assets\studio-photo.ico</ApplicationIcon>
+    <!-- SON PROPRE LOGO depuis le 17/08/2026 : silhouette claire dans un cadre sarcelle au
+         rapport 35 × 45. Il portait celui du Studio complet, si bien que sur un poste qui a
+         les deux raccourcis rien ne les distinguait — ni au bureau, ni dans la barre des
+         tâches, ni dans Alt-Tab. Voir tools\Studio.Logo\LogoIdentite.cs. -->
+    <ApplicationIcon>Assets\studio-identite.ico</ApplicationIcon>
     <AssemblyName>Studio.Identite</AssemblyName>
     <RootNamespace>Studio.Identite</RootNamespace>
 
@@ -50,7 +54,7 @@
          disparaître de lui-même quand la fenêtre paraît — sans une ligne de code. Entre le
          double-clic et la fenêtre, l'opérateur n'avait rien du tout devant un client, et
          c'est exactement là que se joue l'impression d'instantanéité. -->
-    <SplashScreen Include="..\Studio.App\Assets\studio-photo.png" Link="studio-photo.png" />
+    <SplashScreen Include="Assets\studio-identite.png" />
   </ItemGroup>
 
   <ItemGroup>
