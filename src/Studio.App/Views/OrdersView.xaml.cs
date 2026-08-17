@@ -352,10 +352,35 @@ public partial class OrdersView : UserControl
         // a refusé le cadrage. Signalé par l'exploitant le 04/08/2026.
         if (DocumentDeLaPlanche(ligne) is { } document)
         {
-            Navigator.Go(
-                new IdPhotoView(source, document, avecSousDossiers: false),
+            var titrePlanche =
                 $"Commande {ligne.Order.DisplayNumber} — {document.Country}, " +
-                $"{document.WidthMm:0.#}×{document.HeightMm:0.#} mm");
+                $"{document.WidthMm:0.#}×{document.HeightMm:0.#} mm";
+
+            // Ici aussi, on rend le travail et pas seulement le dossier : cadrage,
+            // corrections, fonds, quantités et photos par planche. Le seul motif de rouvrir
+            // une planche est que le guichet a refusé le cadrage — repartir d'un cadrage
+            // automatique effacerait précisément ce qu'on vient corriger.
+            var norme = new IdentiteEnAttente
+            {
+                Country = document.Country,
+                Document = document.Document,
+                WidthMm = document.WidthMm,
+                HeightMm = document.HeightMm,
+                HeadMinMm = document.HeadMinMm,
+                HeadMaxMm = document.HeadMaxMm,
+                CrownMarginMm = document.CrownMarginMm,
+                TargetHeadOverrideMm = document.TargetHeadOverrideMm,
+            };
+
+            var articles = ligne.Retenues
+                .SelectMany(e => e.Lines)
+                .Where(EstIdentite)
+                .SelectMany(l => l.Items);
+
+            Navigator.Go(
+                new IdPhotoView(
+                    TravailDepuisCommande.TraduireIdentite(articles, source, titrePlanche, norme)),
+                titrePlanche);
             return;
         }
 

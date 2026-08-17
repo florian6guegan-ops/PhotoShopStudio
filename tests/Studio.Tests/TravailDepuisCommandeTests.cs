@@ -200,6 +200,81 @@ public class TravailDepuisCommandeTests
         Assert.Equal(0.4, article.Adjustments.Exposure, 4);
     }
 
+    // — les planches d'identité —
+
+    private static IdentiteEnAttente Norme() => new()
+    {
+        Country = "France", Document = "Passeport / CNI",
+        WidthMm = 35, HeightMm = 45, HeadMinMm = 32, HeadMaxMm = 36,
+    };
+
+    /// <summary>
+    /// Le seul motif de rouvrir une planche est que le guichet a REFUSÉ le cadrage : il faut
+    /// donc retrouver celui qu'on avait, pas un cadrage automatique tout neuf.
+    /// </summary>
+    [Fact]
+    public void Une_planche_rend_son_cadrage_ses_fonds_et_ses_quantites()
+    {
+        var article = Article("001.jpg", new CropSpec(0.2, 0.05, 0.5, 0.7));
+        article.SheetCopiesOverride = 6;
+        article.Adjustments.Grayscale = true;
+        article.Adjustments.GrayBackground = true;
+
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [article], @"C:\photos", "planche", Norme());
+
+        var photo = Assert.Single(travail.Identite!.Photos);
+        Assert.Equal(0.2, photo.CropX, 4);
+        Assert.Equal(0.7, photo.CropHeight, 4);
+        Assert.Equal(6, photo.Copies);
+        Assert.Equal(2, photo.Quantity);
+        Assert.Equal(1.5, photo.Redressement, 4);
+        Assert.True(photo.NoirEtBlanc);
+        Assert.True(photo.FondGris);
+        Assert.False(photo.FondBlanc);
+    }
+
+    /// <summary>
+    /// ⚠ La commande ne garde PAS les repères de crâne et de menton. La photo revient donc
+    /// « pas prête », pour que la détection les retrouve — et l'écran, lui, ne recadre pas
+    /// par-dessus un cadrage repris.
+    /// </summary>
+    [Fact]
+    public void Une_planche_revient_pas_prete_pour_que_la_detection_retrouve_les_reperes()
+    {
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [Article("001.jpg")], @"C:\photos", "planche", Norme());
+
+        Assert.False(Assert.Single(travail.Identite!.Photos).Prete);
+    }
+
+    /// <summary>La norme visée revient telle quelle : c'est elle qui fixe la case et le prix.</summary>
+    [Fact]
+    public void La_norme_visee_est_conservee()
+    {
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [Article("001.jpg")], @"C:\photos", "planche", Norme());
+
+        Assert.Equal("France", travail.Identite!.Country);
+        Assert.Equal(35, travail.Identite.WidthMm, 3);
+        Assert.Equal(45, travail.Identite.HeightMm, 3);
+        Assert.Equal(36, travail.Identite.HeadMaxMm, 3);
+        Assert.False(travail.AvecSousDossiers);
+    }
+
+    /// <summary>Sans nombre de photos enregistré, on repart de la planche PLEINE (zéro).</summary>
+    [Fact]
+    public void Sans_nombre_enregistre_la_planche_repart_pleine()
+    {
+        var article = Article("001.jpg");
+        article.SheetCopiesOverride = null;
+
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [article], @"C:\photos", "planche", Norme());
+
+        Assert.Equal(0, Assert.Single(travail.Identite!.Photos).Copies);
+    }
+
     /// <summary>Le produit de la barre : le plus représenté, pour préremplir la liste.</summary>
     [Fact]
     public void Le_produit_par_defaut_est_le_plus_represente()

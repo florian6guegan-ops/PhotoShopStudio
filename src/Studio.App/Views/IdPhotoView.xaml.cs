@@ -539,10 +539,21 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             // que l'opérateur vient de corriger à la main.
             if (!item.Prete)
             {
+                // ⚠ UN CADRAGE DÉJÀ POSÉ NE SE REFAIT PAS.
+                //
+                // Une planche rouverte depuis « Commandes du jour » arrive avec le cadrage
+                // de la commande mais SANS repères — la commande n'en garde pas. Il faut
+                // donc laisser la détection les retrouver, et surtout PAS recadrer ensuite :
+                // le seul motif de rouvrir une planche est que le guichet a refusé le
+                // cadrage, et repartir du cadrage automatique effacerait justement celui
+                // qu'on vient chercher.
+                var cadrageRepris = !_crop.IsFull;
+
                 var face = await Task.Run(() => App.Services.Faces.DetectMain(path));
                 var detecte = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
                 PoserReperes(detecte);
-                AutoCrop();
+
+                if (!cadrageRepris) AutoCrop();
                 item.Prete = true;
             }
 
@@ -2760,6 +2771,13 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             photo.Redressement = garde.Redressement;
             photo.NoirEtBlanc = garde.NoirEtBlanc;
             photo.FondBlanc = garde.FondBlanc;
+
+            // ⚠ LE FOND GRIS ÉTAIT OUBLIÉ ICI. Il est arrivé après le blanc et n'avait été
+            // branché que d'un côté : une planche mise de côté en fond gris revenait avec le
+            // fond du studio, sans rien d'anormal à l'écran ni au journal. C'est la TROISIÈME
+            // fois que ce champ-là manque à un endroit (voir la 1.5.3, ReglagesRetenus).
+            photo.FondGris = garde.FondGris;
+
             photo.Corrections = garde.Corrections.Clone();
             photo.Quantite = garde.Quantity;
             photo.Copies = garde.Copies;

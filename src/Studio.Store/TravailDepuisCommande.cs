@@ -87,6 +87,68 @@ public static class TravailDepuisCommande
     }
 
     /// <summary>
+    /// La même chose pour une PLANCHE D'IDENTITÉ, qui se reprend dans son propre écran.
+    ///
+    /// <b>⚠ Les repères de crâne et de menton ne sont PAS dans la commande.</b> Elle ne garde
+    /// que le cadrage, les corrections et les fonds ; les repères n'appartiennent qu'au
+    /// travail mis de côté. La photo revient donc avec <c>Prete = false</c>, de sorte que la
+    /// détection de visage les retrouve — et l'écran, lui, sait ne PAS recadrer par-dessus un
+    /// cadrage repris (voir <c>IdPhotoView.OuvrirLaPhotoAsync</c>). On récupère ainsi les
+    /// deux : les repères par la détection, le cadrage tel que l'opérateur l'avait laissé.
+    /// </summary>
+    /// <param name="articles">Les articles des lignes d'identité de la commande.</param>
+    /// <param name="norme">
+    /// La norme visée, déjà remplie par l'appelant — lui seul sait la déduire de la taille de
+    /// case enregistrée. Cette méthode n'y touche pas et ne fait qu'ajouter ses photos.
+    /// </param>
+    public static TravailEnAttente TraduireIdentite(
+        IEnumerable<OrderItem> articles, string dossierDesPhotos, string titre,
+        IdentiteEnAttente norme)
+    {
+        ArgumentNullException.ThrowIfNull(articles);
+        ArgumentNullException.ThrowIfNull(norme);
+
+        foreach (var article in articles)
+            norme.Photos.Add(new PhotoIdentiteEnAttente
+            {
+                FileName = article.FileName,
+                Selected = true,
+                Quantity = Math.Max(1, article.Quantity),
+
+                // 0 = « planche pleine » : l'écran recalera sur la capacité du papier
+                Copies = article.SheetCopiesOverride ?? 0,
+
+                // Voir plus haut : sans repères en magasin, on laisse la détection les
+                // retrouver, et l'écran garde le cadrage repris.
+                Prete = false,
+
+                CropX = article.Crop.X,
+                CropY = article.Crop.Y,
+                CropWidth = article.Crop.Width,
+                CropHeight = article.Crop.Height,
+
+                Redressement = article.FineRotationDegrees,
+
+                // Les trois cases vivent DANS les réglages une fois la commande écrite
+                // (voir IdPhotoView.ReglagesDe) : c'est de là qu'il faut les relire.
+                NoirEtBlanc = article.Adjustments.Grayscale,
+                FondBlanc = article.Adjustments.WhiteBackground,
+                FondGris = article.Adjustments.GrayBackground,
+
+                Corrections = article.Adjustments.Clone(),
+            });
+
+        return new TravailEnAttente
+        {
+            Id = Guid.NewGuid(),
+            PhotosDirectory = dossierDesPhotos,
+            AvecSousDossiers = false,
+            Titre = titre,
+            Identite = norme,
+        };
+    }
+
+    /// <summary>
     /// Une photo de la commande, telle que l'opérateur l'avait réglée.
     ///
     /// <b>Elle revient COCHÉE</b> : elle faisait partie de la commande, donc l'opérateur
