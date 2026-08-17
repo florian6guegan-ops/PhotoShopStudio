@@ -21,7 +21,7 @@
         <TextBlock Grid.Row="0" Text="Agrandissement — taille personnalisée"
                    Style="{StaticResource PageTitle}" HorizontalAlignment="Center"/>
 
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="32">
+        <Border Grid.Row="1" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="32">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock Style="{StaticResource Hint}" TextAlignment="Center" Margin="0,0,0,20"
                            Text="Donnez la taille du tirage fini. Il est facturé au prix du format du catalogue dans lequel il tient."/>
@@ -49,12 +49,12 @@
                              AutomationProperties.Name="Largeur en centimètres"
                              TextChanged="OnTailleTapee"/>
                     <TextBlock Text="×" FontSize="34" Margin="16,0" VerticalAlignment="Center"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                     <TextBox x:Name="HauteurBox" Style="{StaticResource Saisie}"
                              AutomationProperties.Name="Hauteur en centimètres"
                              TextChanged="OnTailleTapee"/>
                     <TextBlock Text="cm" FontSize="26" Margin="16,0,0,0" VerticalAlignment="Center"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                 </StackPanel>
 
                 <!-- Les tailles déjà demandées : au comptoir, c'est presque toujours la même. -->
@@ -76,15 +76,15 @@
 
                 <!-- Le prix AVANT de choisir les photos : c'est ici que l'opérateur
                      l'annonce au client, sans avoir rien engagé. -->
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="20"
                         Margin="0,28,0,0" MinWidth="620">
                     <StackPanel>
                         <TextBlock x:Name="VerdictText" FontSize="20" FontWeight="SemiBold"
                                    TextAlignment="Center" TextWrapping="Wrap"
-                                   Foreground="{StaticResource TextBrush}"/>
+                                   Foreground="{DynamicResource TextBrush}"/>
                         <TextBlock x:Name="PrixText" FontSize="40" FontWeight="Bold"
                                    TextAlignment="Center" Margin="0,10,0,0"
-                                   Foreground="{StaticResource TitleBrush}"/>
+                                   Foreground="{DynamicResource TitleBrush}"/>
                         <TextBlock x:Name="PaliersText" Style="{StaticResource Hint}" FontSize="16"
                                    TextAlignment="Center" Margin="0,6,0,0"/>
                     </StackPanel>

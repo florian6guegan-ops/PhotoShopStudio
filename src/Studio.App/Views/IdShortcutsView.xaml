@@ -17,7 +17,7 @@
                    Text="Ces formats s'affichent en grand à l'ouverture du module photo d'identité. Les 274 autres restent accessibles par le bouton « Autres formats… »."/>
 
         <!-- Ajout : une norme du référentiel, ou un produit tiré tel quel (E-Photo) -->
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12"
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12"
                 Padding="16" Margin="0,0,0,14">
             <Grid>
                 <Grid.RowDefinitions>
@@ -27,19 +27,29 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <ComboBox x:Name="DocumentCombo" Grid.Row="0" Grid.Column="0" FontSize="18" Padding="10,8"
                           DisplayMemberPath="Libelle" Margin="0,0,12,8"
                           AutomationProperties.Name="Document à ajouter"/>
-                <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource FlatButton}"
+                <!-- Le NOMBRE fait partie du raccourci : la boutique vend deux planches
+                     françaises, et ce n'est pas le format qui les distingue. « Planche
+                     pleine » reste le défaut — c'est ce que faisaient tous les raccourcis
+                     avant le 17/08/2026. -->
+                <ComboBox x:Name="PhotosCombo" Grid.Row="0" Grid.Column="1" FontSize="18" Padding="10,8"
+                          DisplayMemberPath="Libelle" MinWidth="190" Margin="0,0,12,8"
+                          ToolTip="Combien de photos poser sur la planche. « Planche pleine » en met autant que le papier peut en porter."
+                          AutomationProperties.Name="Photos par planche"/>
+                <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource FlatButton}"
                         MinWidth="220" MinHeight="48" FontSize="18" Margin="0,0,0,8"
                         Click="OnAjouterDocument">➕ Ajouter ce document</Button>
 
-                <ComboBox x:Name="ProduitCombo" Grid.Row="1" Grid.Column="0" FontSize="18" Padding="10,8"
+                <ComboBox x:Name="ProduitCombo" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                          FontSize="18" Padding="10,8"
                           DisplayMemberPath="Libelle" Margin="0,0,12,0"
                           AutomationProperties.Name="Produit à ajouter"/>
-                <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource FlatButton}"
+                <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource FlatButton}"
                         MinWidth="220" MinHeight="48" FontSize="18"
                         Click="OnAjouterProduit">➕ Ajouter ce produit</Button>
             </Grid>
@@ -49,7 +59,7 @@
             <ItemsControl x:Name="RaccourcisList">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12"
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12"
                                 Padding="16" Margin="0,0,0,10">
                             <DockPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
@@ -63,15 +73,15 @@
                                             Click="OnDescendre" Tag="{Binding}">↓</Button>
                                     <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
                                             MinHeight="48" MinWidth="70" FontSize="18" Padding="12,6"
-                                            Foreground="{StaticResource DangerBrush}"
+                                            Foreground="{DynamicResource DangerBrush}"
                                             ToolTip="Retirer ce raccourci"
                                             Click="OnRetirer" Tag="{Binding}">🗑</Button>
                                 </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}"
+                                               Foreground="{DynamicResource TextBrush}"
                                                Text="{Binding Libelle}"/>
-                                    <TextBlock FontSize="17" Foreground="{StaticResource MutedBrush}"
+                                    <TextBlock FontSize="17" Foreground="{DynamicResource MutedBrush}"
                                                Text="{Binding Detail}" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </DockPanel>

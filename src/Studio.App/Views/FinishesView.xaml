@@ -15,7 +15,7 @@
         <TextBlock Grid.Row="1" Style="{StaticResource Hint}" Margin="0,0,0,16" TextWrapping="Wrap"
                    Text="Une finition = un jeu de réglages du pilote, enregistré sous un nom. Saisissez le nom (Brillant, Mat, Lustré…), cliquez sur « Capturer » : le dialogue du pilote s'ouvre, choisissez-y la finition, validez. L'opérateur pourra ensuite la choisir au moment d'imprimer."/>
 
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,16">
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,16">
             <StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Nom :" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -37,7 +37,7 @@
             <ItemsControl x:Name="FinishesList">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,10">
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,10">
                             <DockPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                     <Button Style="{StaticResource FlatButton}" MinHeight="48" MinWidth="150"
@@ -49,8 +49,8 @@
                                 </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}" Text="{Binding Name}"/>
-                                    <TextBlock FontSize="17" Foreground="{StaticResource MutedBrush}"
+                                               Foreground="{DynamicResource TextBrush}" Text="{Binding Name}"/>
+                                    <TextBlock FontSize="17" Foreground="{DynamicResource MutedBrush}"
                                                Text="{Binding Details}" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </DockPanel>

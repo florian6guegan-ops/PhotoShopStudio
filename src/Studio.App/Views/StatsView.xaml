@@ -15,19 +15,19 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Background="{StaticResource CardBrush}" CornerRadius="12"
+            <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="12"
                     Padding="20" Margin="0,0,8,0">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,12"
-                               Foreground="{StaticResource TextBrush}" Text="Par jour"/>
+                               Foreground="{DynamicResource TextBrush}" Text="Par jour"/>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="DaysList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="0,4">
                                         <TextBlock DockPanel.Dock="Right" FontSize="19" FontWeight="Bold"
-                                                   Foreground="{StaticResource AccentBrush}" Text="{Binding Revenue}"/>
-                                        <TextBlock FontSize="19" Foreground="{StaticResource TextBrush}"
+                                                   Foreground="{DynamicResource AccentBrush}" Text="{Binding Revenue}"/>
+                                        <TextBlock FontSize="19" Foreground="{DynamicResource TextBrush}"
                                                    Text="{Binding Label}"/>
                                     </DockPanel>
                                 </DataTemplate>
@@ -37,19 +37,19 @@
                 </DockPanel>
             </Border>
 
-            <Border Grid.Column="1" Background="{StaticResource CardBrush}" CornerRadius="12"
+            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="12"
                     Padding="20" Margin="8,0,0,0">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,12"
-                               Foreground="{StaticResource TextBrush}" Text="Par produit"/>
+                               Foreground="{DynamicResource TextBrush}" Text="Par produit"/>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="ProductsList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="0,4">
                                         <TextBlock DockPanel.Dock="Right" FontSize="19" FontWeight="Bold"
-                                                   Foreground="{StaticResource AccentBrush}" Text="{Binding Revenue}"/>
-                                        <TextBlock FontSize="19" Foreground="{StaticResource TextBrush}"
+                                                   Foreground="{DynamicResource AccentBrush}" Text="{Binding Revenue}"/>
+                                        <TextBlock FontSize="19" Foreground="{DynamicResource TextBrush}"
                                                    Text="{Binding Label}"/>
                                     </DockPanel>
                                 </DataTemplate>

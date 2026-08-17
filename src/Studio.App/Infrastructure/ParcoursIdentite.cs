@@ -21,9 +21,11 @@ public static class ParcoursIdentite
     public static void Ouvrir() =>
         Navigator.Go(new IdDocumentPickerView(
                 // Une NORME : on choisit le support, puis les photos, puis on cadre.
-                document =>
+                // `photos` est le nombre imposé par le raccourci — « planche de 6 » — qu'il
+                // faut porter jusqu'au cadrage, seul endroit où il veut dire quelque chose.
+                (document, photos) =>
                     Navigator.Go(new SourcePickerView((racine, profond) =>
-                            Navigator.Go(new IdPhotoPickerView(racine, document, profond),
+                            Navigator.Go(new IdPhotoPickerView(racine, document, profond, photos),
                                 $"{document.Country} — choisir les photos")),
                         "Photos d'identité — choisir le support"),
 

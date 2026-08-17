@@ -34,6 +34,18 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     private int _quantity = 1;
     private int _copies = 6;   // photos sur la planche ; recalé sur le produit à la sélection
 
+    /// <summary>
+    /// Photos par planche VOULUES par le raccourci qui a ouvert cet écran — « France —
+    /// planche de 6 » —, ou null quand personne n'en a demandé.
+    ///
+    /// <b>Ce n'est pas le nombre courant, c'est le DÉFAUT.</b> Partout où l'écran repartait
+    /// de la planche pleine — au changement de papier, à l'ouverture d'une photo jamais
+    /// réglée — il repart désormais de ce nombre-ci quand il existe. L'opérateur reste libre
+    /// de le monter ou de le descendre au compteur : le raccourci pose le point de départ,
+    /// il ne verrouille rien.
+    /// </summary>
+    private readonly int? _copiesVoulues;
+
     private StripItem? _current;
     private BitmapSource? _displayBitmap;
 
@@ -191,8 +203,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
     /// <param name="chemins">Photos retenues à l'écran précédent, dans l'ordre du choix.</param>
     /// <param name="document">Norme visée. Null = norme française.</param>
-    public IdPhotoView(IReadOnlyList<string> chemins, IdDocumentSpec? document = null)
-        : this("", document, false, chemins)
+    /// <param name="photosParPlanche">Photos par planche imposées, ou null pour la planche pleine.</param>
+    public IdPhotoView(IReadOnlyList<string> chemins, IdDocumentSpec? document = null,
+        int? photosParPlanche = null)
+        : this("", document, false, chemins, photosParPlanche)
     {
     }
 
@@ -201,8 +215,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// Norme visée. Null = norme française, le cas courant de la boutique.
     /// </param>
     /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
-    public IdPhotoView(string rootPath, IdDocumentSpec? document = null, bool avecSousDossiers = true)
-        : this(rootPath, document, avecSousDossiers, null)
+    /// <param name="photosParPlanche">Photos par planche imposées, ou null pour la planche pleine.</param>
+    public IdPhotoView(string rootPath, IdDocumentSpec? document = null,
+        bool avecSousDossiers = true, int? photosParPlanche = null)
+        : this(rootPath, document, avecSousDossiers, null, photosParPlanche)
     {
     }
 
@@ -222,12 +238,13 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     private IdPhotoView(string rootPath, IdDocumentSpec? document, bool avecSousDossiers,
-        IReadOnlyList<string>? chemins)
+        IReadOnlyList<string>? chemins, int? photosParPlanche = null)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
         _cheminsImposes = chemins;
         _document = document ?? IdDocumentSpec.France;
+        _copiesVoulues = photosParPlanche;
         InitializeComponent();
 
         TitleText.Text = _document.Country == "France"
@@ -585,8 +602,9 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         Redresser(photo.Redressement);
         SetQuantity(photo.Quantite);
 
-        // 0 = jamais réglée : on part de la planche pleine, comme au choix du papier
-        SetCopies(photo.Copies > 0 ? photo.Copies : MaxCopiesForSelectedProduct());
+        // 0 = jamais réglée : on part de ce que le raccourci a demandé, ou de la planche
+        // pleine à défaut — comme au choix du papier
+        SetCopies(photo.Copies > 0 ? photo.Copies : CopiesParDefaut());
 
         MontrerLesCorrections();
     }
@@ -1189,7 +1207,95 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         SujetPanel.Visibility = Visibility.Visible;
         CorrectionsColonne.Width = new GridLength(300);
 
+        // LA DÉTECTION PART À L'APPUI SUR LE BOUTON, pas à la case.
+        //
+        // Elle attendait « Corriger le sujet seul », et surtout un CURSEUR : la case seule
+        // laisse le sujet neutre (voir CorrectionsSujet.IsNeutral), donc aucun détourage
+        // n'était lancé. Les quatre secondes du réseau tombaient donc sur le premier
+        // mouvement d'exposition — au pire moment, celui où l'opérateur cherche son réglage
+        // et croit le curseur cassé.
+        //
+        // Ouvrir ce panneau EST la demande de détourer : on le fait tout de suite, la barre
+        // d'attente s'affiche pendant qu'il calcule, et les curseurs répondent ensuite au
+        // dixième de seconde puisque le masque est en mémoire.
+        _corrections.Sujet.Actif = true;
+        if (_current is not null) _current.Corrections = _corrections.Clone();
+
         RelireLeSujet();
+
+        _ = DetecterLeSujetAsync();
+    }
+
+    /// <summary>
+    /// Détoure la personne MAINTENANT, et range le masque : c'est tout ce que fait cette
+    /// méthode. Elle ne change pas un pixel de l'aperçu — sans aucun réglage, il n'y a rien
+    /// à montrer — elle paie d'avance le seul calcul lent de cet écran.
+    ///
+    /// <b>Elle passe par la même file que les aperçus</b> (<c>_apercuFile</c>). Deux
+    /// détourages menés de front ne tiennent pas sur la Quadro P2000 des boutiques : le
+    /// second se replie sur la découpe par la couleur, et le fond ressort dégradé — c'est le
+    /// défaut relevé à Créteil sur le récapitulatif.
+    /// </summary>
+    private async Task DetecterLeSujetAsync()
+    {
+        var depart = _detoure ?? _displayBitmap;
+        if (depart is null) return;
+
+        // Mêmes pixels, même numéro, même clé que RecalculerLApercuCorrigeAsync : c'est la
+        // condition pour que le masque calculé ici serve les curseurs juste après, au lieu
+        // d'être rangé sous un nom que personne ne redemandera.
+        if (!ReferenceEquals(_departSource, depart))
+        {
+            _departBgra = EnBgra(depart, out _departLargeur, out _departHauteur);
+            _departSource = depart;
+            _departNumero++;
+        }
+
+        var cle = _detoure is null
+            ? CleDuFichier(_current?.Path)
+            : $"{_current?.Path}#{_departNumero}";
+
+        // déjà détouré : il n'y a rien à attendre, et une barre qui apparaîtrait pour rien
+        // ferait croire à un travail à chaque ouverture du panneau
+        if (cle is not null &&
+            MasqueSujet.DejaEnMemoire(cle, (uint)_departLargeur, (uint)_departHauteur))
+            return;
+
+        var pixels = _departBgra;
+        if (pixels is null) return;
+
+        var largeur = _departLargeur;
+        var hauteur = _departHauteur;
+        var contour = _corrections.Sujet.ContourPx;
+        var adoucir = _corrections.Sujet.AdoucissementPx;
+
+        await _apercuFile.WaitAsync();
+        try
+        {
+            CommencerLAttente("Détection de la personne");
+
+            await Task.Run(() =>
+            {
+                var lecture = new ImageMagick.PixelReadSettings(
+                    (uint)largeur, (uint)hauteur,
+                    ImageMagick.StorageType.Char, ImageMagick.PixelMapping.BGRA);
+
+                using var image = new ImageMagick.MagickImage(pixels, lecture);
+                MasqueSujet.Calculer(image, contour, adoucir, cle)?.Dispose();
+            });
+        }
+        catch (Exception ex)
+        {
+            // Le détourage n'est pas le tirage : on laisse l'écran tel quel. Le premier
+            // curseur le retentera, et la phrase du panneau dit déjà par quoi la découpe
+            // se fait sur ce poste.
+            FileLog.Write("Détection du sujet impossible (photo d'identité)", ex);
+        }
+        finally
+        {
+            FinirLAttente();
+            _apercuFile.Release();
+        }
     }
 
     private void OnFermerLaSelectionDuSujet(object sender, RoutedEventArgs e)
@@ -2058,6 +2164,16 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         ProductCombo.SelectedItem is ProductChoice choice ? choice.Capacite : 1;
 
     /// <summary>
+    /// D'où repart le compteur quand rien n'a encore été réglé : le nombre demandé par le
+    /// raccourci s'il y en a un, la planche pleine sinon.
+    ///
+    /// <see cref="SetCopies"/> borne de toute façon à ce que le papier porte : une planche
+    /// de six demandée sur un papier qui n'en prend que quatre en donnera quatre, plutôt
+    /// qu'une impression refusée après l'annonce du prix.
+    /// </summary>
+    private int CopiesParDefaut() => _copiesVoulues ?? MaxCopiesForSelectedProduct();
+
+    /// <summary>
     /// Changer de produit repart de la planche PLEINE.
     ///
     /// Le nombre de copies inscrit au produit (« planche de 8 ») vaut pour le format
@@ -2076,7 +2192,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             if (!ReferenceEquals(photo, _current))
                 photo.Copies = 0;
 
-        SetCopies(choice.Capacite);
+        SetCopies(_copiesVoulues ?? choice.Capacite);
         ShowFinishes(choice.Product);
     }
 
@@ -2107,8 +2223,51 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         var chemins = _photos.Select(p => p.Path).ToList();
 
         Navigator.Go(
-            new IdDocumentPickerView(document => Revenir(new IdPhotoView(chemins, document))),
+            new IdDocumentPickerView(
+                // Une NORME : la page se refait sur le nouveau gabarit, avec les mêmes
+                // photos — et avec le nombre que le raccourci demande, s'il en demande un.
+                (document, photos) => Revenir(new IdPhotoView(chemins, document, photos)),
+
+                // UN PRODUIT tiré tel quel — l'E-Photo.
+                //
+                // CETTE TUILE-LÀ ÉTAIT INVISIBLE DEPUIS CET ÉCRAN, et c'est exactement
+                // l'oubli signalé le 17/08/2026 : le picker MASQUE ses raccourcis
+                // « produit » quand l'appelant ne dit pas où les envoyer, et cet appel-ci ne
+                // le disait pas. Sur Studio Photo Identité, où changer de document est le
+                // SEUL chemin vers le picker, l'E-Photo n'existait donc nulle part — alors
+                // qu'elle figure dans les raccourcis par défaut depuis le 03/08/2026.
+                //
+                // Elle ne passe pas par le gabarit d'identité : la photo part entière sur un
+                // 10×15, c'est l'écran des tirages qui la sert, produit déjà choisi.
+                OuvrirUnProduit),
             "Choisir le document");
+    }
+
+    /// <summary>
+    /// Ouvre un produit tiré tel quel — l'E-Photo — sur l'écran des tirages ordinaires.
+    ///
+    /// On saute l'écran des supports quand on sait déjà où sont les photos, exactement comme
+    /// « Ouvrir des photos » : au comptoir, la carte est dans le lecteur ou le poste a son
+    /// dossier fixe, et un écran qui ne propose qu'une chose est un geste pour rien.
+    /// </summary>
+    private static void OuvrirUnProduit(Product produit)
+    {
+        if (DepartDesPhotos() is { } depart)
+        {
+            Navigator.Go(new PhotoGridView(depart, produit.Code, avecSousDossiers: true),
+                produit.Name);
+            return;
+        }
+
+        // Sa photo n'arrive presque jamais sur une carte mémoire : le client l'envoie par
+        // courriel ou depuis son téléphone, et elle atterrit dans Téléchargements. D'où ce
+        // raccourci-là, ici et pas ailleurs — c'est la règle déjà posée dans ParcoursIdentite.
+        Navigator.Go(
+            new SourcePickerView((racine, profond) =>
+                    Navigator.Go(new PhotoGridView(racine, produit.Code, avecSousDossiers: profond),
+                        produit.Name),
+                SourcePickerView.RaccourciTelechargements()),
+            $"{produit.Name} — choisir le support");
     }
 
     /// <summary>

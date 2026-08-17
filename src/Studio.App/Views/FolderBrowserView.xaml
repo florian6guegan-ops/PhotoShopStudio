@@ -10,7 +10,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border" Background="{TemplateBinding Background}"
-                                CornerRadius="10" BorderBrush="{StaticResource AccentBrush}"
+                                CornerRadius="10" BorderBrush="{DynamicResource AccentBrush}"
                                 BorderThickness="2" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
                         </Border>
@@ -19,7 +19,7 @@
                                 <Setter TargetName="border" Property="Background" Value="#33FFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="{StaticResource AccentDarkBrush}"/>
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource AccentDarkBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -40,7 +40,7 @@
 
         <!-- Chemin cliquable : remonter de trois niveaux est le geste courant, et le
              bouton « dossier parent » ne le fait qu'un cran à la fois. -->
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="10"
+        <Border Grid.Row="1" Background="{DynamicResource CardBrush}" CornerRadius="10"
                 Padding="10,8" Margin="0,0,0,12">
             <DockPanel LastChildFill="True">
                 <Button x:Name="ParentButton" DockPanel.Dock="Left" Style="{StaticResource FlatButton}"
@@ -67,11 +67,11 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Button Background="Transparent" BorderThickness="0" Cursor="Hand"
                                             Padding="8,4" FontSize="17"
-                                            Foreground="{StaticResource TextBrush}"
+                                            Foreground="{DynamicResource TextBrush}"
                                             Content="{Binding Name}" Tag="{Binding Path}"
                                             Click="OnBreadcrumb"/>
                                     <TextBlock Text="›" FontSize="17" VerticalAlignment="Center"
-                                               Foreground="{StaticResource MutedBrush}"/>
+                                               Foreground="{DynamicResource MutedBrush}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -87,12 +87,12 @@
             </Grid.ColumnDefinitions>
 
             <!-- Points de départ : disques, clés, CD, puis les dossiers usuels du poste -->
-            <Border Grid.Column="0" Background="{StaticResource CardBrush}" CornerRadius="12"
+            <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="12"
                     Padding="10" Margin="0,0,12,0">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock Text="RACCOURCIS" FontSize="13" FontWeight="Bold"
-                                   Foreground="{StaticResource MutedBrush}" Margin="6,4,0,10"/>
+                                   Foreground="{DynamicResource MutedBrush}" Margin="6,4,0,10"/>
                         <ItemsControl x:Name="ShortcutsList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -110,7 +110,7 @@
 
             <!-- Les sous-dossiers, avec ce qu'ils contiennent : c'est l'information qui
                  manquait pour choisir sans ouvrir au hasard. -->
-            <Border Grid.Column="1" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="10">
+            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="10">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -126,7 +126,7 @@
                                             Tag="{Binding Path}" Click="OnEnterFolder">
                                         <DockPanel LastChildFill="True">
                                             <Border DockPanel.Dock="Left" Width="88" Height="66"
-                                                    Background="{StaticResource PanelBrush}"
+                                                    Background="{DynamicResource PanelBrush}"
                                                     CornerRadius="6" Margin="0,0,14,0">
                                                 <Grid>
                                                     <TextBlock Text="📁" FontSize="30"
@@ -138,11 +138,11 @@
                                             </Border>
                                             <StackPanel VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Name}" FontSize="19"
-                                                           Foreground="{StaticResource TextBrush}"
+                                                           Foreground="{DynamicResource TextBrush}"
                                                            TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{Binding CountLabel}" FontSize="15"
                                                            Margin="0,4,0,0"
-                                                           Foreground="{StaticResource MutedBrush}"/>
+                                                           Foreground="{DynamicResource MutedBrush}"/>
                                             </StackPanel>
                                         </DockPanel>
                                     </Button>
@@ -161,13 +161,13 @@
                     <!-- Un dossier qui disparaît sans un mot inquiète : on dit combien
                          ont été écartés, faute de quoi que ce soit d'imprimable dedans. -->
                     <TextBlock x:Name="HiddenText" Grid.Row="1" FontSize="14"
-                               Foreground="{StaticResource MutedBrush}" Margin="6,8,0,2"
+                               Foreground="{DynamicResource MutedBrush}" Margin="6,8,0,2"
                                Visibility="Collapsed"/>
                 </Grid>
             </Border>
         </Grid>
 
-        <Border Grid.Row="3" Background="{StaticResource CardBrush}" CornerRadius="12"
+        <Border Grid.Row="3" Background="{DynamicResource CardBrush}" CornerRadius="12"
                 Padding="16" Margin="0,12,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>

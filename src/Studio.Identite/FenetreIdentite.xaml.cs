@@ -1,6 +1,8 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using Studio.App.Infrastructure;
 using Studio.App.Views;
 
@@ -73,5 +75,107 @@ public partial class FenetreIdentite : Window
     {
         if (e.Key == Key.System && e.SystemKey == Key.F4) e.Handled = true;
         base.OnPreviewKeyDown(e);
+    }
+
+    // ----- la fenêtre s'arrête à la barre des tâches -----
+
+    /// <summary>
+    /// <b>Une fenêtre SANS BORDURE agrandie couvre l'écran ENTIER</b>, barre des tâches
+    /// comprise — c'est le comportement de Windows, pas un réglage de l'application. Et
+    /// comme la barre des tâches est au premier plan, ce sont les quarante derniers pixels
+    /// de la page qui passent DESSOUS : la rangée de boutons du bas (« Enregistrer »,
+    /// « Retour », la phrase de conformité) devenait inatteignable.
+    ///
+    /// Signalé le 17/08/2026 : « certains boutons sont trop bas sur l'écran ». Le Studio
+    /// complet n'a jamais eu le défaut — sa fenêtre garde sa bordure, et Windows l'agrandit
+    /// alors à la zone de travail tout seul.
+    ///
+    /// On répond nous-mêmes à WM_GETMINMAXINFO en donnant la zone de TRAVAIL du moniteur
+    /// (<c>rcWork</c>) au lieu de sa surface entière (<c>rcMonitor</c>). Pris sur le
+    /// moniteur qui porte la fenêtre, et non sur l'écran principal : à Créteil comme à
+    /// Arcueil le poste peut recevoir un second écran, et la barre des tâches n'y est pas
+    /// forcément du même côté.
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        if (PresentationSource.FromVisual(this) is HwndSource source)
+            source.AddHook(SurMessageDeFenetre);
+    }
+
+    private const int WmGetMinMaxInfo = 0x0024;
+    private const int MoniteurLePlusProche = 0x0002;
+
+    private static IntPtr SurMessageDeFenetre(
+        IntPtr fenetre, int message, IntPtr wParam, IntPtr lParam, ref bool traite)
+    {
+        if (message != WmGetMinMaxInfo) return IntPtr.Zero;
+
+        var moniteur = MonitorFromWindow(fenetre, MoniteurLePlusProche);
+        if (moniteur == IntPtr.Zero) return IntPtr.Zero;
+
+        var infos = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(moniteur, ref infos)) return IntPtr.Zero;
+
+        var cotes = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+
+        // Les positions sont relatives au coin haut-gauche du MONITEUR, pas du bureau :
+        // sur un second écran placé à gauche, des coordonnées absolues enverraient la
+        // fenêtre hors de l'écran.
+        cotes.ptMaxPosition.X = infos.rcWork.Left - infos.rcMonitor.Left;
+        cotes.ptMaxPosition.Y = infos.rcWork.Top - infos.rcMonitor.Top;
+        cotes.ptMaxSize.X = infos.rcWork.Right - infos.rcWork.Left;
+        cotes.ptMaxSize.Y = infos.rcWork.Bottom - infos.rcWork.Top;
+
+        // Sans la borne haute, Windows autorise encore l'agrandissement à l'écran entier
+        // et le réglage ci-dessus ne tient pas.
+        cotes.ptMaxTrackSize = cotes.ptMaxSize;
+
+        Marshal.StructureToPtr(cotes, lParam, fDeleteOld: false);
+        traite = true;
+        return IntPtr.Zero;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr fenetre, int drapeaux);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr moniteur, ref MONITORINFO infos);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
     }
 }

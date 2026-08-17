@@ -22,7 +22,7 @@
                  Par défaut la carte mémoire, trouvée toute seule : au comptoir, le client
                  tend sa carte, on l'insère, on ouvre. Un dossier fixe ne sert qu'au poste
                  où les photos arrivent toujours au même endroit. -->
-            <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                     Margin="0,0,0,14">
                 <StackPanel>
                     <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
@@ -50,10 +50,29 @@
                 </StackPanel>
             </Border>
 
+            <!-- LES FORMATS MIS EN AVANT.
+                 L'écran existait — c'est celui du Catalogue du Studio complet — mais AUCUN
+                 chemin n'y menait depuis Studio Photo Identité, qui n'a pas de Catalogue.
+                 Sur le poste identité, c'est pourtant le seul réglage qu'on veuille changer
+                 avec la saison. Signalé le 17/08/2026. -->
+            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                    Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                               Text="Les formats"/>
+                    <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,8,0,0"
+                               TextWrapping="Wrap"
+                               Text="Les formats qui s'affichent en grand quand on change de document : la norme française, la planche de 6, l'E-Photo… Les 274 autres restent derrière « Autres formats… »."/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="300" MinHeight="46"
+                            FontSize="16" HorizontalAlignment="Left" Margin="0,12,0,0"
+                            Click="OnFormats">Choisir les formats mis en avant…</Button>
+                </StackPanel>
+            </Border>
+
             <!-- L'HABILLAGE. Ne paraît que là où il veut dire quelque chose : le Studio
                  complet n'a qu'une palette, ce poste-ci en a deux. -->
             <Border x:Name="HabillagePanel" Visibility="Collapsed"
-                    Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                    Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                     Margin="0,0,0,14">
                 <StackPanel>
                     <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
@@ -71,7 +90,7 @@
             <!-- LA MISE À JOUR. Ne paraît que dans Studio Photo Identité : le Studio complet
                  a la sienne, dans Paramètres, et sur une autre suite de publications. -->
             <Border x:Name="MajPanel" Visibility="Collapsed"
-                    Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                    Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                     Margin="0,0,0,14">
                 <StackPanel>
                     <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
@@ -94,7 +113,7 @@
             <TextBlock Style="{StaticResource Hint}" Margin="2,0,0,8" TextWrapping="Wrap"
                        Text="Le compte qui envoie les photos aux clients. Avec Gmail, il faut un mot de passe D'APPLICATION — pas celui du compte : Google refuse le mot de passe ordinaire pour l'envoi. Il se crée sur le compte Google, validation en deux étapes activée."/>
 
-            <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -139,7 +158,7 @@
                     </Grid>
 
                     <CheckBox x:Name="ActifCheck" Grid.Row="4" Grid.Column="1" FontSize="19"
-                              Foreground="{StaticResource TextBrush}" Margin="0,4,0,0"
+                              Foreground="{DynamicResource TextBrush}" Margin="0,4,0,0"
                               Click="OnActifChanged"
                               Content="Envoi par courriel actif"/>
 

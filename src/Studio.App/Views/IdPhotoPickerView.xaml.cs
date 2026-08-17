@@ -36,15 +36,24 @@ public partial class IdPhotoPickerView : UserControl
     /// </summary>
     private CritereDeTri _tri = CritereDeTri.DateRecente;
 
+    /// <summary>
+    /// Photos par planche imposées par le raccourci d'origine (« France — planche de 6 »),
+    /// ou null pour la planche pleine. Cet écran ne s'en sert pas : il ne fait que le
+    /// porter jusqu'au cadrage, qui est le seul à savoir compter des cases.
+    /// </summary>
+    private readonly int? _photosParPlanche;
+
     /// <param name="rootPath">Dossier des photos.</param>
     /// <param name="document">Norme visée ; null = norme française.</param>
     /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
+    /// <param name="photosParPlanche">Photos par planche imposées, ou null pour la planche pleine.</param>
     public IdPhotoPickerView(string rootPath, IdDocumentSpec? document = null,
-        bool avecSousDossiers = true)
+        bool avecSousDossiers = true, int? photosParPlanche = null)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
         _document = document ?? IdDocumentSpec.France;
+        _photosParPlanche = photosParPlanche;
 
         InitializeComponent();
 
@@ -233,7 +242,7 @@ public partial class IdPhotoPickerView : UserControl
         var chemins = CheminsRetenus();
         if (chemins.Count == 0) return;
 
-        Navigator.Go(new IdPhotoView(chemins, _document),
+        Navigator.Go(new IdPhotoView(chemins, _document, _photosParPlanche),
             $"{_document.Country} — cadrer {chemins.Count} photo(s)");
     }
 

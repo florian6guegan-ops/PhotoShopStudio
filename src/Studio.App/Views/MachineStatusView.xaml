@@ -4,12 +4,12 @@
     <UserControl.Resources>
         <Style x:Key="Etiquette" TargetType="TextBlock">
             <Setter Property="FontSize" Value="15"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="Margin" Value="0,0,10,4"/>
         </Style>
         <Style x:Key="Valeur" TargetType="TextBlock">
             <Setter Property="FontSize" Value="16"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="0,0,0,4"/>
         </Style>
@@ -34,7 +34,7 @@
             <ItemsControl x:Name="MachinesList">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                                 Margin="0,0,0,16">
                             <StackPanel>
                                 <!-- La pastille dit l'état d'un coup d'œil, et les couleurs
@@ -48,10 +48,10 @@
                                             VerticalAlignment="Center"
                                             Background="{Binding EtatCouleur}"/>
                                     <TextBlock Text="{Binding Titre}" FontSize="20" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}"/>
+                                               Foreground="{DynamicResource TextBrush}"/>
                                 </StackPanel>
                                 <TextBlock Text="{Binding SousTitre}" FontSize="14"
-                                           Foreground="{StaticResource MutedBrush}" Margin="24,4,0,14"/>
+                                           Foreground="{DynamicResource MutedBrush}" Margin="24,4,0,14"/>
 
                                 <!-- alerte consommables -->
                                 <Border Background="#FFF3CD" CornerRadius="8" Padding="12,10" Margin="0,0,0,14"
@@ -85,7 +85,7 @@
                                                             <ColumnDefinition Width="56"/>
                                                         </Grid.ColumnDefinitions>
                                                         <TextBlock Grid.Column="0" Text="{Binding Nom}" FontSize="15"
-                                                                   Foreground="{StaticResource TextBrush}"
+                                                                   Foreground="{DynamicResource TextBrush}"
                                                                    VerticalAlignment="Center"/>
                                                         <Border Grid.Column="1" Height="18" CornerRadius="9"
                                                                 Background="#E6E6E6" HorizontalAlignment="Stretch">
@@ -95,7 +95,7 @@
                                                         </Border>
                                                         <TextBlock Grid.Column="2" Text="{Binding Texte}" FontSize="15"
                                                                    FontWeight="SemiBold" TextAlignment="Right"
-                                                                   Foreground="{StaticResource TextBrush}"
+                                                                   Foreground="{DynamicResource TextBrush}"
                                                                    VerticalAlignment="Center"/>
                                                     </Grid>
                                                 </DataTemplate>
@@ -112,10 +112,10 @@
                                                     <DockPanel Margin="0,0,0,4">
                                                         <TextBlock DockPanel.Dock="Left" Text="{Binding Nom}"
                                                                    FontSize="15" MinWidth="90"
-                                                                   Foreground="{StaticResource TextBrush}"/>
+                                                                   Foreground="{DynamicResource TextBrush}"/>
                                                         <TextBlock Text="{Binding Restants}" FontSize="15"
                                                                    FontWeight="SemiBold" TextAlignment="Right"
-                                                                   Foreground="{StaticResource TextBrush}"/>
+                                                                   Foreground="{DynamicResource TextBrush}"/>
                                                     </DockPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>

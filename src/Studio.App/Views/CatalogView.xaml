@@ -21,7 +21,7 @@
             <ItemsControl x:Name="ProductsList">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12"
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12"
                                 Padding="16" Margin="0,0,0,10">
                             <DockPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
@@ -48,17 +48,17 @@
                                          est désactivé au lieu d'être supprimé. -->
                                     <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
                                             MinHeight="48" MinWidth="70" FontSize="18" Padding="12,6"
-                                            Foreground="{StaticResource DangerBrush}"
+                                            Foreground="{DynamicResource DangerBrush}"
                                             ToolTip="Supprimer ce produit du catalogue"
                                             Click="OnDeleteProduct" Tag="{Binding}">🗑</Button>
                                 </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="22" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}" Text="{Binding Title}"/>
+                                               Foreground="{DynamicResource TextBrush}" Text="{Binding Title}"/>
                                     <!-- TextWrapping : la ligne porte désormais, le cas
                                          échéant, la phrase qui explique des cotes douteuses.
                                          Sans retour à la ligne elle serait coupée net. -->
-                                    <TextBlock FontSize="17" Foreground="{StaticResource MutedBrush}"
+                                    <TextBlock FontSize="17" Foreground="{DynamicResource MutedBrush}"
                                                Text="{Binding Details}" Margin="0,4,0,0"
                                                TextWrapping="Wrap"/>
                                 </StackPanel>

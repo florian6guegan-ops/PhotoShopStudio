@@ -21,7 +21,7 @@
         <TextBlock Grid.Row="0" Text="Taille personnalisée" Style="{StaticResource PageTitle}"
                    HorizontalAlignment="Center"/>
 
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="32">
+        <Border Grid.Row="1" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="32">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock Style="{StaticResource Hint}" TextAlignment="Center" Margin="0,0,0,24"
                            Text="Donnez la taille de la photo finie. Le logiciel cherchera le plus petit papier où la quantité demandée tient."/>
@@ -31,12 +31,12 @@
                              AutomationProperties.Name="Largeur en centimètres"
                              TextChanged="OnTailleTapee"/>
                     <TextBlock Text="×" FontSize="34" Margin="16,0" VerticalAlignment="Center"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                     <TextBox x:Name="HauteurBox" Style="{StaticResource Saisie}"
                              AutomationProperties.Name="Hauteur en centimètres"
                              TextChanged="OnTailleTapee"/>
                     <TextBlock Text="cm" FontSize="26" Margin="16,0,0,0" VerticalAlignment="Center"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                 </StackPanel>
 
                 <!-- LE SENS DE LA PHOTO, en toutes lettres.
@@ -79,20 +79,20 @@
 
                 <!-- Ce que ça donnera, avant d'engager du papier : l'opérateur annonce son
                      prix ici, pas après avoir choisi les photos. -->
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="20"
                         Margin="0,28,0,0" MinWidth="560">
                     <StackPanel>
                         <TextBlock x:Name="VerdictText" FontSize="20" FontWeight="SemiBold"
                                    TextAlignment="Center" TextWrapping="Wrap"
-                                   Foreground="{StaticResource TextBrush}"/>
+                                   Foreground="{DynamicResource TextBrush}"/>
                         <ItemsControl x:Name="ApercuList" Margin="0,12,0,0">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="0,3">
                                         <TextBlock DockPanel.Dock="Left" Width="150" FontSize="16"
-                                                   Foreground="{StaticResource MutedBrush}"
+                                                   Foreground="{DynamicResource MutedBrush}"
                                                    Text="{Binding Quantite}"/>
-                                        <TextBlock FontSize="16" Foreground="{StaticResource TextBrush}"
+                                        <TextBlock FontSize="16" Foreground="{DynamicResource TextBrush}"
                                                    Text="{Binding Resultat}"/>
                                     </DockPanel>
                                 </DataTemplate>

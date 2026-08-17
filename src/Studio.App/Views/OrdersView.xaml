@@ -10,17 +10,17 @@
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FontSize" Value="22"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="fond" Background="{StaticResource PanelBrush}"
+                        <Border x:Name="fond" Background="{DynamicResource PanelBrush}"
                                 CornerRadius="10,10,0,0" Padding="28,12" Margin="0,0,4,0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="fond" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="fond" Property="Background" Value="{DynamicResource AccentBrush}"/>
                                 <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -70,7 +70,7 @@
                 <ItemsControl x:Name="OrdersList">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="{StaticResource CardBrush}" CornerRadius="12"
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="12"
                                     Padding="16" Margin="0,0,0,12">
                                 <StackPanel>
                                     <DockPanel>
@@ -86,7 +86,7 @@
                                         </Border>
                                         <TextBlock DockPanel.Dock="Left" FontSize="24" FontWeight="Bold"
                                                    VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TextBrush}" Text="{Binding Header}"/>
+                                                   Foreground="{DynamicResource TextBrush}" Text="{Binding Header}"/>
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                                             <!-- Les photos d'une commande restent dans son dossier :
                                                  on peut donc les ressortir et les retravailler, qu'il
@@ -143,7 +143,7 @@
                                                 <DataTemplate>
                                                     <Border Width="76" Height="76" Margin="0,0,6,0"
                                                             CornerRadius="6" ClipToBounds="True"
-                                                            Background="{StaticResource PanelBrush}">
+                                                            Background="{DynamicResource PanelBrush}">
                                                         <Image Source="{Binding}" Stretch="UniformToFill"/>
                                                     </Border>
                                                 </DataTemplate>
@@ -152,11 +152,11 @@
                                         <!-- « +12 » : on ne montre que les premières, et
                                              l'opérateur doit savoir qu'il en manque. -->
                                         <Border CornerRadius="6" Padding="10,0" Height="76"
-                                                Background="{StaticResource PanelBrush}"
+                                                Background="{DynamicResource PanelBrush}"
                                                 Visibility="{Binding ResteVisibility}">
                                             <TextBlock Text="{Binding ResteTexte}" FontSize="17"
                                                        FontWeight="SemiBold" VerticalAlignment="Center"
-                                                       Foreground="{StaticResource MutedBrush}"/>
+                                                       Foreground="{DynamicResource MutedBrush}"/>
                                         </Border>
                                     </StackPanel>
 
@@ -179,7 +179,7 @@
                                                         🖼  Tirer sur l'Epson…
                                                     </Button>
                                                     <TextBlock FontSize="19" VerticalAlignment="Center"
-                                                               Foreground="{StaticResource MutedBrush}"
+                                                               Foreground="{DynamicResource MutedBrush}"
                                                                Text="{Binding Label}" TextTrimming="CharacterEllipsis"/>
                                                 </DockPanel>
                                             </DataTemplate>

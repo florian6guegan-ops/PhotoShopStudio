@@ -15,7 +15,7 @@
 
                 <!-- Le prix D'ABORD : c'est ce qu'on annonce au client avant qu'il dise oui,
                      et non ce qu'on découvre au ticket. -->
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock x:Name="PrixText" Style="{StaticResource Valeur}"
@@ -28,19 +28,19 @@
                 <!-- L'avertissement de configuration : visible seulement si l'envoi n'est
                      pas utilisable, et il dit alors quoi faire. -->
                 <Border x:Name="AvertissementConfig" Visibility="Collapsed"
-                        Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock x:Name="AvertissementText" Style="{StaticResource Texte}"
                                    FontSize="18" TextWrapping="Wrap"
-                                   Foreground="{StaticResource DangerBrush}"/>
+                                   Foreground="{DynamicResource DangerBrush}"/>
                         <Button Style="{StaticResource FlatButton}" MinHeight="48" MinWidth="260"
                                 HorizontalAlignment="Left" Margin="0,12,0,0"
                                 Click="OnOuvrirParametres">⚙  Ouvrir les Paramètres</Button>
                     </StackPanel>
                 </Border>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
                         <TextBlock Text="Adresse(s) du client" Style="{StaticResource Hint}"/>
                         <TextBox x:Name="AdresseBox" FontSize="22" Padding="12,10" Margin="0,6,0,0"

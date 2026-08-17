@@ -11,7 +11,7 @@
         <TextBlock x:Name="TitreText" Grid.Row="0" Style="{StaticResource PageTitle}"
                    HorizontalAlignment="Center"/>
 
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="32">
+        <Border Grid.Row="1" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="32">
             <!-- La liste DOIT défiler. Elle ne le faisait pas, et le défaut ne se voyait
                  qu'avec assez de feuilles au catalogue : au-delà de la hauteur de la carte,
                  les dernières étaient hors d'atteinte et la molette ne répondait pas — rien
@@ -37,10 +37,10 @@
                                     <StackPanel Margin="8,6">
                                         <TextBlock Text="{Binding Titre}" FontSize="22"
                                                    FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextBrush}"/>
+                                                   Foreground="{DynamicResource TextBrush}"/>
                                         <TextBlock Text="{Binding Detail}" FontSize="16"
                                                    TextWrapping="Wrap" Margin="0,4,0,0"
-                                                   Foreground="{StaticResource MutedBrush}"/>
+                                                   Foreground="{DynamicResource MutedBrush}"/>
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>

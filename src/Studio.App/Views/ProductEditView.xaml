@@ -4,7 +4,7 @@
     <UserControl.Resources>
         <Style x:Key="FieldLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="20"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin" Value="0,0,16,14"/>
         </Style>
@@ -26,7 +26,7 @@
         <TextBlock x:Name="TitleText" Grid.Row="0" Style="{StaticResource PageTitle}"/>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="24" MaxWidth="860"
+            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="24" MaxWidth="860"
                     HorizontalAlignment="Left">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -147,10 +147,10 @@
             </Border>
         </ScrollViewer>
 
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <DockPanel>
                 <TextBlock x:Name="ErrorText" DockPanel.Dock="Left" FontSize="18"
-                           Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                           Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Style="{StaticResource FlatButton}" MinWidth="150" Click="OnCancel">Annuler</Button>
                     <Button Style="{StaticResource BigButton}" Margin="12,0,0,0" Click="OnSave">✓ Enregistrer</Button>

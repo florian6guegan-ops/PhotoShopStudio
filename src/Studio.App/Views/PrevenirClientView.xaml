@@ -14,7 +14,7 @@
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="820" HorizontalAlignment="Left">
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
                         <TextBlock x:Name="ResumeText" Style="{StaticResource Texte}"
                                    FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -41,7 +41,7 @@
                 <TextBlock Text="Aperçu du message" Style="{StaticResource Texte}"
                            FontSize="20" FontWeight="SemiBold" Margin="0,24,0,8"/>
 
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="12" Padding="18">
+                <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="18">
                     <TextBlock x:Name="ApercuText" Style="{StaticResource Texte}"
                                FontSize="16" TextWrapping="Wrap" FontFamily="Consolas"/>
                 </Border>

@@ -5,12 +5,12 @@
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="18"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Margin" Value="0,18,0,10"/>
         </Style>
         <Style x:Key="Lbl" TargetType="TextBlock">
             <Setter Property="FontSize" Value="15"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin" Value="0,0,12,8"/>
         </Style>
@@ -80,7 +80,7 @@
             </Border>
 
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Width="440">
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
                         <TextBlock Style="{StaticResource SectionTitle}" Text="Configuration de l'imprimante"
                                    Margin="0,0,0,10"/>

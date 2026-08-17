@@ -16,12 +16,12 @@
                 <!-- L'avertissement de configuration : visible seulement si l'envoi n'est
                      pas utilisable, et il dit alors quoi faire. -->
                 <Border x:Name="AvertissementConfig" Visibility="Collapsed"
-                        Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock x:Name="AvertissementText" Style="{StaticResource Texte}"
                                    FontSize="18" TextWrapping="Wrap"
-                                   Foreground="{StaticResource DangerBrush}"/>
+                                   Foreground="{DynamicResource DangerBrush}"/>
                         <Button Style="{StaticResource FlatButton}" MinHeight="48" MinWidth="260"
                                 HorizontalAlignment="Left" Margin="0,12,0,0"
                                 Click="OnOuvrirParametres">⚙  Ouvrir les Paramètres</Button>
@@ -30,7 +30,7 @@
 
                 <!-- Ce qui part : le choix se fait ICI et non à l'écran précédent, pour que
                      l'opérateur voie les deux comptes côte à côte avant de trancher. -->
-                <Border x:Name="ChoixCarte" Background="{StaticResource CardBrush}" CornerRadius="12"
+                <Border x:Name="ChoixCarte" Background="{DynamicResource CardBrush}" CornerRadius="12"
                         Padding="20" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="Ce qui part" Style="{StaticResource Hint}"/>
@@ -45,7 +45,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="ReglagesCarte" Background="{StaticResource CardBrush}" CornerRadius="12"
+                <Border x:Name="ReglagesCarte" Background="{DynamicResource CardBrush}" CornerRadius="12"
                         Padding="20" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="Nom du dossier envoyé" Style="{StaticResource Hint}"/>
@@ -83,7 +83,7 @@
                 <!-- L'avancement remplace le choix pendant l'envoi : rien ne doit laisser
                      croire qu'on peut encore changer d'avis une fois les octets partis. -->
                 <Border x:Name="AvancementCarte" Visibility="Collapsed"
-                        Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock x:Name="AvancementText" Style="{StaticResource Texte}" FontSize="18"
@@ -96,7 +96,7 @@
                 <!-- Le résultat : le lien est SÉLECTIONNABLE, parce qu'un lien qu'on ne peut
                      pas copier ne sert à rien si le presse-papier a échoué. -->
                 <Border x:Name="ResultatCarte" Visibility="Collapsed"
-                        Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="Lien à donner au client" Style="{StaticResource Hint}"/>

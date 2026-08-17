@@ -25,7 +25,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Width="230" Height="250" Margin="8" CornerRadius="10"
-                                Background="{StaticResource CardBrush}"
+                                Background="{DynamicResource CardBrush}"
                                 BorderThickness="5" BorderBrush="{Binding BorderBrush}"
                                 MouseLeftButtonUp="OnPhotoClicked" Tag="{Binding}">
                             <Grid>
@@ -34,7 +34,7 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <Image Grid.Row="0" Source="{Binding Thumbnail}" Stretch="Uniform" Margin="6"/>
-                                <Border Grid.Row="0" Background="{StaticResource OkBrush}" CornerRadius="10"
+                                <Border Grid.Row="0" Background="{DynamicResource OkBrush}" CornerRadius="10"
                                         Width="52" Height="52" HorizontalAlignment="Right" VerticalAlignment="Top"
                                         Margin="6" Visibility="{Binding CheckVisibility}">
                                     <TextBlock Text="✓" Foreground="White" FontSize="32" FontWeight="Bold"
@@ -58,7 +58,7 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <DockPanel>
                 <TextBlock x:Name="HelpText" DockPanel.Dock="Left" Style="{StaticResource Hint}"
                            VerticalAlignment="Center"

@@ -6,21 +6,21 @@
         <Style x:Key="GrandeTuile" TargetType="Button">
             <Setter Property="Margin" Value="10"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="fond" Background="{TemplateBinding Background}" CornerRadius="14"
-                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="2">
+                                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="fond" Property="Background" Value="{StaticResource PanelBrush}"/>
+                                <Setter TargetName="fond" Property="Background" Value="{DynamicResource PanelBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="fond" Property="Background" Value="{StaticResource AccentDarkBrush}"/>
+                                <Setter TargetName="fond" Property="Background" Value="{DynamicResource AccentDarkBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="fond" Property="Background" Value="#161C22"/>
@@ -34,12 +34,12 @@
         <Style x:Key="TitreTuile" TargetType="TextBlock">
             <Setter Property="FontSize" Value="34"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style x:Key="SousTitreTuile" TargetType="TextBlock">
             <Setter Property="FontSize" Value="17"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
             <Setter Property="TextAlignment" Value="Center"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
@@ -79,7 +79,7 @@
             <Button Style="{StaticResource GrandeTuile}" IsEnabled="False">
                 <StackPanel>
                     <TextBlock Text="Produits personnalisés" Style="{StaticResource TitreTuile}"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                     <TextBlock Text="Mug, tee-shirt, coussin, puzzle — à venir"
                                Style="{StaticResource SousTitreTuile}"/>
                 </StackPanel>
@@ -88,7 +88,7 @@
             <Button Style="{StaticResource GrandeTuile}" IsEnabled="False">
                 <StackPanel>
                     <TextBlock Text="Pêle-mêle" Style="{StaticResource TitreTuile}"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                     <TextBlock Text="Plusieurs photos sur un seul tirage — à venir"
                                Style="{StaticResource SousTitreTuile}"/>
                 </StackPanel>

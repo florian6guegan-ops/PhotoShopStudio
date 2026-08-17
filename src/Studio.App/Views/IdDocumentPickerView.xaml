@@ -24,7 +24,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Button Width="330" Height="170" Margin="10" Cursor="Hand"
-                                Background="{StaticResource AccentBrush}" BorderThickness="0"
+                                Background="{DynamicResource AccentBrush}" BorderThickness="0"
                                 AutomationProperties.Name="{Binding Libelle}"
                                 Click="OnRaccourciChoisi" Tag="{Binding}">
                             <Button.Template>
@@ -36,7 +36,7 @@
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter TargetName="fond" Property="Background"
-                                                    Value="{StaticResource AccentDarkBrush}"/>
+                                                    Value="{DynamicResource AccentDarkBrush}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -85,24 +85,24 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Button Width="290" Height="150" Margin="8" Cursor="Hand"
-                                Background="{StaticResource CardBrush}" BorderThickness="0"
+                                Background="{DynamicResource CardBrush}" BorderThickness="0"
                                 AutomationProperties.Name="{Binding Titre}"
                                 Click="OnDocumentChoisi" Tag="{Binding}">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="fond" Background="{TemplateBinding Background}"
-                                            CornerRadius="12" BorderBrush="{StaticResource AccentBrush}"
+                                            CornerRadius="12" BorderBrush="{DynamicResource AccentBrush}"
                                             BorderThickness="2">
                                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter TargetName="fond" Property="Background"
-                                                    Value="{StaticResource PanelBrush}"/>
+                                                    Value="{DynamicResource PanelBrush}"/>
                                         </Trigger>
                                         <Trigger Property="IsPressed" Value="True">
                                             <Setter TargetName="fond" Property="Background"
-                                                    Value="{StaticResource AccentDarkBrush}"/>
+                                                    Value="{DynamicResource AccentDarkBrush}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -110,17 +110,17 @@
 
                             <StackPanel Margin="12,0">
                                 <TextBlock Text="{Binding Pays}" FontSize="21" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}"
+                                           Foreground="{DynamicResource TextBrush}"
                                            HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Document}" FontSize="15"
-                                           Foreground="{StaticResource MutedBrush}"
+                                           Foreground="{DynamicResource MutedBrush}"
                                            HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
                                            Margin="0,2,0,8"/>
                                 <TextBlock Text="{Binding Cotes}" FontSize="17"
-                                           Foreground="{StaticResource TitleBrush}"
+                                           Foreground="{DynamicResource TitleBrush}"
                                            HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding Visage}" FontSize="13"
-                                           Foreground="{StaticResource MutedBrush}"
+                                           Foreground="{DynamicResource MutedBrush}"
                                            HorizontalAlignment="Center" Margin="0,4,0,0"/>
                             </StackPanel>
                         </Button>

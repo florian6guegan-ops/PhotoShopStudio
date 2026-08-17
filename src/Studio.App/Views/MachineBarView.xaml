@@ -5,12 +5,12 @@
          Il tenait 150 px de haut sur un écran de 1080 — avec l'en-tête et la barre d'action
          de la grille, il ne restait qu'une rangée et demie de photos. Rien n'y a été retiré :
          le contenu est le même, à des cotes de bandeau plutôt que de tuile. -->
-    <Border Background="#0C1116" BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0"
+    <Border Background="#0C1116" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0"
             Padding="8,5">
         <Grid>
             <!-- Renvoyé à la ligne : ce message porte les motifs de panne, et une phrase
                  coupée au milieu ne sert à personne. -->
-            <TextBlock x:Name="MessageText" FontSize="14" Foreground="{StaticResource MutedBrush}"
+            <TextBlock x:Name="MessageText" FontSize="14" Foreground="{DynamicResource MutedBrush}"
                        VerticalAlignment="Center" Margin="6,0" TextWrapping="Wrap"/>
 
             <ItemsControl x:Name="MachinesList">

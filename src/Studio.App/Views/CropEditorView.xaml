@@ -53,7 +53,7 @@
              01/08/2026). Ici la colonne « Auto » de droite est servie d'abord, donc
              Valider est toujours visible, et les outils de gauche passent à la ligne
              quand la fenêtre est trop étroite. -->
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>

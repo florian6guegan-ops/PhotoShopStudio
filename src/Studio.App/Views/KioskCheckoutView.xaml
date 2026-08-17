@@ -20,16 +20,16 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Width="300" MinHeight="140" Margin="10" CornerRadius="14"
-                                Background="{StaticResource CardBrush}"
+                                Background="{DynamicResource CardBrush}"
                                 BorderThickness="5" BorderBrush="{Binding BorderBrush}"
                                 MouseLeftButtonUp="OnProductClicked" Tag="{Binding}">
                             <StackPanel VerticalAlignment="Center" Margin="16">
                                 <TextBlock Text="{Binding Name}" FontSize="26" FontWeight="Bold"
                                            TextAlignment="Center" TextWrapping="Wrap"
-                                           Foreground="{StaticResource TextBrush}"/>
+                                           Foreground="{DynamicResource TextBrush}"/>
                                 <TextBlock Text="{Binding PriceLabel}" FontSize="22"
                                            TextAlignment="Center" Margin="0,8,0,0"
-                                           Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"/>
+                                           Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"/>
                             </StackPanel>
                         </Border>
                     </DataTemplate>
@@ -37,10 +37,10 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <DockPanel>
                 <TextBlock x:Name="SummaryText" DockPanel.Dock="Left" FontSize="24" FontWeight="Bold"
-                           VerticalAlignment="Center" Foreground="{StaticResource TextBrush}"/>
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
                 <Button x:Name="SendButton" DockPanel.Dock="Right" Style="{StaticResource BigButton}"
                         HorizontalAlignment="Right" IsEnabled="False" Click="OnSend">
                     ✓  Envoyer ma commande

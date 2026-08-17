@@ -19,7 +19,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Ces réglages sont propres à CE poste : ils vivent dans ses données, jamais dans le logiciel. Un nouveau poste opérateur se configure ici, sans rien recompiler."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
 
                         <CheckBox x:Name="ActifCheck" Margin="0,0,0,18"
@@ -69,7 +69,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,14,0,0">
                     <StackPanel>
                         <Button Style="{StaticResource FlatButton}" MinHeight="56" MinWidth="320"
@@ -93,7 +93,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Dropbox Transfer n'a pas d'API : rien ne permet d'en créer un depuis un programme. On passe donc par l'API Dropbox — gratuite, elle aussi — qui téléverse les photos dans un dossier daté et en crée un lien de partage. Le client reçoit un lien, sans avoir de compte à créer."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
 
                         <CheckBox x:Name="DropboxActifCheck" Margin="0,0,0,18"
@@ -183,7 +183,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Ce que porte la bande, en bas de la planche : la date du tirage à gauche, la mention au centre, le code QR et le logo à droite."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
 
                         <CheckBox x:Name="MarqueActiveCheck" Margin="0,0,0,18"
@@ -236,7 +236,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Deux méthodes. Celle par couleur reconnaît le fond de studio et efface ce qui lui ressemble : environ une seconde, aucune exigence, et elle marche toujours. Le réseau de neurones donne un contour bien meilleur — les mèches de cheveux sont tenues — mais il lui faut une carte graphique, et il se compte en secondes."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
 
                         <!-- Trois choix exclusifs, et RIEN de grisé. La première version
@@ -276,7 +276,7 @@
 
                         <!-- Le minimum requis, en clair : c'est la question qu'on se pose
                              devant cette case, et la seule réponse utile est chiffrée. -->
-                        <Border Background="{StaticResource PanelBrush}" CornerRadius="10"
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="10"
                                 Padding="16,12" Margin="0,18,0,0">
                             <StackPanel>
                                 <TextBlock Text="Ce qu'il faut comme machine"
@@ -328,7 +328,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Le client scanne ce code pour rejoindre le réseau, puis le second code pour envoyer ses photos. Ce poste est branché en Ethernet : il n'a aucun profil WiFi à lire, le réseau doit donc être saisi ici. Laissé vide, Studio tentera de lire le profil de Windows — ce qui ne vaut que pour un portable."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -405,7 +405,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Prix d'une planche, quel que soit le papier. Une norme étrangère demande de retrouver le gabarit du pays et de vérifier une hauteur de visage qu'on ne connaît pas par cœur : la boutique la facture plus cher."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">
                     <StackPanel Orientation="Horizontal">
                         <StackPanel Margin="0,0,32,0">
@@ -438,7 +438,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Ces dossiers sont épinglés dans TOUTES les boîtes « ouvrir un fichier » de Windows, et proposés en tuile sur l'écran « d'où viennent les photos ? ». Le Bureau et Téléchargements se trouvent tout seuls, où que Windows les range. Un dossier introuvable n'est simplement pas proposé."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">
                     <StackPanel>
                         <ItemsControl x:Name="FavorisList">
@@ -506,7 +506,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"
                            Text="Studio trouve seul les bornes et les imprimantes. Ne remplissez ces cases que si ce qu'il a trouvé est faux : ce que vous mettez ici l'emporte."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">
                     <StackPanel>
                         <TextBlock Text="Bornes (dossier de DiLand)" Style="{StaticResource Hint}"/>
@@ -541,7 +541,7 @@
                                         </Border>
                                         <TextBlock Text="{Binding Detail}" FontSize="15"
                                                    VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TextBrush}"
+                                                   Foreground="{DynamicResource TextBrush}"
                                                    TextTrimming="CharacterEllipsis"/>
                                     </DockPanel>
                                 </DataTemplate>
@@ -566,7 +566,7 @@
                 <TextBlock Text="Supports de photos" Style="{StaticResource Texte}"
                            FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">
                     <StackPanel>
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
@@ -578,7 +578,7 @@
                                     <CheckBox IsChecked="{Binding Masque, Mode=TwoWay}"
                                               Checked="OnSupportChange" Unchecked="OnSupportChange"
                                               FontSize="17" Margin="0,4"
-                                              Foreground="{StaticResource TextBrush}"
+                                              Foreground="{DynamicResource TextBrush}"
                                               VerticalContentAlignment="Center"
                                               Content="{Binding Libelle}"/>
                                 </DataTemplate>
@@ -597,11 +597,11 @@
                 <TextBlock Text="Cadrage des photos" Style="{StaticResource Texte}"
                            FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">
                     <StackPanel>
                         <CheckBox x:Name="CadrageAutoCheck" FontSize="18"
-                                  Foreground="{StaticResource TextBrush}"
+                                  Foreground="{DynamicResource TextBrush}"
                                   VerticalContentAlignment="Center"
                                   Content="Poser le cadre sur le visage"/>
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
@@ -616,7 +616,7 @@
                 <TextBlock Text="Version et mises à jour" Style="{StaticResource Texte}"
                            FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,8,0,20">
                     <StackPanel>
                         <TextBlock x:Name="VersionText" Style="{StaticResource Texte}" FontSize="18"/>
@@ -646,7 +646,7 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"
                            Text="Envoie les journaux de ce poste, ses réglages et son catalogue de produits à celui qui suit le logiciel, pour qu'il puisse comprendre la panne. Aucune photo de client n'est jointe, et les mots de passe ne le sont jamais."/>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                         Margin="0,0,0,20">
                     <StackPanel>
                         <TextBlock Text="Adresse où envoyer le rapport" Style="{StaticResource Hint}"/>
@@ -683,7 +683,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20">
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
                     <StackPanel>
                         <Button Style="{StaticResource FlatButton}" MinHeight="56" MinWidth="300"
                                 FontSize="20" HorizontalAlignment="Left"

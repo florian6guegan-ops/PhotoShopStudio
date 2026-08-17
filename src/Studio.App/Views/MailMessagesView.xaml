@@ -17,7 +17,7 @@
                    Text="Ces mots se choisissent dans une liste au moment de l'envoi, et remplissent la case « Mot pour le client ». Ils restent retouchables à ce moment-là : le nom du client s'y ajoute en deux mots."/>
 
         <!-- Saisie : un intitulé court, qu'on lit dans la liste déroulante, et le mot lui-même -->
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12"
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12"
                 Padding="16" Margin="0,0,0,14">
             <Grid>
                 <Grid.RowDefinitions>
@@ -54,7 +54,7 @@
             <ItemsControl x:Name="MessagesList">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12"
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12"
                                 Padding="16" Margin="0,0,0,10">
                             <DockPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
@@ -72,15 +72,15 @@
                                             Click="OnModifier" Tag="{Binding}">✏ Modifier</Button>
                                     <Button Style="{StaticResource FlatButton}" Margin="8,0,0,0"
                                             MinHeight="48" MinWidth="70" FontSize="18" Padding="12,6"
-                                            Foreground="{StaticResource DangerBrush}"
+                                            Foreground="{DynamicResource DangerBrush}"
                                             ToolTip="Retirer ce message"
                                             Click="OnRetirer" Tag="{Binding}">🗑</Button>
                                 </StackPanel>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock FontSize="21" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextBrush}"
+                                               Foreground="{DynamicResource TextBrush}"
                                                Text="{Binding Libelle}"/>
-                                    <TextBlock FontSize="16" Foreground="{StaticResource MutedBrush}"
+                                    <TextBlock FontSize="16" Foreground="{DynamicResource MutedBrush}"
                                                TextWrapping="Wrap" Margin="0,4,0,0"
                                                Text="{Binding Apercu}"/>
                                 </StackPanel>

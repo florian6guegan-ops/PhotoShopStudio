@@ -105,4 +105,120 @@ public class IdShortcutsTests
             Directory.Delete(dossier, recursive: true);
         }
     }
+
+    /// <summary>
+    /// La planche française de SIX n'est livrée qu'à Studio Photo Identité, demandé le
+    /// 17/08/2026 : le Studio complet fait des photos d'identité de temps en temps, et une
+    /// seconde tuile « France » n'y encombrerait l'écran pour rien.
+    /// </summary>
+    [Fact]
+    public void LaPlancheDeSix_NEstLivreeQuAuPosteIdentite()
+    {
+        var deSix = (IdShortcut r) => r.Kind == IdShortcutKind.Document && r.Photos == 6;
+
+        Assert.DoesNotContain(IdShortcuts.Defaults, r => deSix(r));
+        Assert.Contains(IdShortcuts.DefautsIdentite, r => deSix(r));
+
+        // et le reste est bien le même des deux côtés : une planche de plus, rien d'autre
+        Assert.Equal(
+            IdShortcuts.Defaults,
+            IdShortcuts.DefautsIdentite.Where(r => !deSix(r)).ToList());
+    }
+
+    /// <summary>Sans fichier, chaque logiciel reçoit SES défauts.</summary>
+    [Fact]
+    public void Load_SansFichier_RendLesDefautsDuLogicielDemande()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "studio-raccourcis-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dossier);
+        try
+        {
+            Assert.Equal(IdShortcuts.Defaults, IdShortcuts.Load(dossier, posteIdentite: false));
+            Assert.Equal(IdShortcuts.DefautsIdentite, IdShortcuts.Load(dossier, posteIdentite: true));
+        }
+        finally
+        {
+            Directory.Delete(dossier, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Un fichier réglé l'emporte sur les deux listes de défauts : dès qu'un poste a choisi
+    /// ses formats, c'est son fichier qui parle — et les deux logiciels le partagent.
+    /// </summary>
+    [Fact]
+    public void Load_AvecFichier_IgnoreLesDefautsDuPosteIdentite()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "studio-raccourcis-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dossier);
+        try
+        {
+            var voulu = new[] { new IdShortcut(IdShortcutKind.Document, "Espagne|Passport", "Espagne") };
+            IdShortcuts.Save(dossier, voulu);
+
+            Assert.Equal(voulu, IdShortcuts.Load(dossier, posteIdentite: true));
+        }
+        finally
+        {
+            Directory.Delete(dossier, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Le nombre de photos survit à l'aller-retour par le fichier — c'est tout ce qui
+    /// distingue « France » de « France — planche de 6 ».
+    /// </summary>
+    [Fact]
+    public void SavePuisLoad_ConserveLesPhotosParPlanche()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "studio-raccourcis-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dossier);
+        try
+        {
+            var voulu = new[]
+            {
+                new IdShortcut(IdShortcutKind.Document, "France|Passeport / CNI", "France"),
+                new IdShortcut(IdShortcutKind.Document, "France|Passeport / CNI", "France — planche de 6", 6),
+            };
+
+            IdShortcuts.Save(dossier, voulu);
+            var relu = IdShortcuts.Load(dossier);
+
+            Assert.Equal(voulu, relu);
+            Assert.Null(relu[0].Photos);
+            Assert.Equal(6, relu[1].Photos);
+        }
+        finally
+        {
+            Directory.Delete(dossier, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Un fichier écrit AVANT le 17/08/2026 n'a pas de champ « Photos ». Il doit se relire
+    /// comme avant — planche pleine — et non tomber en erreur.
+    /// </summary>
+    [Fact]
+    public void Load_FichierSansLeChampPhotos_RendLaPlanchePleine()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "studio-raccourcis-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dossier);
+        try
+        {
+            File.WriteAllText(Path.Combine(dossier, IdShortcuts.FileName),
+                """
+                { "Raccourcis": [ { "Kind": "Document", "Cle": "France|ID Card", "Libelle": "France" } ] }
+                """);
+
+            var relu = IdShortcuts.Load(dossier);
+
+            Assert.Single(relu);
+            Assert.Null(relu[0].Photos);
+            Assert.Equal("France|ID Card", relu[0].Cle);
+        }
+        finally
+        {
+            Directory.Delete(dossier, recursive: true);
+        }
+    }
 }

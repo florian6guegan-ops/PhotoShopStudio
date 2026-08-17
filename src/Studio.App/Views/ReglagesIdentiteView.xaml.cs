@@ -67,6 +67,16 @@ public partial class ReglagesIdentiteView : UserControl
     }
 
     /// <summary>
+    /// Les formats mis en avant, sur l'écran du Catalogue.
+    ///
+    /// C'est le MÊME écran que celui du Studio complet (Catalogue → Raccourcis photo
+    /// d'identité), et il enregistre dans le même fichier : Studio Photo Identité n'a
+    /// simplement pas de Catalogue pour y mener.
+    /// </summary>
+    private void OnFormats(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new IdShortcutsView(), "Les formats mis en avant");
+
+    /// <summary>
     /// Le mode sombre s'applique TOUT DE SUITE, avant même d'enregistrer : on choisit un
     /// habillage en le regardant, pas en lisant son nom. L'enregistrement suit avec le
     /// bouton, comme le reste de l'écran.
@@ -234,14 +244,11 @@ public partial class ReglagesIdentiteView : UserControl
     // ----- mise à jour -----
 
     /// <summary>
-    /// L'exécutable qui tourne. C'est lui qui dit de QUEL logiciel il s'agit — et donc
-    /// quelle suite de publications le concerne.
+    /// L'exécutable qui tourne dit de QUEL logiciel il s'agit — et donc quelle suite de
+    /// publications le concerne. Voir <see cref="Logiciel"/>, qui porte la question depuis
+    /// que les raccourcis d'identité se la posent eux aussi.
     /// </summary>
-    private static string Executable =>
-        Path.GetFileName(Environment.ProcessPath) ?? "Studio.App.exe";
-
-    private static bool EstIdentite =>
-        Executable.Equals("Studio.Identite.exe", StringComparison.OrdinalIgnoreCase);
+    private static bool EstIdentite => Logiciel.EstIdentite;
 
     /// <summary>
     /// Un dépôt, deux applications, deux suites d'étiquettes : <c>v1.5.19</c> pour le
@@ -330,7 +337,7 @@ public partial class ReglagesIdentiteView : UserControl
 
             var installe = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             var script = MiseAJour.PreparerLInstallation(
-                archive, installe, Path.Combine(installe, Executable));
+                archive, installe, Path.Combine(installe, Logiciel.Executable));
 
             FileLog.Write($"Mise à jour (poste identité) : installation de {version.Version} lancée");
 

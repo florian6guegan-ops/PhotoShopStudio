@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Studio Photo Identité"
         WindowState="Maximized" WindowStyle="None"
-        Background="{StaticResource PageBrush}"
+        Background="{DynamicResource PageBrush}"
         FontFamily="Segoe UI"
         MinWidth="1024" MinHeight="700">
 
@@ -16,7 +16,7 @@
         <!-- EN-TÊTE, façon maquette : fin, la marque à gauche, « Client suivant » à droite.
              Il ne porte PAS de bouton Retour permanent : le parcours d'identité va toujours
              de l'avant, et le retour appartient à chaque écran. -->
-        <Border Grid.Row="0" Background="{StaticResource CardBrush}" Padding="16,10">
+        <Border Grid.Row="0" Background="{DynamicResource CardBrush}" Padding="16,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -26,15 +26,15 @@
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Width="34" Height="34" CornerRadius="9"
-                            Background="{StaticResource AccentBrush}">
+                            Background="{DynamicResource AccentBrush}">
                         <TextBlock Text="🪪" FontSize="18" Foreground="White"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
                         <TextBlock x:Name="TitreEcran" Text="Photos d'identité"
-                                   Foreground="{StaticResource TextBrush}"
+                                   Foreground="{DynamicResource TextBrush}"
                                    FontSize="20" FontWeight="Bold"/>
-                        <TextBlock Text="STUDIO PHOTO" Foreground="{StaticResource MutedBrush}"
+                        <TextBlock Text="STUDIO PHOTO" Foreground="{DynamicResource MutedBrush}"
                                    FontSize="11" FontWeight="SemiBold"/>
                     </StackPanel>
                 </StackPanel>
@@ -59,7 +59,12 @@
 
         <!-- L'écran courant. Le Navigator du Studio est un simple événement : cette
              fenêtre-ci s'y abonne exactement comme le fait la fenêtre du Studio complet. -->
-        <ContentControl x:Name="HoteEcran" Grid.Row="1"/>
+        <!-- LA MARGE, comme la fenêtre du Studio complet (ScreenHost, Margin="24").
+             Elle manquait ici : les écrans partagés touchaient les quatre bords, et leur
+             rangée de boutons du bas — « Enregistrer », « Retour », la phrase de
+             conformité — se collait à l'arête de l'écran, sous la barre des tâches.
+             C'est le « certains boutons sont trop bas » signalé le 17/08/2026. -->
+        <ContentControl x:Name="HoteEcran" Grid.Row="1" Margin="24,16,24,20"/>
 
     </Grid>
 </Window>

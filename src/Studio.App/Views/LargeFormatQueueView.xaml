@@ -19,7 +19,7 @@
             <ItemsControl x:Name="GroupsList">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource CardBrush}" CornerRadius="12" Padding="20"
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
                                 Margin="0,0,0,16">
                             <StackPanel>
                                 <Grid>
@@ -29,9 +29,9 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
                                         <TextBlock Text="{Binding Header}" FontSize="19" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"/>
+                                                   Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"/>
                                         <TextBlock Text="{Binding SubHeader}" FontSize="14"
-                                                   Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"
                                                    TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Marquer comme tirée" Padding="14,8"
@@ -43,7 +43,7 @@
                                 <ItemsControl ItemsSource="{Binding Files}" Margin="0,14,0,0">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border BorderBrush="{StaticResource SeparatorBrush}"
+                                            <Border BorderBrush="{DynamicResource SeparatorBrush}"
                                                     BorderThickness="0,1,0,0" Padding="0,10">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
@@ -56,9 +56,9 @@
                                                            Margin="0,0,16,0"/>
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding ProductLabel}" FontSize="16"
-                                                                   Foreground="{StaticResource TextBrush}"/>
+                                                                   Foreground="{DynamicResource TextBrush}"/>
                                                         <TextBlock Text="{Binding FileLabel}" FontSize="13"
-                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   Foreground="{DynamicResource MutedBrush}"
                                                                    Margin="0,3,0,0"/>
                                                     </StackPanel>
                                                     <Button Grid.Column="2" Content="Tirer sur l'Epson…"

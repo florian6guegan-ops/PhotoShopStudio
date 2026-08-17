@@ -17,17 +17,22 @@ namespace Studio.App.Views;
 /// </summary>
 public partial class IdDocumentPickerView : UserControl
 {
-    private readonly Action<IdDocumentSpec> _onChoisi;
+    private readonly Action<IdDocumentSpec, int?> _onChoisi;
     private readonly Action<Product>? _onProduit;
     private IReadOnlyList<IdDocumentSpec> _documents = [];
 
-    /// <param name="onChoisi">Appelé avec le document retenu.</param>
+    /// <param name="onChoisi">
+    /// Appelé avec le document retenu, et avec le nombre de photos que le raccourci impose
+    /// à la planche — null quand il n'en impose aucun, c'est-à-dire pour tout ce qui vient
+    /// de la recherche et pour les raccourcis d'avant le 17/08/2026.
+    /// </param>
     /// <param name="onProduit">
     /// Appelé quand le raccourci retenu désigne un PRODUIT et non une norme — l'E-Photo,
     /// qui sort la photo entière sur un 10×15 sans passer par le gabarit d'identité.
     /// Null : ces raccourcis-là sont alors masqués plutôt que menant à un cul-de-sac.
     /// </param>
-    public IdDocumentPickerView(Action<IdDocumentSpec> onChoisi, Action<Product>? onProduit = null)
+    public IdDocumentPickerView(
+        Action<IdDocumentSpec, int?> onChoisi, Action<Product>? onProduit = null)
     {
         InitializeComponent();
         _onChoisi = onChoisi;
@@ -50,14 +55,24 @@ public partial class IdDocumentPickerView : UserControl
     {
         var tuiles = new List<RaccourciTuile>();
 
-        foreach (var raccourci in IdShortcuts.Load(App.Services.CatalogDir))
+        foreach (var raccourci in IdShortcuts.Load(App.Services.CatalogDir, Logiciel.EstIdentite))
         {
             switch (raccourci.Kind)
             {
                 case IdShortcutKind.Document:
                     if (TrouverDocument(raccourci.Cle) is { } spec)
-                        tuiles.Add(new RaccourciTuile(raccourci.Libelle,
-                            $"{spec.WidthMm:0.#} × {spec.HeightMm:0.#} mm", spec, null));
+                    {
+                        // Le nombre est dit SUR LA TUILE : deux raccourcis peuvent viser la
+                        // même norme et ne différer que par lui — « France » et « France —
+                        // planche de 6 » — et rien d'autre ne les distinguerait.
+                        var cotes = $"{spec.WidthMm:0.#} × {spec.HeightMm:0.#} mm";
+                        var detail = raccourci.Photos is { } photos
+                            ? $"{cotes} — planche de {photos}"
+                            : cotes;
+
+                        tuiles.Add(new RaccourciTuile(raccourci.Libelle, detail, spec,
+                            null, raccourci.Photos));
+                    }
                     break;
 
                 case IdShortcutKind.Produit:
@@ -65,7 +80,7 @@ public partial class IdDocumentPickerView : UserControl
                     if (App.Services.Catalog.Find(raccourci.Cle) is { Enabled: true } produit)
                         tuiles.Add(new RaccourciTuile(raccourci.Libelle,
                             $"{produit.WidthMm:0.#} × {produit.HeightMm:0.#} mm — photo entière, " +
-                            "bords blancs", null, produit));
+                            "bords blancs", null, produit, null));
                     break;
             }
         }
@@ -84,7 +99,7 @@ public partial class IdDocumentPickerView : UserControl
     {
         if ((sender as Button)?.Tag is not RaccourciTuile tuile) return;
 
-        if (tuile.Spec is { } spec) _onChoisi(spec);
+        if (tuile.Spec is { } spec) _onChoisi(spec, tuile.Photos);
         else if (tuile.Produit is { } produit) _onProduit?.Invoke(produit);
     }
 
@@ -100,8 +115,9 @@ public partial class IdDocumentPickerView : UserControl
 
     /// <param name="Spec">Norme visée, ou null si la tuile désigne un produit.</param>
     /// <param name="Produit">Produit tiré tel quel, ou null si la tuile désigne une norme.</param>
+    /// <param name="Photos">Photos imposées à la planche, ou null pour la planche pleine.</param>
     private sealed record RaccourciTuile(string Libelle, string Detail,
-        IdDocumentSpec? Spec, Product? Produit);
+        IdDocumentSpec? Spec, Product? Produit, int? Photos);
 
     private void Charger() => _documents = ReferentielIdentite.Charger();
 
@@ -119,8 +135,9 @@ public partial class IdDocumentPickerView : UserControl
 
     private void OnDocumentChoisi(object sender, RoutedEventArgs e)
     {
+        // La recherche ne dit rien du nombre : la planche part pleine, comme avant.
         if ((sender as Button)?.Tag is DocumentRow ligne)
-            _onChoisi(ligne.Spec);
+            _onChoisi(ligne.Spec, null);
     }
 
     private void OnBack(object sender, RoutedEventArgs e) => Navigator.Back();

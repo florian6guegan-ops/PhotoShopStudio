@@ -9,7 +9,7 @@
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Template">
@@ -22,8 +22,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="fond" Property="Background" Value="{StaticResource PanelBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter TargetName="fond" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -36,21 +36,21 @@
             <Setter Property="Margin" Value="6"/>
             <Setter Property="MinHeight" Value="150"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="fond" Background="{TemplateBinding Background}" CornerRadius="14"
-                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="2">
+                                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="fond" Property="Background" Value="{StaticResource PanelBrush}"/>
+                                <Setter TargetName="fond" Property="Background" Value="{DynamicResource PanelBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="fond" Property="Background" Value="{StaticResource AccentDarkBrush}"/>
+                                <Setter TargetName="fond" Property="Background" Value="{DynamicResource AccentDarkBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -61,12 +61,12 @@
         <Style x:Key="TuileTitre" TargetType="TextBlock">
             <Setter Property="FontSize" Value="27"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
         <Style x:Key="TuileSousTitre" TargetType="TextBlock">
             <Setter Property="FontSize" Value="15"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
             <Setter Property="TextAlignment" Value="Center"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
@@ -143,7 +143,7 @@
             </Button>
 
             <Button Style="{StaticResource Principale}" Click="OnTirages"
-                    Background="{StaticResource AccentBrush}"
+                    Background="{DynamicResource AccentBrush}"
                     AutomationProperties.Name="Tirages">
                 <StackPanel>
                     <TextBlock Text="Tirages" Style="{StaticResource TuileTitre}" Foreground="White"/>
@@ -177,7 +177,7 @@
                     Padding="14,12" Margin="2,0,2,14" Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock x:Name="AttenteTitle" Text="En attente" FontSize="20" FontWeight="Bold"
-                               Foreground="{StaticResource TitleBrush}" Margin="0,0,0,10"/>
+                               Foreground="{DynamicResource TitleBrush}" Margin="0,0,0,10"/>
 
                     <ItemsControl x:Name="AttenteList">
                         <ItemsControl.ItemTemplate>
@@ -205,7 +205,7 @@
                                                     VerticalAlignment="Center">
                                             <Button Style="{StaticResource ActionLigne}" Content="Reprendre"
                                                     Tag="{Binding}" Click="OnAttenteReprendre"
-                                                    Background="{StaticResource OkBrush}"
+                                                    Background="{DynamicResource OkBrush}"
                                                     ToolTip="Rouvre la commande telle que vous l'avez laissée"/>
                                             <Button Style="{StaticResource ActionLigne}" Content="Abandonner"
                                                     Tag="{Binding}" Click="OnAttenteAbandonner"
@@ -230,7 +230,7 @@
                     Actualiser
                 </Button>
                 <TextBlock x:Name="KioskTitle" Text="Commandes des bornes" FontSize="22" FontWeight="Bold"
-                           Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center"/>
+                           Foreground="{DynamicResource TitleBrush}" VerticalAlignment="Center"/>
             </DockPanel>
 
             <Border Grid.Row="2" Background="#0E141A" CornerRadius="12" Padding="8">
@@ -322,7 +322,7 @@
                                                 <Button Style="{StaticResource ActionLigne}" Content="Imprimer"
                                                         Tag="{Binding}" Click="OnKioskPrint"
                                                         IsEnabled="{Binding ActionsPossibles}"
-                                                        Background="{StaticResource OkBrush}"
+                                                        Background="{DynamicResource OkBrush}"
                                                         ToolTip="Tirer la commande telle quelle, sans retouche"/>
                                                 <Button Style="{StaticResource ActionLigne}" Content="Supprimer"
                                                         Tag="{Binding}" Click="OnKioskDismiss"

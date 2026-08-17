@@ -10,7 +10,7 @@
 
         <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}" Text="Photos depuis un téléphone"/>
 
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="24">
+        <Border Grid.Row="1" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="24">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock Style="{StaticResource Hint}" TextAlignment="Center" Margin="0,0,0,16"
                            Text="Le client scanne avec l'appareil photo de son téléphone, dans l'ordre."/>
@@ -21,31 +21,31 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <StackPanel x:Name="WifiPanel" Margin="0,0,32,0" Visibility="Collapsed">
                         <TextBlock FontSize="20" FontWeight="Bold" TextAlignment="Center"
-                                   Margin="0,0,0,8" Foreground="{StaticResource TextBrush}"
+                                   Margin="0,0,0,8" Foreground="{DynamicResource TextBrush}"
                                    Text="1.  Se connecter au WiFi"/>
                         <Border Background="White" Padding="16" CornerRadius="12" HorizontalAlignment="Center">
                             <Image x:Name="WifiQrImage" Width="280" Height="280"/>
                         </Border>
                         <TextBlock x:Name="WifiSsidText" FontSize="20" FontWeight="SemiBold"
                                    TextAlignment="Center" Margin="0,12,0,0"
-                                   Foreground="{StaticResource TextBrush}"/>
+                                   Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
 
                     <StackPanel x:Name="UploadPanel">
                         <TextBlock x:Name="UploadStepText" FontSize="20" FontWeight="Bold"
                                    TextAlignment="Center" Margin="0,0,0,8"
-                                   Foreground="{StaticResource TextBrush}"
+                                   Foreground="{DynamicResource TextBrush}"
                                    Text="Envoyer les photos"/>
                         <Border Background="White" Padding="16" CornerRadius="12" HorizontalAlignment="Center">
                             <Image x:Name="QrImage" Width="280" Height="280"/>
                         </Border>
                         <TextBlock x:Name="UrlText" FontSize="20" FontWeight="SemiBold" TextAlignment="Center"
-                                   Margin="0,12,0,0" Foreground="{StaticResource TextBrush}"/>
+                                   Margin="0,12,0,0" Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
                 </StackPanel>
 
                 <TextBlock x:Name="CountText" FontSize="26" FontWeight="Bold" TextAlignment="Center"
-                           Margin="0,24,0,0" Foreground="{StaticResource OkBrush}"
+                           Margin="0,24,0,0" Foreground="{DynamicResource OkBrush}"
                            Text="En attente de photos…"/>
 
                 <!-- APERÇU DES PHOTOS REÇUES. Un compteur ne dit pas si ce sont les bonnes
@@ -76,7 +76,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="16" Margin="0,16,0,0">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Left" Style="{StaticResource Hint}" VerticalAlignment="Center"
                            Text="Les photos apparaissent ici au fur et à mesure."/>

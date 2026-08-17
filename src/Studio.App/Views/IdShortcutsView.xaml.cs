@@ -24,7 +24,7 @@ public partial class IdShortcutsView : UserControl
     public IdShortcutsView()
     {
         InitializeComponent();
-        _raccourcis = IdShortcuts.Load(App.Services.CatalogDir).ToList();
+        _raccourcis = IdShortcuts.Load(App.Services.CatalogDir, Logiciel.EstIdentite).ToList();
 
         Loaded += (_, _) =>
         {
@@ -60,6 +60,13 @@ public partial class IdShortcutsView : UserControl
             .Select(p => new ChoixProduit(p))
             .ToList();
 
+        // Jusqu'à douze : c'est ce qu'un 10×15 porte d'un passeport étranger à petites
+        // cases. Au-delà, le papier décide, et SetCopies borne de toute façon au réel.
+        List<ChoixPhotos> parPlanche = [new(null)];
+        parPlanche.AddRange(Enumerable.Range(1, 12).Select(n => new ChoixPhotos(n)));
+        PhotosCombo.ItemsSource = parPlanche;
+        PhotosCombo.SelectedIndex = 0;
+
         if (DocumentCombo.Items.Count > 0) DocumentCombo.SelectedIndex = 0;
         if (ProduitCombo.Items.Count > 0) ProduitCombo.SelectedIndex = 0;
     }
@@ -84,37 +91,59 @@ public partial class IdShortcutsView : UserControl
 
         var spec = IdDocumentCatalog.FindByKey(_documents, raccourci.Cle);
 
+        // Le nombre est dit ICI aussi : deux raccourcis peuvent viser la même norme et ne
+        // différer que par lui, et la liste serait alors illisible.
+        var planche = raccourci.Photos is { } photos
+            ? $", planche de {photos}"
+            : ", planche pleine";
+
         return new Ligne(raccourci,
             spec is null
                 ? $"Document « {raccourci.Cle} » absent du référentiel"
-                : $"Document — {spec.Country}, {spec.Document} ({spec.WidthMm:0.#} × {spec.HeightMm:0.#} mm)");
+                : $"Document — {spec.Country}, {spec.Document} " +
+                  $"({spec.WidthMm:0.#} × {spec.HeightMm:0.#} mm{planche})");
     }
 
     private void OnAjouterDocument(object sender, RoutedEventArgs e)
     {
         if (DocumentCombo.SelectedItem is not ChoixDocument choix) return;
 
+        var photos = (PhotosCombo.SelectedItem as ChoixPhotos)?.Nombre;
         var cle = IdShortcuts.DocumentKey(choix.Spec.Country, choix.Spec.Document);
-        if (Existe(IdShortcutKind.Document, cle)) return;
+        if (Existe(IdShortcutKind.Document, cle, photos)) return;
 
-        _raccourcis.Add(new IdShortcut(IdShortcutKind.Document, cle, choix.Spec.Country));
+        // Le libellé porte le nombre : sans lui, la tuile « France » de la planche de six
+        // serait le sosie de celle de la planche pleine, sur l'écran comme dans cette liste.
+        var libelle = photos is { } n
+            ? $"{choix.Spec.Country} — planche de {n}"
+            : choix.Spec.Country;
+
+        _raccourcis.Add(new IdShortcut(IdShortcutKind.Document, cle, libelle, photos));
         Afficher();
     }
 
     private void OnAjouterProduit(object sender, RoutedEventArgs e)
     {
         if (ProduitCombo.SelectedItem is not ChoixProduit choix) return;
-        if (Existe(IdShortcutKind.Produit, choix.Produit.Code)) return;
+        if (Existe(IdShortcutKind.Produit, choix.Produit.Code, null)) return;
 
         _raccourcis.Add(new IdShortcut(IdShortcutKind.Produit, choix.Produit.Code, choix.Produit.Name));
         Afficher();
     }
 
-    /// <summary>Un même format deux fois ne ferait que deux tuiles identiques.</summary>
-    private bool Existe(IdShortcutKind genre, string cle)
+    /// <summary>
+    /// Un même format deux fois ne ferait que deux tuiles identiques.
+    ///
+    /// <b>Le nombre de photos fait partie de l'identité du raccourci</b> : « France » et
+    /// « France — planche de 6 » visent la même norme et sont pourtant deux ventes
+    /// différentes. Sans lui dans la comparaison, la seconde serait refusée comme doublon.
+    /// </summary>
+    private bool Existe(IdShortcutKind genre, string cle, int? photos)
     {
         var deja = _raccourcis.Any(r =>
-            r.Kind == genre && r.Cle.Equals(cle, StringComparison.OrdinalIgnoreCase));
+            r.Kind == genre
+            && r.Cle.Equals(cle, StringComparison.OrdinalIgnoreCase)
+            && r.Photos == photos);
 
         if (deja) MessageText.Text = "Ce format est déjà dans les raccourcis.";
         return deja;
@@ -147,7 +176,8 @@ public partial class IdShortcutsView : UserControl
     private void OnDefauts(object sender, RoutedEventArgs e)
     {
         _raccourcis.Clear();
-        _raccourcis.AddRange(IdShortcuts.Defaults);
+        _raccourcis.AddRange(
+            Logiciel.EstIdentite ? IdShortcuts.DefautsIdentite : IdShortcuts.Defaults);
         MessageText.Text = "Raccourcis par défaut rétablis — pensez à enregistrer.";
         Afficher();
     }
@@ -181,6 +211,12 @@ public partial class IdShortcutsView : UserControl
     private sealed record ChoixProduit(Product Produit)
     {
         public string Libelle => $"{Produit.Name} — {Produit.WidthMm:0.#} × {Produit.HeightMm:0.#} mm";
+    }
+
+    /// <param name="Nombre">Photos sur la planche, ou null pour « autant qu'il en tient ».</param>
+    private sealed record ChoixPhotos(int? Nombre)
+    {
+        public string Libelle => Nombre is { } n ? $"Planche de {n}" : "Planche pleine";
     }
 
     private sealed record Ligne(IdShortcut Raccourci, string Detail)

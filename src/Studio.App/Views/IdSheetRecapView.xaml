@@ -17,7 +17,7 @@
 
         <!-- La planche telle qu'elle sortira, fond blanc compris : c'est le dernier
              regard avant le papier, et la feuille doit se voir comme une feuille. -->
-        <Border Grid.Row="1" Background="#263238" CornerRadius="12" Margin="0,8,0,0"
+        <Border Grid.Row="1" Background="{DynamicResource SceneBrush}" CornerRadius="12" Margin="0,8,0,0"
                 ClipToBounds="True">
             <Grid>
                 <!-- L'image REMPLIT la place disponible (Stretch="Uniform" dans une grille,
@@ -41,7 +41,7 @@
 
              Grille et non DockPanel : la colonne de droite est servie d'abord, donc
              « Imprimer » reste visible quelle que soit la largeur de la fenêtre. -->
-        <Border Grid.Row="2" Background="{StaticResource CardBrush}" CornerRadius="12"
+        <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12"
                 Padding="12,10" Margin="0,8,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -94,7 +94,7 @@
                          vu au cadrage, et l'opérateur doit l'apprendre ICI plutôt que devant
                          le client. Masqué tant qu'il n'y a rien à dire. -->
                     <TextBlock x:Name="RepliDetourageText" Style="{StaticResource Hint}" FontSize="14"
-                               Foreground="{StaticResource TitleBrush}"
+                               Foreground="{DynamicResource TitleBrush}"
                                VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
                                Margin="12,0,0,4" Visibility="Collapsed"/>
                 </WrapPanel>
