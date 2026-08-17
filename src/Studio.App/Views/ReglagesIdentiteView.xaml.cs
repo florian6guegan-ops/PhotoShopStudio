@@ -40,6 +40,7 @@ public partial class ReglagesIdentiteView : UserControl
         Loaded += (_, _) =>
         {
             MontrerLaSource(App.Services.Identite);
+            MontrerLeDetourage();
             Montrer(App.Services.Mail);
         };
     }
@@ -75,6 +76,30 @@ public partial class ReglagesIdentiteView : UserControl
     /// </summary>
     private void OnFormats(object sender, RoutedEventArgs e) =>
         Navigator.Go(new IdShortcutsView(), "Les formats mis en avant");
+
+    /// <summary>
+    /// Méthode et modèle de détourage. Le MÊME écran que celui des Paramètres du Studio
+    /// complet, et le même <c>detourage.json</c> : ce logiciel-ci n'avait simplement aucune
+    /// porte vers lui — voir <see cref="ReglagesDetourageView"/>.
+    /// </summary>
+    private void OnDetourage(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesDetourageView(), "Détourage du fond blanc");
+
+    /// <summary>
+    /// Dit en une phrase ce que le poste fera du fond blanc. <b>C'est ce qui manquait le
+    /// plus</b> : sur un poste jamais réglé, rien nulle part ne disait que le réseau était
+    /// éteint, et la découpe par couleur qui renonce ressemble à une panne.
+    /// </summary>
+    private void MontrerLeDetourage()
+    {
+        var reglages = App.Services.Detourage;
+
+        DetourageResumeText.Text = reglages.Actif
+            ? $"Réseau de neurones, modèle « {reglages.ModeleDemande} » : le contour tient les " +
+              "mèches de cheveux, et il faut compter quelques secondes par photo."
+            : "Méthode par couleur : environ une seconde par photo, aucune exigence — mais la " +
+              "photo reste INTACTE quand le fond n'est pas uni. C'est le réglage d'origine.";
+    }
 
     /// <summary>
     /// Le mode sombre s'applique TOUT DE SUITE, avant même d'enregistrer : on choisit un

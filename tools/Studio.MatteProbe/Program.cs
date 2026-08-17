@@ -6,12 +6,25 @@ using Studio.Imaging.Geometry;
 // Essaie le detourage sur une photo reelle, DANS LES MEMES CONDITIONS que l'ecran
 // d'identite : image redressee par l'EXIF, tete localisee par la detection de visage.
 //
-// Usage : MatteProbe <photo> <sortie.png>
+// Usage : MatteProbe <photo> [sortie.png] [dossier-des-modeles]
+//
+// ⚠ LA SONDE ALLUME LE RESEAU ELLE-MEME, et c'est tout son interet : BiRefNetMatting.Actif
+// est FAUX par defaut (voir DetourageSettings), si bien que la sonde mesurait jusqu'ici la
+// methode par COULEUR en croyant eprouver le reseau. Elle sert justement a repondre a
+// « cette carte graphique tient-elle le detourage ? » sur un poste ou le reglage n'est pas
+// encore pose — c'est la question d'Arcueil, 17/08/2026, Quadro K600 de 1 Go.
 
 var source = args.Length > 0 ? args[0] : "";
 var sortie = args.Length > 1 ? args[1] : Path.Combine(Path.GetTempPath(), "detoure.png");
 
 if (!File.Exists(source)) { Console.WriteLine($"Photo introuvable : {source}"); return 1; }
+
+BiRefNetMatting.Actif = true;
+
+// Le modele vit dans les DONNEES du poste, pas a cote de la sonde : on laisse le donner en
+// argument, et l'on garde le dossier de la sonde comme repli.
+if (args.Length > 2 && Directory.Exists(args[2]))
+    BiRefNetMatting.DossiersCherches = [args[2], Path.Combine(AppContext.BaseDirectory, "models")];
 
 MagickInit.Configure();
 using var image = new MagickImage(source);
