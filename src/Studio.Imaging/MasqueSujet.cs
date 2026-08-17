@@ -296,10 +296,74 @@ public static class MasqueSujet
         if (octets is null) return null;
 
         var masque = new MagickImage(octets);
+
         if (masque.Width != image.Width || masque.Height != image.Height)
+        {
+            // ⚠ LE RAPPORT DOIT CORRESPONDRE, et c'est ce contrôle qui manquait.
+            //
+            // « Deux tailles donnent le même masque à un redimensionnement près » est vrai
+            // d'un REDIMENSIONNEMENT, et faux dès qu'un RECADRAGE s'en mêle. Or la clé de ce
+            // cache est le fichier — voir Empreinte —, elle ne dit rien de la géométrie : le
+            // masque rangé pendant que l'opérateur règle son aperçu est celui de l'image
+            // ENTIÈRE, et l'impression, elle, demande le masque de la CASE recadrée.
+            //
+            // Arcueil, 17/08/2026, commande 17-006. Une planche d'identité recadrée en 35×45
+            // (rapport 0,778) a reçu le masque de la photo entière (rapport 0,665), étiré
+            // sans un mot par le IgnoreAspectRatio ci-dessous. La correction du sujet —
+            // +0,45 d'exposition — est donc tombée sur le FOND par endroits et en travers du
+            // visage ailleurs : un chevron clair derrière les épaules, une démarcation nette
+            // sur le front. Parfait à l'aperçu, gâché sur le papier, huit fois sur la planche.
+            //
+            // On refuse plutôt que d'étirer. La correction est alors simplement sautée et le
+            // fond laissé tel quel : c'est déjà la règle de cette classe — « l'appelant
+            // renonce à la correction plutôt que d'en inventer une sur un masque
+            // approximatif » — il lui manquait de savoir reconnaître ce cas-là.
+            if (!RapportsCompatibles(masque.Width, masque.Height, image.Width, image.Height))
+            {
+                Log?.Invoke(
+                    $"Masque du sujet ignoré : il a été calculé pour du {masque.Width}×{masque.Height} " +
+                    $"(rapport {(double)masque.Width / masque.Height:F3}) et on le demande pour du " +
+                    $"{image.Width}×{image.Height} (rapport {(double)image.Width / image.Height:F3}). " +
+                    "L'étirer poserait la correction à côté du sujet — correction sautée.");
+
+                masque.Dispose();
+                return null;
+            }
+
             masque.Resize(new MagickGeometry(image.Width, image.Height) { IgnoreAspectRatio = true });
+        }
 
         return masque;
+    }
+
+    /// <summary>
+    /// Écart de rapport toléré entre le masque mémorisé et l'image à laquelle on l'applique.
+    ///
+    /// Deux pour cent laissent passer ce qu'on veut vraiment partager — le même cadrage à
+    /// deux tailles, dont les rapports ne diffèrent que par les arrondis entiers : une photo
+    /// de 4000×6016 vaut 0,66489 et son aperçu de 1064×1600 vaut 0,66500, soit deux
+    /// centièmes de pour cent. Et ils écartent un recadrage d'identité, qui s'en éloigne de
+    /// dix-sept pour cent.
+    /// </summary>
+    private const double EcartDeRapportTolere = 0.02;
+
+    /// <summary>
+    /// Un masque de ces dimensions peut-il servir à une image de celles-là, par simple
+    /// redimensionnement ?
+    ///
+    /// Public parce que c'est la règle du garde-fou ci-dessus, et qu'une règle qui décide
+    /// d'abandonner une correction mérite d'être vérifiable par un essai.
+    /// </summary>
+    public static bool RapportsCompatibles(
+        uint largeurMasque, uint hauteurMasque, uint largeurImage, uint hauteurImage)
+    {
+        if (hauteurMasque == 0 || hauteurImage == 0 || largeurMasque == 0 || largeurImage == 0)
+            return false;
+
+        var duMasque = (double)largeurMasque / hauteurMasque;
+        var deLImage = (double)largeurImage / hauteurImage;
+
+        return Math.Abs(duMasque - deLImage) / deLImage <= EcartDeRapportTolere;
     }
 
     /// <summary>
