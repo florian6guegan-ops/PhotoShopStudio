@@ -1052,6 +1052,27 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         {
             var chemin = _current.Path;
             var gris = GrayBackgroundCheck.IsChecked == true;
+
+            // ⚠ LA CLÉ DU FICHIER, ET C'EST TOUT LE POINT.
+            //
+            // Sans elle, MasqueSujet retombe sur l'empreinte des PIXELS de la vignette :
+            // 176 ms de relecture, et surtout une clé que personne d'autre n'emploie. Le
+            // rendu de la planche, lui, demande son masque sous CleDuFichier — voir
+            // ImagePipeline.MasqueDuSujet, qui le prélève exprès sur la photo entière « pour
+            // retomber dans le même seau de cache que l'aperçu ». Les deux clés ne se
+            // rencontraient donc JAMAIS, et le réseau tournait DEUX FOIS sur la même photo :
+            // une fois en cochant « fond blanc », une seconde fois à l'impression, en pleine
+            // attente du client.
+            //
+            // C'est ce qui explique les planches d'identité à 9,5 s mesurées le 17/08/2026,
+            // contre 765 ms quand le masque était déjà là. Le même piège que la 1.5.8, à un
+            // appelant près : celui-ci n'avait jamais été rebranché.
+            //
+            // La vignette et la planche n'ont pas la même définition, et c'est sans
+            // importance : MasqueSujet ignore la taille depuis le 12/08/2026, exprès pour
+            // qu'un masque d'aperçu serve la planche pleine résolution.
+            var cle = CleDuFichier(chemin);
+
             var octets = await Task.Run(() =>
             {
                 var jpeg = App.Services.Thumbnails.GetJpeg(chemin, 1600);
@@ -1059,7 +1080,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 var fond = gris
                     ? BackgroundRemoval.GrisIdentite
                     : ImageMagick.MagickColors.White;
-                return BackgroundRemoval.PoserUnFond(image, fond)
+                return BackgroundRemoval.PoserUnFond(image, fond, cle)
                     ? image.ToByteArray(ImageMagick.MagickFormat.Png)
                     : null;
             });
