@@ -69,6 +69,25 @@
                 </StackPanel>
             </Border>
 
+            <!-- LE CADRAGE AUTOMATIQUE. La détection continue de tourner quand il est
+                 décoché — elle pose les repères, donc le contrôle de conformité ; c'est le
+                 PLACEMENT du cadre qu'on laisse à l'opérateur. -->
+            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                    Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                               Text="Le cadrage"/>
+                    <CheckBox x:Name="CadrageAutoCheck" Style="{StaticResource CaseCochable}"
+                              Margin="0,12,0,0">
+                        <TextBlock Text="Cadrer automatiquement d'après le visage"
+                                   Style="{StaticResource Texte}" FontSize="16"/>
+                    </CheckBox>
+                    <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,8,0,0"
+                               TextWrapping="Wrap"
+                               Text="Décoché, la photo s'ouvre sur un cadre centré, à placer à la main. La hauteur de tête reste mesurée et affichée, et le bouton « Cadrage automatique » de l'écran reste disponible quand on le veut."/>
+                </StackPanel>
+            </Border>
+
             <!-- LE DÉTOURAGE DU FOND BLANC.
                  Il ne se réglait QUE dans les Paramètres du Studio complet, que ce
                  logiciel-ci n'a pas — si bien qu'un poste qui ne fait que de l'identité ne

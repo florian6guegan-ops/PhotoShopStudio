@@ -549,11 +549,14 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 // qu'on vient chercher.
                 var cadrageRepris = !_crop.IsFull;
 
+                // La détection tourne MÊME quand le cadrage automatique est éteint : elle
+                // pose les repères, donc le contrôle de conformité du bandeau. Ce qu'on
+                // coupe alors, c'est le PLACEMENT du cadre, pas la mesure de la tête.
                 var face = await Task.Run(() => App.Services.Faces.DetectMain(path));
                 var detecte = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
                 PoserReperes(detecte);
 
-                if (!cadrageRepris) AutoCrop();
+                if (!cadrageRepris) AutoCrop(App.Services.Identite.CadrageAutomatique);
                 item.Prete = true;
             }
 
@@ -804,12 +807,24 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         }
     }
 
-    /// <summary>Recalcule la tête et le cadre à partir des deux repères.</summary>
-    private void AutoCrop()
+    /// <summary>
+    /// Recalcule la tête et le cadre à partir des deux repères.
+    /// </summary>
+    /// <param name="suivreLesReperes">
+    /// Faux pour poser un cadre CENTRÉ au rapport du document, sans tenir compte du visage —
+    /// c'est le poste réglé sur « pas de cadrage automatique »
+    /// (<see cref="ReglagesIdentite.CadrageAutomatique"/>). On emprunte alors exactement le
+    /// repli qui servait déjà quand aucun visage n'était détecté : il n'y a pas deux façons
+    /// de poser un cadre neutre.
+    ///
+    /// Le bouton « Cadrage automatique » de l'écran, lui, appelle toujours avec vrai : il
+    /// EST la demande explicite, et le réglage du poste n'a pas à l'empêcher.
+    /// </param>
+    private void AutoCrop(bool suivreLesReperes = true)
     {
         if (_displayBitmap is null) return;
 
-        if (_crown is not null && _chin is not null)
+        if (suivreLesReperes && _crown is not null && _chin is not null)
         {
             try
             {

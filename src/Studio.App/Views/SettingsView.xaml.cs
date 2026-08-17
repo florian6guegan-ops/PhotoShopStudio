@@ -46,10 +46,30 @@ public partial class SettingsView : UserControl
             MontrerLeDetourage(App.Services.Detourage);
             MontrerLeWifi(App.Services.Wifi);
             MontrerLesTarifsIdentite(App.Services.TarifsIdentite);
+            CadrageIdentiteAutoCheck.IsChecked = App.Services.Identite.CadrageAutomatique;
             MontrerLesFavoris(App.Services.Favoris);
             MontrerLePoste(App.Services.Poste);
             MontrerLaVersion();
         };
+    }
+
+    /// <summary>
+    /// Le cadrage automatique des photos d'identité.
+    ///
+    /// La case paraît AUSSI dans les réglages de Studio Photo Identité — les deux logiciels
+    /// servent le même comptoir et le réglage est celui du POSTE. Elles écrivent le même
+    /// <c>identite.json</c> ; la règle, elle, ne vit qu'à un endroit (<c>IdPhotoView</c>).
+    ///
+    /// Enregistré à la volée, comme le reste de cet écran : il n'y a pas de bouton
+    /// « Enregistrer » ici, et une case qu'il faudrait valider ailleurs ne serait jamais
+    /// prise.
+    /// </summary>
+    private void OnCadrageIdentiteAutoChange(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+
+        App.Services.SaveIdentite(
+            App.Services.Identite with { CadrageAutomatique = CadrageIdentiteAutoCheck.IsChecked == true });
     }
 
     // ===== Tarif des photos d'identité =====

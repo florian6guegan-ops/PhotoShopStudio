@@ -20,7 +20,23 @@ namespace Studio.Core.Domain;
 /// Demandé depuis Arcueil : un comptoir en contre-jour, ou une fin de journée, et l'écran
 /// clair fatigue. Faux par défaut — c'est la maquette validée qui est claire.
 /// </param>
-public sealed record ReglagesIdentite(string DossierPhotos = "", bool ModeSombre = false)
+/// <param name="CadrageAutomatique">
+/// Placer le cadre tout seul à l'ouverture d'une photo, d'après le visage détecté.
+///
+/// <b>Vrai par défaut</b>, parce que c'est ce qui rend le comptoir rapide : la photo
+/// s'ouvre déjà cadrée à la norme, et l'opérateur n'a plus qu'à corriger. Mais la détection
+/// se trompe — un fond chargé, une frange, un enfant porté — et l'opérateur qui recadre à la
+/// main les cinquante photos de sa journée préfère alors partir d'un cadre neutre plutôt que
+/// de défaire à chaque fois une proposition fausse. Demandé le 18/08/2026.
+///
+/// Faux, la photo s'ouvre sur un cadre CENTRÉ au rapport du document — jamais sur la photo
+/// entière, qui n'aurait aucun sens sur une planche d'identité. La détection de visage
+/// continue de tourner : elle pose les repères, donc le contrôle de conformité à l'écran.
+/// Seul le PLACEMENT du cadre est laissé à l'opérateur, et le bouton « Cadrage automatique »
+/// reste là pour le demander expressément.
+/// </param>
+public sealed record ReglagesIdentite(
+    string DossierPhotos = "", bool ModeSombre = false, bool CadrageAutomatique = true)
 {
     /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
     public const string FileName = "identite.json";

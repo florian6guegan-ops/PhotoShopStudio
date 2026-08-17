@@ -328,6 +328,25 @@
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
                            Text="Le référentiel compte 274 documents ; la boutique en tire deux toute la journée. Les raccourcis sont les tuiles mises devant, avant le reste du référentiel."/>
 
+                <!-- LE CADRAGE AUTOMATIQUE. La case paraît DEUX FOIS — ici et dans les
+                     réglages de Studio Photo Identité — mais elle écrit le MÊME réglage
+                     (ReglagesIdentite.CadrageAutomatique), et la règle, elle, ne vit qu'à un
+                     endroit. Les boutons se doublent, ce qu'ils font, non. -->
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <!-- ⚠ PAS le même réglage que « Poser le cadre sur le visage » plus
+                             bas, sous « Cadrage des photos » : celui-là vaut pour les
+                             TIRAGES et ne fait que déplacer le cadre. Celui-ci décide si
+                             une PLANCHE D'IDENTITÉ s'ouvre déjà cadrée à la norme. -->
+                        <CheckBox x:Name="CadrageIdentiteAutoCheck" Style="{StaticResource CaseCochable}"
+                                  Content="Cadrer automatiquement d'après le visage"
+                                  Click="OnCadrageIdentiteAutoChange"/>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                   Text="Décoché, la photo s'ouvre sur un cadre centré, à placer à la main. La hauteur de tête reste mesurée et affichée, et le bouton « Cadrage automatique » de l'écran reste disponible quand on le veut."/>
+                    </StackPanel>
+                </Border>
+
                 <!-- ===== Tarif des photos d'identité =====
                      Le prix d'une planche dépend du DOCUMENT et non du papier : c'est le
                      même produit du catalogue dans les deux cas. Voir TarifsIdentite. -->

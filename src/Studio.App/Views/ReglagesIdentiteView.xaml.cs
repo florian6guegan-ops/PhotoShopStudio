@@ -55,6 +55,8 @@ public partial class ReglagesIdentiteView : UserControl
         DossierRadio.IsChecked = fixe;
         CarteRadio.IsChecked = !fixe;
 
+        CadrageAutoCheck.IsChecked = reglages.CadrageAutomatique;
+
         // La case n'a de sens que sur un poste qui porte deux palettes — voir Habillage.
         HabillagePanel.Visibility = Habillage.EstReglable ? Visibility.Visible : Visibility.Collapsed;
         SombreCheck.IsChecked = reglages.ModeSombre;
@@ -167,7 +169,8 @@ public partial class ReglagesIdentiteView : UserControl
 
     private ReglagesIdentite SaisieSource() => new(
         DossierPhotos: DossierRadio.IsChecked == true ? DossierBox.Text.Trim() : "",
-        ModeSombre: SombreCheck.IsChecked == true);
+        ModeSombre: SombreCheck.IsChecked == true,
+        CadrageAutomatique: CadrageAutoCheck.IsChecked == true);
 
     private void Montrer(MailSettings reglages)
     {
