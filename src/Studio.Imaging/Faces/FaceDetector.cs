@@ -104,7 +104,22 @@ public sealed class FaceDetector
         // par MagickInit et non « new MagickImage(chemin) » : les photos du client sont
         // sur SA carte, et c'est là que la projection en mémoire tue le processus quand
         // elle est retirée (voir MagickInit.Lire)
-        using var magick = MagickInit.Lire(imagePath, 0);
+        //
+        // ⚠ ON NE DÉCODE QUE CE QU'ON VA REGARDER. Cette lecture demandait la photo ENTIÈRE
+        // — un fichier d'appareil de 50 Mo, décodé en 24 mégapixels — pour la réduire
+        // aussitôt à 800 px dans DetectAll. Sur une carte mémoire c'est pire encore :
+        // MagickInit.Lire en copie d'abord tous les octets pour survivre à un retrait.
+        //
+        // C'est ce qui fait « traîner » l'ouverture d'une photo sur l'écran d'identité,
+        // signalé le 18/08/2026 : l'écran venait de décoder la même photo une ligne plus
+        // haut pour l'afficher, et la détection la relisait entièrement derrière.
+        //
+        // L'indication de taille laisse le décodeur JPEG travailler à l'échelle 1/2, 1/4 ou
+        // 1/8 : il rend directement une image d'environ 800 px, sans jamais construire les
+        // 24 mégapixels. Le résultat est le MÊME — DetectAll réduisait déjà à cette taille,
+        // et les boîtes rendues sont NORMALISÉES (voir DetectedFace), donc indépendantes de
+        // la définition décodée.
+        using var magick = MagickInit.Lire(imagePath, DetectionBoxPx);
         return DetectAll(magick).OrderByDescending(f => f.Score).FirstOrDefault();
     }
 
