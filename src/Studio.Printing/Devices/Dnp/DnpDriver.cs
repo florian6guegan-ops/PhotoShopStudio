@@ -152,6 +152,48 @@ public sealed class DnpDriver
             : rouleau;
     }
 
+    /// <summary>
+    /// La définition à retenir pour juger de la TAILLE PHYSIQUE d'un tirage, en points par
+    /// pouce.
+    ///
+    /// <b>⚠ C'est cette mesure qui décide de la DÉCOUPE</b> (voir <see cref="TailleDeTirage"/>),
+    /// et l'appelant y renonçait trop vite : quand <c>GetResolution</c> rendait zéro — machine
+    /// qui sort de veille, port occupé, SDK muet — il se repliait sur « le format du
+    /// rouleau », c'est-à-dire AUCUNE découpe. Une planche d'identité 6×4 sortait alors sur
+    /// une feuille 6×8 entière, à moitié blanche, sans que rien ne le signale : le journal
+    /// annonçait sobrement « format demandé Size6x8 ».
+    ///
+    /// Relevé sur kodakidpc le 17/08/2026, à quatre minutes d'intervalle et sur la MÊME image
+    /// de 1844 × 1240 : à 16:17 « format demandé Size6x4 » (juste), à 16:22 « Size6x8 » — une
+    /// demi-feuille perdue. Seule la réponse de la machine avait changé.
+    ///
+    /// On ne renonce donc plus. La machine d'abord, quand elle répond quelque chose de
+    /// plausible ; le FICHIER ensuite — Studio rend ses pages à la définition du produit et
+    /// l'écrit dans le PNG ; 300 ppp en dernier ressort, définition de toutes les DNP de la
+    /// boutique. Les trois s'accordent en fonctionnement normal.
+    /// </summary>
+    /// <param name="machineH">Ce que rend <c>GetResolutionH</c>, ou 0 si elle se tait.</param>
+    /// <param name="machineV">Ce que rend <c>GetResolutionV</c>, ou 0 si elle se tait.</param>
+    /// <param name="fichierH">Définition horizontale inscrite dans l'image.</param>
+    /// <param name="fichierV">Définition verticale inscrite dans l'image.</param>
+    public static (double H, double V) DefinitionRetenue(
+        double machineH, double machineV, double fichierH, double fichierV)
+    {
+        if (Plausible(machineH) && Plausible(machineV)) return (machineH, machineV);
+        if (Plausible(fichierH) && Plausible(fichierV)) return (fichierH, fichierV);
+
+        return (DefinitionParDefaut, DefinitionParDefaut);
+    }
+
+    /// <summary>Définition de repli : celle de toutes les DNP de la boutique.</summary>
+    public const double DefinitionParDefaut = 300.0;
+
+    /// <summary>
+    /// Large, mais pas crédule : une DNP tire à 300 ou 600 ppp, jamais à 12 ni à 12 000.
+    /// Le zéro d'une machine muette tombe évidemment hors bornes, et c'est le cas qui compte.
+    /// </summary>
+    private static bool Plausible(double ppp) => ppp is >= 100 and <= 1200;
+
     /// <summary>Tirages restants sur le rouleau chargé.</summary>
     public int GetMediaRemaining(int portNumber) => CspStatInterop.GetMediaCounter(portNumber);
 

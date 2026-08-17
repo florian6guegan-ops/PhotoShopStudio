@@ -454,6 +454,37 @@ De100Message TirerSurDnp(De100Message request)
         return TirerSurDnpSousVerrou(request, demande);
 }
 
+/// <summary>
+/// Combien de points par pouce pour juger de la TAILLE PHYSIQUE du tirage.
+///
+/// La REGLE vit dans DnpDriver.DefinitionRetenue, ou elle est eprouvee par des essais ;
+/// ici on ne fait que lui apporter ses trois chiffres et dire au journal ce qu on a retenu.
+/// Voir cette methode pour la demi-feuille perdue de kodakidpc le 17/08/2026.
+/// </summary>
+(double H, double V) ResolutionUtile(DnpDriver pilote, int port, System.Drawing.Bitmap image)
+{
+    double machineH = 0, machineV = 0;
+    try
+    {
+        (machineH, machineV) = pilote.GetResolution(port);
+    }
+    catch (Exception ex)
+    {
+        log($"Definition de la DNP illisible ({ex.Message}).");
+    }
+
+    var retenue = DnpDriver.DefinitionRetenue(
+        machineH, machineV, image.HorizontalResolution, image.VerticalResolution);
+
+    // On ne le dit QUE si la machine s est tue : en fonctionnement normal cette ligne
+    // paraitrait a chaque tirage sans rien apprendre a personne.
+    if (retenue.H != machineH || retenue.V != machineV)
+        log($"La DNP n annonce pas sa definition ({machineH}x{machineV} ppp) : on retient " +
+            $"{retenue.H:0}x{retenue.V:0} ppp plutot que de renoncer a la decoupe.");
+
+    return retenue;
+}
+
 De100Message TirerSurDnpSousVerrou(De100Message request, De100DnpPrintRequest demande)
 {
     var pilote = new DnpDriver();
@@ -468,10 +499,10 @@ De100Message TirerSurDnpSousVerrou(De100Message request, De100DnpPrintRequest de
     // Un 10x15 sur un rouleau 15x20 doit etre COUPE, sinon la machine sort une feuille
     // entiere dont la moitie part a la poubelle. On lui reclame donc le format qui convient.
     var etat = pilote.GetPrinterInfo(demande.PortNumber);
-    var (pppH, pppV) = pilote.GetResolution(demande.PortNumber);
-    var taille = pppH > 0 && pppV > 0
-        ? DnpDriver.TailleDeTirage(etat.MediaSize, image.Width / (double)pppH, image.Height / (double)pppV)
-        : etat.MediaSize;
+    var (pppH, pppV) = ResolutionUtile(pilote, demande.PortNumber, image);
+
+    var taille = DnpDriver.TailleDeTirage(
+        etat.MediaSize, image.Width / pppH, image.Height / pppV);
 
     if (taille != etat.MediaSize)
         log($"Rouleau {etat.MediaSize} et tirage plus petit : on reclame {taille} " +

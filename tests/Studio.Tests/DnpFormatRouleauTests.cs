@@ -129,4 +129,64 @@ public class DnpFormatRouleauTests
             DnpMediaSize.None,
             DnpDriver.TailleDeTirage(DnpMediaSize.None, 6.15, 4.13));
     }
+
+    // ————— avec quelle définition on mesure le tirage —————
+
+    /// <summary>
+    /// En fonctionnement normal, c'est la machine qui parle : elle seule sait à quelle
+    /// définition elle compose.
+    /// </summary>
+    [Fact]
+    public void La_definition_de_la_machine_l_emporte()
+    {
+        Assert.Equal((600.0, 600.0),
+            DnpDriver.DefinitionRetenue(machineH: 600, machineV: 600, fichierH: 300, fichierV: 300));
+    }
+
+    /// <summary>
+    /// <b>LA DEMI-FEUILLE PERDUE DE KODAKIDPC, 17/08/2026.</b>
+    ///
+    /// Quand la machine se tait — elle sort de veille, le port est occupé —, l'appelant
+    /// renonçait à la découpe et réclamait le rouleau entier : une planche d'identité 6×4
+    /// sortait sur une feuille 6×8 à moitié blanche. Relevé sur la MÊME image de 1844 × 1240
+    /// à quatre minutes d'écart : « format demandé Size6x4 » à 16:17, « Size6x8 » à 16:22.
+    ///
+    /// Le fichier, lui, sait toujours : Studio le rend à 300 ppp et l'écrit dedans.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0)]        // la machine ne répond rien
+    [InlineData(-1, -1)]      // ni n'importe quoi
+    [InlineData(12, 12)]      // ni une valeur absurde
+    [InlineData(300, 0)]      // ni une seule des deux
+    public void Machine_muette_on_prend_la_definition_du_fichier(double h, double v)
+    {
+        Assert.Equal((300.0, 300.0),
+            DnpDriver.DefinitionRetenue(h, v, fichierH: 300, fichierV: 300));
+    }
+
+    /// <summary>
+    /// Le cas complet : machine muette, fichier sans définition utilisable. On retient
+    /// 300 ppp — celle de toutes les DNP de la boutique — plutôt que de renoncer.
+    /// </summary>
+    [Fact]
+    public void Machine_muette_et_fichier_muet_on_retient_300()
+    {
+        Assert.Equal((DnpDriver.DefinitionParDefaut, DnpDriver.DefinitionParDefaut),
+            DnpDriver.DefinitionRetenue(0, 0, 0, 0));
+    }
+
+    /// <summary>
+    /// Et le bout du bout, celui qui compte vraiment : une planche d'identité de
+    /// 1844 × 1240 sur un rouleau 6×8, machine muette, DOIT se réclamer en 6×4. C'est
+    /// exactement le tirage de 16:22 qui a gâché une demi-feuille.
+    /// </summary>
+    [Fact]
+    public void Une_planche_identite_sur_rouleau_6x8_se_coupe_meme_si_la_machine_se_tait()
+    {
+        var (h, v) = DnpDriver.DefinitionRetenue(0, 0, fichierH: 300, fichierV: 300);
+
+        Assert.Equal(
+            DnpMediaSize.Size6x4,
+            DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, 1844 / h, 1240 / v));
+    }
 }
