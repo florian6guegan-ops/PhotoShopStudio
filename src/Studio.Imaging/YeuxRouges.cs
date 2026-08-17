@@ -43,21 +43,39 @@ public static class YeuxRouges
     /// <summary>
     /// Rayon du disque corrigé, en part de la LARGEUR DU VISAGE.
     ///
-    /// YuNet donne le centre de l'œil, pas son contour. Un douzième de la largeur du visage
-    /// couvre l'iris entier avec de la marge, sans atteindre le sourcil ni l'aile du nez —
-    /// vérifié sur les portraits d'identité du poste, où le visage occupe presque tout le
-    /// cadre.
+    /// <b>Un douzième débordait très largement de l'œil.</b> Mesuré le 17/08/2026 sur une
+    /// photo d'identité du poste : visage de 1794 px, donc un rayon de 150 px — un disque de
+    /// 300 px de diamètre, qui couvre la paupière, le sourcil, l'arête du nez et le haut de
+    /// la joue. C'est là que la correction allait chercher la peau qu'elle grisait.
+    ///
+    /// Un vingt-quatrième vaut à peu près le rayon de l'IRIS : sur un visage de 140 mm, un
+    /// iris de 12 mm de diamètre en occupe un onzième, soit un vingt-deuxième de rayon. Il
+    /// reste donc la marge qu'il faut pour l'imprécision de YuNet sur le centre de l'œil,
+    /// sans aller chercher la peau du pourtour.
     /// </summary>
-    private const double RayonParLargeurDeVisage = 1.0 / 12;
+    private const double RayonParLargeurDeVisage = 1.0 / 24;
 
     /// <summary>
     /// Au-delà de ce rapport rouge / (vert + bleu), le pixel est tenu pour un œil rouge.
     ///
-    /// 1,5 est le seuil classique. Plus bas, une paupière rosée y passerait ; plus haut, un
-    /// œil rouge un peu sombre resterait rouge. Le disque étant déjà restreint à la pupille,
-    /// on peut se permettre d'être franc.
+    /// <b>1,5 ne séparait pas une pupille d'une peau.</b> C'est le seuil qu'on lit partout,
+    /// et il est trop bas pour une peau chaude : mesuré le 17/08/2026 sur une photo du poste,
+    /// la peau autour de l'œil donne R=83, V=61, B=47 — soit un rapport de <b>1,54</b>, juste
+    /// au-dessus. La correction lui rabattait donc le rouge sur la moyenne des deux autres
+    /// canaux et la grisait, pendant que les vraies pupilles, sombres (R=22), passaient sous
+    /// <see cref="RougeMinimal"/> sans être touchées. « Il ne l'applique pas sur les yeux »,
+    /// signalé depuis la boutique le 17/08/2026.
+    ///
+    /// 2,0 sépare largement les deux : un rouge de rétine au flash dépasse 4. Avec le rayon
+    /// resserré, la même photo passe de <b>36 862 pixels de peau grisés à 370</b> — quelques
+    /// pixels très saturés du pourtour de l'iris (R=81, V=50, B=30, rapport 2,03) frôlent
+    /// encore le seuil, sur une image de 24 mégapixels. Ce n'est pas zéro, et c'est mesuré,
+    /// pas supposé.
+    ///
+    /// La marge est du côté de la peau, et c'est le bon côté : laisser un œil rouge est un
+    /// défaut qu'on voit et qu'on refait, griser une joue est un tirage qu'on ne comprend pas.
     /// </summary>
-    private const double SeuilDeRouge = 1.5;
+    private const double SeuilDeRouge = 2.0;
 
     /// <summary>En dessous, le pixel est trop sombre pour qu'un rouge y veuille dire quelque chose.</summary>
     private const int RougeMinimal = 60;
@@ -99,6 +117,16 @@ public static class YeuxRouges
         var largeur = (int)image.Width;
         var hauteur = (int)image.Height;
         if (largeur <= 0 || hauteur <= 0) return false;
+
+        // ⚠ Une image en NIVEAUX DE GRIS n'a qu'un octet par pixel, alors que la relecture
+        // ci-dessous sait toujours rendre du RVB : on lui réécrirait trois octets là où elle
+        // n'en attend qu'un, et SetPixels lèverait « Too many values specified » — ce qui
+        // ferait échouer le TIRAGE ENTIER. C'est le mur sur lequel MasqueSujet.Fondre est
+        // tombé le 17/08/2026.
+        //
+        // Renoncer est ici la seule réponse sensée : cette correction reconnaît une pupille
+        // au ROUGE qui y domine, et une image grise n'en a aucun.
+        if (image.ChannelCount < 3) return false;
 
         using var pixels = image.GetPixels();
         var octets = pixels.ToByteArray(PixelMapping.RGB);

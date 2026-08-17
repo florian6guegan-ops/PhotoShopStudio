@@ -54,6 +54,62 @@ public class YeuxRougesTests
     /// <summary>Rouge vif de rétine : le rouge écrase largement les deux autres canaux.</summary>
     private static readonly MagickColor RougeDeRetine = new(220, 40, 40);
 
+    /// <summary>
+    /// Des PEAUX, relevées ou plausibles — ce que la correction ne doit jamais toucher.
+    ///
+    /// <b>La première est mesurée</b>, le 17/08/2026, sur la peau au-dessus de l'œil d'une
+    /// photo d'identité du poste : R=83, V=61, B=47, soit un rapport de 1,54. L'ancien seuil
+    /// de 1,5 la prenait pour une pupille et lui rabattait le rouge à 54 — 36 862 pixels
+    /// grisés autour des yeux, pendant que les vraies pupilles (R=22) n'étaient pas touchées.
+    /// C'est le défaut signalé depuis la boutique : « il ne l'applique pas sur les yeux ».
+    /// </summary>
+    public static TheoryData<byte, byte, byte, string> Peaux => new()
+    {
+        { 83, 61, 47, "peau foncée mesurée le 17/08 (rapport 1,54)" },
+        { 95, 67, 55, "la même, plus claire (rapport 1,56)" },
+        { 205, 155, 135, "peau claire éclairée (rapport 1,41)" },
+        { 180, 120, 100, "peau chaude, joue rosée (rapport 1,64)" },
+    };
+
+    /// <summary>
+    /// <b>Aucune peau ne doit être prise pour une pupille.</b> Le disque est centré sur l'œil
+    /// mais déborde toujours un peu : c'est le SEUIL qui est le rempart, pas le cadrage.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Peaux))]
+    public void La_peau_n_est_jamais_prise_pour_une_pupille(byte r, byte v, byte b, string quoi)
+    {
+        using var image = Toile(new MagickColor(r, v, b));
+
+        var touche = YeuxRouges.Corriger(image, [Visage(100, 100)]);
+
+        Assert.False(touche, $"la correction a mordu sur : {quoi}");
+
+        var (apresR, apresV, apresB) = Lire(image, 100, 100);
+        Assert.Equal((r, v, b), ((byte)apresR, (byte)apresV, (byte)apresB));
+    }
+
+    /// <summary>
+    /// Le rempart ne doit pas non plus tout bloquer : un vrai rouge de rétine passe encore,
+    /// et de loin — son rapport dépasse 4 là où une peau reste sous 1,7.
+    /// </summary>
+    [Fact]
+    public void Un_vrai_rouge_de_retine_reste_corrige_malgre_le_seuil_releve()
+    {
+        using var image = Toile(new MagickColor(83, 61, 47)); // sur de la peau, comme en vrai
+        PoserUneTache(image, 100, 100, 4, RougeDeRetine);
+
+        var touche = YeuxRouges.Corriger(image, [Visage(100, 100)]);
+
+        Assert.True(touche, "le rouge de rétine devait être corrigé");
+
+        var (r, v, _) = Lire(image, 100, 100);
+        Assert.InRange(r, v - 2, v + 2);
+
+        // et la peau autour n'a pas bougé
+        Assert.Equal((83, 61, 47), Lire(image, 100, 130));
+    }
+
     [Fact]
     public void Le_rouge_de_la_pupille_est_neutralise()
     {

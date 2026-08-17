@@ -584,7 +584,21 @@ public static class MasqueSujet
         var dessus = pixelsCorrige.ToByteArray(PixelMapping.RGB);
         var dose = pixelsMasque.ToByteArray(PixelMapping.RGB);
 
-        if (fond is null || dessus is null || dose is null ||
+        // ⚠ ET L'IMAGE DOIT VRAIMENT PORTER TROIS CANAUX.
+        //
+        // Le noir et blanc la met en NIVEAUX DE GRIS — un seul octet par pixel — tandis que
+        // la relecture ci-dessus, elle, sait toujours rendre du RVB. Les trois tableaux font
+        // donc la même longueur, le contrôle qui suit ne voit rien d'anormal, et c'est
+        // SetPixels qui tombe tout en bas sur « Too many values specified » : on lui rend
+        // trois octets par pixel pour une image qui n'en attend qu'un.
+        //
+        // L'exception remontait jusqu'à RenderToFile, et le TIRAGE ENTIER échouait — pour une
+        // planche d'identité en noir et blanc avec correction du sujet, deux cases voisines
+        // du même panneau. Le repli ci-dessous ne fait aucune hypothèse sur les canaux ; il
+        // est plus lent, et c'est exactement à cela qu'il sert.
+        var troisCanaux = image.ChannelCount >= 3 && corrige.ChannelCount >= 3;
+
+        if (!troisCanaux || fond is null || dessus is null || dose is null ||
             dessus.Length != fond.Length || dose.Length != fond.Length)
         {
             // relecture impossible : on retombe sur la composition d'ImageMagick, plus lente

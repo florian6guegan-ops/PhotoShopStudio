@@ -95,11 +95,13 @@ public class MasqueGeometrieTests : IDisposable
     /// photo entière simplement étiré le placerait de 75 à 225. Les deux se distinguent donc
     /// au pixel, et c'est exactement le défaut du 17/08.
     /// </summary>
-    private MagickImage RendreLaMoitieBasse(CorrectionsSujet? sujet = null, bool fondGris = false)
+    private MagickImage RendreLaMoitieBasse(
+        CorrectionsSujet? sujet = null, bool fondGris = false, bool noirEtBlanc = false)
     {
         var reglages = new ImageAdjustments
         {
             GrayBackground = fondGris,
+            Grayscale = noirEtBlanc,
             Sujet = sujet ?? new CorrectionsSujet(),
             CleDeLaPhoto = _photo,
         };
@@ -157,6 +159,75 @@ public class MasqueGeometrieTests : IDisposable
         // le gris identité vaut 210 — franchement plus sombre que le fond d'origine à 250
         Assert.True(surLeFond is > 195 and < 225,
             $"le fond devait passer au gris identité (210), lu {surLeFond}");
+    }
+
+    /// <summary>
+    /// <b>Une planche en NOIR ET BLANC avec correction du sujet.</b>
+    ///
+    /// Le noir et blanc met l'image en niveaux de gris — un seul octet par pixel — alors que
+    /// <c>Fondre</c> relit et RÉÉCRIT trois octets. La lecture le tolère (elle sait rendre du
+    /// gris en RVB), l'écriture non : « Too many values specified ». Et le garde-fou des
+    /// longueurs ne voit rien, puisque les trois tableaux font la même taille.
+    ///
+    /// Les deux réglages sont côte à côte dans le même panneau, et la case « Noir et blanc »
+    /// est un classique de la photo d'identité.
+    /// </summary>
+    [Fact]
+    public void Une_planche_en_noir_et_blanc_accepte_la_correction_du_sujet()
+    {
+        using var rendu = RendreLaMoitieBasse(
+            new CorrectionsSujet { Actif = true, Exposure = 1.0 }, noirEtBlanc: true);
+
+        Assert.True(Clarte(rendu, 200, 40) > 120,
+            "le sujet devait s'éclaircir, en noir et blanc comme en couleur");
+
+        Assert.True(Clarte(rendu, 200, 250) > 240, "le fond devait rester intact");
+    }
+
+    /// <summary>
+    /// <b>L'autre porte d'entrée du même mur : une photo SOURCE déjà en noir et blanc.</b>
+    ///
+    /// Sans la case « Noir et blanc », donc — un client qui apporte un fichier monochrome sur
+    /// une clé, ou un appareil réglé en monochrome. ImageMagick relit une image parfaitement
+    /// neutre en niveaux de gris, et <c>Fondre</c> retombait sur le même « Too many values
+    /// specified ».
+    /// </summary>
+    [Fact]
+    public void Une_photo_source_deja_en_noir_et_blanc_accepte_la_correction_du_sujet()
+    {
+        var monochrome = Path.Combine(Path.GetTempPath(), $"studio-nb-{Guid.NewGuid():N}.png");
+        _rendus.Add(monochrome);
+
+        // ⚠ Un gris MOYEN, pas du noir : l'exposition est multiplicative, et du noir pur
+        // resterait noir quoi qu'on lui demande. L'image reste neutre — c'est tout ce qui
+        // compte ici, puisque c'est la neutralité qui la fait relire en niveaux de gris.
+        using (var image = new MagickImage(MagickColors.White, PhotoW, PhotoH))
+        using (var sujet = new MagickImage(MagickColor.FromRgb(110, 110, 110), SujetW, SujetH))
+        {
+            image.Composite(sujet, SujetX, SujetY, CompositeOperator.Over);
+            image.Write(monochrome);
+        }
+
+        var reglages = new ImageAdjustments
+        {
+            Sujet = new CorrectionsSujet { Actif = true, Exposure = 1.0 },
+            CleDeLaPhoto = monochrome,
+        };
+
+        var demande = new RenderRequest(
+            monochrome, PhotoW, PhotoH / 2, new CropSpec(0, 0.5, 1, 0.5),
+            0, 0, FitMode.Fill, 0, reglages);
+
+        var sortie = Path.Combine(Path.GetTempPath(), $"studio-rendu-{Guid.NewGuid():N}.png");
+        _rendus.Add(sortie);
+
+        ImagePipeline.RenderToFile(demande, sortie, Dpi);
+
+        using var rendu = new MagickImage(sortie);
+
+        var surLeSujet = Clarte(rendu, 200, 40);
+        Assert.True(surLeSujet > 140, $"le sujet devait s'éclaircir, lu {surLeSujet}");
+        Assert.True(Clarte(rendu, 200, 250) > 240, "le fond devait rester blanc");
     }
 
     /// <summary>
