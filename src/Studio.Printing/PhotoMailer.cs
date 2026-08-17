@@ -67,11 +67,21 @@ public static class PhotoMailer
         // par MagickInit : la source est la photo du client, donc souvent sa carte, et
         // c'est la projection en mémoire d'un support retiré qui tue le processus
         // (voir MagickInit.Lire)
-        using (var entiere = MagickInit.Lire(sourcePath, 0))
-        {
-            entiere.AutoOrient();
-            MagickInit.Write(entiere, original);
-        }
+        //
+        // ⚠ SAUF QUAND IL N'Y A RIEN À REDRESSER, et c'est le cas le plus fréquent. Une
+        // photo sans étiquette de rotation ressort de l'AutoOrient identique à
+        // elle-même : on payait alors un décodage ET un réencodage complets de 24 Mpx pour
+        // récrire le même dessin. La copie octet pour octet est plus rapide, et elle est
+        // même MEILLEURE — le client reçoit son fichier d'origine intact, ce que « la photo
+        // d'origine, entière » promet, au lieu d'un JPEG réencodé une génération plus loin.
+        if (SansRedressementAFaire(sourcePath))
+            File.Copy(sourcePath, original, overwrite: true);
+        else
+            using (var entiere = MagickInit.Lire(sourcePath, 0))
+            {
+                entiere.AutoOrient();
+                MagickInit.Write(entiere, original);
+            }
 
         // Le cadrage passe par le pipeline de rendu : rotation, redressement, recadrage et
         // corrections y sont appliqués dans le bon ordre, et le client reçoit donc
@@ -98,15 +108,58 @@ public static class PhotoMailer
     /// La cible en pixels est celle du cadrage lui-même, donc le fichier garde LE RATIO DU
     /// CADRAGE et toute la résolution que la photo d'origine permet.
     /// </summary>
+    /// <summary>
+    /// L'orientation EXIF de cette photo la laisse-t-elle telle quelle ?
+    ///
+    /// Seules <c>Undefined</c> et <c>TopLeft</c> ne demandent RIEN — les six autres valeurs
+    /// tournent l'image d'un quart de tour, la retournent en miroir, ou les deux. Dans le
+    /// doute (fichier illisible, format sans en-tête EXIF) on répond NON : redresser une
+    /// photo qui n'en avait pas besoin ne coûte que du temps, tandis que copier telle quelle
+    /// une photo couchée l'envoie couchée au client.
+    /// </summary>
+    private static bool SansRedressementAFaire(string sourcePath)
+    {
+        try
+        {
+            MagickInit.Configure();
+
+            using var entete = new MagickImage();
+            entete.Ping(sourcePath);
+
+            return entete.Orientation is OrientationType.Undefined or OrientationType.TopLeft;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private static void RendreLeCadrage(
         string sourcePath, CropSpec crop, int rotationQuarterTurns,
         double fineRotationDegrees, ImageAdjustments adjustments, string sortie)
     {
-        using var mesure = MagickInit.Lire(sourcePath, 0);
-        mesure.AutoOrient();
+        // ⚠ ON PINGUE L'EN-TÊTE, ON NE DÉCODE PAS.
+        //
+        // Cette mesure-là ouvrait la photo EN ENTIER — `MagickInit.Lire(sourcePath, 0)` —
+        // pour ne lire que deux nombres, puis la jetait ; `RenderToFile` la relisait juste
+        // après pour de vrai. Sur un fichier d'appareil de 50 Mo c'est un décodage complet
+        // de trop, et sur une CARTE MÉMOIRE c'est pire : `MagickInit.Lire` en copie d'abord
+        // tous les octets en mémoire pour survivre à un retrait de carte. Or au comptoir la
+        // photo du client est justement sur sa carte. « L'envoi par courriel est
+        // extrêmement long », signalé le 17/08/2026.
+        //
+        // <b>Et la mesure était FAUSSE dès qu'on avait pivoté la photo</b> : elle appliquait
+        // l'orientation EXIF mais pas les quarts de tour de l'opérateur, alors que le
+        // cadrage, lui, se rapporte à l'image pivotée. Sur une photo tournée d'un quart de
+        // tour, largeur et hauteur étaient donc échangées et le fichier envoyé au client
+        // sortait à une définition qui n'était pas la sienne.
+        //
+        // GetOrientedSize répond aux deux : elle pingue les en-têtes, applique l'EXIF ET les
+        // quarts de tour, sans décoder un seul pixel.
+        var (mesureL, mesureH) = ImagePipeline.GetOrientedSize(sourcePath, rotationQuarterTurns);
 
-        var largeur = Math.Max(1, (int)Math.Round(crop.Width * mesure.Width));
-        var hauteur = Math.Max(1, (int)Math.Round(crop.Height * mesure.Height));
+        var largeur = Math.Max(1, (int)Math.Round(crop.Width * mesureL));
+        var hauteur = Math.Max(1, (int)Math.Round(crop.Height * mesureH));
 
         var demande = new RenderRequest(
             sourcePath, largeur, hauteur, crop,
