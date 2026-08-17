@@ -1895,6 +1895,21 @@ public sealed class PrintOrchestrator
     /// lisant les cotes du fichier. On les PING — l'en-tête suffit, l'image n'est pas
     /// décodée.
     ///
+    /// <b>⚠ LES COTES SONT CELLES QU'ON VOIT, orientation EXIF appliquée.</b> C'est LA
+    /// subtilité de cette méthode, et elle lui a manqué jusqu'au 17/08/2026 : elle lisait
+    /// l'en-tête brut (<c>MagickImageInfo</c>), qui rend les pixels tels qu'ils sont STOCKÉS.
+    /// Une photo prise à la verticale est stockée couchée avec une étiquette EXIF « tourne-moi »
+    /// — 6016 × 4000 dans le fichier, 4000 × 6016 à l'écran. Or le cadrage a été posé sur
+    /// l'image REDRESSÉE (le rendu fait <c>AutoOrient</c>, voir <c>ImagePipeline</c>), donc
+    /// ses fractions se rapportent à 4000 × 6016. Les multiplier par les cotes brutes
+    /// retourne le verdict : un portrait soigneusement cadré debout était déclaré COUCHÉ, et
+    /// les cases de la planche basculaient — le client demandait du 7 × 10 et repartait avec
+    /// du 10 × 7. Signalé depuis le comptoir, commande 17-021 du 17/08/2026.
+    ///
+    /// <see cref="ImagePipeline.GetOrientedSize"/> porte la règle, quarts de tour de
+    /// l'opérateur compris ; c'est déjà elle qu'appellent les deux autres endroits de ce
+    /// fichier qui ont besoin des cotes d'une photo.
+    ///
     /// À égalité — moitié debout, moitié couché — on ne touche à rien : mieux vaut le sens
     /// saisi qu'un arbitrage arbitraire qui surprendrait une planche sur deux.
     /// </summary>
@@ -1907,13 +1922,10 @@ public sealed class PrintOrchestrator
         {
             try
             {
-                var info = new MagickImageInfo(Path.Combine(photosDir, item.FileName));
-
-                // les quarts de tour de l'opérateur comptent : ils changent la photo AVANT
-                // que le cadrage ne s'y applique
-                var (largeur, hauteur) = item.RotationQuarterTurns % 2 == 0
-                    ? ((double)info.Width, (double)info.Height)
-                    : ((double)info.Height, (double)info.Width);
+                // orientation EXIF ET quarts de tour de l'opérateur : les deux changent la
+                // photo AVANT que le cadrage ne s'y applique
+                var (largeur, hauteur) = ImagePipeline.GetOrientedSize(
+                    Path.Combine(photosDir, item.FileName), item.RotationQuarterTurns);
 
                 var l = largeur * item.Crop.Width;
                 var h = hauteur * item.Crop.Height;

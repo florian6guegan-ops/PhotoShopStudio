@@ -140,4 +140,101 @@ public class SensDesCadragesTests : IDisposable
 
         Assert.Null(sens);
     }
+
+    // — L'ORIENTATION EXIF, l'angle mort de tous les essais ci-dessus —
+
+    /// <summary>
+    /// Une photo prise à la verticale, comme elle sort d'un appareil ou d'un téléphone :
+    /// les pixels sont STOCKÉS couchés, et une étiquette EXIF dit « tourne-moi ».
+    ///
+    /// Tous les essais de cette classe écrivaient des images sans étiquette, où les cotes
+    /// stockées sont aussi les cotes vues. C'est précisément ce qui a laissé passer le
+    /// défaut de la commande 17-021.
+    /// </summary>
+    private string PhotoDeboutParEtiquette(string nom, uint largeurStockee, uint hauteurStockee)
+    {
+        var chemin = Path.Combine(_dossier, nom);
+
+        using (var image = new MagickImage(MagickColors.Gray, largeurStockee, hauteurStockee))
+        {
+            // ⚠ IL FAUT LES DEUX, ET DANS CET ORDRE : le profil EXIF d'abord, la propriété
+            // Orientation ensuite. Mesuré le 17/08/2026 — l'un OU l'autre seul se relit
+            // « Undefined », les deux ensemble donnent bien LeftBottom. C'est ce qui avait
+            // fait renoncer à couvrir la règle par un essai (voir ThumbnailService).
+            var exif = new ExifProfile();
+            exif.SetValue(ExifTag.Orientation, (ushort)8);
+            image.SetProfile(exif);
+            image.Orientation = OrientationType.LeftBottom;   // 8 : « pivoter d'un quart de tour »
+            image.Write(chemin, MagickFormat.Jpeg);
+        }
+
+        // ⚠ On VÉRIFIE que l'étiquette tient. Sans ce contrôle, un jour où Magick.NET
+        // cesserait de l'écrire, les deux essais ci-dessous passeraient au vert en ne
+        // prouvant plus rien — ils retomberaient sur une photo couchée ordinaire.
+        using var relue = new MagickImage();
+        relue.Ping(chemin);
+        Assert.True(
+            relue.Orientation is OrientationType.LeftTop or OrientationType.RightTop
+                or OrientationType.RightBottom or OrientationType.LeftBottom,
+            $"l'étiquette EXIF ne s'est pas écrite (relue : {relue.Orientation}) — " +
+            "cet essai ne prouverait rien");
+
+        return chemin;
+    }
+
+    /// <summary>
+    /// LE CAS DE LA COMMANDE 17-021, le 17/08/2026.
+    ///
+    /// Une photo prise à la verticale : 6016 × 4000 dans le fichier, 4000 × 6016 à l'écran.
+    /// L'opérateur a demandé du 7 × 10 cm et cadré debout — le rectangle vaut 0,774 × 0,735
+    /// des cotes VUES, soit 3097 × 4425 px, donc debout.
+    ///
+    /// En lisant l'en-tête BRUT, le même rectangle donne 4658 × 2942 : couché. La planche
+    /// basculait alors ses cases en 100 × 70, et le client repartait avec du 10 × 7 après
+    /// avoir demandé du 7 × 10. C'est « le format personnalisé ne garde pas le format ».
+    /// </summary>
+    [Fact]
+    public void Un_portrait_par_etiquette_EXIF_cadre_debout_donne_un_sens_debout()
+    {
+        PhotoDeboutParEtiquette("001.jpg", 6016, 4000);
+
+        var sens = PrintOrchestrator.SensDesCadrages(
+            Ligne(Article("001.jpg", 0.7742733, 0.7354420)), _dossier);
+
+        Assert.True(sens,
+            "0,774 × 4000 = 3097 de large pour 0,735 × 6016 = 4425 de haut : c'est DEBOUT. " +
+            "Lire l'en-tête brut inverserait le verdict.");
+    }
+
+    /// <summary>
+    /// Le revers, pour que l'essai ci-dessus ne passe pas simplement parce qu'on aurait
+    /// inversé la règle : sur la MÊME photo étiquetée, une bande large reste couchée.
+    /// </summary>
+    [Fact]
+    public void Un_portrait_par_etiquette_EXIF_cadre_en_bandeau_donne_un_sens_couche()
+    {
+        PhotoDeboutParEtiquette("001.jpg", 6016, 4000);
+
+        // 1,0 × 4000 = 4000 de large, 0,4 × 6016 = 2406 de haut : couché
+        var sens = PrintOrchestrator.SensDesCadrages(
+            Ligne(Article("001.jpg", 1.0, 0.4)), _dossier);
+
+        Assert.False(sens);
+    }
+
+    /// <summary>
+    /// Étiquette EXIF ET quart de tour de l'opérateur : les deux se cumulent, et il a fallu
+    /// les deux pour que le verdict soit juste. La photo est vue debout (4000 × 6016), le
+    /// quart de tour la recouche (6016 × 4000), un cadrage presque plein est donc couché.
+    /// </summary>
+    [Fact]
+    public void Etiquette_EXIF_et_quart_de_tour_se_cumulent()
+    {
+        PhotoDeboutParEtiquette("001.jpg", 6016, 4000);
+
+        var sens = PrintOrchestrator.SensDesCadrages(
+            Ligne(Article("001.jpg", 0.9, 0.9, quartsDeTour: 1)), _dossier);
+
+        Assert.False(sens);
+    }
 }
