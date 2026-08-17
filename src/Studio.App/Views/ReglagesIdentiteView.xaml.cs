@@ -56,6 +56,7 @@ public partial class ReglagesIdentiteView : UserControl
         CarteRadio.IsChecked = !fixe;
 
         CadrageAutoCheck.IsChecked = reglages.CadrageAutomatique;
+        DireOuEnEstLeCadrage(reglages.CadrageAutomatique);
 
         // La case n'a de sens que sur un poste qui porte deux palettes — voir Habillage.
         HabillagePanel.Visibility = Habillage.EstReglable ? Visibility.Visible : Visibility.Collapsed;
@@ -102,6 +103,34 @@ public partial class ReglagesIdentiteView : UserControl
             : "Méthode par couleur : environ une seconde par photo, aucune exigence — mais la " +
               "photo reste INTACTE quand le fond n'est pas uni. C'est le réglage d'origine.";
     }
+
+    /// <summary>
+    /// Le cadrage automatique s'enregistre AU CLIC, et pas avec le bouton du bas.
+    ///
+    /// <b>Livré d'abord en attente d'« Enregistrer », il donnait un réglage qui paraissait
+    /// pris et ne l'était pas</b> : on décoche la case, on revient à l'écran de cadrage, et
+    /// la photo se cadre encore — « cocher ou décocher, il cadre quand même », signalé le
+    /// 18/08/2026. La case voisine du mode sombre, elle, s'applique à l'instant : deux cases
+    /// côte à côte qui n'obéissent pas à la même règle, c'est le piège assuré.
+    ///
+    /// La phrase d'état dit ce qui est ENREGISTRÉ, pas ce qui est coché : c'est la seule
+    /// façon pour l'opérateur de vérifier que son geste a été pris.
+    /// </summary>
+    private void OnCadrageAuto(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+
+        var voulu = CadrageAutoCheck.IsChecked == true;
+        App.Services.SaveIdentite(App.Services.Identite with { CadrageAutomatique = voulu });
+
+        DireOuEnEstLeCadrage(App.Services.Identite.CadrageAutomatique);
+    }
+
+    /// <summary>Ce qui est réellement enregistré, relu depuis les réglages.</summary>
+    private void DireOuEnEstLeCadrage(bool actif) =>
+        CadrageAutoEtatText.Text = actif
+            ? "Enregistré : la photo s'ouvre cadrée sur le visage."
+            : "Enregistré : la photo s'ouvre sur un cadre centré, à placer à la main.";
 
     /// <summary>
     /// Le mode sombre s'applique TOUT DE SUITE, avant même d'enregistrer : on choisit un

@@ -47,6 +47,7 @@ public partial class SettingsView : UserControl
             MontrerLeWifi(App.Services.Wifi);
             MontrerLesTarifsIdentite(App.Services.TarifsIdentite);
             CadrageIdentiteAutoCheck.IsChecked = App.Services.Identite.CadrageAutomatique;
+            DireOuEnEstLeCadrageIdentite(App.Services.Identite.CadrageAutomatique);
             MontrerLesFavoris(App.Services.Favoris);
             MontrerLePoste(App.Services.Poste);
             MontrerLaVersion();
@@ -70,7 +71,17 @@ public partial class SettingsView : UserControl
 
         App.Services.SaveIdentite(
             App.Services.Identite with { CadrageAutomatique = CadrageIdentiteAutoCheck.IsChecked == true });
+
+        // Relu depuis les RÉGLAGES et jamais depuis la case : c'est ce qui est enregistré
+        // qui compte, et l'opérateur doit pouvoir le vérifier d'un coup d'œil. C'est
+        // précisément ce qui manquait quand la case paraissait prise sans l'être.
+        DireOuEnEstLeCadrageIdentite(App.Services.Identite.CadrageAutomatique);
     }
+
+    private void DireOuEnEstLeCadrageIdentite(bool actif) =>
+        CadrageIdentiteEtatText.Text = actif
+            ? "Enregistré : la planche s'ouvre cadrée sur le visage."
+            : "Enregistré : la planche s'ouvre sur un cadre centré, à placer à la main.";
 
     // ===== Tarif des photos d'identité =====
 
