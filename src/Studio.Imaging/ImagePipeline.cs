@@ -573,6 +573,94 @@ public static class ImagePipeline
 
         image.AutoOrient(); // applique l'orientation EXIF une bonne fois pour toutes
 
+        // LE MASQUE DU SUJET SE PRÉLÈVE ICI, sur la photo ENTIÈRE et redressée : le même
+        // repère que l'aperçu, donc le même masque, retrouvé dans le cache sans repasser par
+        // le réseau.
+        //
+        // ⚠ Arcueil, commande 17-006 du 17/08/2026. Ce masque était demandé tout en bas, une
+        // fois l'image recadrée en 35×45 — mais la clé du cache est le FICHIER, et il rendait
+        // donc celui de la photo entière, que MasqueALaTaille étirait sur la case. La
+        // correction du sujet tombait à côté du sujet : chevron clair derrière les épaules,
+        // démarcation nette en travers du front, huit fois sur la planche. Parfait à l'aperçu,
+        // gâché sur le papier.
+        using var masqueDuSujet = MasqueDuSujet(image, request.Adjustments);
+
+        var aDecouper = AppliquerLaGeometrie(image, request, MagickColors.White);
+
+        // Et le masque suit LE MÊME chemin, par LE MÊME code — c'est toute l'idée. Dupliquer
+        // la séquence géométrique aurait remis en place le défaut qu'on corrige : ce dépôt a
+        // déjà payé deux pannes muettes à des méthodes jumelles qui avaient cessé de se
+        // ressembler (le fond gris oublié d'un seul côté, le 13/08).
+        //
+        // Le NOIR remplit ce que la rotation fine et le cadre libèrent : pour un masque, noir
+        // veut dire « rien à corriger ici », ce qui est exactement le cas d'un coin ajouté.
+        if (masqueDuSujet is not null)
+            AppliquerLaGeometrie(masqueDuSujet, request, MagickColors.Black);
+
+        ApplyAdjustments(image, request.Adjustments, masqueDuSujet);
+
+        // Le trait APRÈS les corrections — une correction de luminosité ne doit pas délaver le
+        // repère de coupe — et AVANT la conversion ICC, pour que tout ce qui part sur le papier
+        // suive le même chemin couleur.
+        if (request.CutBorder && aDecouper is { } cadre) DrawCutBorder(image, cadre, dpi);
+
+        if (request.IccProfilePath is not null)
+        {
+            // gestion couleur chez nous : sRGB → profil imprimante (la correction du
+            // pilote doit alors être désactivée dans le DEVMODE du produit, sinon elle
+            // s'applique une seconde fois par-dessus la nôtre)
+            // Profil illisible ou absent : on n'applique RIEN et le tirage part quand même,
+            // en sRGB présumé. Voir Profil.
+            if (Profil(request.IccProfilePath) is { } profil)
+            {
+                image.RenderingIntent = RenderingIntent.Perceptual;  // photos : dégradés et peaux préservés
+                image.BlackPointCompensation = true;                 // évite les noirs bouchés en dye-sub
+                image.TransformColorSpace(ColorProfiles.SRGB, profil);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Le masque du sujet de la photo entière, quand les réglages en ont besoin — pour la
+    /// correction du sujet, pour un fond posé, ou les deux. Null sinon, et null quand le
+    /// détourage n'a rien pu dire.
+    ///
+    /// <b>À appeler sur la photo ENTIÈRE et redressée, avant toute géométrie.</b> C'est ce qui
+    /// le fait tomber dans le même seau de cache que l'aperçu : le réseau ne tourne qu'une
+    /// fois pour les deux, et le gain de 14,5 s par photo mesuré à Créteil le 12/08/2026 est
+    /// préservé.
+    /// </summary>
+    private static MagickImage? MasqueDuSujet(MagickImage image, ImageAdjustments a)
+    {
+        if (a.IsNeutral) return null;
+
+        var leSujet = !a.Sujet.IsNeutral;
+        var unFond = a.GrayBackground || a.WhiteBackground;
+        if (!leSujet && !unFond) return null;
+
+        return MasqueSujet.Nu(image, a.CleDeLaPhoto);
+    }
+
+    /// <summary>
+    /// Toute la géométrie d'un tirage — quarts de tour, redressement fin, recadrage, mise au
+    /// format — appliquée sur place.
+    ///
+    /// <b>Sortie en méthode pour être appelée DEUX fois : sur la photo, et sur le masque du
+    /// sujet.</b> Un masque qui ne subit pas exactement le même chemin que son image finit à
+    /// côté du sujet, et c'est la panne du 17/08/2026 — voir <c>RenderInto</c>. Une seule
+    /// implémentation, donc, et aucune divergence possible.
+    /// </summary>
+    /// <param name="remplissage">
+    /// Ce qui comble les vides ouverts par la rotation fine et par la mise au format : le
+    /// blanc du papier pour une photo, le noir du « rien à corriger » pour un masque.
+    /// </param>
+    /// <returns>
+    /// L'emplacement de la photo dans le tirage — là où passeront les ciseaux — ou null quand
+    /// le mode n'en définit pas.
+    /// </returns>
+    private static PixelRect? AppliquerLaGeometrie(
+        MagickImage image, RenderRequest request, MagickColor remplissage)
+    {
         var turns = ((request.RotationQuarterTurns % 4) + 4) % 4;
         if (turns != 0)
             image.Rotate(90 * turns);
@@ -585,7 +673,7 @@ public static class ImagePipeline
         {
             ReduireAvantRedressement(image, request);
 
-            image.BackgroundColor = MagickColors.White;
+            image.BackgroundColor = remplissage;
             image.Rotate(request.FineRotationDegrees);
             image.ResetPage();
         }
@@ -618,7 +706,7 @@ public static class ImagePipeline
             image.Resize(new MagickGeometry(targetW, targetH) { IgnoreAspectRatio = true });
             image.ResetPage();
             // garantit les dimensions exactes même après arrondis
-            image.Extent(targetW, targetH, Gravity.Center, MagickColors.White);
+            image.Extent(targetW, targetH, Gravity.Center, remplissage);
 
             // Le bord de la photo EST le bord du tirage : c'est encore là que passent les
             // ciseaux quand plusieurs tirages sortent sur la même feuille. La case
@@ -663,35 +751,15 @@ public static class ImagePipeline
             var poseeW = (int)image.Width;
             var poseeH = (int)image.Height;
 
-            image.BackgroundColor = MagickColors.White;
-            image.Extent(targetW, targetH, Gravity.Center, MagickColors.White);
+            image.BackgroundColor = remplissage;
+            image.Extent(targetW, targetH, Gravity.Center, remplissage);
 
             // Gravity.Center centre à l'entier inférieur : on refait le même calcul
             aDecouper = new PixelRect(
                 ((int)targetW - poseeW) / 2, ((int)targetH - poseeH) / 2, poseeW, poseeH);
         }
 
-        ApplyAdjustments(image, request.Adjustments);
-
-        // Le trait APRÈS les corrections — une correction de luminosité ne doit pas délaver le
-        // repère de coupe — et AVANT la conversion ICC, pour que tout ce qui part sur le papier
-        // suive le même chemin couleur.
-        if (request.CutBorder && aDecouper is { } cadre) DrawCutBorder(image, cadre, dpi);
-
-        if (request.IccProfilePath is not null)
-        {
-            // gestion couleur chez nous : sRGB → profil imprimante (la correction du
-            // pilote doit alors être désactivée dans le DEVMODE du produit, sinon elle
-            // s'applique une seconde fois par-dessus la nôtre)
-            // Profil illisible ou absent : on n'applique RIEN et le tirage part quand même,
-            // en sRGB présumé. Voir Profil.
-            if (Profil(request.IccProfilePath) is { } profil)
-            {
-                image.RenderingIntent = RenderingIntent.Perceptual;  // photos : dégradés et peaux préservés
-                image.BlackPointCompensation = true;                 // évite les noirs bouchés en dye-sub
-                image.TransformColorSpace(ColorProfiles.SRGB, profil);
-            }
-        }
+        return aDecouper;
     }
 
     /// <summary>
@@ -859,7 +927,8 @@ public static class ImagePipeline
         image.ResetPage();
     }
 
-    private static void ApplyAdjustments(MagickImage image, ImageAdjustments adjustments) =>
-        ImageAdjuster.Apply(image, adjustments);
+    private static void ApplyAdjustments(
+        MagickImage image, ImageAdjustments adjustments, MagickImage? masqueAligne = null) =>
+        ImageAdjuster.Apply(image, adjustments, avecRelief: true, masqueAligne);
 }
 

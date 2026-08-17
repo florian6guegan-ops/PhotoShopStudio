@@ -191,16 +191,37 @@ public static class BackgroundRemoval
         var masque = MasqueSujet.Nu(image, cle);
         if (masque is null) return false;
 
-        using (masque)
-        {
-            // Le masque devient la transparence de la photo, puis on aplatit sur la couleur
-            // demandée. « Alpha(Remove) » compose sur BackgroundColor sans seconde image ni
-            // encodage intermédiaire : sur un 4000 × 6016, l'aller-retour PNG coûtait plus
-            // cher que tout le reste du détourage réuni.
-            image.Composite(masque, ImageMagick.CompositeOperator.CopyAlpha);
-            image.BackgroundColor = fond;
-            image.Alpha(ImageMagick.AlphaOption.Remove);
-        }
+        using (masque) return PoserUnFond(image, fond, masque);
+    }
+
+    /// <summary>
+    /// Pose le fond en se servant d'un masque QUE L'APPELANT FOURNIT, sans passer par le
+    /// cache.
+    ///
+    /// <b>Pour le masque que le pipeline a transporté à travers la géométrie.</b> La surcharge
+    /// à clé ci-dessus demande au cache le masque « de ce fichier », qui est celui de la photo
+    /// ENTIÈRE ; quand l'image a été recadrée depuis, il ne lui va plus. Le pipeline, lui, sait
+    /// quel masque va avec son image — il lui a fait subir le même recadrage et la même mise à
+    /// l'échelle. Voir <c>ImagePipeline.RenderInto</c>.
+    ///
+    /// Le masque n'est PAS libéré : il appartient à l'appelant, qui peut encore en avoir besoin
+    /// pour la correction du sujet.
+    /// </summary>
+    /// <returns>Vrai si un fond a été posé.</returns>
+    public static bool PoserUnFond(
+        ImageMagick.MagickImage image, ImageMagick.MagickColor fond, ImageMagick.MagickImage masque)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentNullException.ThrowIfNull(fond);
+        ArgumentNullException.ThrowIfNull(masque);
+
+        // Le masque devient la transparence de la photo, puis on aplatit sur la couleur
+        // demandée. « Alpha(Remove) » compose sur BackgroundColor sans seconde image ni
+        // encodage intermédiaire : sur un 4000 × 6016, l'aller-retour PNG coûtait plus
+        // cher que tout le reste du détourage réuni.
+        image.Composite(masque, ImageMagick.CompositeOperator.CopyAlpha);
+        image.BackgroundColor = fond;
+        image.Alpha(ImageMagick.AlphaOption.Remove);
 
         return true;
     }

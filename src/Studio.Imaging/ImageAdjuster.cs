@@ -27,7 +27,23 @@ public static class ImageAdjuster
     /// reste pour les usages où l'on veut la couleur sans le relief — une vignette de
     /// planche, où l'accentuation ne se verrait pas.
     /// </param>
-    public static void Apply(IMagickImage<byte> image, ImageAdjustments a, bool avecRelief = true)
+    /// <param name="masqueAligne">
+    /// Le masque du sujet, DÉJÀ à la géométrie de <paramref name="image"/>, quand l'appelant
+    /// s'en est chargé lui-même.
+    ///
+    /// <b>C'est le chemin d'impression, et il existe pour une panne précise.</b> Le cache des
+    /// masques a pour clé le FICHIER : il rend celui de la photo entière. Or le tirage appelle
+    /// cette méthode après avoir recadré et mis à l'échelle — Arcueil, commande 17-006 du
+    /// 17/08/2026 : la correction du sujet est tombée à côté du sujet, chevron clair derrière
+    /// les épaules et démarcation en travers du front, huit fois sur la planche.
+    ///
+    /// <c>ImagePipeline.RenderInto</c> prélève donc le masque sur la photo entière puis lui
+    /// fait subir LA MÊME géométrie qu'à l'image, par le même code, et le passe ici. Null pour
+    /// l'aperçu, qui n'applique aucune géométrie et se sert très bien du cache.
+    /// </param>
+    public static void Apply(
+        IMagickImage<byte> image, ImageAdjustments a, bool avecRelief = true,
+        MagickImage? masqueAligne = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(a);
@@ -46,9 +62,16 @@ public static class ImageAdjuster
         // Null quand le détourage n'a rien pu dire : la correction du sujet est alors
         // simplement sautée, et le reste s'applique comme avant.
         MagickImage? masqueDuSujet = null;
-        if (!a.Sujet.IsNeutral && image is MagickImage source)
-            masqueDuSujet = MasqueSujet.Calculer(
-                source, a.Sujet.ContourPx, a.Sujet.AdoucissementPx, a.CleDeLaPhoto);
+        if (!a.Sujet.IsNeutral)
+        {
+            // Le masque fourni l'emporte toujours : lui seul est à la géométrie de l'image.
+            if (masqueAligne is not null)
+                masqueDuSujet = MasqueSujet.RetoucherUneCopie(
+                    masqueAligne, a.Sujet.ContourPx, a.Sujet.AdoucissementPx);
+            else if (image is MagickImage source)
+                masqueDuSujet = MasqueSujet.Calculer(
+                    source, a.Sujet.ContourPx, a.Sujet.AdoucissementPx, a.CleDeLaPhoto);
+        }
 
         // Le fond AVANT tout le reste : il raisonne sur les couleurs d'origine. Après une
         // désaturation ou un coup de contraste, le fond ne ressemblerait plus à ce que le
@@ -58,12 +81,18 @@ public static class ImageAdjuster
         // une commande relue d'un journal ancien peut porter les deux, et un fond gris est
         // accepté partout où le blanc l'est — l'inverse n'est pas vrai.
         if ((a.GrayBackground || a.WhiteBackground) && image is MagickImage photo)
-            BackgroundRemoval.PoserUnFond(
-                photo,
-                a.GrayBackground ? BackgroundRemoval.GrisIdentite : MagickColors.White,
-                // la MÊME clé que la correction du sujet ci-dessus : les deux veulent le
-                // même découpage, et sans elle le fond repayait le réseau à chaque rendu
-                a.CleDeLaPhoto);
+        {
+            var fond = a.GrayBackground ? BackgroundRemoval.GrisIdentite : MagickColors.White;
+
+            if (masqueAligne is not null)
+                BackgroundRemoval.PoserUnFond(photo, fond, masqueAligne);
+            else
+                BackgroundRemoval.PoserUnFond(
+                    photo, fond,
+                    // la MÊME clé que la correction du sujet ci-dessus : les deux veulent le
+                    // même découpage, et sans elle le fond repayait le réseau à chaque rendu
+                    a.CleDeLaPhoto);
+        }
 
         // Les yeux rouges AVANT le noir et blanc, et avant tout réglage de couleur : la
         // correction reconnaît une pupille au ROUGE qui y domine, et une image désaturée ou

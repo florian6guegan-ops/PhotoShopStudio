@@ -220,6 +220,40 @@ public static class MasqueSujet
     }
 
     /// <summary>
+    /// Retouche une COPIE d'un masque nu qu'on tient déjà : contour élargi et bord adouci,
+    /// aux mêmes valeurs que <see cref="Calculer"/> leur donnerait.
+    ///
+    /// <b>Pour le masque que le pipeline a lui-même transporté à travers la géométrie.</b>
+    /// <see cref="Calculer"/> part du cache et raisonne sur le fichier ; ici l'appelant sait
+    /// déjà quel masque va avec son image, parce qu'il lui a fait subir le même recadrage et
+    /// la même mise à l'échelle. Il ne lui manque que cette retouche — voir
+    /// <c>ImagePipeline.RenderInto</c>.
+    ///
+    /// L'échelle se prend sur le masque : il a la taille de l'image, c'est la condition qui
+    /// rend l'ensemble juste.
+    /// </summary>
+    public static MagickImage RetoucherUneCopie(
+        MagickImage masqueNu, double contourPx, double adoucissementPx)
+    {
+        ArgumentNullException.ThrowIfNull(masqueNu);
+
+        var copie = (MagickImage)masqueNu.Clone();
+
+        try
+        {
+            var echelle = Math.Max(copie.Width, copie.Height) / GrandCoteDeReference;
+            Retoucher(copie, contourPx * echelle, adoucissementPx * echelle);
+        }
+        catch
+        {
+            copie.Dispose();
+            throw;
+        }
+
+        return copie;
+    }
+
+    /// <summary>
     /// La clé d'une image : celle que l'appelant donne, ou à défaut l'empreinte de ses
     /// PIXELS.
     ///
