@@ -12,6 +12,7 @@ using System.Windows.Media;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
 using Studio.Imaging.Geometry;
+using Studio.Store;
 using Studio.Store.DiLand;
 
 namespace Studio.App.Views;
@@ -358,9 +359,35 @@ public partial class OrdersView : UserControl
             return;
         }
 
+        var titre = $"Commande {ligne.Order.DisplayNumber} — {combien} photo(s)";
+
+        // ON REND LE TRAVAIL DÉJÀ FAIT, et pas seulement le dossier.
+        //
+        // Cet écran ne rouvrait que le DOSSIER des photos : cadrages, corrections, formats
+        // par photo, quantités et finitions étaient perdus, et il fallait tout refaire pour
+        // retirer une seule photo d'une commande de quinze. Signalé le 17/08/2026.
+        //
+        // On ne réinvente rien : la grille sait déjà reprendre un travail — c'est le
+        // mécanisme des commandes mises de côté, éprouvé en boutique, qui gère jusqu'aux
+        // doublons d'une même photo tirée en plusieurs formats. On traduit la commande dans
+        // cette forme-là (voir TravailDepuisCommande) et l'écran fait le reste.
+        var travail = TravailDepuisCommande.Traduire(ligne.Retenues, source, titre);
+
+        // En taille libre, le format du catalogue n'a plus cours : rouvrir sans elle
+        // remettrait tous les cadres au centre, au mauvais rapport.
+        var taille = travail.EnTaillePersonnalisee
+            ? new CustomSize(travail.CustomWidthMm, travail.CustomHeightMm, travail.PaperCode)
+            : null;
+
         Navigator.Go(
-            new PhotoGridView(source, ProduitMajoritaire(ligne.Order), avecSousDossiers: false),
-            $"Commande {ligne.Order.DisplayNumber} — {combien} photo(s)");
+            new PhotoGridView(
+                source,
+                taille is null ? travail.ProduitParDefaut : null,
+                avecSousDossiers: false,
+                enAttente: travail,
+                taillePerso: taille,
+                montageFeuille: travail.MontageSheetCode),
+            titre);
     }
 
     /// <summary>
