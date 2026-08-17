@@ -2288,37 +2288,16 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 // SEUL chemin vers le picker, l'E-Photo n'existait donc nulle part — alors
                 // qu'elle figure dans les raccourcis par défaut depuis le 03/08/2026.
                 //
-                // Elle ne passe pas par le gabarit d'identité : la photo part entière sur un
-                // 10×15, c'est l'écran des tirages qui la sert, produit déjà choisi.
-                OuvrirUnProduit),
+                // Elle ne passe pas par le gabarit d'identité : la photo part ENTIÈRE sur un
+                // 10×15, bords blancs compris, et c'est l'écran des tirages qui la sert.
+                //
+                // ⚠ LE MÊME PARCOURS QUE LE STUDIO COMPLET, pas une copie. La première
+                // version recopiait ce chemin ici en sautant le choix du support quand une
+                // carte était insérée — or la photo d'une E-Photo n'est justement JAMAIS sur
+                // la carte : elle arrive par courriel ou par téléphone, dans Téléchargements.
+                // Voir ParcoursIdentite.OuvrirUnProduit.
+                ParcoursIdentite.OuvrirUnProduit),
             "Choisir le document");
-    }
-
-    /// <summary>
-    /// Ouvre un produit tiré tel quel — l'E-Photo — sur l'écran des tirages ordinaires.
-    ///
-    /// On saute l'écran des supports quand on sait déjà où sont les photos, exactement comme
-    /// « Ouvrir des photos » : au comptoir, la carte est dans le lecteur ou le poste a son
-    /// dossier fixe, et un écran qui ne propose qu'une chose est un geste pour rien.
-    /// </summary>
-    private static void OuvrirUnProduit(Product produit)
-    {
-        if (DepartDesPhotos() is { } depart)
-        {
-            Navigator.Go(new PhotoGridView(depart, produit.Code, avecSousDossiers: true),
-                produit.Name);
-            return;
-        }
-
-        // Sa photo n'arrive presque jamais sur une carte mémoire : le client l'envoie par
-        // courriel ou depuis son téléphone, et elle atterrit dans Téléchargements. D'où ce
-        // raccourci-là, ici et pas ailleurs — c'est la règle déjà posée dans ParcoursIdentite.
-        Navigator.Go(
-            new SourcePickerView((racine, profond) =>
-                    Navigator.Go(new PhotoGridView(racine, produit.Code, avecSousDossiers: profond),
-                        produit.Name),
-                SourcePickerView.RaccourciTelechargements()),
-            $"{produit.Name} — choisir le support");
     }
 
     /// <summary>

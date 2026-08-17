@@ -1,4 +1,5 @@
 using Studio.App.Views;
+using Studio.Core.Domain;
 
 namespace Studio.App.Infrastructure;
 
@@ -29,18 +30,40 @@ public static class ParcoursIdentite
                                 $"{document.Country} — choisir les photos")),
                         "Photos d'identité — choisir le support"),
 
-                // Un PRODUIT tiré tel quel — l'E-Photo. Ce n'est pas une norme : la photo
-                // part entière sur un 10×15, sans gabarit ni recadrage d'identité, et c'est
-                // donc l'écran des tirages qui la sert, produit déjà choisi.
-                //
-                // Sa photo n'arrive presque jamais sur une carte mémoire : le client
-                // l'envoie par courriel ou depuis son téléphone, et elle atterrit dans
-                // Téléchargements. D'où le raccourci, ici et pas ailleurs.
-                produit =>
-                    Navigator.Go(new SourcePickerView((racine, profond) =>
-                            Navigator.Go(new PhotoGridView(racine, produit.Code, avecSousDossiers: profond),
-                                produit.Name),
-                            SourcePickerView.RaccourciTelechargements()),
-                        $"{produit.Name} — choisir le support")),
+                // Un PRODUIT tiré tel quel — l'E-Photo. Voir OuvrirUnProduit.
+                OuvrirUnProduit),
             "Photos d'identité — choisir le document");
+
+    /// <summary>
+    /// Ouvre un PRODUIT tiré tel quel depuis les raccourcis d'identité — l'E-Photo.
+    ///
+    /// Ce n'est pas une norme : la photo part ENTIÈRE sur un 10×15, bords blancs compris,
+    /// sans gabarit ni recadrage d'identité. C'est donc l'écran des tirages qui la sert,
+    /// produit déjà choisi — c'est lui qui sait poser une photo entière dans son format
+    /// (<c>Product.DefaultFit</c> vaut <c>Fit</c> sur ce produit).
+    ///
+    /// <b>⚠ ON PASSE TOUJOURS PAR LE CHOIX DU SUPPORT, et c'est le point.</b> La photo d'une
+    /// E-Photo n'arrive presque jamais sur une carte mémoire : le client l'envoie par
+    /// courriel ou depuis son téléphone, et elle atterrit dans Téléchargements — d'où ce
+    /// raccourci-là, ici et pas ailleurs. Sauter cet écran pour ouvrir la carte insérée,
+    /// comme le fait « Ouvrir des photos », emmène l'opérateur exactement là où la photo
+    /// n'est PAS.
+    ///
+    /// <b>Partagé, et non recopié.</b> Studio Photo Identité y arrive par un autre bouton —
+    /// « changer de document » depuis l'écran de cadrage — et la première version y avait
+    /// recopié ce parcours en sautant le choix du support. Les BOUTONS se doublent, ce
+    /// qu'ils font, non.
+    /// </summary>
+    public static void OuvrirUnProduit(Product produit)
+    {
+        ArgumentNullException.ThrowIfNull(produit);
+
+        Navigator.Go(
+            new SourcePickerView(
+                (racine, profond) => Navigator.Go(
+                    new PhotoGridView(racine, produit.Code, avecSousDossiers: profond),
+                    produit.Name),
+                SourcePickerView.RaccourciTelechargements()),
+            $"{produit.Name} — choisir le support");
+    }
 }
