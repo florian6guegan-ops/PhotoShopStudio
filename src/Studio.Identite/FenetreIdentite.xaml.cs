@@ -53,6 +53,8 @@ public partial class FenetreIdentite : Window
             });
         };
         Closed += (_, _) => Navigator.Navigated -= SurNavigation;
+
+        SizeChanged += (_, _) => MettreLEchelleAJour();
     }
 
     private void SurNavigation(UserControl ecran, string titre)
@@ -196,6 +198,48 @@ public partial class FenetreIdentite : Window
             WindowState = WindowState.Normal;
             PoserLaTailleFlottante();
         }
+    }
+
+    /// <summary>
+    /// La place dont les écrans ont besoin pour tenir SANS être réduits, en unités WPF.
+    ///
+    /// Relevée à l'écran de cadrage, le plus chargé : la bande des photos, l'aperçu et le
+    /// panneau de droite avec ses onze tuiles. En dessous, le panneau se mettait à défiler
+    /// et « Imprimer la planche » sortait de la vue.
+    /// </summary>
+    private const double LargeurConfortable = 1500;
+
+    /// <summary>
+    /// Mesurée sur le panneau de droite déroulé : de « DOCUMENT » à « Ouvrir des photos »,
+    /// en-tête et marges comprises. 860 laissait la dernière tuile sous la ligne de
+    /// flottaison, et le panneau gardait sa barre de défilement en fenêtre réduite.
+    /// </summary>
+    private const double HauteurConfortable = 1000;
+
+    /// <summary>
+    /// Met l'interface à l'échelle de la fenêtre.
+    ///
+    /// <b>Jamais AU-DESSUS de 1.</b> Agrandir l'interface sur un grand écran donnerait des
+    /// tuiles énormes et une bande de photos démesurée : les écrans sont élastiques, ils
+    /// savent occuper la place. Ce facteur ne sert qu'à rattraper ce qui MANQUE.
+    ///
+    /// Le facteur suit la dimension la plus contrainte : une fenêtre large mais basse doit
+    /// réduire autant qu'une fenêtre étroite, sans quoi les rangées du bas se coupent.
+    /// </summary>
+    private void MettreLEchelleAJour()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0) return;
+
+        var facteur = Math.Min(1, Math.Min(
+            ActualWidth / LargeurConfortable,
+            ActualHeight / HauteurConfortable));
+
+        // Un plancher : en dessous, on ne lit plus rien et il vaut mieux laisser défiler.
+        // La fenêtre ne descend de toute façon pas sous 1024 × 700 (MinWidth/MinHeight).
+        facteur = Math.Max(0.62, facteur);
+
+        EchelleInterface.ScaleX = facteur;
+        EchelleInterface.ScaleY = facteur;
     }
 
     /// <summary>Vrai une fois que la taille flottante a été posée : on ne la reposera plus.</summary>

@@ -7,7 +7,22 @@
         FontFamily="Segoe UI"
         MinWidth="1024" MinHeight="700">
 
+    <!-- L'ÉCHELLE DE L'INTERFACE.
+
+         Les écrans sont élastiques — les colonnes s'étirent — mais leurs TUILES ont une
+         taille fixe : cartes de 46 px, polices de 17. En fenêtre réduite, le panneau de
+         droite gardait donc sa largeur et se mettait à défiler ; « Imprimer la planche »
+         passait hors de vue, et le texte du milieu se coupait au lieu de se replier.
+         Signalé le 18/08/2026, juste après la fenêtre flottante.
+
+         Le facteur est posé par SurTaille : 1 tant que la fenêtre est assez grande — le
+         plein écran ne change donc pas d'un pixel —, puis proportionnel en dessous. C'est
+         un LayoutTransform et non un RenderTransform : la mise en page est REFAITE à
+         l'échelle voulue, les textes restent nets et les clics tombent juste. -->
     <Grid>
+        <Grid.LayoutTransform>
+            <ScaleTransform x:Name="EchelleInterface" ScaleX="1" ScaleY="1"/>
+        </Grid.LayoutTransform>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
