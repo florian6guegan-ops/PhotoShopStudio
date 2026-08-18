@@ -159,6 +159,22 @@
                                       Content="Contour de découpe"
                                       ToolTip="Trace un trait noir de 0,2 mm sur le bord de la photo, à suivre aux ciseaux quand le tirage sort avec des marges blanches."
                                       Click="OnCutBorderChanged"/>
+                            <!-- AVANT / APRÈS, maintenu.
+                                 L'écran montre la photo TRAITÉE : cadrage posé, corrections
+                                 appliquées. Rien ne permettait de la comparer à ce qu'on
+                                 avait au départ — or c'est en comparant qu'on juge une
+                                 retouche, et le client demande souvent à voir. Le bouton se
+                                 maintient plutôt qu'il ne bascule : on relâche, on est
+                                 revenu, sans risquer de laisser l'écran sur l'original.
+                                 Demandé le 18/08/2026. -->
+                            <Button x:Name="ComparerButton" Style="{StaticResource FlatButton}"
+                                    MinHeight="44" FontSize="15" Margin="0,0,0,8"
+                                    Content="👁  Voir l'original   (maintenir)"
+                                    ToolTip="Maintenez pour revoir la photo telle qu'elle est arrivée, sans cadrage ni corrections. Relâchez pour revenir au tirage."
+                                    PreviewMouseLeftButtonDown="OnComparerAppuye"
+                                    PreviewMouseLeftButtonUp="OnComparerRelache"
+                                    MouseLeave="OnComparerRelache"
+                                    LostMouseCapture="OnComparerRelache"/>
                             <Button Style="{StaticResource FlatButton}" MinHeight="44" FontSize="15"
                                     Margin="0,0,0,8" Click="OnResetCrop" Content="Réinitialiser"/>
                             <Button Style="{StaticResource FlatButton}" MinHeight="44" FontSize="15"

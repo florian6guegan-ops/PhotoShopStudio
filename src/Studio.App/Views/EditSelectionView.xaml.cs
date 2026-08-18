@@ -640,6 +640,10 @@ internal partial class EditSelectionView : UserControl
         _courante = photo;
         _versionSurface++; // ce que la surface doit montrer a changé
 
+        // une comparaison en cours appartenait à la photo précédente : la laisser courir
+        // ferait revenir son original par-dessus la nouvelle au relâchement
+        _comparaisonEnCours = false;
+
         Cadre(photo); // crée le cadre au format du produit, ou le reprend
         ChargerHauteDefinition(photo);
         Refresh();
@@ -786,6 +790,7 @@ internal partial class EditSelectionView : UserControl
         photo.RotationQuarterTurns = (photo.RotationQuarterTurns + sens + 4) % 4;
 
         Perimer(photo); // les pixels tournent : la photo prête pour la surface est à refaire
+        PerimerLOriginal(photo); // …et l'original de la comparaison avec elle
         Redessiner(photo);
         Refresh();
     }
@@ -1041,12 +1046,88 @@ internal partial class EditSelectionView : UserControl
     private void OnRotatePhoto(object sender, RoutedEventArgs e) =>
         SurLesVisees("Photo pivotée d'un quart de tour", photo => PivoterPhoto(photo, 1));
 
+    // — avant / après —
+
     /// <summary>
-    /// Le contour de découpe, posé sur toutes les photos VISÉES — comme les corrections.
+    /// Les originaux déjà composés, par clé de photo — l'image telle qu'elle est arrivée,
+    /// remise d'aplomb mais sans une seule correction.
     ///
-    /// Une commande de vingt tirages à marges blanches se recoupe entière : cocher photo par
-    /// photo n'aurait servi personne.
+    /// Le quart de tour EST appliqué : sans lui, l'original apparaîtrait couché sous un
+    /// cadre resté debout, et la comparaison ne dirait plus rien de la retouche.
     /// </summary>
+    private readonly CacheImages _originaux = new();
+
+    /// <summary>Vrai tant que le bouton est enfoncé : la surface montre alors l'original.</summary>
+    private bool _comparaisonEnCours;
+
+    /// <summary>
+    /// Montre la photo telle qu'elle est arrivée, tant que le bouton reste enfoncé.
+    ///
+    /// <b>Maintenu et non basculé.</b> Un interrupteur laisserait l'écran sur l'original —
+    /// devant un client, on croirait la retouche perdue, et rien à l'écran ne dirait que
+    /// c'est une vue de comparaison. Relâcher revient toujours au tirage, y compris si la
+    /// souris quitte le bouton en cours de route (MouseLeave, LostMouseCapture).
+    ///
+    /// <b>Le CADRE reste affiché.</b> C'est lui qui montre le cadrage : on voit donc du même
+    /// coup ce que la photo était et ce que le tirage en gardera. Le retirer ferait sauter
+    /// l'image sous les yeux sans rien apprendre de plus.
+    /// </summary>
+    private async void OnComparerAppuye(object sender, MouseButtonEventArgs e)
+    {
+        if (_comparaisonEnCours) return;
+        _comparaisonEnCours = true;
+
+        var photo = _courante;
+
+        try
+        {
+            if (!_originaux.TryGet(photo.Cle, out var original))
+            {
+                // la haute définition si elle est déjà là, la vignette sinon : c'est la
+                // même source que la surface montre, donc la même finesse
+                var source = _hautesDefinitions.TryGet(photo.Path, out var haute)
+                    ? haute
+                    : photo.SourceThumbnail;
+                if (source is null) return;
+
+                var quarts = photo.RotationQuarterTurns;
+
+                // réglages NEUFS : c'est tout l'objet de la comparaison
+                original = await Task.Run(
+                    () => PhotoGridView.PhotoItem.ComposerPhoto(source, quarts, new ImageAdjustments()));
+
+                _originaux.Set(photo.Cle, original);
+            }
+
+            // relâché pendant le calcul, ou photo changée : on ne montre plus rien
+            if (!_comparaisonEnCours || !ReferenceEquals(photo, _courante)) return;
+
+            Surface.UpdatePhoto(original);
+            ComparerButton.Content = "👁  Original — relâchez";
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Avant/après : original impossible à préparer", ex);
+            _comparaisonEnCours = false;
+        }
+    }
+
+    private void OnComparerRelache(object sender, RoutedEventArgs e)
+    {
+        if (!_comparaisonEnCours) return;
+        _comparaisonEnCours = false;
+
+        ComparerButton.Content = "👁  Voir l'original   (maintenir)";
+        MontrerSurface();
+    }
+
+    /// <summary>
+    /// Un original ne vaut plus quand la photo a tourné d'un quart de tour : c'est le seul
+    /// réglage qui entre dans sa composition. Les curseurs, eux, ne le concernent pas —
+    /// c'est justement ce qu'on veut comparer.
+    /// </summary>
+    private void PerimerLOriginal(PhotoGridView.PhotoItem photo) => _originaux.Remove(photo.Cle);
+
     // — la quantité —
 
     /// <summary>
@@ -1084,6 +1165,12 @@ internal partial class EditSelectionView : UserControl
         Refresh();
     }
 
+    /// <summary>
+    /// Le contour de découpe, posé sur toutes les photos VISÉES — comme les corrections.
+    ///
+    /// Une commande de vingt tirages à marges blanches se recoupe entière : cocher photo par
+    /// photo n'aurait servi personne.
+    /// </summary>
     private void OnCutBorderChanged(object sender, RoutedEventArgs e)
     {
         var actif = CutBorderCheck.IsChecked == true;
