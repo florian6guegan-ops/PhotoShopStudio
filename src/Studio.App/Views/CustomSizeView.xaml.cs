@@ -24,8 +24,22 @@ namespace Studio.App.Views;
 /// même convention que les produits à bord blanc du catalogue, où <c>Product.WidthMm</c>
 /// donne le papier et <c>ImageArea</c> en retire deux fois la marge.
 /// </param>
+/// <param name="ContourNoir">
+/// Trace un trait noir de 0,2 mm sur le bord de chaque photo, à suivre aux ciseaux.
+///
+/// <b>Il se décide ICI et non photo par photo.</b> Un format libre sort presque toujours en
+/// planche, plusieurs tirages sur une même feuille, et c'est bien le trait qui dit où
+/// couper : le cocher ensuite dans « Modifier », photo par photo, était le geste que
+/// l'opérateur oubliait — et une planche sans trait se coupe à l'œil. Demandé le
+/// 18/08/2026, avec la compensation d'impression.
+///
+/// La case n'existait qu'à l'écran d'édition, où elle porte sur la SÉLECTION visée : celle
+/// d'ici pose la valeur de départ des photos ouvertes dans ce format, et l'édition reste
+/// libre de la changer photo par photo.
+/// </param>
 public sealed record CustomSize(
-    double WidthMm, double HeightMm, string? PaperCode = null, double BorderMm = 0)
+    double WidthMm, double HeightMm, string? PaperCode = null, double BorderMm = 0,
+    bool ContourNoir = false)
 {
     /// <summary>Libellé en centimètres, l'unité du comptoir.</summary>
     public string Libelle =>
@@ -109,6 +123,14 @@ public partial class CustomSizeView : UserControl
             : 0;
 
     private void OnTailleTapee(object sender, TextChangedEventArgs e) => Recalculer();
+
+    /// <summary>
+    /// La case du contour passe par le même recalcul que la taille : c'est <c>_taille</c>
+    /// qui part à l'écran suivant, et elle n'est reconstruite que là. Sans ce rappel, cocher
+    /// après avoir tapé les centimètres ne changeait rien — le défaut le plus discret qui
+    /// soit, puisque la case reste cochée à l'écran.
+    /// </summary>
+    private void OnContourNoirChange(object sender, RoutedEventArgs e) => Recalculer();
 
     // ----- le sens de la photo -----
 
@@ -201,7 +223,8 @@ public partial class CustomSizeView : UserControl
             return;
         }
 
-        _taille = new CustomSize(largeur, hauteur, BorderMm: _bordMm);
+        _taille = new CustomSize(largeur, hauteur, BorderMm: _bordMm,
+            ContourNoir: ContourNoirCheck.IsChecked == true);
         ContinuerButton.IsEnabled = true;
 
         // LE SENS SUIT LES CADRAGES, ET L'ÉCRAN LE DIT.
@@ -321,7 +344,10 @@ public partial class CustomSizeView : UserControl
         // La marge n'est PAS retenue avec la taille : elle appartient à la famille, pas au
         // format. Sans cela, un 9 × 13 demandé une fois en cadre blanc reviendrait bordé
         // en impression rapide, où l'écran ne montre même pas la marge.
-        _recentes.Insert(0, taille with { BorderMm = 0 });
+        // Le CONTOUR non plus : il tient à la façon de couper du jour — ciseaux ou massicot
+        // sur repères —, pas au format. Une taille reproposée le porterait sans que la case
+        // le montre, puisqu'elle repart décochée.
+        _recentes.Insert(0, taille with { BorderMm = 0, ContourNoir = false });
         if (_recentes.Count > MaximumRecentes) _recentes.RemoveRange(MaximumRecentes,
             _recentes.Count - MaximumRecentes);
 

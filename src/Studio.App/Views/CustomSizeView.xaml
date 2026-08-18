@@ -39,6 +39,22 @@
                                Foreground="{DynamicResource MutedBrush}"/>
                 </StackPanel>
 
+                <!-- LE CONTOUR DE DÉCOUPE, décidé ICI.
+
+                     Un format libre sort presque toujours en PLANCHE, plusieurs tirages sur
+                     une même feuille : le trait est ce qui dit où couper. Il ne se cochait
+                     qu'à l'écran d'édition, photo par photo, et c'est le geste qu'on oublie
+                     — une planche sans trait se coupe alors à l'œil. Demandé le 18/08/2026.
+
+                     Ce n'est qu'une VALEUR DE DÉPART : l'édition reste libre de l'ôter sur
+                     telle ou telle photo. -->
+                <CheckBox x:Name="ContourNoirCheck" Style="{StaticResource CaseCochable}"
+                          HorizontalAlignment="Center" Margin="0,22,0,0" FontSize="18"
+                          Foreground="{DynamicResource TextBrush}" VerticalContentAlignment="Center"
+                          Content="Contours noirs à découper"
+                          ToolTip="Trace un trait noir de 0,2 mm sur le bord de chaque photo, à suivre aux ciseaux. À décocher si vous coupez au massicot sur repères."
+                          Click="OnContourNoirChange"/>
+
                 <!-- LE SENS DE LA PHOTO, en toutes lettres.
 
                      Il se décidait par le seul ORDRE des deux nombres, et rien ne le disait :

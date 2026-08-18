@@ -244,6 +244,30 @@
                            FontSize="17" VerticalAlignment="Center"/>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- LA QUANTITÉ, ici aussi.
+
+                         Elle ne se réglait qu'à l'écran de sélection : l'opérateur qui
+                         cadre une photo et à qui le client dit « finalement j'en veux
+                         trois » devait revenir en arrière, retrouver la vignette, compter,
+                         puis rouvrir « Modifier ». Le nombre est pourtant écrit sur chaque
+                         vignette de cet écran-là — on le lisait sans pouvoir le changer.
+
+                         Elle porte sur les photos VISÉES, comme le contour de découpe et le
+                         format : cocher trois photos et monter à 2 les passe toutes les
+                         trois à 2. -->
+                    <TextBlock Text="Quantité :" Style="{StaticResource Hint}" FontSize="15"
+                               VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <Button x:Name="QuantiteMoinsButton" Style="{StaticResource FlatButton}"
+                            MinHeight="56" MinWidth="52" FontSize="19" Click="OnQuantiteMoins"
+                            ToolTip="Une de moins sur les photos cochées (ou sur celle affichée).">−</Button>
+                    <TextBlock x:Name="QuantiteText" Style="{StaticResource Texte}" FontSize="18"
+                               FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="46"
+                               TextAlignment="Center"/>
+                    <Button x:Name="QuantitePlusButton" Style="{StaticResource FlatButton}"
+                            MinHeight="56" MinWidth="52" FontSize="19" Margin="0,0,12,0"
+                            Click="OnQuantitePlus"
+                            ToolTip="Une de plus sur les photos cochées (ou sur celle affichée).">+</Button>
+
                     <!-- Le format se choisit ici, à côté du retour et de l'impression :
                          il commande le tirage, pas le seul recadrage. -->
                     <Button x:Name="FormatButton" Style="{StaticResource FlatButton}"

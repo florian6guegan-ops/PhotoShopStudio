@@ -252,6 +252,19 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     private bool EnTaillePersonnalisee => _taillePerso is not null;
 
     /// <summary>
+    /// Pose le contour de découpe demandé à la saisie de la taille libre.
+    ///
+    /// <b>Une valeur de DÉPART, pas un verrou</b> : l'écran d'édition garde la main photo par
+    /// photo. Et rien n'est posé hors taille libre — un tirage du catalogue tient son
+    /// contour de son propre réglage, et le forcer ici tracerait des traits sur des 10×15
+    /// que personne ne découpe.
+    /// </summary>
+    private void AppliquerLeContourPerso(PhotoItem photo)
+    {
+        if (_taillePerso is { ContourNoir: true }) photo.CutBorder = true;
+    }
+
+    /// <summary>
     /// Demande une taille libre, puis y bascule les photos DÉJÀ ouvertes.
     ///
     /// C'est le cas du comptoir : la commande arrive d'une borne en 10×15, le client la voit
@@ -282,7 +295,14 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         // le format de TOUTES les photos change, cochées ou non : la planche est une seule
         // ligne de commande, elle ne peut pas mélanger deux tailles
-        foreach (var photo in _photos) photo.Product = _produitPerso;
+        foreach (var photo in _photos)
+        {
+            photo.Product = _produitPerso;
+
+            // le contour demandé avec la taille suit la bascule : une planche dont la moitié
+            // des photos porte le trait ne se coupe pas
+            AppliquerLeContourPerso(photo);
+        }
 
         FileLog.Write($"Bascule en taille personnalisée {taille.Libelle} sur {_photos.Count} photo(s)");
         UpdateSummary();
@@ -319,6 +339,11 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             foreach (var file in files)
             {
                 var photo = new PhotoItem(file, OnCartChanged);
+
+                // Le contour demandé à la saisie de la taille libre, AVANT la reprise d'un
+                // brouillon : ce que l'opérateur avait décidé photo par photo l'emporte sur
+                // une valeur de départ.
+                AppliquerLeContourPerso(photo);
 
                 // le cadrage du client d'abord, le brouillon par-dessus : le second est ce
                 // que l'OPÉRATEUR a décidé, il l'emporte

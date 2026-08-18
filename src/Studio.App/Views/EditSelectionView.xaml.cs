@@ -323,6 +323,14 @@ internal partial class EditSelectionView : UserControl
         var total = _photos.Sum(p => (p.Product?.Price ?? 0) * p.Quantity);
         SummaryText.Text = $"{_photos.Count} photo(s) · {tirages} tirage(s) · {total:0.00} €";
 
+        // Ce que les boutons vont changer : la quantité des photos VISÉES. Quand elles n'ont
+        // pas la même, on le dit — « 1–3 » — plutôt que d'en afficher une seule, qui ferait
+        // croire que les autres suivent.
+        var quantites = Visees().Select(p => p.Quantity).ToList();
+        QuantiteText.Text = quantites.Count == 0 ? "—"
+            : quantites.Min() == quantites.Max() ? $"×{quantites[0]}"
+            : $"{quantites.Min()}–{quantites.Max()}";
+
         FormatButton.Content = _courante.Product is { } produit
             ? $"Format : {produit.Name}"
             : "Format : à choisir";
@@ -1039,6 +1047,43 @@ internal partial class EditSelectionView : UserControl
     /// Une commande de vingt tirages à marges blanches se recoupe entière : cocher photo par
     /// photo n'aurait servi personne.
     /// </summary>
+    // — la quantité —
+
+    /// <summary>
+    /// Une de moins, une de plus, sur les photos VISÉES.
+    ///
+    /// <b>Elle ne se réglait qu'à l'écran de sélection</b>, alors qu'elle est écrite sur
+    /// chaque vignette de celui-ci : on la lisait sans pouvoir la changer, et « j'en veux
+    /// finalement trois » obligeait à ressortir, retrouver la vignette et rouvrir
+    /// « Modifier ». Demandé le 18/08/2026.
+    ///
+    /// <b>Le pas part de la photo AFFICHÉE</b>, et non d'un compteur propre à l'écran :
+    /// les photos visées peuvent porter des quantités différentes, et un compteur commun
+    /// les aurait toutes alignées sur sa valeur au premier clic — en écrasant sans le dire
+    /// ce que l'opérateur avait posé photo par photo.
+    /// </summary>
+    private void OnQuantiteMoins(object sender, RoutedEventArgs e) => ChangerLaQuantite(-1);
+
+    private void OnQuantitePlus(object sender, RoutedEventArgs e) => ChangerLaQuantite(+1);
+
+    /// <summary>
+    /// Décale la quantité des photos visées. Bornes 1..99, comme à l'écran de sélection :
+    /// zéro tirage n'est pas une quantité, c'est un décochage.
+    /// </summary>
+    private void ChangerLaQuantite(int pas)
+    {
+        var visees = Visees();
+
+        foreach (var photo in visees)
+            photo.Quantity = Math.Clamp(photo.Quantity + pas, 1, 99);
+
+        FileLog.Write(
+            $"Quantité {(pas > 0 ? "montée" : "descendue")} d'un cran sur {visees.Count} photo(s) " +
+            "depuis l'écran de modification");
+
+        Refresh();
+    }
+
     private void OnCutBorderChanged(object sender, RoutedEventArgs e)
     {
         var actif = CutBorderCheck.IsChecked == true;
