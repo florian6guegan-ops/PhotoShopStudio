@@ -182,6 +182,16 @@ public sealed class PrintOrchestrator
     /// </summary>
     public MarqueSettings? Marque { get; set; }
 
+    /// <summary>
+    /// Ce qu'il faut ajouter au rendu pour que le papier ressemble à l'écran, machine par
+    /// machine. Posée par l'application au démarrage, comme <see cref="Marque"/> et pour la
+    /// même raison : l'atelier d'impression ne lit pas le dossier de configuration.
+    ///
+    /// Null = aucune compensation, la machine reçoit ce que l'écran montrait. Voir
+    /// <see cref="CorrectionsMachines"/> — et surtout : elle ne touche JAMAIS l'aperçu.
+    /// </summary>
+    public CorrectionsMachines? Corrections { get; set; }
+
     /// <param name="catalogDir">Dossier catalog/ contenant les DEVMODE et profils ICC.</param>
     /// <param name="minilab">
     /// Accès au minilab Fuji. Null = les produits qui en dépendent seront refusés
@@ -1779,8 +1789,8 @@ public sealed class PrintOrchestrator
                     var iccPath = IccPath(product, item.Finish);
 
                     // la correction propre à la machine, par-dessus ce que l'opérateur a
-                    // posé — voir Product.PrintExposure
-                    var reglages = AvecLaCorrectionDuProduit(item.Adjustments, product);
+                    // posé — voir ReglagesDuTirage
+                    var reglages = ReglagesDuTirage(item.Adjustments, product);
 
                     var chrono = System.Diagnostics.Stopwatch.StartNew();
                     if (!File.Exists(output)) // rendu déterministe : réutilisable après un crash
@@ -1873,6 +1883,26 @@ public sealed class PrintOrchestrator
         var corriges = reglages.Clone();
         corriges.Exposure += product.PrintExposure;
         return corriges;
+    }
+
+    /// <summary>
+    /// Les réglages avec lesquels ce tirage est RENDU : ceux de l'opérateur, la correction
+    /// du produit, puis celle de la machine qui va le sortir.
+    ///
+    /// <b>Un seul point de passage pour les trois chemins de rendu</b> — planche d'identité,
+    /// montage à taille libre, tirage ordinaire. Les trois appelaient
+    /// <see cref="AvecLaCorrectionDuProduit"/> chacun de leur côté ; y ajouter la machine
+    /// trois fois aurait fini par en oublier un, et un seul produit non compensé suffit à
+    /// faire douter du réglage entier.
+    ///
+    /// <b>⚠ CE CHEMIN N'EST PAS CELUI DE L'APERÇU</b>, et il ne doit jamais le devenir : la
+    /// compensation existe pour rattraper l'écart entre l'écran et le papier. Voir
+    /// <see cref="CorrectionMachine"/>.
+    /// </summary>
+    private ImageAdjustments ReglagesDuTirage(ImageAdjustments reglages, Product product)
+    {
+        var corriges = AvecLaCorrectionDuProduit(reglages, product);
+        return Corrections?.Appliquer(corriges, product) ?? corriges;
     }
 
     /// <summary>
@@ -2014,7 +2044,7 @@ public sealed class PrintOrchestrator
                                 // le produit désigne le papier de la planche, et la lui
                                 // demander mettrait le blanc autour de la feuille entière.
                                 MmPx.ToPixels(line.CustomCellBorderMm ?? 0, product.Dpi),
-                                AvecLaCorrectionDuProduit(item.Adjustments, product),
+                                ReglagesDuTirage(item.Adjustments, product),
                                 IccPath(product, item.Finish)),
                             place.Copies);
                     })
@@ -2181,7 +2211,7 @@ public sealed class PrintOrchestrator
             item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees,
             item.FitOverride ?? product.DefaultFit,
             MmPx.ToPixels(product.BorderMm, dpi),
-            AvecLaCorrectionDuProduit(item.Adjustments, product),
+            ReglagesDuTirage(item.Adjustments, product),
             IccPath(product, item.Finish),
             item.CutBorder);
     }

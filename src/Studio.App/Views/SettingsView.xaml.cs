@@ -45,6 +45,7 @@ public partial class SettingsView : UserControl
             MontrerLaMarque(App.Services.Marque);
             MontrerLeDetourage(App.Services.Detourage);
             MontrerLaCouleurDnp();
+            MontrerLaCorrectionImpression();
             MontrerLeWifi(App.Services.Wifi);
             MontrerLesTarifsIdentite(App.Services.TarifsIdentite);
             CadrageIdentiteAutoCheck.IsChecked = App.Services.Identite.CadrageAutomatique;
@@ -995,6 +996,7 @@ public partial class SettingsView : UserControl
         MarqueMentionBox.Text = reglages.Mention;
         MarqueLogoBox.Text = reglages.LogoPath;
         MarqueQrBox.Text = reglages.QrTexte;
+        MarqueNomMagasinBox.Text = reglages.NomMagasin;
         MarqueActiveCheck.IsChecked = reglages.BandeActive;
 
         DireOuEnEstLaMarque(reglages);
@@ -1004,6 +1006,7 @@ public partial class SettingsView : UserControl
         Mention: MarqueMentionBox.Text.Trim(),
         LogoPath: MarqueLogoBox.Text.Trim(),
         QrTexte: MarqueQrBox.Text.Trim(),
+        NomMagasin: MarqueNomMagasinBox.Text.Trim(),
         BandeActive: MarqueActiveCheck.IsChecked == true);
 
     /// <summary>
@@ -1076,6 +1079,19 @@ public partial class SettingsView : UserControl
     /// </summary>
     private void OnOuvrirLaCouleurDnp(object sender, RoutedEventArgs e) =>
         Navigator.Go(new ReglagesCouleurDnpView(), "Profil couleur de la DNP");
+
+    // ----- compensation d'impression -----
+
+    /// <summary>
+    /// Ce qu'on ajoute au tirage pour que le papier ressemble à l'écran. Réglage de MACHINE
+    /// lui aussi, et débrayable — voir <see cref="ReglagesCorrectionImpressionView"/>.
+    /// Ici, la porte et le résumé.
+    /// </summary>
+    private void OnOuvrirLaCorrectionImpression(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesCorrectionImpressionView(), "Compensation d'impression");
+
+    private void MontrerLaCorrectionImpression() =>
+        CorrectionImpressionResumeText.Text = ReglagesCorrectionImpressionView.Resume();
 
     private void MontrerLaCouleurDnp() =>
         CouleurDnpResumeText.Text = ReglagesIdentiteView.ResumeCouleurDnp();

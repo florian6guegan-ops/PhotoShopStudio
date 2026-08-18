@@ -238,9 +238,18 @@ public partial class IdSheetRecapView : UserControl
                 MmPx.ToPixels(_document.HeightMm, ppp),
                 planche.Crop, 0, planche.RedressementDegres,
                 FitMode.Fill, 0,
-                // la correction propre à la machine est celle du tirage : l'aperçu doit
-                // montrer ce qui sortira, pas ce que l'écran de cadrage affichait
-                AvecLaCorrectionDuProduit(planche.Reglages, planche.Produit)),
+                // ⚠ LA CORRECTION DE LA MACHINE N'ENTRE PAS ICI, et c'est la règle du champ
+                // lui-même (voir Product.PrintExposure, point 3) : elle compense l'écart
+                // entre ce que l'écran montre et ce que la machine sort. L'appliquer aussi
+                // à l'aperçu éclaircit les DEUX, laisse l'écart intact, et amène l'opérateur
+                // à rassombrir à la main ce qui vient d'être corrigé.
+                //
+                // Elle était pourtant reprise ici depuis l'origine, au motif inverse — que
+                // l'aperçu doit montrer ce qui sortira. Il le doit pour tout ce qui tient au
+                // TRAVAIL (cadrage, corrections, bande de date, compte de photos) ; pas pour
+                // ce qui rattrape la machine, qui n'existe justement que sur le papier.
+                // Signalé le 18/08/2026 : « les photos sont légèrement plus foncées ».
+                planche.Reglages),
             planche.Copies, sheet.GapMm, sheet.CutMarks,
             MmPx.ToPixels(planche.Produit.WidthMm, ppp),
             MmPx.ToPixels(planche.Produit.HeightMm, ppp),
@@ -291,14 +300,6 @@ public partial class IdSheetRecapView : UserControl
         image.Rotate(-90);
         return image.ToByteArray(ImageMagick.MagickFormat.Png);
     }
-
-    /// <summary>
-    /// La même règle que l'impression : voir <c>PrintOrchestrator.AvecLaCorrectionDuProduit</c>.
-    /// Reprise ici pour que l'aperçu ne puisse pas en diverger sans qu'on s'en aperçoive —
-    /// un aperçu plus sombre que le tirage ferait corriger à la main ce qui est déjà corrigé.
-    /// </summary>
-    private static ImageAdjustments AvecLaCorrectionDuProduit(ImageAdjustments reglages, Product produit) =>
-        Studio.Printing.PrintOrchestrator.AvecLaCorrectionDuProduit(reglages, produit);
 
     private static BitmapImage ToBitmap(byte[] octets)
     {

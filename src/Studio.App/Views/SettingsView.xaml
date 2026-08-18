@@ -199,6 +199,17 @@
                                    TextWrapping="Wrap"
                                    Text="La première ligne est mise en avant, la seconde la précise. N'y mettez pas la Marianne ni le nom d'un prestataire agréé : le premier est l'emblème de l'État, le second appartient à qui l'a déposé."/>
 
+                        <!-- LE NOM DE LA BOUTIQUE, à part de la mention.
+                             Tapé dedans, il aurait pris le corps et le gras de l'annonce :
+                             c'est une signature, pas une affirmation de conformité. Il
+                             s'écrit donc petit et gris, à la suite. Demandé le 18/08/2026. -->
+                        <TextBlock Text="Nom du magasin (en petit, à côté de la mention)"
+                                   Style="{StaticResource Hint}" Margin="0,18,0,0"/>
+                        <TextBox x:Name="MarqueNomMagasinBox" FontSize="18" Padding="12,10" Margin="0,6,0,0"/>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0" FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Text="Il signe TOUTES les planches, quel que soit le document ou le papier : « PHOTOS CONFORMES · Photo Concept Maisons-Alfort ». Laissez vide pour ne rien signer."/>
+
                         <TextBlock Text="Logo (PNG à fond transparent)" Style="{StaticResource Hint}"
                                    Margin="0,18,0,0"/>
                         <Grid Margin="0,6,0,0">
@@ -264,6 +275,26 @@
                         <TextBlock x:Name="CouleurDnpResumeText" Style="{StaticResource Hint}"
                                    TextWrapping="Wrap" Margin="0,0,0,12"/>
                         <Button Content="Profil couleur de la DNP…" Click="OnOuvrirLaCouleurDnp"
+                                HorizontalAlignment="Left" Padding="18,10" FontSize="16"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Compensation d'impression =====
+                     Une machine ne rend pas ce que l'écran montre : la DS620 sort plus dense
+                     qu'un écran rétroéclairé. Le champ existait déjà par produit
+                     (Product.PrintExposure, 04/08/2026), en un seul nombre tapé dans le
+                     Catalogue ; ceci est le même besoin réglé à la main, machine par machine,
+                     et débrayable. Demandé le 18/08/2026.
+                     ⚠ Ce réglage ne touche PAS l'aperçu : voir CorrectionMachine. -->
+
+                <TextBlock Text="Compensation d'impression" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+                        <TextBlock x:Name="CorrectionImpressionResumeText" Style="{StaticResource Hint}"
+                                   TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <Button Content="Compensation d'impression…" Click="OnOuvrirLaCorrectionImpression"
                                 HorizontalAlignment="Left" Padding="18,10" FontSize="16"/>
                     </StackPanel>
                 </Border>

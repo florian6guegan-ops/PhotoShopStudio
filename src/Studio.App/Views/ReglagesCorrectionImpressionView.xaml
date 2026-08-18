@@ -1,0 +1,116 @@
+<UserControl x:Class="Studio.App.Views.ReglagesCorrectionImpressionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}"
+                   Text="Compensation d'impression"/>
+
+        <TextBlock Grid.Row="1" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,14"
+                   Text="Ce que la machine ajoute au tirage pour que le papier ressemble à l'écran. Une DS620 sort plus dense qu'un écran rétroéclairé : la correction se pose ici, une fois pour la machine, et vaut pour tout ce qui en sort — planches d'identité, E-Photo, 10×15."/>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+
+                <!-- LA MACHINE. Le réglage suit la file d'impression, pas le produit : la
+                     couleur dépend de la machine et de son papier. Même choix que le
+                     profil couleur de la DNP. -->
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                                   Text="La machine"/>
+
+                        <ComboBox x:Name="MachineCombo" Margin="0,14,0,0" MinHeight="46" FontSize="17"
+                                  SelectionChanged="OnMachineChange"/>
+
+                        <CheckBox x:Name="ActifCheck" Margin="0,16,0,0" FontSize="17"
+                                  Content="Appliquer cette correction"
+                                  Click="OnActifChange"/>
+
+                        <TextBlock Style="{StaticResource Hint}" FontSize="13" Margin="0,10,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="Décochée, la machine reçoit exactement ce que l'écran montre — les valeurs restent en mémoire pour être rallumées d'un clic, ce qui permet de comparer deux tirages."/>
+                    </StackPanel>
+                </Border>
+
+                <!-- LES CURSEURS. Mêmes noms et mêmes plages que le panneau de correction
+                     des photos : un opérateur qui sait éclaircir une photo sait régler ceci. -->
+                <Border x:Name="CurseursCard" Background="{DynamicResource CardBrush}" CornerRadius="12"
+                        Padding="20" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                                   Text="Ce qui s'ajoute au tirage"/>
+
+                        <TextBlock x:Name="ExpositionLabel" Style="{StaticResource Hint}" FontSize="13"
+                                   Margin="0,14,0,0"/>
+                        <Slider x:Name="ExpositionSlider" Minimum="-2" Maximum="2" TickFrequency="0.05"
+                                IsSnapToTickEnabled="True" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="ContrasteLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="ContrasteSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="HautesLumieresLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="HautesLumieresSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="OmbresLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="OmbresSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="TemperatureLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="TemperatureSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="TeinteLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="TeinteSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="SaturationLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="SaturationSlider" Minimum="-100" Maximum="100" Margin="0,0,0,8"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <TextBlock x:Name="NetteteLabel" Style="{StaticResource Hint}" FontSize="13"/>
+                        <Slider x:Name="NetteteSlider" Minimum="0" Maximum="100" Margin="0,0,0,12"
+                                ValueChanged="OnCurseurChange"/>
+
+                        <Button Style="{StaticResource FlatButton}" MinWidth="240" MinHeight="46"
+                                HorizontalAlignment="Left" FontSize="16" Click="OnRemiseAZero"
+                                Content="Tout remettre à zéro"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- CE QUE ÇA NE TOUCHE PAS. C'est le point le plus facile à se tromper :
+                     une compensation montrée à l'écran laisserait l'écart intact. -->
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                                   Text="⚠ Ce réglage ne change pas l'aperçu"/>
+                        <TextBlock Style="{StaticResource Texte}" FontSize="15" Margin="0,12,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="Il n'agit que sur le fichier envoyé à la machine. C'est voulu : il existe pour rattraper l'écart entre l'écran et le papier, et l'appliquer aussi à l'aperçu éclaircirait les deux en laissant l'écart intact. Réglez-le en comparant un tirage à l'écran, un dixième de diaphragme à la fois."/>
+                        <TextBlock x:Name="EtatText" Style="{StaticResource Texte}" FontSize="15"
+                                   Margin="0,12,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Style="{StaticResource FlatButton}" MinWidth="180" MinHeight="52" FontSize="19"
+                    Click="OnRetour">Retour</Button>
+            <Button Style="{StaticResource BigButton}" MinWidth="240"
+                    MinHeight="52" FontSize="19" Margin="12,0,0,0" Click="OnEnregistrer">Enregistrer</Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

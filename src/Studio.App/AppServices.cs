@@ -197,6 +197,29 @@ public sealed class AppServices
         Printer.Marque = reglages;
     }
 
+    private CorrectionsMachines? _corrections;
+
+    /// <summary>
+    /// La compensation d'impression, machine par machine : ce qu'on ajoute au rendu pour
+    /// que le papier ressemble à l'écran.
+    ///
+    /// Dans les données du poste (<c>config\corrections-machines.json</c>) et non dans le
+    /// catalogue : elle se mesure sur UNE machine et son rouleau, et n'a aucun sens à
+    /// voyager avec les formats et les prix. Voir <see cref="CorrectionMachine"/>.
+    /// </summary>
+    public CorrectionsMachines Corrections => _corrections ??= CorrectionsMachines.Load(ConfigDir);
+
+    /// <summary>
+    /// Enregistre la compensation et l'applique sans redémarrer — l'écran de réglage doit
+    /// pouvoir être jugé sur le tirage SUIVANT, pas au prochain lancement.
+    /// </summary>
+    public void SaveCorrections(CorrectionsMachines corrections)
+    {
+        CorrectionsMachines.Save(ConfigDir, corrections);
+        _corrections = corrections;
+        Printer.Corrections = corrections;
+    }
+
     /// <summary>
     /// Les dossiers épinglés dans les boîtes de fichiers et dans le choix du support.
     ///
@@ -719,6 +742,11 @@ public sealed class AppServices
         // de configuration
         services.Printer.Marque = services.Marque;
 
+        // et la compensation d'impression avec elle, pour la même raison : l'atelier ne lit
+        // pas config/, et une lecture de fichier par tirage coûterait un accès disque au
+        // milieu d'un rendu
+        services.Printer.Corrections = services.Corrections;
+
         services.Consommables = EstimationConsommables.Charger(
             Path.Combine(dataRoot, "config", "consommables.json"));
         services.Debits = EstimationDuree.Charger(
@@ -835,6 +863,10 @@ public sealed class AppServices
             // le nouvel orchestrateur repart nu : sans ce report, les planches perdraient
             // leur bande dès qu'on touche au catalogue
             Marque = Marque,
+            // et pour la compensation d'impression : sans ce report, changer un prix au
+            // Catalogue rendrait les tirages plus sombres qu'à la commande précédente,
+            // sans qu'aucun réglage n'ait bougé
+            Corrections = Corrections,
             // idem pour l'avertissement : un orchestrateur muet laisserait partir un
             // tirage sur le mauvais rouleau sans que personne n'en sache rien
             Avertir = message => AvertirLOperateur(this, message),
