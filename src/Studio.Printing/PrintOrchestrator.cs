@@ -2358,11 +2358,7 @@ public sealed class PrintOrchestrator
     internal bool EnvoyerDirectementALaDnp(Product product, RenderedPage page)
     {
         if (_minilab is null) return false;
-        if (!product.PrinterName.StartsWith("DP-DS", StringComparison.OrdinalIgnoreCase)
-            && !product.PrinterName.StartsWith("DS6", StringComparison.OrdinalIgnoreCase)
-            && !product.PrinterName.StartsWith("DS8", StringComparison.OrdinalIgnoreCase)
-            && !product.PrinterName.StartsWith("QW", StringComparison.OrdinalIgnoreCase))
-            return false;
+        if (!ImprimanteDnp.EstUneDnp(product.PrinterName)) return false;
 
         try
         {

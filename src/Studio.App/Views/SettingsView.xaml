@@ -248,6 +248,26 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ===== Profil couleur de la DNP =====
+                     Il se réglait produit par produit, dans le Catalogue. Seule la planche
+                     d'identité en portait un sur les trois postes : l'E-Photo et le 10×15
+                     sortaient sans gestion des couleurs, sur la même machine et le même
+                     rouleau. Et le profil de la planche est la variante « Vivid » de DiLand,
+                     d'où l'écart de rendu entre les deux logiciels signalé le 18/08/2026.
+                     Écran partagé avec Studio Photo Identité. -->
+
+                <TextBlock Text="Profil couleur de la DNP (DS620)" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+                        <TextBlock x:Name="CouleurDnpResumeText" Style="{StaticResource Hint}"
+                                   TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <Button Content="Profil couleur de la DNP…" Click="OnOuvrirLaCouleurDnp"
+                                HorizontalAlignment="Left" Padding="18,10" FontSize="16"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- ===== WiFi du magasin =====
                      Le code QR de connexion s'affiche sur l'écran « téléphone », juste
                      avant celui qui sert à envoyer les photos : le second ne mène nulle

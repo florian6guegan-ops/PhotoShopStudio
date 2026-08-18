@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using Studio.App.Infrastructure;
+using Studio.Core.Catalog;
 using Studio.Core.Cloud;
 using Studio.Core.Domain;
 using Studio.Core.Mail;
@@ -41,6 +42,7 @@ public partial class ReglagesIdentiteView : UserControl
         {
             MontrerLaSource(App.Services.Identite);
             MontrerLeDetourage();
+            MontrerLaCouleur();
             Montrer(App.Services.Mail);
         };
     }
@@ -87,6 +89,41 @@ public partial class ReglagesIdentiteView : UserControl
     /// </summary>
     private void OnDetourage(object sender, RoutedEventArgs e) =>
         Navigator.Go(new ReglagesDetourageView(), "Détourage du fond blanc");
+
+    /// <summary>
+    /// Le profil couleur de la DNP. Le MÊME écran que celui des Paramètres du Studio
+    /// complet — voir <see cref="ReglagesCouleurDnpView"/>.
+    /// </summary>
+    private void OnCouleurDnp(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesCouleurDnpView(), "Profil couleur de la DNP");
+
+    /// <summary>
+    /// Dit en une phrase la couleur que la DNP applique — et surtout quand elle n'en
+    /// applique aucune, ce que rien nulle part ne disait.
+    /// </summary>
+    private void MontrerLaCouleur() =>
+        CouleurResumeText.Text = ResumeCouleurDnp();
+
+    /// <summary>
+    /// Le résumé du profil couleur, en une phrase. Partagé par les deux écrans de réglages :
+    /// une phrase recopiée finit par ne plus dire la même chose des deux côtés.
+    /// </summary>
+    internal static string ResumeCouleurDnp()
+    {
+        var produits = ProfilCouleurDnp.Produits(App.Services.Catalog.All);
+        if (produits.Count == 0) return "Aucune imprimante DNP dans le catalogue de ce poste.";
+
+        var etat = ProfilCouleurDnp.Lire(produits);
+
+        if (!etat.Accord)
+            return "⚠ Les produits de la DNP n'appliquent pas tous le même profil : la machine " +
+                   "sort deux couleurs selon ce qu'on imprime.";
+
+        return etat.Profil is null
+            ? "Aucun profil : la couleur est laissée au pilote, ce qui donne un rendu plus plat " +
+              "que DiLand sur la même machine."
+            : $"Profil « {etat.Profil} » sur les {produits.Count} produits de la DNP.";
+    }
 
     /// <summary>
     /// Dit en une phrase ce que le poste fera du fond blanc. <b>C'est ce qui manquait le

@@ -111,13 +111,11 @@ public static class DiLandPresence
     }
 
     /// <summary>
-    /// Reconnaît une DNP à son nom de file. Les modèles de la gamme commencent tous par
-    /// « DP-DS », « DS6 », « DS8 » ou « QW » ; c'est le nom que pose le pilote du
-    /// constructeur, celui de cette boutique étant « DP-DS620 ».
+    /// Reconnaît une DNP à son nom de file. La règle est posée une fois pour tout le
+    /// logiciel dans <see cref="Studio.Core.Domain.ImprimanteDnp"/> : elle vivait recopiée
+    /// ici, dans le dialogue du pilote et dans l'envoi direct, avec trois listes de préfixes
+    /// à tenir d'accord.
     /// </summary>
     private static bool EstUneDnp(string nomDeFile) =>
-        nomDeFile.StartsWith("DP-DS", StringComparison.OrdinalIgnoreCase)
-        || nomDeFile.StartsWith("DS6", StringComparison.OrdinalIgnoreCase)
-        || nomDeFile.StartsWith("DS8", StringComparison.OrdinalIgnoreCase)
-        || nomDeFile.StartsWith("QW", StringComparison.OrdinalIgnoreCase);
+        Studio.Core.Domain.ImprimanteDnp.EstUneDnp(nomDeFile);
 }

@@ -71,10 +71,7 @@ internal static class DialoguePilote
         return true;
     }
 
-    /// <summary>Même règle de reconnaissance que <c>DiLandPresence.VuesParWindows</c>.</summary>
+    /// <summary>La règle commune, posée dans <see cref="Studio.Core.Domain.ImprimanteDnp"/>.</summary>
     private static bool EstUneDnp(string nomDeFile) =>
-        nomDeFile.StartsWith("DP-DS", System.StringComparison.OrdinalIgnoreCase)
-        || nomDeFile.StartsWith("DS6", System.StringComparison.OrdinalIgnoreCase)
-        || nomDeFile.StartsWith("DS8", System.StringComparison.OrdinalIgnoreCase)
-        || nomDeFile.StartsWith("QW", System.StringComparison.OrdinalIgnoreCase);
+        Studio.Core.Domain.ImprimanteDnp.EstUneDnp(nomDeFile);
 }

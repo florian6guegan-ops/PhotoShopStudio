@@ -114,6 +114,24 @@
                 </StackPanel>
             </Border>
 
+            <!-- LA COULEUR DE LA DNP.
+                 Le profil se réglait produit par produit, dans le Catalogue — que ce
+                 logiciel-ci n'a pas. Seule la planche d'identité en portait un sur les trois
+                 postes : l'E-Photo sortait sans gestion des couleurs, sur la même machine.
+                 C'est le MÊME écran que celui des Paramètres. -->
+            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                    Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Texte}" FontSize="19" FontWeight="SemiBold"
+                               Text="La couleur"/>
+                    <TextBlock x:Name="CouleurResumeText" Style="{StaticResource Hint}"
+                               FontSize="13" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                    <Button Style="{StaticResource FlatButton}" MinWidth="300" MinHeight="46"
+                            FontSize="16" HorizontalAlignment="Left" Margin="0,12,0,0"
+                            Click="OnCouleurDnp">Profil couleur de la DNP…</Button>
+                </StackPanel>
+            </Border>
+
             <!-- L'HABILLAGE. Ne paraît que là où il veut dire quelque chose : le Studio
                  complet n'a qu'une palette, ce poste-ci en a deux. -->
             <Border x:Name="HabillagePanel" Visibility="Collapsed"

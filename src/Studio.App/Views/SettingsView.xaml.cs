@@ -44,6 +44,7 @@ public partial class SettingsView : UserControl
             MontrerDropbox(App.Services.Dropbox);
             MontrerLaMarque(App.Services.Marque);
             MontrerLeDetourage(App.Services.Detourage);
+            MontrerLaCouleurDnp();
             MontrerLeWifi(App.Services.Wifi);
             MontrerLesTarifsIdentite(App.Services.TarifsIdentite);
             CadrageIdentiteAutoCheck.IsChecked = App.Services.Identite.CadrageAutomatique;
@@ -1065,6 +1066,19 @@ public partial class SettingsView : UserControl
 
     private void OnOuvrirLeDetourage(object sender, RoutedEventArgs e) =>
         Navigator.Go(new ReglagesDetourageView(), "Détourage du fond blanc");
+
+    // ----- profil couleur de la DNP -----
+
+    /// <summary>
+    /// Le profil couleur se choisissait produit par produit, dans le Catalogue. C'est un
+    /// réglage de MACHINE : il a donc son écran, partagé avec Studio Photo Identité — voir
+    /// <see cref="ReglagesCouleurDnpView"/>. Ici, la porte et le résumé.
+    /// </summary>
+    private void OnOuvrirLaCouleurDnp(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesCouleurDnpView(), "Profil couleur de la DNP");
+
+    private void MontrerLaCouleurDnp() =>
+        CouleurDnpResumeText.Text = ReglagesIdentiteView.ResumeCouleurDnp();
 
     // ----- WiFi du magasin -----
 
