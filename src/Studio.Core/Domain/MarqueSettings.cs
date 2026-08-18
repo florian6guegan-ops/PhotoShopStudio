@@ -28,11 +28,24 @@ namespace Studio.Core.Domain;
 /// Faux pour revenir à la planche d'avant — date seule dans la marge. La bande est ce qui
 /// change le plus l'allure du tirage : il faut pouvoir la retirer sans passer par le code.
 /// </param>
+/// <param name="NomMagasin">
+/// Le nom de la boutique, écrit EN PETIT à la suite de la mention — « PHOTOS CONFORMES ·
+/// Photo Concept Maisons-Alfort ».
+///
+/// <b>Pourquoi il ne se met pas dans la mention.</b> Rien n'empêchait de le taper dedans,
+/// mais il y aurait pris le corps et le gras de l'annonce : le nom du magasin est une
+/// signature, pas une affirmation de conformité. Séparé, il s'écrit petit et gris, et la
+/// mention reste ce qu'elle est même quand la boutique change de nom ou de propriétaire.
+///
+/// Vide = rien n'est signé, et la bande sort comme avant. Demandé le 18/08/2026, pour les
+/// deux logiciels.
+/// </param>
 public sealed record MarqueSettings(
     string Mention = MarqueSettings.MentionParDefaut,
     string LogoPath = "",
     string QrTexte = "",
-    bool BandeActive = true)
+    bool BandeActive = true,
+    string NomMagasin = "")
 {
     /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
     public const string FileName = "marque.json";
@@ -55,7 +68,10 @@ public sealed record MarqueSettings(
         BandeActive
         && (!string.IsNullOrWhiteSpace(Mention)
             || !string.IsNullOrWhiteSpace(LogoPath)
-            || !string.IsNullOrWhiteSpace(QrTexte));
+            || !string.IsNullOrWhiteSpace(QrTexte)
+            // le nom seul suffit à justifier la bande : une boutique peut vouloir signer
+            // sans rien affirmer
+            || !string.IsNullOrWhiteSpace(NomMagasin));
 
     private static readonly JsonSerializerOptions Options = new()
     {

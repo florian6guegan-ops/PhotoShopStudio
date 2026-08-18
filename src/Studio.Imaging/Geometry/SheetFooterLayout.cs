@@ -25,15 +25,25 @@ namespace Studio.Imaging.Geometry;
 /// Code QR déjà encodé en PNG. Les octets, et non le texte à encoder : la génération vit
 /// dans <c>Studio.Web</c>, dont l'imagerie n'a pas à dépendre.
 /// </param>
+/// <param name="NomMagasin">
+/// Nom de la boutique, écrit en petit à la suite de la mention. Null ou vide = la bande
+/// n'est pas signée. Voir <see cref="MarqueSettings.NomMagasin"/>.
+/// </param>
 public sealed record SheetFooter(
     DateTime Moment,
     string? Mention = null,
     string? LogoPath = null,
-    byte[]? QrPng = null)
+    byte[]? QrPng = null,
+    string? NomMagasin = null)
 {
     /// <summary>Vrai s'il n'y a rien d'autre que la date : la bande se réduit alors.</summary>
     public bool DateSeule =>
-        string.IsNullOrWhiteSpace(Mention) && string.IsNullOrWhiteSpace(LogoPath) && QrPng is null;
+        string.IsNullOrWhiteSpace(Mention) && string.IsNullOrWhiteSpace(LogoPath) && QrPng is null
+        && string.IsNullOrWhiteSpace(NomMagasin);
+
+    /// <summary>Ce que la zone centrale porte : la mention, le nom, ou les deux.</summary>
+    public bool PorteDuTexte =>
+        !string.IsNullOrWhiteSpace(Mention) || !string.IsNullOrWhiteSpace(NomMagasin);
 
     /// <summary>
     /// La bande d'une planche tirée à <paramref name="moment"/>, selon la marque réglée.
@@ -63,7 +73,7 @@ public sealed record SheetFooter(
             }
         }
 
-        return new SheetFooter(moment, marque.Mention, marque.LogoPath, qr);
+        return new SheetFooter(moment, marque.Mention, marque.LogoPath, qr, marque.NomMagasin);
     }
 }
 
@@ -309,8 +319,10 @@ public static class SheetFooterLayout
         var gauche = date.Right + marge;
         var largeurMention = droite - gauche;
 
+        // Le NOM DE LA BOUTIQUE partage cette zone : une bande qui ne porterait que lui,
+        // sans mention, doit quand même lui réserver sa place — voir SheetFooter.PorteDuTexte.
         PixelRect? mention = null;
-        if (!string.IsNullOrWhiteSpace(footer.Mention) && largeurMention > corpsDate)
+        if (footer.PorteDuTexte && largeurMention > corpsDate)
             mention = new PixelRect(gauche, y, largeurMention, utile);
 
         return new FooterPlacement(band, date, mention, qr, logo, corpsDate);

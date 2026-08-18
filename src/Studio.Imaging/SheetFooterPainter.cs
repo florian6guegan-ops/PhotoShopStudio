@@ -40,8 +40,8 @@ public static class SheetFooterPainter
         if (pose.Date is { } date)
             EcrireLaDate(sheet, footer, date, pose.Mention is null, pose.CorpsDatePx);
 
-        if (pose.Mention is { } mention && !string.IsNullOrWhiteSpace(footer.Mention))
-            EcrireLaMention(sheet, footer.Mention, mention);
+        if (pose.Mention is { } mention && footer.PorteDuTexte)
+            EcrireLaMention(sheet, footer.Mention, footer.NomMagasin, mention);
     }
 
     /// <summary>
@@ -106,10 +106,32 @@ public static class SheetFooterPainter
     /// millimètres quel que soit le papier, mais la largeur disponible dépend de ce que la
     /// date et le code QR laissent. Un corps figé sortirait de la zone sur un petit papier.
     /// </summary>
-    private static void EcrireLaMention(MagickImage sheet, string mention, PixelRect zone)
+    /// <param name="nomMagasin">
+    /// Le nom de la boutique, écrit EN PETIT à la suite de la première ligne — « PHOTOS
+    /// CONFORMES · Photo Concept Maisons-Alfort ».
+    ///
+    /// <b>Sur la même ligne, et non en troisième ligne.</b> La bande fait 8 mm : une
+    /// ligne de plus ferait tomber le corps de chacune, et l'annonce de conformité —
+    /// qui est ce que le client lit — deviendrait aussi petite que la signature. À la
+    /// suite, le nom prend la place qui reste sans rien coûter à la mention.
+    ///
+    /// Seul, sans mention, il est écrit centré comme une ligne unique : une boutique peut
+    /// vouloir signer ses planches sans rien affirmer.
+    /// </param>
+    private static void EcrireLaMention(
+        MagickImage sheet, string? mention, string? nomMagasin, PixelRect zone)
     {
-        var lignes = mention.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lignes.Length == 0) return;
+        var lignes = (mention ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var nom = (nomMagasin ?? "").Trim();
+
+        // Le nom SEUL : il devient la ligne, et s'écrit comme une précision — petit et gris,
+        // pas en capitales grasses. Il n'affirme rien, il signe.
+        if (lignes.Length == 0)
+        {
+            if (nom.Length == 0) return;
+            EcrireUneSignature(sheet, nom, zone);
+            return;
+        }
 
         // Deux lignes se partagent la hauteur, l'interligne compris ; une seule la prend
         // toute. Le facteur 0,62 laisse l'air qui sépare les lignes.
@@ -124,8 +146,16 @@ public static class SheetFooterPainter
         // première ligne, écrite en gras et le plus souvent en capitales : elle est
         // sensiblement plus large, et le calcul la laissait mordre sur le code QR. Les
         // suivantes sont écrites en corps réduit, ce dont il faut tenir compte aussi.
+        //
+        // La SIGNATURE compte dans la largeur de la première ligne : elle s'écrit à sa
+        // suite, et l'oublier ici la ferait mordre sur le code QR — ou pousserait la
+        // mention hors de sa zone sur une planche étroite.
+        var suffixe = nom.Length > 0 ? SeparateurSignature + nom : "";
+        var largeurSuffixeEnCorps = suffixe.Length * 0.58 * FractionSignature;
+
         var largeurEnCorps = lignes
-            .Select((ligne, i) => ligne.Trim().Length * (i == 0 ? 0.68 : 0.58 * 0.78))
+            .Select((ligne, i) => ligne.Trim().Length * (i == 0 ? 0.68 : 0.58 * 0.78)
+                                  + (i == 0 ? largeurSuffixeEnCorps : 0))
             .Max();
 
         corps = Math.Min(corps, zone.Width / largeurEnCorps);
@@ -141,19 +171,81 @@ public static class SheetFooterPainter
 
         for (var i = 0; i < lignes.Length; i++)
         {
-            // la première ligne porte l'annonce, les suivantes la précisent : le gras et le
-            // corps les distinguent, comme sur les planches du commerce
+            var texte = lignes[i].Trim();
+
+            // La première ligne porte l'annonce, les suivantes la précisent : le gras et le
+            // corps les distinguent, comme sur les planches du commerce.
+            //
+            // Quand une signature la suit, les deux ne peuvent plus être centrées chacune
+            // de son côté : on centre le COUPLE, puis on écrit de gauche à droite. Les
+            // largeurs sont approchées, comme partout dans cette bande (voir
+            // SheetFooterLayout.LargeurTexte) — on majore, quitte à laisser un peu d'air.
+            if (i == 0 && suffixe.Length > 0)
+            {
+                var largeurAnnonce = texte.Length * 0.68 * corps;
+                var largeurSuffixe = largeurSuffixeEnCorps * corps;
+                var depart = centreX - (largeurAnnonce + largeurSuffixe) / 2;
+
+                sheet.Draw(new Drawables()
+                    .Font(Fonts.SansEmpattement(), FontStyleType.Normal, FontWeight.Bold, FontStretch.Normal)
+                    .FontPointSize(corps)
+                    .FillColor(MagickColors.Black)
+                    .StrokeColor(MagickColors.Transparent)
+                    .TextAlignment(TextAlignment.Left)
+                    .Text(depart, ligneDeBase, texte));
+
+                sheet.Draw(new Drawables()
+                    .Font(Fonts.SansEmpattement(), FontStyleType.Normal, FontWeight.Normal, FontStretch.Normal)
+                    .FontPointSize(corps * FractionSignature)
+                    .FillColor(GrisDeLaPrecision)
+                    .StrokeColor(MagickColors.Transparent)
+                    .TextAlignment(TextAlignment.Left)
+                    .Text(depart + largeurAnnonce, ligneDeBase, suffixe));
+
+                continue;
+            }
+
             var dessin = new Drawables()
                 .Font(Fonts.SansEmpattement(), FontStyleType.Normal,
                     i == 0 ? FontWeight.Bold : FontWeight.Normal, FontStretch.Normal)
                 .FontPointSize(i == 0 ? corps : corps * 0.78)
-                .FillColor(i == 0 ? MagickColors.Black : new MagickColor("#3C3C3C"))
+                .FillColor(i == 0 ? MagickColors.Black : GrisDeLaPrecision)
                 .StrokeColor(MagickColors.Transparent)
                 .TextAlignment(TextAlignment.Center)
-                .Text(centreX, ligneDeBase + i * interligne, lignes[i].Trim());
+                .Text(centreX, ligneDeBase + i * interligne, texte);
 
             sheet.Draw(dessin);
         }
+    }
+
+    /// <summary>Ce qui sépare l'annonce de la signature.</summary>
+    private const string SeparateurSignature = "   ·   ";
+
+    /// <summary>Corps de la signature, en fraction de celui de l'annonce.</summary>
+    private const double FractionSignature = 0.62;
+
+    /// <summary>Le gris des lignes qui précisent — jamais le noir de l'annonce.</summary>
+    private static MagickColor GrisDeLaPrecision => new("#3C3C3C");
+
+    /// <summary>
+    /// Le nom de la boutique SEUL, sans mention : une ligne centrée, en corps réduit.
+    ///
+    /// Le corps suit la même règle qu'une mention d'une ligne, puis se resserre s'il
+    /// dépasse en largeur — un nom long est fréquent (« Photo Concept Maisons-Alfort »).
+    /// </summary>
+    private static void EcrireUneSignature(MagickImage sheet, string nom, PixelRect zone)
+    {
+        var corps = Math.Min(zone.Height * 0.62 * FractionSignature,
+            zone.Width / (nom.Length * 0.58));
+        if (corps < 2) return;
+
+        sheet.Draw(new Drawables()
+            .Font(Fonts.SansEmpattement(), FontStyleType.Normal, FontWeight.Normal, FontStretch.Normal)
+            .FontPointSize(corps)
+            .FillColor(GrisDeLaPrecision)
+            .StrokeColor(MagickColors.Transparent)
+            .TextAlignment(TextAlignment.Center)
+            .Text(zone.X + zone.Width / 2.0, zone.Y + zone.Height / 2 + corps * 0.36, nom));
     }
 
     /// <summary>

@@ -43,6 +43,7 @@ public partial class ReglagesIdentiteView : UserControl
             MontrerLaSource(App.Services.Identite);
             MontrerLeDetourage();
             MontrerLaCouleur();
+            MontrerLeNomDuMagasin(App.Services.Marque);
             Montrer(App.Services.Mail);
         };
     }
@@ -101,8 +102,58 @@ public partial class ReglagesIdentiteView : UserControl
     /// Dit en une phrase la couleur que la DNP applique — et surtout quand elle n'en
     /// applique aucune, ce que rien nulle part ne disait.
     /// </summary>
-    private void MontrerLaCouleur() =>
+    private void MontrerLaCouleur()
+    {
         CouleurResumeText.Text = ResumeCouleurDnp();
+        CorrectionImpressionResumeText.Text = ReglagesCorrectionImpressionView.Resume();
+    }
+
+    // ----- le nom du magasin sur les planches -----
+
+    /// <summary>
+    /// Le nom de la boutique, signé en petit sur TOUTES les planches, à la suite de la
+    /// mention de conformité.
+    ///
+    /// <b>Seul champ de la marque exposé ici</b>, et c'est voulu : mention, logo et code QR
+    /// se règlent une fois pour la boutique, dans le Studio complet, tandis que le nom est
+    /// ce qui change d'un poste identité à l'autre — Arcueil n'est pas Maisons-Alfort. Le
+    /// demander ici évite un aller-retour impossible sur une machine qui n'a que ce
+    /// logiciel-ci. Les deux écrivent le même <c>marque.json</c>.
+    /// </summary>
+    private void MontrerLeNomDuMagasin(MarqueSettings marque)
+    {
+        NomMagasinBox.Text = marque.NomMagasin;
+        DireOuEnEstLeNomDuMagasin(marque.NomMagasin);
+    }
+
+    /// <summary>
+    /// Enregistré à la frappe, comme le reste de cet écran : il n'y a pas de bouton
+    /// « Enregistrer », et un champ qu'il faudrait valider ailleurs ne serait jamais pris.
+    ///
+    /// <b>On repart des réglages ENREGISTRÉS</b> et l'on n'en change qu'un champ : recomposer
+    /// un <c>MarqueSettings</c> depuis cet écran effacerait la mention, le logo et le code QR,
+    /// que ce logiciel-ci ne montre pas.
+    /// </summary>
+    private void OnNomMagasinChange(object sender, TextChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+
+        var nom = NomMagasinBox.Text.Trim();
+        App.Services.SaveMarque(App.Services.Marque with { NomMagasin = nom });
+        DireOuEnEstLeNomDuMagasin(nom);
+    }
+
+    private void DireOuEnEstLeNomDuMagasin(string nom) =>
+        NomMagasinEtatText.Text = string.IsNullOrWhiteSpace(nom)
+            ? "Les planches ne sont pas signées. Tapez le nom pour qu'il paraisse en petit à côté de « PHOTOS CONFORMES »."
+            : $"Enregistré : toutes les planches porteront « {nom} » en petit, à côté de la mention.";
+
+    /// <summary>
+    /// La compensation d'impression — la densité du papier contre celle de l'écran. Le MÊME
+    /// écran que celui des Paramètres du Studio complet, comme le profil couleur.
+    /// </summary>
+    private void OnCorrectionImpression(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesCorrectionImpressionView(), "Compensation d'impression");
 
     /// <summary>
     /// Le résumé du profil couleur, en une phrase. Partagé par les deux écrans de réglages :
