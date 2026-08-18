@@ -12,6 +12,9 @@ public class IdDocumentCatalogTests
     private static readonly Lazy<IReadOnlyList<IdDocumentSpec>> Documents = new(() =>
         IdDocumentCatalog.Load(Chemin()));
 
+    /// <summary>Le référentiel livré, partagé avec les essais de traduction.</summary>
+    internal static string CheminDuReferentiel() => Chemin();
+
     private static string Chemin()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -24,8 +27,16 @@ public class IdDocumentCatalogTests
         throw new FileNotFoundException("catalog/diland-id-documents.json introuvable.");
     }
 
+    /// <summary>
+    /// Un document, désigné par les noms du RÉFÉRENTIEL — donc en anglais.
+    ///
+    /// Depuis le 18/08/2026, <c>Country</c> et <c>Document</c> portent le français : c'est
+    /// ce que l'écran montre. Ces essais-ci vérifient la fidélité au fichier de DiLand, et
+    /// c'est donc son vocabulaire à lui qu'ils emploient. Voir <c>TraductionIdentite</c>.
+    /// </summary>
     private static IdDocumentSpec Trouver(string pays, string document) =>
-        Documents.Value.Single(d => d.Country == pays && d.Document == document);
+        Documents.Value.Single(d =>
+            (d.CountryEn ?? d.Country) == pays && (d.DocumentEn ?? d.Document) == document);
 
     [Fact]
     public void Le_referentiel_se_charge()

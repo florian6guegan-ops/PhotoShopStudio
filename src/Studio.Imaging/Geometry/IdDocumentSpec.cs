@@ -32,8 +32,21 @@ public sealed record IdDocumentSpec(
     double HeadMinMm,
     double HeadMaxMm,
     double? CrownMarginMm = null,
-    double? TargetHeadOverrideMm = null)
+    double? TargetHeadOverrideMm = null,
+    string? CountryEn = null,
+    string? DocumentEn = null)
 {
+    /// <summary>
+    /// Le pays et le type tels que le RÉFÉRENTIEL les écrit — en anglais, fautes de frappe
+    /// comprises. Null pour la norme française de la boutique, qui n'en vient pas.
+    ///
+    /// Ils ne s'affichent nulle part : ils servent à retrouver un document que les
+    /// raccourcis d'un poste ont enregistré avant que l'écran ne parle français, et à ce
+    /// qu'une recherche sur « spain » trouve encore l'Espagne. Voir
+    /// <see cref="TraductionIdentite"/>.
+    /// </summary>
+    public string CleOrigine => $"{CountryEn ?? Country}|{DocumentEn ?? Document}";
+
     /// <summary>Libellé destiné à l'opérateur.</summary>
     public string Label => $"{Country} — {Document} ({WidthMm:0.#} × {HeightMm:0.#} mm)";
 
@@ -141,9 +154,18 @@ public static class IdDocumentCatalog
 
         if (fichier?.Documents is null) return [];
 
+        // TRADUIT DÈS LE CHARGEMENT : le référentiel parle anglais, les écrans parlent au
+        // comptoir. Traduire ici plutôt qu'à l'affichage évite d'y penser dans chacun des
+        // cinq écrans qui montrent un document — et l'un d'eux aurait fini par l'oublier.
+        //
+        // ⚠ LE NOM D'ORIGINE EST GARDÉ, et il le faut : c'est la clé sous laquelle les
+        // raccourcis d'un poste sont déjà enregistrés (« Spain|Passport »). Voir
+        // FindByKey et Search, qui répondent aux deux.
         return fichier.Documents
-            .Select(e => new IdDocumentSpec(e.Pays, e.Document, e.LargeurMm, e.HauteurMm,
-                e.VisageHauteurMm, e.VisageHauteurMaxMm))
+            .Select(e => new IdDocumentSpec(
+                TraductionIdentite.Pays(e.Pays), TraductionIdentite.Document(e.Document),
+                e.LargeurMm, e.HauteurMm, e.VisageHauteurMm, e.VisageHauteurMaxMm,
+                CountryEn: e.Pays, DocumentEn: e.Document))
             .Where(d => d.IsUsable)
             .OrderBy(d => d.Country, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(d => d.Document, StringComparer.CurrentCultureIgnoreCase)
@@ -170,9 +192,14 @@ public static class IdDocumentCatalog
         var pays = morceaux[0].Trim();
         var document = morceaux[1].Trim();
 
+        // Le nom FRANÇAIS d'abord, celui d'ORIGINE ensuite : un poste dont les raccourcis
+        // ont été réglés avant la traduction porte encore « Spain|Passport » dans son
+        // id-raccourcis.json, et sa tuile disparaîtrait sans ce second essai.
         bool Correspond(IdDocumentSpec d) =>
-            d.Country.Equals(pays, StringComparison.OrdinalIgnoreCase) &&
-            d.Document.Equals(document, StringComparison.OrdinalIgnoreCase);
+            (d.Country.Equals(pays, StringComparison.OrdinalIgnoreCase) &&
+             d.Document.Equals(document, StringComparison.OrdinalIgnoreCase))
+            || ((d.CountryEn ?? "").Equals(pays, StringComparison.OrdinalIgnoreCase) &&
+                (d.DocumentEn ?? "").Equals(document, StringComparison.OrdinalIgnoreCase));
 
         return Correspond(IdDocumentSpec.France)
             ? IdDocumentSpec.France
@@ -195,9 +222,14 @@ public static class IdDocumentCatalog
     {
         if (string.IsNullOrWhiteSpace(texte)) return documents;
 
+        // On cherche AUSSI dans le nom d'origine : l'écran affiche « Espagne », mais le
+        // formulaire du client, lui, dit souvent « Spain » — et l'opérateur tape ce qu'il
+        // a sous les yeux.
         var recherche = texte.Trim();
         return documents.Where(d =>
             d.Country.Contains(recherche, StringComparison.CurrentCultureIgnoreCase)
-            || d.Document.Contains(recherche, StringComparison.CurrentCultureIgnoreCase));
+            || d.Document.Contains(recherche, StringComparison.CurrentCultureIgnoreCase)
+            || (d.CountryEn ?? "").Contains(recherche, StringComparison.CurrentCultureIgnoreCase)
+            || (d.DocumentEn ?? "").Contains(recherche, StringComparison.CurrentCultureIgnoreCase));
     }
 }
