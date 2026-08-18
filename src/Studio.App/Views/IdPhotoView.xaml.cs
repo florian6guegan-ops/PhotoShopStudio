@@ -410,18 +410,62 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             if (aOuvrir is not null) await OuvrirLaPhotoAsync(aOuvrir);
         }
 
-        var thumbnails = App.Services.Thumbnails;
-        foreach (var photo in _photos)
+        await ChargerLesVignettesDeLaBandeAsync(ct);
+    }
+
+    /// <summary>
+    /// Remplit la bande de gauche, PAR TRANCHES ET EN PARALLÈLE.
+    ///
+    /// <b>Elles étaient lues une par une, chacune attendue avant la suivante</b> : un seul
+    /// cœur sur huit, et la bande se remplissait vignette après vignette pendant que
+    /// l'opérateur attendait — juste après avoir choisi ses photos, c'est-à-dire au moment
+    /// où il veut travailler. Signalé le 18/08/2026.
+    ///
+    /// ⚠ Le dépôt avait DÉJÀ ce correctif à deux endroits — <c>IdPhotoPickerView</c> et
+    /// <c>PhotoGridView</c>, qui portent le même commentaire — mais pas ici. Trois planches
+    /// de vignettes, deux rapides et une lente : c'est exactement le genre d'écart qu'une
+    /// méthode jumelle laisse s'installer.
+    ///
+    /// Par tranches et non d'un seul lot : la bande se remplit de haut en bas sous les yeux,
+    /// au lieu d'apparaître d'un bloc à la fin.
+    /// </summary>
+    private async Task ChargerLesVignettesDeLaBandeAsync(CancellationToken ct)
+    {
+        var vignettes = App.Services.Thumbnails;
+        var aLire = _photos.Where(p => p.Thumbnail is null).ToList();
+        if (aLire.Count == 0) return;
+
+        var tranche = Math.Max(8, Environment.ProcessorCount * 2);
+
+        for (var debut = 0; debut < aLire.Count; debut += tranche)
         {
             if (ct.IsCancellationRequested) return;
-            if (photo.Thumbnail is not null) continue;
+
+            var lot = aLire.GetRange(debut, Math.Min(tranche, aLire.Count - debut));
+            var lues = new byte[lot.Count][];
+
             try
             {
-                var bytes = await Task.Run(() => thumbnails.GetJpeg(photo.Path, 220), ct);
-                photo.Thumbnail = ToBitmap(bytes);
+                await Task.Run(() => Parallel.For(0, lot.Count,
+                    new ParallelOptions { CancellationToken = ct }, i =>
+                    {
+                        try
+                        {
+                            lues[i] = vignettes.GetJpeg(lot[i].Path, 220);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // une vignette illisible laisse la case vide, le rang reste
+                            FileLog.Write($"Identité : vignette illisible — {lot[i].Path}", ex);
+                        }
+                    }), ct);
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception) { }
+
+            if (ct.IsCancellationRequested) return;
+
+            for (var i = 0; i < lot.Count; i++)
+                if (lues[i] is { } octets) lot[i].Thumbnail = ToBitmap(octets);
         }
     }
 
