@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Studio Photo Identité"
-        WindowState="Maximized" WindowStyle="None"
+        WindowState="Normal" WindowStyle="None"
         Background="{DynamicResource PageBrush}"
         FontFamily="Segoe UI"
         MinWidth="1024" MinHeight="700">
@@ -16,7 +16,10 @@
         <!-- EN-TÊTE, façon maquette : fin, la marque à gauche, « Client suivant » à droite.
              Il ne porte PAS de bouton Retour permanent : le parcours d'identité va toujours
              de l'avant, et le retour appartient à chaque écran. -->
-        <Border Grid.Row="0" Background="{DynamicResource CardBrush}" Padding="16,10">
+        <!-- L'en-tête TIENT LIEU DE BARRE DE TITRE : la fenêtre n'en a pas, et une fois
+             restaurée en mode fenêtre elle serait autrement impossible à déplacer. -->
+        <Border Grid.Row="0" Background="{DynamicResource CardBrush}" Padding="16,10"
+                MouseLeftButtonDown="OnEnteteAttrapee">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -64,6 +67,19 @@
                             MinWidth="70" MinHeight="46" FontSize="19" Margin="10,0,0,0"
                             ToolTip="Réglages : d'où viennent les photos, et le compte d'envoi"
                             Click="OnReglages">⚙</Button>
+                    <!-- RÉDUIRE ET RESTAURER.
+                         La fenêtre n'a pas de barre de titre — WindowStyle="None" — et donc
+                         aucun des trois boutons de Windows : impossible de la mettre dans la
+                         barre des tâches pour aller voir un dossier, ni de sortir du plein
+                         écran. « On ne peut pas réduire l'app non plus », 18/08/2026. -->
+                    <Button x:Name="BoutonReduire" Style="{StaticResource FlatButton}"
+                            MinWidth="70" MinHeight="46" FontSize="17" Margin="10,0,0,0"
+                            ToolTip="Réduire dans la barre des tâches"
+                            Click="OnReduire">—</Button>
+                    <Button x:Name="BoutonAgrandir" Style="{StaticResource FlatButton}"
+                            MinWidth="70" MinHeight="46" FontSize="15" Margin="10,0,0,0"
+                            ToolTip="Plein écran ou fenêtre"
+                            Click="OnAgrandirOuRestaurer">❐</Button>
                     <Button x:Name="BoutonQuitter" Style="{StaticResource FlatButton}"
                             MinWidth="70" MinHeight="46" FontSize="17" Margin="10,0,0,0"
                             ToolTip="Fermer Studio Photo Identité"

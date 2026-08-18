@@ -122,6 +122,59 @@ public partial class FenetreIdentite : Window
 
         if (PresentationSource.FromVisual(this) is HwndSource source)
             source.AddHook(SurMessageDeFenetre);
+
+        // ⚠ ON MAXIMISE ICI, ET SURTOUT PAS DANS LE XAML.
+        //
+        // Déclarée « Maximized » dès le XAML, la fenêtre était dimensionnée par Windows
+        // AVANT que le hook ci-dessus n'existe : une fenêtre sans bordure maximisée déborde
+        // alors de l'épaisseur du cadre de redimensionnement — huit pixels de chaque côté,
+        // hors de l'écran. C'est le « mal cadré, il doit y avoir 5 mm de chaque » signalé le
+        // 18/08/2026, et c'est aussi pourquoi le correctif du 17/08 sur la barre des tâches
+        // ne se voyait qu'à moitié : il répondait à un message qui était déjà passé.
+        WindowState = WindowState.Maximized;
+    }
+
+    /// <summary>
+    /// Réduire dans la barre des tâches.
+    ///
+    /// Sans barre de titre, aucun des trois boutons de Windows n'existe : le poste ne
+    /// pouvait ni s'effacer pour aller chercher un fichier, ni sortir du plein écran.
+    /// </summary>
+    private void OnReduire(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    /// <summary>Plein écran ou fenêtre, d'un même bouton — comme un double-clic sur un titre.</summary>
+    private void OnAgrandirOuRestaurer(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+
+    /// <summary>
+    /// L'en-tête fait office de barre de titre : on y attrape la fenêtre pour la déplacer,
+    /// et le double-clic bascule entre plein écran et fenêtre.
+    ///
+    /// Sans cela, une fenêtre restaurée restait là où Windows l'avait posée, sans aucun
+    /// moyen de la bouger — <c>WindowStyle="None"</c> supprime la barre de titre, donc le
+    /// geste avec.
+    /// </summary>
+    private void OnEnteteAttrapee(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            OnAgrandirOuRestaurer(sender, e);
+            return;
+        }
+
+        // DragMove lève si le bouton a déjà été relâché — un clic bref sur l'en-tête suffit
+        // à provoquer la course. La fenêtre ne doit pas se fermer pour si peu.
+        try
+        {
+            if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+        }
+        catch (InvalidOperationException)
+        {
+            // le bouton était déjà relâché : il n'y a rien à déplacer
+        }
     }
 
     private const int WmGetMinMaxInfo = 0x0024;
