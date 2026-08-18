@@ -30,7 +30,19 @@ public partial class FenetreIdentite : Window
 
         Navigator.Navigated += SurNavigation;
 
-        Loaded += (_, _) => AccueilStudio.Rentrer();
+        Loaded += (_, _) =>
+        {
+            AccueilStudio.Rentrer();
+
+            // Le bandeau de mise a jour : il n'installe rien, il annonce. La surveillance
+            // est partagee avec la fenetre du Studio complet — c'est elle qui sait que ce
+            // logiciel-ci suit les publications « identite-v », et pas celles du Studio.
+            SurveillanceMaj.Demarrer(Dispatcher, version =>
+            {
+                MajBannerText.Text = $"⬆  Mise à jour {version.ToString(3)} disponible";
+                MajBanner.Visibility = Visibility.Visible;
+            });
+        };
         Closed += (_, _) => Navigator.Navigated -= SurNavigation;
     }
 
@@ -49,6 +61,14 @@ public partial class FenetreIdentite : Window
     /// photos, c'est un obstacle sans contrepartie. Retiré à la demande, le 14/08/2026.
     /// </summary>
     private void OnReglages(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new ReglagesIdentiteView(), "Réglages");
+
+    /// <summary>
+    /// Le bandeau mene aux reglages, ou vit le bouton « Installer ». On n'installe jamais
+    /// depuis le bandeau lui-meme : un clic malheureux ne doit pas remplacer le logiciel
+    /// devant un client.
+    /// </summary>
+    private void OnMajBannerClicked(object sender, MouseButtonEventArgs e) =>
         Navigator.Go(new ReglagesIdentiteView(), "Réglages");
 
     /// <summary>

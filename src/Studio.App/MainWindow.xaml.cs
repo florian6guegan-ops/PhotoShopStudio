@@ -46,58 +46,29 @@ public partial class MainWindow : Window
 
     // ----- notification de mise à jour -----
 
-    private readonly DispatcherTimer _majTimer = new() { Interval = TimeSpan.FromHours(3) };
     private bool _majDemarree;
-
-    /// <summary>La version qui tourne, telle qu'elle a été compilée.</summary>
-    private static Version VersionInstallee =>
-        typeof(App).Assembly.GetName().Version ?? new Version(0, 0, 0);
 
     /// <summary>
     /// Lance la surveillance des mises à jour : une fois tout de suite, puis toutes les
     /// trois heures. <b>Jamais en mode borne</b> — le bandeau ne doit pas s'afficher devant
     /// un client, et cette méthode n'est appelée que pour l'opérateur et le poste identité.
     ///
-    /// Un poste reste ouvert toute la journée, et des versions paraissent en journée : sans
-    /// la vérification périodique, l'opérateur ne verrait une correction que le lendemain.
+    /// La surveillance elle-même vit dans <see cref="SurveillanceMaj"/>, partagée avec la
+    /// fenêtre de Studio Photo Identité : c'est elle qui sait quelle suite de publications
+    /// concerne CE logiciel. Ici on ne fait que lever le bandeau.
     /// </summary>
     private void DemarrerVerificationMaj()
     {
         if (_majDemarree) return;   // identité puis déverrouillage : ne pas empiler
         _majDemarree = true;
 
-        _majTimer.Tick += (_, _) => _ = VerifierMajEnFond();
-        _majTimer.Start();
-        _ = VerifierMajEnFond();
+        SurveillanceMaj.Demarrer(Dispatcher, version =>
+        {
+            MajBannerText.Text = $"⬆  Mise à jour {version.ToString(3)} disponible";
+            MajBanner.Visibility = Visibility.Visible;
+        });
     }
 
-    /// <summary>
-    /// Demande au dépôt s'il existe une version plus récente, et lève le bandeau le cas
-    /// échéant. <b>Rien n'est installé</b> : on annonce, l'opérateur décide dans les
-    /// Paramètres. Silencieux sur panne réseau — <see cref="MiseAJour.DernierePubliee"/> rend
-    /// null plutôt que de lever.
-    /// </summary>
-    private async Task VerifierMajEnFond()
-    {
-        try
-        {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-            var publiee = await new MiseAJour(client).DernierePubliee();
-
-            if (publiee is null || !MiseAJour.EstPlusRecente(publiee.Version, VersionInstallee))
-                return;
-
-            Dispatcher.Invoke(() =>
-            {
-                MajBannerText.Text = $"⬆  Mise à jour {publiee.Version.ToString(3)} disponible";
-                MajBanner.Visibility = Visibility.Visible;
-            });
-        }
-        catch (Exception ex)
-        {
-            FileLog.Write("Vérification de mise à jour en fond impossible", ex);
-        }
-    }
 
     private void OnMajBannerClicked(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
         Navigator.Go(new SettingsView(), "Paramètres");

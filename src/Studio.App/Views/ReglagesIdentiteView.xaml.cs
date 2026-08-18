@@ -310,13 +310,16 @@ public partial class ReglagesIdentiteView : UserControl
     /// <summary>
     /// Un dépôt, deux applications, deux suites d'étiquettes : <c>v1.5.19</c> pour le
     /// Studio, <c>identite-v1.5.19</c> pour Identité — cette dernière en préversion, donc
-    /// hors de « la dernière publication ». Voir <see cref="MiseAJour.PrefixeEtiquette"/>.
+    /// hors de « la dernière publication ».
+    ///
+    /// <b>La règle vit dans <see cref="SurveillanceMaj"/></b>, avec le bandeau qui l'annonce :
+    /// deux endroits qui choisissent le préfixe finiraient par en choisir deux différents, et
+    /// le poste annoncerait la version de l'autre logiciel.
     /// </summary>
     private static MiseAJour Verificateur(System.Net.Http.HttpClient client) =>
-        new(client) { PrefixeEtiquette = EstIdentite ? "identite-v" : "v" };
+        SurveillanceMaj.Verificateur(client);
 
-    private static Version VersionInstallee =>
-        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0);
+    private static Version VersionInstallee => SurveillanceMaj.VersionInstallee;
 
     private VersionPubliee? _majProposee;
 

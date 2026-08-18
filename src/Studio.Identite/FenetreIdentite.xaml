@@ -40,6 +40,21 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- LE BANDEAU DE MISE À JOUR. Il existait dans le Studio complet et
+                         nulle part ailleurs : ce logiciel-ci, né plus tard avec sa propre
+                         fenêtre, n'annonçait RIEN. Les postes identité ont tourné deux
+                         versions en retard sans que personne à la boutique puisse le savoir.
+                         Il n'installe rien : on annonce, l'opérateur décide aux réglages. -->
+                    <Border x:Name="MajBanner" CornerRadius="8" Padding="14,8"
+                            Margin="0,0,10,0" VerticalAlignment="Center"
+                            Cursor="Hand" Visibility="Collapsed"
+                            Background="{DynamicResource TitleBrush}"
+                            MouseLeftButtonUp="OnMajBannerClicked"
+                            ToolTip="Une nouvelle version est disponible. Cliquez pour l'installer depuis les réglages.">
+                        <TextBlock x:Name="MajBannerText" Text="⬆  Mise à jour disponible"
+                                   Foreground="White" FontSize="15" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                    </Border>
                     <Button x:Name="BoutonClientSuivant" Style="{StaticResource FlatButton}"
                             MinWidth="200" MinHeight="46" FontSize="17"
                             ToolTip="Repartir de zéro pour le client suivant"
