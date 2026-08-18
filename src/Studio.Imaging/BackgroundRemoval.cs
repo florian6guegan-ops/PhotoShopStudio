@@ -81,9 +81,32 @@ public static class BackgroundRemoval
     /// Huit mesures : assez pour que la médiane ait un sens, assez peu pour suivre un
     /// changement de modèle ou de taille dans la même séance.
     /// </summary>
-    private static readonly Queue<TimeSpan> Dernieres = new();
+    private static readonly Queue<Mesure> Dernieres = new();
 
     private const int MesuresRetenues = 8;
+
+    /// <summary>
+    /// Une durée mesurée, AVEC la taille sur laquelle elle a été mesurée.
+    ///
+    /// <b>La taille manquait, et c'est ce qui faisait mentir la barre.</b> Le même écran
+    /// détoure tantôt une vignette d'aperçu (1 600 px de côté, moins de 3 Mpx) tantôt la
+    /// photo d'origine pour la planche (24 Mpx) : entre les deux, le réseau coûte la même
+    /// chose — son entrée est figée à 1024 × 1024 — mais les deux redimensionnements qui
+    /// l'encadrent, eux, suivent la taille. Une médiane qui mélangeait les deux populations
+    /// n'était juste pour aucune. Signalé le 18/08/2026 : « le temps de chargement n'est
+    /// toujours pas représentatif du vrai temps que ça prend ».
+    /// </summary>
+    private readonly record struct Mesure(TimeSpan Duree, double Megapixels);
+
+    /// <summary>
+    /// Ce que coûte une image de <paramref name="megapixels"/>, en unités arbitraires.
+    ///
+    /// Un coût FIXE — le réseau, toujours en 1024 × 1024 — plus une part proportionnelle à
+    /// la taille : les deux redimensionnements et la lecture des pixels. Le rapport entre
+    /// les deux vient des mesures de l'atelier du 03/08/2026 : environ 4 s pour un aperçu
+    /// de 2 Mpx, environ 6 s pour une photo de 24 Mpx sur la même carte.
+    /// </summary>
+    private static double Cout(double megapixels) => 1 + Math.Max(0, megapixels) / 12.0;
 
     /// <summary>
     /// Durée à annoncer : la MÉDIANE des dernières mesures, ou null tant qu'aucune n'existe.
@@ -92,17 +115,41 @@ public static class BackgroundRemoval
     /// la séance, celui qui charge le réseau — tirerait la moyenne vers le haut pendant
     /// tout le reste de la journée.
     /// </summary>
-    public static TimeSpan? DureeTypique
-    {
-        get
-        {
-            lock (Dernieres)
-            {
-                if (Dernieres.Count == 0) return null;
+    public static TimeSpan? DureeTypique => DureeTypiquePour(null);
 
-                var triees = Dernieres.OrderBy(d => d).ToList();
-                return triees[triees.Count / 2];
+    /// <summary>
+    /// Durée à annoncer pour une image de <paramref name="megapixels"/> mégapixels.
+    ///
+    /// <b>On ramène chaque mesure à son coût, puis on l'étend à celui qu'on attend.</b> Les
+    /// mesures ne portent pas toutes sur la même taille — un aperçu de cadrage et une
+    /// planche pleine résolution se suivent dans la même séance —, et la médiane brute de
+    /// durées n'était donc juste pour aucune des deux. La médiane des durées RAPPORTÉES au
+    /// coût, elle, est la même grandeur pour toutes : c'est la vitesse du poste.
+    ///
+    /// <paramref name="megapixels"/> null : on rend la durée typique telle quelle, pour les
+    /// appelants qui ne savent pas encore sur quoi ils vont travailler.
+    ///
+    /// Null tant qu'aucune mesure n'existe — l'écran a ses ordres de grandeur pour ce cas.
+    /// </summary>
+    public static TimeSpan? DureeTypiquePour(double? megapixels)
+    {
+        lock (Dernieres)
+        {
+            if (Dernieres.Count == 0) return null;
+
+            if (megapixels is not { } voulus)
+            {
+                var brutes = Dernieres.Select(m => m.Duree).OrderBy(d => d).ToList();
+                return brutes[brutes.Count / 2];
             }
+
+            // secondes par unité de coût, sur chaque mesure — puis la médiane
+            var vitesses = Dernieres
+                .Select(m => m.Duree.TotalSeconds / Cout(m.Megapixels))
+                .OrderBy(v => v)
+                .ToList();
+
+            return TimeSpan.FromSeconds(vitesses[vitesses.Count / 2] * Cout(voulus));
         }
     }
 
@@ -120,6 +167,10 @@ public static class BackgroundRemoval
     /// </summary>
     internal static ImageMagick.MagickImage? DecouperLeSujet(ImageMagick.MagickImage image)
     {
+        // Relevé AVANT l'appel : c'est ce qui permet de savoir si CE détourage-ci a payé le
+        // chargement du réseau. Après coup, la session est prête dans les deux cas.
+        var reseauDejaCharge = BiRefNetMatting.SessionPrete;
+
         var chrono = System.Diagnostics.Stopwatch.StartNew();
 
         var masque = BiRefNetMatting.CalculerMasque(image) ?? CalculerMasqueSujet(image);
@@ -127,9 +178,20 @@ public static class BackgroundRemoval
 
         DerniereDuree = chrono.Elapsed;
 
+        // ⚠ LE CHARGEMENT DU RÉSEAU N'EST PAS UN DÉTOURAGE. Le premier appel de la séance
+        // le paie — plusieurs secondes pour poser le modèle sur la carte —, et le retenir
+        // ici gonflerait toutes les estimations suivantes d'un temps qui ne se repaiera
+        // jamais. Il est mesuré à part, et l'écran l'ajoute tant que la session n'est pas
+        // prête (voir BiRefNetMatting.DureeDuChargement).
+        var duree = chrono.Elapsed;
+        if (!reseauDejaCharge
+            && BiRefNetMatting.DureeDuChargement is { } chargement
+            && duree > chargement)
+            duree -= chargement;
+
         lock (Dernieres)
         {
-            Dernieres.Enqueue(chrono.Elapsed);
+            Dernieres.Enqueue(new Mesure(duree, image.Width * (double)image.Height / 1_000_000.0));
             while (Dernieres.Count > MesuresRetenues) Dernieres.Dequeue();
         }
 

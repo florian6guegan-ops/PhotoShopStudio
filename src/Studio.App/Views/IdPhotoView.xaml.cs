@@ -1090,7 +1090,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // d'attente, sans que rien n'annonce combien de temps.
         CommencerLAttente(GrayBackgroundCheck.IsChecked == true
             ? "Pose du fond gris"
-            : "Pose du fond blanc");
+            : "Pose du fond blanc", MegapixelsDeLApercu);
 
         try
         {
@@ -1397,7 +1397,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         await _apercuFile.WaitAsync();
         try
         {
-            CommencerLAttente("Détection de la personne");
+            CommencerLAttente("Détection de la personne", MegapixelsDeLApercu);
 
             await Task.Run(() =>
             {
@@ -1679,7 +1679,9 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 // paie, puisque la file a pu faire attendre quelques secondes.
                 jeton.ThrowIfCancellationRequested();
 
-                if (vaDetourer) CommencerLAttente("Détourage de la personne");
+                if (vaDetourer)
+                    CommencerLAttente("Détourage de la personne",
+                        largeur * (double)hauteur / 1_000_000.0);
 
                 var octets = await Task.Run(() =>
                 {
@@ -1746,11 +1748,38 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// planche, et l'estimation suivante héritait de cette mesure-là. Voir
     /// <see cref="MasqueSujet.DureeTypique"/>.
     /// </summary>
-    private static TimeSpan EstimationDuDetourage() =>
-        MasqueSujet.DureeTypique ??
-        (BiRefNetMatting.Actif && BiRefNetMatting.EstInstalle
-            ? TimeSpan.FromSeconds(4.3)
-            : TimeSpan.FromSeconds(1.2));
+    /// <param name="megapixels">
+    /// La taille de ce qui va être détouré. Le réseau coûte la même chose quelle que soit
+    /// l'image — son entrée est figée à 1024 × 1024 — mais les redimensionnements qui
+    /// l'encadrent suivent la taille, et l'écran traite tantôt une vignette de 1 600 px,
+    /// tantôt la photo d'origine. Voir <see cref="BackgroundRemoval.DureeTypiquePour"/>.
+    /// </param>
+    private static TimeSpan EstimationDuDetourage(double megapixels)
+    {
+        var reseau = BiRefNetMatting.Actif && BiRefNetMatting.EstInstalle;
+
+        var detourage = BackgroundRemoval.DureeTypiquePour(megapixels)
+                        ?? (reseau ? TimeSpan.FromSeconds(4.3) : TimeSpan.FromSeconds(1.2));
+
+        // ⚠ LE PREMIER DÉTOURAGE DE LA SÉANCE PAIE LE CHARGEMENT DU RÉSEAU, et c'est
+        // justement celui où l'opérateur regarde la barre — un demi-gigaoctet posé sur la
+        // carte graphique. Il était annoncé comme un détourage ordinaire, d'où « le temps
+        // n'est pas représentatif » (18/08/2026).
+        //
+        // La durée mesurée quand on la connaît ; sinon un ordre de grandeur relevé au
+        // journal sur la Quadro P2000 de l'atelier. Mieux vaut annoncer large et finir en
+        // avance que l'inverse : c'est l'attente qui dépasse l'annonce qui inquiète.
+        if (reseau && !BiRefNetMatting.SessionPrete)
+            detourage += BiRefNetMatting.DureeDuChargement ?? TimeSpan.FromSeconds(10);
+
+        return detourage;
+    }
+
+    /// <summary>
+    /// Taille de l'aperçu sur lequel travaille cet écran — la vignette de 1 600 px, dans le
+    /// rapport d'un portrait. Approchée : elle ne sert qu'à annoncer une attente.
+    /// </summary>
+    private const double MegapixelsDeLApercu = 1600 * 1200 / 1_000_000.0;
 
     /// <summary>
     /// Montre la barre et la fait avancer. Sans effet si l'attente est déjà affichée — un
@@ -1760,12 +1789,16 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// Ce qu'on attend, dit à l'opérateur : « Détourage de la personne », « Pose du fond ».
     /// C'est le même calcul dessous, mais pas la même chose de son point de vue.
     /// </param>
-    private void CommencerLAttente(string quoi)
+    /// <param name="megapixels">
+    /// Ce qu'on va traiter, en mégapixels — l'estimation en dépend. Voir
+    /// <see cref="EstimationDuDetourage"/>.
+    /// </param>
+    private void CommencerLAttente(string quoi, double megapixels)
     {
         if (_attenteTimer is not null) return;
 
         _attenteQuoi = quoi;
-        _attenteEstimee = EstimationDuDetourage();
+        _attenteEstimee = EstimationDuDetourage(megapixels);
         _attenteChrono.Restart();
 
         AttenteBarre.Value = 0;

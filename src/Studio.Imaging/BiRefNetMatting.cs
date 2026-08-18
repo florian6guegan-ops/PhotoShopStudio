@@ -87,6 +87,11 @@ public static class BiRefNetMatting
             // toucher aux réglages, et le poste a pu changer de carte entre-temps.
             _modelesEcartes.Clear();
             DernierRepli = null;
+
+            // Le prochain détourage repaiera le chargement : l'oublier ici ferait annoncer
+            // une attente courte juste après un changement de modèle, c'est-à-dire au seul
+            // moment où l'on sait qu'elle sera longue.
+            DureeDuChargement = null;
         }
     }
 
@@ -130,6 +135,30 @@ public static class BiRefNetMatting
 
     private static InferenceSession? _session;
     private static bool _tentative;
+
+    /// <summary>
+    /// Ce qu'a duré le chargement du réseau sur ce poste, ou null tant qu'il n'a pas été
+    /// chargé.
+    ///
+    /// <b>Il ne se confond pas avec un détourage</b>, et c'est pourquoi il se mesure à part :
+    /// un modèle de plusieurs centaines de mégaoctets posé sur la carte graphique prend
+    /// bien plus de temps qu'un masque, et il ne se paie qu'UNE fois par séance. Mêlé aux
+    /// autres mesures, il rendait toutes les estimations fausses — trop longues ensuite,
+    /// bien trop courtes la première fois.
+    /// </summary>
+    public static TimeSpan? DureeDuChargement { get; private set; }
+
+    /// <summary>
+    /// Vrai quand le réseau est déjà en mémoire : le prochain détourage ne paie plus le
+    /// chargement. C'est ce que l'écran doit savoir pour annoncer une attente juste.
+    ///
+    /// Faux aussi quand le chargement a échoué — le détourage passe alors par la méthode
+    /// couleur, qui est autrement plus rapide et n'a rien à charger.
+    /// </summary>
+    public static bool SessionPrete
+    {
+        get { lock (Verrou) return _session is not null; }
+    }
 
     /// <summary>Le fichier de modèle réellement chargé dans <see cref="_session"/>.</summary>
     private static string? _modeleCharge;
@@ -379,9 +408,20 @@ public static class BiRefNetMatting
                 options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
 
                 options.AppendExecutionProvider_DML(0);
+
+                // ⚠ CE CHARGEMENT SE COMPTE EN SECONDES, et il tombe sur le PREMIER
+                // détourage de la séance — celui que l'opérateur attend devant un client.
+                // La barre l'annonçait comme un détourage ordinaire (4,3 s) parce que rien
+                // ne le mesurait à part : « le temps de chargement n'est toujours pas
+                // représentatif du vrai temps que ça prend », 18/08/2026. On le chronomètre
+                // donc, et l'écran l'ajoute tant que la session n'est pas prête.
+                var chrono = System.Diagnostics.Stopwatch.StartNew();
                 _session = new InferenceSession(chemin, options);
+                DureeDuChargement = chrono.Elapsed;
+
                 _modeleCharge = Path.GetFileName(chemin);
-                Log?.Invoke($"BiRefNet : « {_modeleCharge} » chargé sur la carte graphique (DirectML).");
+                Log?.Invoke($"BiRefNet : « {_modeleCharge} » chargé sur la carte graphique (DirectML) " +
+                            $"en {DureeDuChargement.Value.TotalSeconds:0.0} s.");
                 return _session;
             }
             catch (Exception ex)
