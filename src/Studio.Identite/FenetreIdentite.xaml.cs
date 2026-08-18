@@ -123,6 +123,11 @@ public partial class FenetreIdentite : Window
         if (PresentationSource.FromVisual(this) is HwndSource source)
             source.AddHook(SurMessageDeFenetre);
 
+        // Le premier plan suit le FOCUS : voir PasserAuPremierPlan. Posé avant la
+        // maximisation, pour que le tout premier affichage couvre déjà la barre des tâches.
+        Activated += (_, _) => PasserAuPremierPlan(true);
+        Deactivated += (_, _) => PasserAuPremierPlan(false);
+
         // ⚠ ON MAXIMISE ICI, ET SURTOUT PAS DANS LE XAML.
         //
         // Déclarée « Maximized » dès le XAML, la fenêtre était dimensionnée par Windows
@@ -143,11 +148,60 @@ public partial class FenetreIdentite : Window
     private void OnReduire(object sender, RoutedEventArgs e) =>
         WindowState = WindowState.Minimized;
 
+    /// <summary>
+    /// Vrai tant que la fenêtre doit couvrir l'ÉCRAN ENTIER, barre des tâches comprise.
+    ///
+    /// C'est l'état de départ : le poste identité est une borne de comptoir, et il doit
+    /// remplir l'écran comme le fait ID Maker. Le bouton ❐ en sort pour repasser en
+    /// fenêtre ordinaire, bornée à la zone de travail.
+    /// </summary>
+    private bool _pleinEcran = true;
+
     /// <summary>Plein écran ou fenêtre, d'un même bouton — comme un double-clic sur un titre.</summary>
-    private void OnAgrandirOuRestaurer(object sender, RoutedEventArgs e) =>
-        WindowState = WindowState == WindowState.Maximized
-            ? WindowState.Normal
-            : WindowState.Maximized;
+    private void OnAgrandirOuRestaurer(object sender, RoutedEventArgs e)
+    {
+        _pleinEcran = !_pleinEcran;
+
+        if (_pleinEcran)
+        {
+            // ⚠ PASSER PAR « NORMAL » pour que Windows REDEMANDE la taille maximisée : sans
+            // cet aller-retour, une fenêtre déjà maximisée garde la zone calculée sous
+            // l'ancien réglage, et le bouton paraît sans effet.
+            WindowState = WindowState.Normal;
+            WindowState = WindowState.Maximized;
+            PasserAuPremierPlan(true);
+        }
+        else
+        {
+            PasserAuPremierPlan(false);
+            WindowState = WindowState.Normal;
+        }
+    }
+
+    /// <summary>
+    /// Met (ou retire) la fenêtre au-dessus de tout, y compris la barre des tâches.
+    ///
+    /// <b>Couvrir l'écran entier ne suffit pas à masquer la barre des tâches</b> : elle est
+    /// elle-même au premier plan, et ce sont les quarante derniers pixels de la page qui
+    /// passent dessous — le défaut signalé le 17/08/2026 sur les boutons du bas.
+    ///
+    /// <b>Le premier plan suit le FOCUS, et n'est jamais permanent.</b> Une fenêtre
+    /// définitivement au-dessus recouvrirait les boîtes de dialogue du logiciel lui-même —
+    /// « Fermer Studio Photo Identité ? », l'avertissement d'un fond non détouré — qui
+    /// s'ouvrent sans propriétaire déclaré : le poste paraîtrait figé sur une question
+    /// invisible. Dès que le focus part, la fenêtre redescend et la barre des tâches
+    /// revient.
+    /// </summary>
+    private void PasserAuPremierPlan(bool devant)
+    {
+        if (!_pleinEcran && devant) return;
+
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero) return;
+
+        SetWindowPos(handle, devant ? HwndTopMost : HwndNoTopMost, 0, 0, 0, 0,
+            SwpNoMove | SwpNoSize | SwpNoActivate);
+    }
 
     /// <summary>
     /// L'en-tête fait office de barre de titre : on y attrape la fenêtre pour la déplacer,
@@ -180,7 +234,7 @@ public partial class FenetreIdentite : Window
     private const int WmGetMinMaxInfo = 0x0024;
     private const int MoniteurLePlusProche = 0x0002;
 
-    private static IntPtr SurMessageDeFenetre(
+    private IntPtr SurMessageDeFenetre(
         IntPtr fenetre, int message, IntPtr wParam, IntPtr lParam, ref bool traite)
     {
         if (message != WmGetMinMaxInfo) return IntPtr.Zero;
@@ -193,13 +247,26 @@ public partial class FenetreIdentite : Window
 
         var cotes = Marshal.PtrToStructure<MINMAXINFO>(lParam);
 
+        // ÉCRAN ENTIER en plein écran, zone de TRAVAIL en mode fenêtre.
+        //
+        // Le poste identité est une borne de comptoir : il doit couvrir l'écran comme ID
+        // Maker, barre des tâches comprise — « la fenêtre n'apparaît pas complètement en
+        // plein écran », 18/08/2026. La zone de travail reste le bon choix dès qu'on
+        // repasse en fenêtre, où la barre des tâches doit rester atteignable.
+        //
+        // ⚠ Couvrir l'écran entier ne suffit PAS à masquer la barre des tâches : elle est
+        // au premier plan, et c'est ainsi que les quarante derniers pixels de la page
+        // passaient dessous (17/08/2026). C'est <see cref="PasserAuPremierPlan"/> qui règle
+        // cela, en passant la fenêtre au-dessus TANT QU'ELLE A LE FOCUS.
+        var zone = _pleinEcran ? infos.rcMonitor : infos.rcWork;
+
         // Les positions sont relatives au coin haut-gauche du MONITEUR, pas du bureau :
         // sur un second écran placé à gauche, des coordonnées absolues enverraient la
         // fenêtre hors de l'écran.
-        cotes.ptMaxPosition.X = infos.rcWork.Left - infos.rcMonitor.Left;
-        cotes.ptMaxPosition.Y = infos.rcWork.Top - infos.rcMonitor.Top;
-        cotes.ptMaxSize.X = infos.rcWork.Right - infos.rcWork.Left;
-        cotes.ptMaxSize.Y = infos.rcWork.Bottom - infos.rcWork.Top;
+        cotes.ptMaxPosition.X = zone.Left - infos.rcMonitor.Left;
+        cotes.ptMaxPosition.Y = zone.Top - infos.rcMonitor.Top;
+        cotes.ptMaxSize.X = zone.Right - zone.Left;
+        cotes.ptMaxSize.Y = zone.Bottom - zone.Top;
 
         // Sans la borne haute, Windows autorise encore l'agrandissement à l'écran entier
         // et le réglage ci-dessus ne tient pas.
@@ -209,6 +276,17 @@ public partial class FenetreIdentite : Window
         traite = true;
         return IntPtr.Zero;
     }
+
+    private static readonly IntPtr HwndTopMost = new(-1);
+    private static readonly IntPtr HwndNoTopMost = new(-2);
+    private const int SwpNoSize = 0x0001;
+    private const int SwpNoMove = 0x0002;
+    private const int SwpNoActivate = 0x0010;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr fenetre, IntPtr apres,
+        int x, int y, int largeur, int hauteur, int drapeaux);
 
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr fenetre, int drapeaux);
