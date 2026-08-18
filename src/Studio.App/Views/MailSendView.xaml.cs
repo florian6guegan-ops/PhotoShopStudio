@@ -242,17 +242,45 @@ public partial class MailSendView : UserControl
             // gèlerait la caisse deux minutes (c'est le délai posé dans PhotoMailer)
             await Task.Run(() =>
             {
-                var i = 0;
-                foreach (var photo in _photos)
-                {
-                    var nomDeBase = $"{DateTime.Now:HHmmss}-{++i:00}";
+                var chrono = System.Diagnostics.Stopwatch.StartNew();
 
-                    var fichiers = PhotoMailer.Preparer(
-                        photo.SourcePath, photo.Crop, photo.RotationQuarterTurns,
-                        photo.FineRotationDegrees, photo.Adjustments, dossier, nomDeBase);
+                // ⚠ PRÉPARATION EN PARALLÈLE, ENVOI ENSUITE.
+                //
+                // Les deux se faisaient photo par photo, en alternance : on rendait une
+                // photo de 24 Mpx (plusieurs secondes), on ouvrait une connexion SMTP pour
+                // elle seule, on téléversait, puis on recommençait. Rien ne recouvrait
+                // rien. « L'envoi des photos par mail est extrêmement long », 18/08/2026.
+                //
+                // DEUX À LA FOIS, pas davantage : une photo de 24 Mpx tient plusieurs
+                // centaines de méga-octets dans ImageMagick le temps du rendu, et le
+                // détourage du fond passe de toute façon par un verrou unique (le réseau
+                // ONNX ne se partage pas). Au-delà, on échangerait du temps contre de la
+                // mémoire — c'est ce qui fait tomber le poste, pas ce qui l'accélère.
+                var horodatage = DateTime.Now.ToString("HHmmss");
 
-                    PhotoMailer.Envoyer(reglages, adresses, fichiers, mot);
-                }
+                var lots = new PhotosDuClient[_photos.Count];
+
+                Parallel.For(0, _photos.Count,
+                    new ParallelOptions { MaxDegreeOfParallelism = 2 },
+                    i =>
+                    {
+                        var photo = _photos[i];
+                        lots[i] = PhotoMailer.Preparer(
+                            photo.SourcePath, photo.Crop, photo.RotationQuarterTurns,
+                            photo.FineRotationDegrees, photo.Adjustments, dossier,
+                            $"{horodatage}-{i + 1:00}");
+                    });
+
+                var prepare = chrono.Elapsed;
+                FileLog.Write(
+                    $"Courriel : {_photos.Count} photo(s) préparée(s) en {prepare.TotalSeconds:0.0} s.");
+
+                // UNE SEULE connexion pour tous les messages : voir EnvoyerPlusieurs
+                PhotoMailer.EnvoyerPlusieurs(reglages, adresses, lots, mot);
+
+                FileLog.Write(
+                    $"Courriel : envoi terminé en {chrono.Elapsed.TotalSeconds:0.0} s " +
+                    $"(dont {prepare.TotalSeconds:0.0} s de préparation).");
             });
 
             EtatText.Text = "Envoi effectué.";

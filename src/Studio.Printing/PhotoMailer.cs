@@ -243,6 +243,95 @@ public static class PhotoMailer
     }
 
     /// <summary>
+    /// Envoie PLUSIEURS lots de photos — un message par lot, mais UNE SEULE connexion.
+    ///
+    /// <b>Pourquoi cette méthode existe.</b> L'écran d'envoi appelait <see cref="Envoyer"/>
+    /// dans une boucle, et chaque appel ouvrait son propre <see cref="SmtpClient"/> : une
+    /// connexion TCP, une négociation TLS et une authentification Gmail PAR PHOTO. Sur
+    /// trois photos, c'est trois fois le prix d'entrée avant même de téléverser le premier
+    /// octet. « L'envoi des photos par mail est extrêmement long », 18/08/2026.
+    ///
+    /// <b>Un message par lot, et non un seul message pour tout.</b> Les trois fichiers
+    /// d'une photo pèsent plusieurs mégaoctets ; tout réunir dépasserait vite les 25 Mo que
+    /// Gmail accepte, et l'envoi entier serait refusé au lieu d'une photo. Le découpage
+    /// protège donc le comptoir — c'est la connexion qu'il fallait mutualiser, pas le
+    /// message.
+    /// </summary>
+    /// <param name="lots">Les fichiers préparés, une entrée par photo.</param>
+    public static void EnvoyerPlusieurs(
+        MailSettings reglages,
+        IReadOnlyList<string> destinataires,
+        IReadOnlyList<PhotosDuClient> lots,
+        string? motDuPhotographe = null)
+    {
+        ArgumentNullException.ThrowIfNull(reglages);
+        ArgumentNullException.ThrowIfNull(destinataires);
+        ArgumentNullException.ThrowIfNull(lots);
+
+        if (lots.Count == 0) return;
+
+        // un seul lot : rien à mutualiser, on passe par le chemin ordinaire
+        if (lots.Count == 1)
+        {
+            Envoyer(reglages, destinataires, lots[0], motDuPhotographe);
+            return;
+        }
+
+        if (!reglages.EstUtilisable)
+            throw new InvalidOperationException(
+                "L'envoi par courriel n'est pas configuré : " + reglages.CeQuiManque() +
+                ".\n\nOuvrez Paramètres → Envoi par courriel pour le renseigner.");
+
+        var propres = destinataires
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Select(a => a.Trim())
+            .ToList();
+
+        if (propres.Count == 0)
+            throw new ArgumentException("Aucune adresse de destination.", nameof(destinataires));
+
+        var chrono = System.Diagnostics.Stopwatch.StartNew();
+        var octets = 0L;
+
+        using var client = Client(reglages);
+
+        for (var i = 0; i < lots.Count; i++)
+        {
+            var photos = lots[i];
+
+            foreach (var fichier in photos.Tous)
+                if (!File.Exists(fichier))
+                    throw new FileNotFoundException($"Fichier à envoyer introuvable : {fichier}", fichier);
+
+            using var message = new MailMessage
+            {
+                From = new MailAddress(reglages.Expediteur, reglages.NomExpediteur),
+                // numéroté : trois messages « Vos photos » côte à côte dans une boîte de
+                // réception ne se distinguent pas, et le client croit à un doublon
+                Subject = $"Vos photos ({i + 1}/{lots.Count})",
+                Body = Corps(motDuPhotographe),
+                IsBodyHtml = false,
+            };
+
+            message.To.Add(propres[0]);
+            foreach (var autre in propres.Skip(1))
+                message.Bcc.Add(autre);
+
+            foreach (var fichier in photos.Tous)
+            {
+                message.Attachments.Add(new Attachment(fichier));
+                octets += new FileInfo(fichier).Length;
+            }
+
+            Expedier(reglages, message, string.Join(", ", propres), photos.Tous.Count, client);
+        }
+
+        Log?.Invoke(
+            $"Courriel : {lots.Count} message(s), {octets / 1024 / 1024} Mo téléversés " +
+            $"en {chrono.Elapsed.TotalSeconds:0.0} s sur UNE connexion.");
+    }
+
+    /// <summary>
     /// Prévient le client que sa commande est prête à être retirée en magasin.
     ///
     /// <b>Aucune pièce jointe</b>, et c'est tout le sujet : ce message ne livre pas les
@@ -465,30 +554,59 @@ public static class PhotoMailer
     /// et pour la même raison : un poste qui sait envoyer les photos d'un client sait
     /// envoyer son rapport, sans rien de plus à régler.
     /// </summary>
+    /// <param name="partage">
+    /// Client SMTP déjà ouvert, quand plusieurs messages se suivent — voir
+    /// <see cref="EnvoyerPlusieurs"/>. Null : on en ouvre un pour ce seul message, et on
+    /// le referme.
+    /// </param>
     internal static void Expedier(
-        MailSettings reglages, MailMessage message, string destinataire, int fichiers)
+        MailSettings reglages, MailMessage message, string destinataire, int fichiers,
+        SmtpClient? partage = null)
     {
-        using var client = new SmtpClient(reglages.Serveur, reglages.Port)
-        {
-            EnableSsl = true,   // STARTTLS sur le port 587, ce qu'attend Gmail
-            Credentials = new NetworkCredential(reglages.Expediteur, reglages.MotDePasseApplication),
-            DeliveryMethod = SmtpDeliveryMethod.Network,
-            Timeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds,
-        };
+        var client = partage ?? Client(reglages);
 
         try
         {
+            var chrono = System.Diagnostics.Stopwatch.StartNew();
             client.Send(message);
+
+            // La DURÉE est écrite, et c'est nouveau : « l'envoi est extrêmement long » ne
+            // se vérifiait nulle part, faute d'un seul chiffre au journal. On sait
+            // maintenant ce que coûte le téléversement, message par message.
             Log?.Invoke(fichiers > 0
-                ? $"Photos envoyées à {destinataire} ({fichiers} fichiers)."
-                : $"Message envoyé à {destinataire} (sans pièce jointe).");
+                ? $"Photos envoyées à {destinataire} ({fichiers} fichiers) " +
+                  $"en {chrono.Elapsed.TotalSeconds:0.0} s."
+                : $"Message envoyé à {destinataire} (sans pièce jointe) " +
+                  $"en {chrono.Elapsed.TotalSeconds:0.0} s.");
         }
         catch (SmtpException ex)
         {
             Log?.Invoke($"Envoi à {destinataire} impossible : {ex.StatusCode} — {ex.Message}");
             throw new InvalidOperationException(Expliquer(ex), ex);
         }
+        finally
+        {
+            // le client PARTAGÉ appartient à l'appelant : il l'utilise pour les messages
+            // suivants, et le referme lui-même
+            if (partage is null) client.Dispose();
+        }
     }
+
+    /// <summary>
+    /// Le client SMTP, réglé comme Gmail l'attend.
+    ///
+    /// Sorti d'<see cref="Expedier"/> pour être RÉUTILISÉ : ouvrir la connexion, négocier
+    /// le TLS et s'authentifier coûte plusieurs secondes, et c'était payé une fois par
+    /// photo. Voir <see cref="EnvoyerPlusieurs"/>.
+    /// </summary>
+    private static SmtpClient Client(MailSettings reglages) =>
+        new(reglages.Serveur, reglages.Port)
+        {
+            EnableSsl = true,   // STARTTLS sur le port 587, ce qu'attend Gmail
+            Credentials = new NetworkCredential(reglages.Expediteur, reglages.MotDePasseApplication),
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            Timeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds,
+        };
 
     /// <summary>
     /// Envoie un message d'essai à l'adresse d'expédition elle-même.
