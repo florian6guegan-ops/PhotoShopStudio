@@ -17,6 +17,15 @@ namespace Studio.Identite;
 /// d'être neuf sans rien réécrire du parcours d'identité, qui sert en boutique depuis des
 /// semaines. Les écrans seront remplacés un à un par ceux de la maquette.
 ///
+/// <b>⚠ ResizeMode="NoResize", et ce n'est pas un choix de confort.</b> Une fenêtre
+/// <c>WindowStyle="None"</c> restée redimensionnable garde une BORDURE DE REDIMENSIONNEMENT
+/// que rien ne peint : mesuré le 18/08/2026, la fenêtre faisait 1920 × 1080 pour une zone
+/// client de 1906 × 1066 posée en (7,7) — sept pixels de noir tout autour de l'interface.
+/// C'est le « mal calibré » signalé trois fois, et aucune correction de la TAILLE de la
+/// fenêtre ne pouvait l'enlever, puisque le cadre est en dehors d'elle. Le prix à payer est
+/// qu'on ne la redimensionne plus à la souris — sans objet sur une borne, qui vit en plein
+/// écran et se déplace par son en-tête.
+///
 /// <b>Pas de sortie vers le Studio complet.</b> Sur un poste identité verrouillé du Studio,
 /// cinq appuis dans le coin plus le PIN déverrouillaient le Studio de la boutique. Ici il
 /// n'y a pas de Studio derrière : le geste ne fait rien, et c'est juste. L'engrenage du
@@ -164,6 +173,11 @@ public partial class FenetreIdentite : Window
 
         if (_pleinEcran)
         {
+            // ⚠ NoResize D'ABORD : c'est lui qui supprime la bordure de redimensionnement,
+            // et donc les sept pixels de noir autour de l'interface. Le poser après la
+            // maximisation laisserait le cadre le temps d'un affichage.
+            ResizeMode = ResizeMode.NoResize;
+
             // ⚠ PASSER PAR « NORMAL » pour que Windows REDEMANDE la taille maximisée : sans
             // cet aller-retour, une fenêtre déjà maximisée garde la zone calculée sous
             // l'ancien réglage, et le bouton paraît sans effet.
@@ -174,8 +188,39 @@ public partial class FenetreIdentite : Window
         else
         {
             PasserAuPremierPlan(false);
+
+            // FENÊTRE FLOTTANTE, comme ID Maker : on la déplace par l'en-tête et on la
+            // redimensionne par ses bords. La bordure de redimensionnement revient donc —
+            // elle ne coûte rien ici, la fenêtre ne touchant plus les bords de l'écran.
+            ResizeMode = ResizeMode.CanResize;
             WindowState = WindowState.Normal;
+            PoserLaTailleFlottante();
         }
+    }
+
+    /// <summary>Vrai une fois que la taille flottante a été posée : on ne la reposera plus.</summary>
+    private bool _tailleFlottantePosee;
+
+    /// <summary>
+    /// Donne à la fenêtre flottante une taille et une place utilisables : les quatre
+    /// cinquièmes de l'écran, centrée.
+    ///
+    /// Sans cela, quitter le plein écran rend la taille « normale » que WPF n'a jamais
+    /// calculée — celle du XAML, 1024 × 700 posée dans un coin. Une seule fois : ensuite,
+    /// c'est la taille que l'opérateur a donnée qui compte, et la lui reprendre à chaque
+    /// bascule serait le meilleur moyen de lui faire détester le bouton.
+    /// </summary>
+    private void PoserLaTailleFlottante()
+    {
+        if (_tailleFlottantePosee) return;
+        _tailleFlottantePosee = true;
+
+        var travail = SystemParameters.WorkArea;
+
+        Width = Math.Max(MinWidth, travail.Width * 0.8);
+        Height = Math.Max(MinHeight, travail.Height * 0.8);
+        Left = travail.Left + (travail.Width - Width) / 2;
+        Top = travail.Top + (travail.Height - Height) / 2;
     }
 
     /// <summary>
