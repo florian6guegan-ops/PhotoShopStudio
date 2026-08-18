@@ -194,6 +194,70 @@ public sealed class DnpDriver
     /// </summary>
     private static bool Plausible(double ppp) => ppp is >= 100 and <= 1200;
 
+
+    /// <summary>
+    /// Les cotes du format déclaré, en pouces : (largeur du ROULEAU, longueur tirée).
+    ///
+    /// Le nom de l'énumération les porte déjà — <c>Size6x4</c>, c'est six pouces de rouleau
+    /// et quatre de longueur — mais on les écrit ici plutôt que de disséquer un nom : une
+    /// valeur qu'on ne connaît pas doit rendre null et ne rien faire, pas produire un
+    /// nombre inventé sur une machine qu'on n'a jamais vue.
+    /// </summary>
+    private static (double Rouleau, double Longueur)? CotesEnPouces(DnpMediaSize taille) =>
+        taille switch
+        {
+            DnpMediaSize.Size5x3 => (5, 3),
+            DnpMediaSize.Size5x5 => (5, 5),
+            DnpMediaSize.Size5x7 => (5, 7),
+            DnpMediaSize.Size6x4 => (6, 4),
+            DnpMediaSize.Size6x4p5 => (6, 4.5),
+            DnpMediaSize.Size6x6 => (6, 6),
+            DnpMediaSize.Size6x8 => (6, 8),
+            DnpMediaSize.Size6x9 => (6, 9),
+            DnpMediaSize.Size8x4 => (8, 4),
+            DnpMediaSize.Size8x5 => (8, 5),
+            DnpMediaSize.Size8x6 => (8, 6),
+            DnpMediaSize.Size8x8 => (8, 8),
+            DnpMediaSize.Size8x10 => (8, 10),
+            DnpMediaSize.Size8x12 => (8, 12),
+            _ => null,
+        };
+
+    /// <summary>
+    /// La trame doit-elle être pivotée d'un quart de tour avant d'être remise au SDK ?
+    ///
+    /// <b>⚠ LA MACHINE N'ORIENTE RIEN.</b> Elle attend une trame dont la LARGEUR est celle du
+    /// rouleau : pour un 6×4, du 1844 × 1240 — six pouces en largeur, quatre en longueur. On
+    /// lui envoyait l'image telle que le rendu l'avait faite, et pour un produit PORTRAIT
+    /// c'est l'inverse : 1240 × 1844. La machine lit alors la trame en travers et coupe ce
+    /// qui dépasse.
+    ///
+    /// Signalé le 18/08/2026, commande 18-006 : une E-Photo portrait sortie coupée en
+    /// paysage. Le rendu, lui, était juste — 1240 × 1844 pour un produit de 105 × 156,1 mm,
+    /// photo entière, aucun recadrage. Tout s'est joué à l'envoi.
+    ///
+    /// <b>Pourquoi personne ne l'avait vu.</b> Le seul produit DNP portrait de la boutique
+    /// est l'E-Photo, et elle n'était pas joignable depuis le poste identité jusqu'au
+    /// 17/08. Les planches d'identité, elles, sont en 156,1 × 105 — donc déjà dans le sens
+    /// de la trame, et elles sortent juste depuis des semaines.
+    ///
+    /// Format inconnu : on ne pivote pas. Deviner sur une machine qu'on n'a jamais vue
+    /// coûterait une feuille à chaque tirage.
+    /// </summary>
+    public static bool DoitPivoter(DnpMediaSize taille, int largeurImage, int hauteurImage)
+    {
+        if (largeurImage <= 0 || hauteurImage <= 0) return false;
+        if (CotesEnPouces(taille) is not { } cotes) return false;
+
+        // Un format carré n'a pas de sens à défendre, et une image carrée non plus.
+        if (Math.Abs(cotes.Rouleau - cotes.Longueur) < 0.01) return false;
+        if (largeurImage == hauteurImage) return false;
+
+        var trameCouchee = cotes.Rouleau > cotes.Longueur;
+        var imageCouchee = largeurImage > hauteurImage;
+
+        return trameCouchee != imageCouchee;
+    }
     /// <summary>Tirages restants sur le rouleau chargé.</summary>
     public int GetMediaRemaining(int portNumber) => CspStatInterop.GetMediaCounter(portNumber);
 

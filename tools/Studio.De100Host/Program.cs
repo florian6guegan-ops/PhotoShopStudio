@@ -508,6 +508,25 @@ De100Message TirerSurDnpSousVerrou(De100Message request, De100DnpPrintRequest de
         log($"Rouleau {etat.MediaSize} et tirage plus petit : on reclame {taille} " +
             "(la machine coupe, deux tirages par feuille).");
 
+    // ⚠ LA TRAME SUIT LE ROULEAU, PAS LE RENDU.
+    //
+    // La machine n'oriente rien : elle attend une trame dont la LARGEUR est celle du
+    // rouleau — pour un 6x4, du 1844 x 1240. On lui remettait l'image telle que le rendu
+    // l'avait faite ; pour un produit PORTRAIT c'est l'inverse, et elle lit alors la trame
+    // en travers et coupe ce qui depasse.
+    //
+    // Commande 18-006 du 18/08/2026 : une E-Photo portrait sortie coupee en paysage. Le
+    // rendu etait pourtant juste — 1240 x 1844 pour un produit de 105 x 156,1 mm, photo
+    // entiere, aucun recadrage. Les planches d'identite, elles, sont deja dans le sens de la
+    // trame (1844 x 1240) et sortent juste depuis des semaines : c'est pour ca que personne
+    // ne l'avait vu.
+    if (DnpDriver.DoitPivoter(taille, image.Width, image.Height))
+    {
+        image.RotateFlip(System.Drawing.RotateFlipType.Rotate90FlipNone);
+        log($"Trame pivotee d'un quart de tour pour {taille} : " +
+            $"{image.Width}x{image.Height} (la largeur suit le rouleau).");
+    }
+
     var faits = 0;
     for (var i = 0; i < Math.Max(1, demande.Copies); i++)
     {

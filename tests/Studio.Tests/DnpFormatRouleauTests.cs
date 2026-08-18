@@ -189,4 +189,72 @@ public class DnpFormatRouleauTests
             DnpMediaSize.Size6x4,
             DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, 1844 / h, 1240 / v));
     }
+
+    // ————— dans quel sens la trame part à la machine —————
+
+    /// <summary>
+    /// <b>L'E-PHOTO PORTRAIT SORTIE COUPÉE EN PAYSAGE</b>, commande 18-006 du 18/08/2026.
+    ///
+    /// La machine n'oriente rien : elle attend une trame dont la LARGEUR est celle du
+    /// rouleau. Un produit portrait — l'E-Photo, 105 × 156,1 mm — se rend en 1240 × 1844, et
+    /// remis tel quel à un 6×4 il est lu en travers puis rogné.
+    /// </summary>
+    [Fact]
+    public void Une_trame_portrait_sur_un_6x4_doit_pivoter()
+    {
+        Assert.True(DnpDriver.DoitPivoter(DnpMediaSize.Size6x4, 1240, 1844));
+    }
+
+    /// <summary>
+    /// ⚠ Et la planche d'identité, elle, ne doit PAS bouger : elle est en 156,1 × 105, donc
+    /// rendue en 1844 × 1240 — déjà dans le sens de la trame. Elle sort juste depuis des
+    /// semaines, et ce correctif ne doit rien y changer.
+    /// </summary>
+    [Fact]
+    public void Une_planche_identite_sur_un_6x4_ne_bouge_pas()
+    {
+        Assert.False(DnpDriver.DoitPivoter(DnpMediaSize.Size6x4, 1844, 1240));
+    }
+
+    /// <summary>
+    /// Le 6×8 est un format DEBOUT : c'est l'inverse. Une trame couchée doit y pivoter, une
+    /// trame debout non — sans quoi le correctif casserait le rouleau d'Arcueil.
+    /// </summary>
+    [Theory]
+    [InlineData(1844, 2492, false)]   // debout sur un 6x8 : rien à faire
+    [InlineData(2492, 1844, true)]    // couchée sur un 6x8 : à pivoter
+    public void Le_6x8_est_un_format_debout(int largeur, int hauteur, bool attendu)
+    {
+        Assert.Equal(attendu, DnpDriver.DoitPivoter(DnpMediaSize.Size6x8, largeur, hauteur));
+    }
+
+    /// <summary>
+    /// Un format CARRÉ n'a pas de sens à défendre, et une image carrée non plus : on ne
+    /// pivote pas pour rien.
+    /// </summary>
+    [Fact]
+    public void Un_format_ou_une_image_carres_ne_pivotent_pas()
+    {
+        Assert.False(DnpDriver.DoitPivoter(DnpMediaSize.Size6x6, 1240, 1844));
+        Assert.False(DnpDriver.DoitPivoter(DnpMediaSize.Size6x4, 1500, 1500));
+    }
+
+    /// <summary>
+    /// ⚠ Format INCONNU : on ne pivote pas. Deviner le sens de la trame sur une machine
+    /// qu'on n'a jamais vue coûterait une feuille à chaque tirage.
+    /// </summary>
+    [Theory]
+    [InlineData(DnpMediaSize.None)]
+    [InlineData(DnpMediaSize.PostcardRewind)]
+    public void Sur_un_format_inconnu_on_ne_pivote_pas(DnpMediaSize taille)
+    {
+        Assert.False(DnpDriver.DoitPivoter(taille, 1240, 1844));
+    }
+
+    /// <summary>Une image sans dimensions ne fait rien lever.</summary>
+    [Fact]
+    public void Une_image_vide_ne_pivote_pas()
+    {
+        Assert.False(DnpDriver.DoitPivoter(DnpMediaSize.Size6x4, 0, 0));
+    }
 }
