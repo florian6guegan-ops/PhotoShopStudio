@@ -167,10 +167,25 @@ public sealed class DnpDriver
     /// de 1844 × 1240 : à 16:17 « format demandé Size6x4 » (juste), à 16:22 « Size6x8 » — une
     /// demi-feuille perdue. Seule la réponse de la machine avait changé.
     ///
-    /// On ne renonce donc plus. La machine d'abord, quand elle répond quelque chose de
-    /// plausible ; le FICHIER ensuite — Studio rend ses pages à la définition du produit et
-    /// l'écrit dans le PNG ; 300 ppp en dernier ressort, définition de toutes les DNP de la
-    /// boutique. Les trois s'accordent en fonctionnement normal.
+    /// <b>⚠ ET LE 17/08 ON A CRU QUE LA MACHINE SE TAISAIT. C'EST FAUX : ELLE RÉPOND UN
+    /// RÉGLAGE.</b> <c>GetResolutionH/V</c> ne dit pas « je compose à tant de points par
+    /// pouce » une fois pour toutes — elle rend la définition RÉGLÉE dans la machine pour le
+    /// travail suivant (le SDK a le <c>SetResolution</c> qui va avec), et n'importe quel
+    /// logiciel qui partage cette DS620 la change sous nos pieds. Sur kodakidpc, IDMaker
+    /// tourne à côté de Studio sur la même machine.
+    ///
+    /// La preuve, relevée le 19/08/2026 : sur les journaux de kodakidpc, la ligne « la DNP
+    /// n'annonce pas sa définition » ne paraît <b>pas une seule fois</b> — la machine a donc
+    /// toujours répondu du plausible — et pourtant six planches 1844 × 1240 identiques sont
+    /// parties, les unes en <c>Size6x4</c>, les autres en <c>Size6x8</c> le même après-midi.
+    /// Une machine réglée à 600 ppp mesure notre trame 3,07 × 2,07 pouces : plus un 6×4, donc
+    /// plus de découpe, donc une feuille 15 × 20 entière pour une planche 10 × 15.
+    ///
+    /// <b>Le FICHIER d'abord, donc.</b> Il ne bouge pas, LUI : Studio rend ses pages à la
+    /// définition du produit et l'écrit dans le PNG, et cette trame est fabriquée pour la
+    /// machine — sa taille physique, c'est celle-là. La machine ensuite, si le fichier ne
+    /// porte rien de plausible ; 300 ppp en dernier ressort, définition de toutes les DNP de
+    /// la boutique.
     /// </summary>
     /// <param name="machineH">Ce que rend <c>GetResolutionH</c>, ou 0 si elle se tait.</param>
     /// <param name="machineV">Ce que rend <c>GetResolutionV</c>, ou 0 si elle se tait.</param>
@@ -179,8 +194,8 @@ public sealed class DnpDriver
     public static (double H, double V) DefinitionRetenue(
         double machineH, double machineV, double fichierH, double fichierV)
     {
-        if (Plausible(machineH) && Plausible(machineV)) return (machineH, machineV);
         if (Plausible(fichierH) && Plausible(fichierV)) return (fichierH, fichierV);
+        if (Plausible(machineH) && Plausible(machineV)) return (machineH, machineV);
 
         return (DefinitionParDefaut, DefinitionParDefaut);
     }

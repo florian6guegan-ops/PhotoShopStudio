@@ -459,7 +459,9 @@ De100Message TirerSurDnp(De100Message request)
 ///
 /// La REGLE vit dans DnpDriver.DefinitionRetenue, ou elle est eprouvee par des essais ;
 /// ici on ne fait que lui apporter ses trois chiffres et dire au journal ce qu on a retenu.
-/// Voir cette methode pour la demi-feuille perdue de kodakidpc le 17/08/2026.
+/// Voir cette methode pour les demi-feuilles perdues de kodakidpc (17 et 18/08/2026) : la
+/// definition annoncee par la DNP est un REGLAGE que le logiciel voisin change sous nos
+/// pieds, pas une propriete de la machine. On mesure donc la trame, jamais la machine.
 /// </summary>
 (double H, double V) ResolutionUtile(DnpDriver pilote, int port, System.Drawing.Bitmap image)
 {
@@ -476,11 +478,13 @@ De100Message TirerSurDnp(De100Message request)
     var retenue = DnpDriver.DefinitionRetenue(
         machineH, machineV, image.HorizontalResolution, image.VerticalResolution);
 
-    // On ne le dit QUE si la machine s est tue : en fonctionnement normal cette ligne
-    // paraitrait a chaque tirage sans rien apprendre a personne.
+    // On ne le dit QUE si la machine annonce autre chose que la trame : en fonctionnement
+    // normal cette ligne paraitrait a chaque tirage sans rien apprendre a personne. Quand
+    // elle parait, elle nomme le vrai coupable — c est ce qui a manque tout l ete, le
+    // journal se contentant d annoncer sobrement « format demande Size6x8 ».
     if (retenue.H != machineH || retenue.V != machineV)
-        log($"La DNP n annonce pas sa definition ({machineH}x{machineV} ppp) : on retient " +
-            $"{retenue.H:0}x{retenue.V:0} ppp plutot que de renoncer a la decoupe.");
+        log($"La DNP annonce {machineH:0}x{machineV:0} ppp, la trame est faite pour " +
+            $"{retenue.H:0}x{retenue.V:0} ppp : c est la trame qui decide de la decoupe.");
 
     return retenue;
 }

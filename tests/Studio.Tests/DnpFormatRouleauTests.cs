@@ -133,14 +133,52 @@ public class DnpFormatRouleauTests
     // ————— avec quelle définition on mesure le tirage —————
 
     /// <summary>
-    /// En fonctionnement normal, c'est la machine qui parle : elle seule sait à quelle
-    /// définition elle compose.
+    /// <b>LES 15 × 20 ALÉATOIRES DE KODAKIDPC, 18/08/2026.</b>
+    ///
+    /// La définition annoncée par la DNP n'est pas une propriété de la machine : c'est le
+    /// RÉGLAGE posé pour le travail suivant, et le logiciel voisin (IDMaker, sur ce poste)
+    /// le change quand il veut. Six planches identiques de 1844 × 1240 sont parties le même
+    /// après-midi, les unes coupées, les autres sur une feuille entière — sans que la
+    /// machine se taise une seule fois.
+    ///
+    /// C'est donc la TRAME qui décide : elle, on sait comment on l'a faite.
     /// </summary>
     [Fact]
-    public void La_definition_de_la_machine_l_emporte()
+    public void La_definition_du_fichier_l_emporte_sur_le_reglage_de_la_machine()
     {
-        Assert.Equal((600.0, 600.0),
+        Assert.Equal((300.0, 300.0),
             DnpDriver.DefinitionRetenue(machineH: 600, machineV: 600, fichierH: 300, fichierV: 300));
+    }
+
+    /// <summary>
+    /// Le tirage exact du 18/08/2026 à 18:03 : machine réglée à 600 ppp, planche d'identité
+    /// de 1844 × 1240 rendue à 300, rouleau 6×8. Elle DOIT se réclamer en 6×4 — sinon la
+    /// moitié de la feuille part à la poubelle, et la trame est pivotée par-dessus le marché.
+    /// </summary>
+    [Fact]
+    public void Une_planche_se_coupe_meme_si_la_machine_est_reglee_a_600()
+    {
+        var (h, v) = DnpDriver.DefinitionRetenue(600, 600, fichierH: 300, fichierV: 300);
+
+        Assert.Equal(
+            DnpMediaSize.Size6x4,
+            DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, 1844 / h, 1240 / v));
+        Assert.False(DnpDriver.DoitPivoter(DnpMediaSize.Size6x4, 1844, 1240));
+    }
+
+    /// <summary>
+    /// Un produit rendu à 600 ppp se mesure à 600 : la règle suit le fichier, pas un
+    /// nombre écrit en dur. Sa trame 6×4 fait alors 3688 × 2480.
+    /// </summary>
+    [Fact]
+    public void Un_fichier_rendu_a_600_se_mesure_a_600()
+    {
+        var (h, v) = DnpDriver.DefinitionRetenue(300, 300, fichierH: 600, fichierV: 600);
+
+        Assert.Equal((600.0, 600.0), (h, v));
+        Assert.Equal(
+            DnpMediaSize.Size6x4,
+            DnpDriver.TailleDeTirage(DnpMediaSize.Size6x8, 3688 / h, 2480 / v));
     }
 
     /// <summary>
