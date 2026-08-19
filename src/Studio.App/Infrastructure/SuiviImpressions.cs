@@ -680,11 +680,11 @@ public sealed class SuiviImpressions : ObservableObject
 
     /// <summary>La commande qui occupe cette machine en ce moment, s'il y en a une.</summary>
     private TravailImpression? Occupant(string cle) =>
-        _travaux.FirstOrDefault(t => t.Ressource?.Cle == cle);
+        _travaux.FirstOrDefault(t => RessourceDImpression.Croisent(t.Ressource?.Cle, cle));
 
     /// <summary>La dernière qui attend sur cette machine — celle derrière qui on se range.</summary>
     private TravailImpression? DerniereDeLaFile(string cle) =>
-        _file.LastOrDefault(t => t.Ressource?.Cle == cle);
+        _file.LastOrDefault(t => RessourceDImpression.Croisent(t.Ressource?.Cle, cle));
 
     /// <summary>
     /// Machines dont la commande suivante est en train de démarrer.
@@ -700,7 +700,8 @@ public sealed class SuiviImpressions : ObservableObject
 
     /// <summary>Vrai quand cette machine est prise, ou sur le point de l'être.</summary>
     private bool EstOccupee(string cle) =>
-        Occupant(cle) is not null || _clesEnDemarrage.Contains(cle);
+        Occupant(cle) is not null ||
+        _clesEnDemarrage.Any(k => RessourceDImpression.Croisent(k, cle));
 
     /// <summary>
     /// La dernière machine sur laquelle chaque file a réellement sorti du papier.
@@ -756,13 +757,15 @@ public sealed class SuiviImpressions : ObservableObject
     /// <summary>Remet les rangs à jour : ils se lisent dans le bandeau, ils doivent être justes.</summary>
     private void Renumeroter()
     {
-        var rangs = new Dictionary<string, int>();
-
-        foreach (var attente in _file)
+        // Comptées une par une plutôt que groupées par clé : « 3ᵉ de la file » doit compter
+        // celles qui visent le même papier, pas celles dont la clé s'écrit pareil.
+        for (var i = 0; i < _file.Count; i++)
         {
-            var cle = attente.Ressource?.Cle ?? "";
-            rangs[cle] = rangs.TryGetValue(cle, out var rang) ? rang + 1 : 1;
-            attente.Rang = rangs[cle];
+            var cle = _file[i].Ressource?.Cle;
+
+            _file[i].Rang = 1 + _file
+                .Take(i)
+                .Count(precedente => RessourceDImpression.Croisent(precedente.Ressource?.Cle, cle));
         }
     }
 
@@ -821,9 +824,15 @@ public sealed class SuiviImpressions : ObservableObject
         if (EstOccupee(cle)) return;
 
         if (machineLiberee is { Length: > 0 }) _derniereMachine[cle] = machineLiberee;
-        else _derniereMachine.TryGetValue(cle, out machineLiberee);
+        else
+            // Relevée sur une clé QUI CROISE, pas seulement sur la même : la commande qui
+            // se réveille peut demander « auto » là où celle d'avant nommait sa finition.
+            // Sans ça, sa feuille blanche n'aurait plus de machine où sortir.
+            machineLiberee = _derniereMachine
+                .FirstOrDefault(p => RessourceDImpression.Croisent(p.Key, cle)).Value;
 
-        var suivant = _file.FirstOrDefault(t => t.Ressource?.Cle == cle && !t.EnPause);
+        var suivant = _file.FirstOrDefault(
+            t => RessourceDImpression.Croisent(t.Ressource?.Cle, cle) && !t.EnPause);
         if (suivant is null) return;
 
         _file.Remove(suivant);
@@ -882,7 +891,8 @@ public sealed class SuiviImpressions : ObservableObject
 
             // La machine n'est nommée qu'à l'envoi : c'est le moment où les commandes qui
             // attendent derrière peuvent enfin dire OÙ elles sortiront.
-            foreach (var attente in _file.Where(t => t.Ressource?.Cle == travail.Ressource?.Cle))
+            foreach (var attente in _file.Where(
+                         t => RessourceDImpression.Croisent(t.Ressource?.Cle, travail.Ressource?.Cle)))
                 attente.MachineAttendue = travail.Machine;
         });
 
