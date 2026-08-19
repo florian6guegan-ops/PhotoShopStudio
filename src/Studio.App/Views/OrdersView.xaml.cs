@@ -10,6 +10,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Studio.App.Infrastructure;
+using Studio.Core.Catalog;
 using Studio.Core.Domain;
 using Studio.Imaging.Geometry;
 using Studio.Store;
@@ -64,6 +65,8 @@ public partial class OrdersView : UserControl
 
     private void Refresh()
     {
+        RelireLesProduitsDIdentite();
+
         _commandes = App.Services.Store.ScanRecent(days: 7)
             .OrderByDescending(o => o.CreatedAt)
             .ToList();
@@ -229,32 +232,29 @@ public partial class OrdersView : UserControl
         _ => true,
     };
 
-    /// <summary>
-    /// Une enveloppe de TIRAGES, c'est-à-dire sans une seule photo d'identité.
-    ///
-    /// <b>La règle s'est durcie le 06/08/2026.</b> Il suffisait d'une ligne de tirage pour
-    /// qu'une enveloppe MIXTE — des 10×15 et une planche d'identité dans la même commande —
-    /// paraisse dans « Tirages photo ». On y retrouvait donc les planches qu'on avait
-    /// justement rangées dans leur propre onglet, et l'intérêt de séparer les deux tombait.
-    ///
-    /// Rien ne se perd : une enveloppe mixte reste dans « Photos d'identité » et dans
-    /// « Tout ».
-    /// </summary>
     private static bool EstDesTirages(Envelope enveloppe) =>
-        enveloppe.Lines.Any(l => !EstIdentite(l))
-        && !enveloppe.Lines.Any(EstIdentite);
+        GenreDeCommande.EstDesTirages(enveloppe, TrouverLeProduit, ProduitsDIdentite);
+
+    private static bool EstIdentite(OrderLine ligne) =>
+        GenreDeCommande.EstIdentite(ligne, TrouverLeProduit, ProduitsDIdentite);
+
+    private static Product? TrouverLeProduit(string code) => App.Services.Catalog.Find(code);
 
     /// <summary>
-    /// Une ligne de planche d'identité.
+    /// Les produits que l'écran d'identité propose tels quels — l'E-Photo et ce que
+    /// l'exploitant y a ajouté depuis.
     ///
-    /// On interroge d'abord le CATALOGUE : un produit à <c>Sheet</c> est une planche, et
-    /// c'est la seule définition qui vaille. Repli sur la taille de case portée par
-    /// l'article, pour les commandes enregistrées avant que ce champ existe — et pour
-    /// celles dont le produit a été supprimé du catalogue depuis.
+    /// Relus à chaque ouverture de l'écran et pas plus souvent : la liste tient dans un
+    /// fichier du catalogue, et la relire à chaque ligne de chaque enveloppe la rouvrirait
+    /// des centaines de fois pour rien.
     /// </summary>
-    private static bool EstIdentite(OrderLine ligne) =>
-        App.Services.Catalog.Find(ligne.ProductCode)?.Sheet is not null
-        || ligne.Items.Any(i => i.SheetCellWidthMm is > 0);
+    private static IReadOnlyCollection<string> ProduitsDIdentite { get; set; } = [];
+
+    private static void RelireLesProduitsDIdentite() =>
+        ProduitsDIdentite = IdShortcuts.Load(App.Services.CatalogDir, Logiciel.EstIdentite)
+            .Where(r => r.Kind == IdShortcutKind.Produit)
+            .Select(r => r.Cle)
+            .ToList();
 
     // ----- retourner aux photos d'une commande -----
 

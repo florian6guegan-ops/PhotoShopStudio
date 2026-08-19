@@ -218,7 +218,7 @@ public sealed class DnpDriver
     /// valeur qu'on ne connaît pas doit rendre null et ne rien faire, pas produire un
     /// nombre inventé sur une machine qu'on n'a jamais vue.
     /// </summary>
-    private static (double Rouleau, double Longueur)? CotesEnPouces(DnpMediaSize taille) =>
+    public static (double Rouleau, double Longueur)? CotesEnPouces(DnpMediaSize taille) =>
         taille switch
         {
             DnpMediaSize.Size5x3 => (5, 3),

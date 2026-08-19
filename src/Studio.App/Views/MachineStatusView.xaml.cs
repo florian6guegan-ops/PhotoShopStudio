@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Studio.App.Infrastructure;
+using Studio.Printing;
 using Studio.Printing.Devices.Dnp;
 using Studio.Printing.Devices.Fuji;
 
@@ -209,13 +210,21 @@ public partial class MachineStatusView : UserControl
                 ]
                 : [];
 
-            // les formats à longueur libre n'ont pas de compte utile
+            // LES FORMATS DE LA BOUTIQUE, pas ceux du pilote. « 15xS », « 15xL », « 15x23 »
+            // sont une nomenclature de canal que personne ne vend, et le 13×18 — qui sort
+            // très bien d'un rouleau de 152 avec ses bandes blanches — n'y paraissait même
+            // pas. Voir FormatsDuCatalogue.
+            //
+            // Le compte se déduit de la longueur restante : non déclarée, ces zéros n'ont
+            // aucun sens et il vaut mieux ne rien avancer.
             var longueurInconnue = info.Media?.LongueurNonDeclaree == true;
-            Formats = info.Formats
-                .Where(f => !f.Format.IsVariable)
-                // Le compte par format se déduit de la longueur restante : si elle n'est pas
-                // déclarée, ces zéros n'ont aucun sens et il vaut mieux ne rien avancer.
-                .Select(f => new FormatRow(f.Format.Name, longueurInconnue ? "?" : $"{f.RemainingPrints:N0}"))
+            Formats = FormatsDuCatalogue
+                .SurLeMinilab(
+                    App.Services.Catalog.Enabled,
+                    info.MachineId,
+                    info.Media?.PaperWidthMm ?? 0,
+                    info.Media?.PaperRemainingMm ?? 0)
+                .Select(f => new FormatRow(f.Nom, longueurInconnue ? "?" : $"{f.Restants:N0}"))
                 .ToList();
 
             var basses = info.Supplies?.InksBelow(SeuilAlerte).Select(i => $"{i.Name} ({i.Level} %)").ToList() ?? [];
@@ -313,8 +322,24 @@ public partial class MachineStatusView : UserControl
             Papier = $"{info.MediaRemaining:N0} tirages restants{pourcent} — " +
                      $"média {DecrireMedia(info.MediaSize)}, {info.MediaClass}";
 
-            // Le format chargé est le seul possible : la DS620 change de média à la main.
-            Formats = [new FormatRow(DecrireMedia(info.MediaSize), $"{info.MediaRemaining:N0}")];
+            // LES FORMATS DE LA BOUTIQUE, là encore — et pas seulement le média chargé.
+            //
+            // Le compteur de la DS620 parle en FEUILLES : sur un rouleau 15×20, une planche
+            // d'identité 10×15 est coupée en deux, et « 138 restants » veut dire 276
+            // planches. L'écran annonçait la moitié de ce qui restait vraiment.
+            Formats = FormatsDuCatalogue
+                .SurLaDnp(
+                    App.Services.Catalog.Enabled,
+                    info.WindowsQueueName ?? "",
+                    info.MediaSize,
+                    info.MediaRemaining)
+                .Select(f => new FormatRow(f.Nom, $"{f.Restants:N0}"))
+                .ToList();
+
+            // Aucun produit du catalogue ne correspond à ce rouleau : plutôt que de laisser
+            // un vide, on dit au moins ce que la machine annonce.
+            if (Formats.Count == 0)
+                Formats = [new FormatRow(DecrireMedia(info.MediaSize), $"{info.MediaRemaining:N0}")];
 
             Alerte = info.Status.NeedsOperator
                 ? "Intervention nécessaire sur la machine : " + info.Status.Message + "."

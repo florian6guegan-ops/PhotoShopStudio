@@ -1126,64 +1126,67 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         // liste : reposer les lignes déclenche OnMachineChanged, qui l'écraserait.
         var imposeeAvant = App.Services.Printer.PreferredMinilabMachine;
 
+        IReadOnlyList<De100PrinterInfo> etats;
         try
         {
-            var etats = await App.Services.Minilab.SnapshotAsync();
-
-            var machines = etats
-                .Where(e => e.Status != De100PrinterStatus.Offline)
-                .Select(e => new MachineChoice(e.MachineId, DecrireMachine(e)))
-                .ToList();
-
-            if (machines.Count == 0)
-            {
-                App.Services.Printer.PreferredMinilabMachine = null;
-                MachineCombo.ItemsSource = new[]
-                {
-                    new MachineChoice(MachineChoice.Aucune, "aucune machine en ligne"),
-                };
-                MachineCombo.SelectedIndex = 0;
-                MachineCombo.IsEnabled = false;
-                return;
-            }
-
-            // retenues pour pouvoir réécrire la ligne « Automatique » quand la finition du
-            // panier change, sans réinterroger le minilab
-            _machinesEnLigne = etats.Where(e => e.Status != De100PrinterStatus.Offline).ToList();
-
-            var choix = new List<MachineChoice>
-            {
-                new(MachineChoice.Aucune, LibelleAutomatique()),
-            };
-            choix.AddRange(machines);
-
-            MachineCombo.ItemsSource = choix;
-            MachineCombo.IsEnabled = true;
-
-            // Le choix de l'opérateur SURVIT à la navigation. C'est un geste explicite, et
-            // il le reste quand on revient sur l'écran : l'effacer obligeait à redésigner
-            // la machine à chaque aller-retour, alors qu'on vient justement d'y monter un
-            // rouleau. Une machine passée hors ligne entre-temps retombe sur
-            // « Automatique », préférence comprise — imposer une machine absente ferait
-            // refuser la commande en nommant une machine éteinte.
-            var rang = imposeeAvant is null
-                ? 0
-                : choix.FindIndex(c => !c.Automatique && c.Id.ToString() == imposeeAvant);
-
-            MachineCombo.SelectedIndex = rang >= 0 ? rang : 0;
-            if (rang < 0) App.Services.Printer.PreferredMinilabMachine = null;
+            etats = await App.Services.Minilab.SnapshotAsync();
         }
         catch (Exception ex)
         {
             FileLog.Write("Liste des machines du minilab indisponible", ex);
+            etats = [];
+        }
+
+        // La règle — et le pourquoi du repli sur la mémoire — vit dans ChoixDeMachine, où
+        // elle est éprouvée par des essais.
+        var (enLigne, deMemoire) = ChoixDeMachine.Proposer(
+            etats, App.Services.Minilab.DernierInstantane?.Etats);
+
+        var machines = enLigne
+            .Select(e => new MachineChoice(
+                e.MachineId,
+                DecrireMachine(e) + (deMemoire ? " — dernier état connu" : "")))
+            .ToList();
+
+        if (machines.Count == 0)
+        {
+            // Là, il n'y a vraiment rien à choisir : aucune machine n'a répondu une seule
+            // fois depuis le lancement.
             App.Services.Printer.PreferredMinilabMachine = null;
             MachineCombo.ItemsSource = new[]
             {
-                new MachineChoice(MachineChoice.Aucune, "minilab injoignable"),
+                new MachineChoice(MachineChoice.Aucune, "aucune machine en ligne"),
             };
             MachineCombo.SelectedIndex = 0;
             MachineCombo.IsEnabled = false;
+            return;
         }
+
+        // retenues pour pouvoir réécrire la ligne « Automatique » quand la finition du
+        // panier change, sans réinterroger le minilab
+        _machinesEnLigne = enLigne;
+
+        var choix = new List<MachineChoice>
+        {
+            new(MachineChoice.Aucune, LibelleAutomatique()),
+        };
+        choix.AddRange(machines);
+
+        MachineCombo.ItemsSource = choix;
+        MachineCombo.IsEnabled = true;
+
+        // Le choix de l'opérateur SURVIT à la navigation. C'est un geste explicite, et
+        // il le reste quand on revient sur l'écran : l'effacer obligeait à redésigner
+        // la machine à chaque aller-retour, alors qu'on vient justement d'y monter un
+        // rouleau. Une machine passée hors ligne entre-temps retombe sur
+        // « Automatique », préférence comprise — imposer une machine absente ferait
+        // refuser la commande en nommant une machine éteinte.
+        var rang = imposeeAvant is null
+            ? 0
+            : choix.FindIndex(c => !c.Automatique && c.Id.ToString() == imposeeAvant);
+
+        MachineCombo.SelectedIndex = rang >= 0 ? rang : 0;
+        if (rang < 0) App.Services.Printer.PreferredMinilabMachine = null;
     }
 
     private static string DecrireMachine(De100PrinterInfo info)

@@ -152,7 +152,27 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
         if (_machinesConnues is { } connues && DateTime.UtcNow - _machinesLues < memoire)
             return connues;
 
-        var lues = await _client.ListMachinesAsync();
+        IReadOnlyList<char> lues;
+        try
+        {
+            lues = await _client.ListMachinesAsync();
+        }
+        catch (Exception ex) when (_machinesConnues is not null)
+        {
+            // ⚠ UN DÉLAI DÉPASSÉ N'EST PAS UN DÉBRANCHEMENT — la même règle que pour les
+            // tirages (voir De100Commands.EngageLaMachine). Le relais accorde dix secondes
+            // à « list-machines » ; une machine qui SORT DE VEILLE ou qui imprime les
+            // dépasse sans être en panne. L'exception remontait alors jusqu'à l'écran, qui
+            // n'avait plus aucune machine à proposer : le 18/08/2026 à 15:24, l'opérateur
+            // s'est retrouvé sans choix de rouleau, les deux DE100 allumées à côté de lui.
+            //
+            // On garde donc ce qu'on savait, en le disant une fois. Rien n'est engagé sur
+            // cette liste : c'est le TIRAGE qui vérifie la machine, et lui n'a pas changé.
+            Log?.Invoke($"Minilab : liste des machines illisible ({ex.Message}) — on garde " +
+                        $"les {_machinesConnues.Count} connue(s).");
+            _machinesLues = DateTime.UtcNow;
+            return _machinesConnues;
+        }
 
         _machinesConnues = lues;
         _machinesLues = DateTime.UtcNow;
@@ -333,7 +353,27 @@ public sealed class De100BridgePrinter : IMinilabPrinter, IAsyncDisposable
             var info = await _client.GetPrinterInfoAsync(machine);
             if (info is not null) etats.Add(info);
         }
+
+        if (etats.Count > 0) DernierInstantane = (etats, DateTime.Now);
+
         return etats;
+    }
+
+    /// <summary>
+    /// Le dernier instantané qui a ABOUTI, et quand.
+    ///
+    /// <b>À n'employer qu'en repli, et en le disant à l'écran.</b> Ce n'est pas l'état de la
+    /// machine : c'est ce qu'elle disait la dernière fois. Le papier a pu être changé depuis.
+    ///
+    /// Il existe parce qu'un écran privé de réponse n'a pas à devenir inutilisable :
+    /// l'opérateur qui choisit sur quelle machine tirer doit pouvoir le faire même quand le
+    /// SDK met dix secondes de trop à répondre (18/08/2026, voir <see cref="MachinesAsync"/>).
+    /// Rien ne s'engage sur ces valeurs — le tirage, lui, revérifie tout.
+    /// </summary>
+    public (IReadOnlyList<De100PrinterInfo> Etats, DateTime Quand)? DernierInstantane
+    {
+        get;
+        private set;
     }
 
     public string Submit(IReadOnlyList<De100PrintJob> jobs, char machineId)
