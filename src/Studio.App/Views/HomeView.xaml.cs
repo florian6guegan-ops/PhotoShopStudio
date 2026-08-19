@@ -60,8 +60,12 @@ public partial class HomeView : UserControl
 
         Loaded += (_, _) =>
         {
+            // les services, pas le constructeur : la vue peut être bâtie avant eux
+            FileList.ItemsSource = App.Services.Impressions.File;
+
             MettreAJourAgrandissements();
             RafraichirLAttente();
+            RafraichirLaFile();
             RafraichirBornes();
             BrancherSuivi();
             _minuteur.Start();
@@ -125,6 +129,53 @@ public partial class HomeView : UserControl
     /// utilise en boutique.
     /// </summary>
     private void OnIdPhoto(object sender, RoutedEventArgs e) => ParcoursIdentite.Ouvrir();
+
+    // ----- la file d'impression -----
+
+    /// <summary>
+    /// Ce qui est lancé mais pas encore parti : la commande B pendant que la A sort.
+    ///
+    /// <b>Sur l'accueil, à côté des commandes de bornes.</b> C'est l'écran qu'on regarde en
+    /// servant quelqu'un, et une commande qui attend son tour sans se voir nulle part est
+    /// une commande qu'on relance une seconde fois, en croyant que le clic n'a pas pris.
+    ///
+    /// Le bandeau disparaît dès que la file est vide : rien n'attend, rien ne s'affiche.
+    /// </summary>
+    private void RafraichirLaFile()
+    {
+        var file = App.Services.Impressions.File;
+
+        FilePanel.Visibility = file.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        FileTitle.Text = file.Count == 1
+            ? "File d'impression — 1 commande attend son tour"
+            : $"File d'impression — {file.Count} commandes attendent leur tour";
+    }
+
+    private void OnFilePause(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is TravailImpression travail)
+            App.Services.Impressions.BasculerLaPause(travail);
+    }
+
+    /// <summary>
+    /// Retire la commande de la file. On demande confirmation : le geste ne perd rien —
+    /// rien n'est encore parti — mais il annule un tirage que l'opérateur a déjà annoncé
+    /// au client, et ça ne doit pas partir d'un clic de travers.
+    /// </summary>
+    private void OnFileAnnuler(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not TravailImpression travail) return;
+
+        var reponse = MessageBox.Show(
+            $"Retirer la commande {travail.Numero} de la file ?\n\n" +
+            $"{travail.TiragesPrevus} tirage(s) — rien n'a encore été imprimé, et rien ne le sera.\n\n" +
+            "La commande reste dans « Commandes du jour », d'où vous pourrez la relancer.",
+            "File d'impression", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (reponse != MessageBoxResult.Yes) return;
+
+        App.Services.Impressions.RetirerDeLaFile(travail);
+    }
 
     // ----- les commandes mises de côté -----
 
@@ -340,6 +391,7 @@ public partial class HomeView : UserControl
     {
         var suivi = App.Services.Impressions;
         ((INotifyCollectionChanged)suivi.Travaux).CollectionChanged += OnTravauxChanged;
+        ((INotifyCollectionChanged)suivi.File).CollectionChanged += OnFileChanged;
         foreach (var travail in suivi.Travaux) travail.PropertyChanged += OnTravailChanged;
     }
 
@@ -347,8 +399,13 @@ public partial class HomeView : UserControl
     {
         var suivi = App.Services.Impressions;
         ((INotifyCollectionChanged)suivi.Travaux).CollectionChanged -= OnTravauxChanged;
+        ((INotifyCollectionChanged)suivi.File).CollectionChanged -= OnFileChanged;
         foreach (var travail in suivi.Travaux) travail.PropertyChanged -= OnTravailChanged;
     }
+
+    /// <summary>Le bandeau de la file s'ouvre et se ferme avec elle.</summary>
+    private void OnFileChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        Dispatcher.Invoke(RafraichirLaFile);
 
     private void OnTravauxChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {

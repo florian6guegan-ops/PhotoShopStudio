@@ -371,7 +371,130 @@ public sealed class TravailImpression : ObservableObject
     public bool CompteDuPapierSorti =>
         !_versMinilab || Etape.StartsWith("Tirage", StringComparison.Ordinal);
 
+    // ----- la file d'attente : ce qui n'a pas encore commencé -----
+
+    /// <summary>
+    /// La machine que cette commande VISE. Null quand elle n'occupe rien de partagé —
+    /// agrandissement, courriel.
+    /// </summary>
+    public RessourceDImpression? Ressource { get; internal init; }
+
+    /// <summary>Tirages annoncés, tels que la commande les porte, avant tout rendu.</summary>
+    public int TiragesPrevus { get; internal init; }
+
+    /// <summary>Ce qu'il faut pour la démarrer le moment venu ; null dès qu'elle tourne.</summary>
+    internal Order? Commande { get; set; }
+
+    internal Action<IProgress<PrintProgress>, CancellationToken>? Imprimer { get; set; }
+
+    internal Action? ApresSucces { get; set; }
+
+    private bool _enFile;
+    private bool _enPause;
+    private int _rang;
+    private string? _machineAttendue;
+
+    /// <summary>
+    /// Vrai tant que la commande attend son tour : rien n'est rendu, rien n'est parti,
+    /// aucun papier n'est engagé. C'est le seul état où l'on peut encore tout reprendre.
+    /// </summary>
+    public bool EnFile
+    {
+        get => _enFile;
+        internal set
+        {
+            if (!Set(ref _enFile, value)) return;
+            OnPropertyChanged(nameof(EtatFile));
+        }
+    }
+
+    /// <summary>
+    /// Mise en pause par l'opérateur : elle ne partira pas, même quand la machine se
+    /// libère. Les suivantes de la même machine, elles, passent devant.
+    ///
+    /// <b>Ne vaut que dans la file.</b> Une commande déjà transmise au minilab ne se
+    /// suspend pas : le DE100 ne connaît que l'annulation (<c>PIF_CancelOrder</c>), et
+    /// prétendre le contraire ferait croire à un tirage arrêté qui continue de sortir.
+    /// </summary>
+    public bool EnPause
+    {
+        get => _enPause;
+        internal set
+        {
+            if (!Set(ref _enPause, value)) return;
+            OnPropertyChanged(nameof(EtatFile));
+            OnPropertyChanged(nameof(PauseLabel));
+        }
+    }
+
+    /// <summary>Rang dans la file, 1 pour la prochaine à partir.</summary>
+    public int Rang
+    {
+        get => _rang;
+        internal set
+        {
+            if (!Set(ref _rang, value)) return;
+            OnPropertyChanged(nameof(EtatFile));
+        }
+    }
+
+    /// <summary>
+    /// La machine que la commande d'AVANT occupe, quand elle l'a dite.
+    ///
+    /// C'est la seule machine qu'on puisse annoncer honnêtement : celle-ci attend la même
+    /// ressource, donc elle sortira là où l'autre sort. Tant que la commande en cours n'a
+    /// pas nommé sa machine, on s'en tient au libellé de la ressource.
+    /// </summary>
+    public string? MachineAttendue
+    {
+        get => _machineAttendue;
+        internal set
+        {
+            if (!Set(ref _machineAttendue, value)) return;
+            OnPropertyChanged(nameof(DetailFile));
+        }
+    }
+
+    /// <summary>Une feuille blanche doit sortir avant celle-ci, pour la séparer de la précédente.</summary>
+    public bool SeparationDemandee { get; internal set; }
+
+    /// <summary>Ce que la ligne du bandeau annonce : combien de tirages, et pour où.</summary>
+    public string TitreFile =>
+        $"{TiragesPrevus} tirage(s)" +
+        (Ressource is null ? "" : $" · {Ressource.Libelle}");
+
+    public string DetailFile
+    {
+        get
+        {
+            var ou = MachineAttendue is { Length: > 0 } machine
+                ? $"Sortira sur la machine {machine}"
+                : "Sortira sur la machine qui tire en ce moment";
+
+            return SeparationDemandee
+                ? $"{ou}, précédée d'une feuille blanche."
+                : $"{ou}.";
+        }
+    }
+
+    public string EtatFile => EnPause
+        ? "⏸  En pause — elle ne partira pas"
+        : Rang <= 1
+            ? "Prochaine à partir"
+            : $"En attente — {Rang}ᵉ de la file";
+
+    public string PauseLabel => EnPause ? "▶  Reprendre" : "⏸  Pause";
+
     internal void Liberer() => _arret.Dispose();
+
+    /// <summary>Redit tout ce que le bandeau de la file affiche.</summary>
+    internal void RafraichirLaFile()
+    {
+        OnPropertyChanged(nameof(TitreFile));
+        OnPropertyChanged(nameof(DetailFile));
+        OnPropertyChanged(nameof(EtatFile));
+        OnPropertyChanged(nameof(PauseLabel));
+    }
 }
 
 /// <summary>
@@ -404,10 +527,32 @@ public sealed class SuiviImpressions : ObservableObject
     /// </summary>
     public ReadOnlyObservableCollection<TravailImpression> Travaux { get; }
 
-    public SuiviImpressions() => Travaux = new ReadOnlyObservableCollection<TravailImpression>(_travaux);
+    /// <summary>
+    /// Ce qui attend son tour : lancé par l'opérateur, mais pas encore parti.
+    ///
+    /// <b>Séparée des travaux en cours, et c'est délibéré.</b> Le bandeau des machines, la
+    /// ligne d'une commande de borne, le compteur de tirages : tout ce qui existait lit
+    /// <see cref="Travaux"/> et n'y trouve que des commandes réellement engagées. Une
+    /// commande en file n'a rien rendu, rien envoyé, et n'occupe aucune machine — elle
+    /// n'a rien à faire dans ces vues-là. Elle a la sienne, sur l'accueil.
+    /// </summary>
+    public ReadOnlyObservableCollection<TravailImpression> File { get; }
+
+    private readonly ObservableCollection<TravailImpression> _file = [];
+
+    public SuiviImpressions()
+    {
+        Travaux = new ReadOnlyObservableCollection<TravailImpression>(_travaux);
+        File = new ReadOnlyObservableCollection<TravailImpression>(_file);
+    }
 
     /// <summary>Vrai tant qu'au moins une commande est en train de s'imprimer.</summary>
     public bool Actif => _travaux.Count > 0;
+
+    /// <summary>Vrai quand quelque chose attend son tour : le bandeau de la file s'ouvre.</summary>
+    public bool FileActive => _file.Count > 0;
+
+    public int NbEnFile => _file.Count;
 
     /// <summary>Le travail qui vise cette tuile du bandeau, s'il y en a un.</summary>
     public TravailImpression? PourMachine(string lettre) =>
@@ -432,9 +577,18 @@ public sealed class SuiviImpressions : ObservableObject
                            $"par la machine : {fautif.MotifDEchec}";
 
                 var numeros = string.Join(", ", _travaux.Select(t => t.Numero));
-                return _travaux.Count == 1
+                var enCours = _travaux.Count == 1
                     ? $"Impression en cours — commande {numeros}"
                     : $"Impressions en cours — commandes {numeros}";
+
+                // Ce qui attend son tour se dit ICI aussi : le bandeau des machines suit
+                // l'opérateur d'écran en écran, là où la file ne se voit que sur l'accueil.
+                return _file.Count switch
+                {
+                    0 => enCours,
+                    1 => $"{enCours}  ·  1 commande attend son tour",
+                    _ => $"{enCours}  ·  {_file.Count} commandes attendent leur tour",
+                };
             }
 
             return _note ?? "";
@@ -488,7 +642,7 @@ public sealed class SuiviImpressions : ObservableObject
     /// rapporter son avancement et de quoi savoir qu'on lui demande de s'arrêter.
     /// </param>
     /// <param name="apresSucces">Appelé sur le fil de l'interface si tout est parti.</param>
-    public async void Lancer(
+    public void Lancer(
         Order commande,
         Action<IProgress<PrintProgress>, CancellationToken> imprimer,
         Action? apresSucces = null)
@@ -496,7 +650,222 @@ public sealed class SuiviImpressions : ObservableObject
         ArgumentNullException.ThrowIfNull(commande);
         ArgumentNullException.ThrowIfNull(imprimer);
 
-        var travail = new TravailImpression(commande.DisplayNumber);
+        var ressource = RessourceDImpression.Pour(commande);
+
+        var travail = new TravailImpression(commande.DisplayNumber)
+        {
+            Ressource = ressource,
+            TiragesPrevus = RessourceDImpression.TiragesDe(commande),
+            Commande = commande,
+            Imprimer = imprimer,
+            ApresSucces = apresSucces,
+        };
+
+        // La machine est-elle déjà prise par une commande à nous ? Alors celle-ci attend :
+        // on ne la détourne pas vers une machine libre — l'opérateur a monté un rouleau, et
+        // c'est ce rouleau-là qu'il veut. Voir RessourceDImpression.
+        if (ressource is not null && EstOccupee(ressource.Cle))
+        {
+            // Celle qui la précède VRAIMENT : la dernière déjà en file sur cette machine,
+            // et seulement à défaut celle qui tire en ce moment. Sur une troisième commande
+            // d'affilée, annoncer celle qui sort ferait croire qu'elle part juste après —
+            // et la feuille blanche qu'on accepte ne la sépare pas de celle-là, mais de
+            // celle du milieu.
+            MettreEnFile(travail, DerniereDeLaFile(ressource.Cle) ?? Occupant(ressource.Cle));
+            return;
+        }
+
+        Demarrer(travail);
+    }
+
+    /// <summary>La commande qui occupe cette machine en ce moment, s'il y en a une.</summary>
+    private TravailImpression? Occupant(string cle) =>
+        _travaux.FirstOrDefault(t => t.Ressource?.Cle == cle);
+
+    /// <summary>La dernière qui attend sur cette machine — celle derrière qui on se range.</summary>
+    private TravailImpression? DerniereDeLaFile(string cle) =>
+        _file.LastOrDefault(t => t.Ressource?.Cle == cle);
+
+    /// <summary>
+    /// Machines dont la commande suivante est en train de démarrer.
+    ///
+    /// <b>Sans cela, la feuille blanche ouvre une fenêtre.</b> Elle part au minilab depuis
+    /// une tâche de fond, et pendant cette seconde-là la commande précédente a quitté
+    /// <see cref="_travaux"/> sans que la suivante y soit encore entrée : la machine paraît
+    /// libre. Une commande lancée juste à cet instant partirait DIRECTEMENT, en même temps
+    /// que celle qui attendait depuis dix minutes — soit exactement ce que la file existe
+    /// pour empêcher.
+    /// </summary>
+    private readonly HashSet<string> _clesEnDemarrage = [];
+
+    /// <summary>Vrai quand cette machine est prise, ou sur le point de l'être.</summary>
+    private bool EstOccupee(string cle) =>
+        Occupant(cle) is not null || _clesEnDemarrage.Contains(cle);
+
+    /// <summary>
+    /// La dernière machine sur laquelle chaque file a réellement sorti du papier.
+    ///
+    /// Sert à la feuille blanche d'une commande qu'on RÉVEILLE : mise en pause pendant que
+    /// la précédente sortait, elle reprend sur une machine déjà libre, et plus rien ne
+    /// dirait alors où tirer son séparateur. Sa demande serait perdue sans un mot.
+    /// </summary>
+    private readonly Dictionary<string, string> _derniereMachine = [];
+
+    /// <summary>
+    /// Range la commande derrière celle qui occupe la machine.
+    ///
+    /// <b>Aucune question posée.</b> La feuille blanche se règle une fois pour toutes dans
+    /// les Paramètres du poste (<see cref="PosteSettings.SeparerLesCommandes"/>) : une
+    /// boîte à chaque mise en file ferait trois clics de plus dans un coup de feu — et
+    /// c'est justement dans un coup de feu qu'on enchaîne les commandes.
+    /// </summary>
+    /// <param name="devant">
+    /// La commande qui occupe la machine, ou null quand la suivante est justement en train
+    /// de démarrer — la machine est prise dans les deux cas.
+    /// </param>
+    private void MettreEnFile(TravailImpression travail, TravailImpression? devant)
+    {
+        travail.EnFile = true;
+
+        // Celle d'avant attend peut-être elle-même : elle n'a alors pas de machine à elle,
+        // mais elle sait laquelle elle attend, et c'est la même.
+        travail.MachineAttendue = devant?.Machine ?? devant?.MachineAttendue;
+
+        var celleDAvant = devant is null ? "en cours" : devant.Numero;
+
+        // La séparation ne vaut que sur le MINILAB : lui seul reçoit une image et la tire
+        // telle quelle. Sur la DS620, une feuille blanche coûterait un panneau de
+        // sublimation entier — ruban et papier — pour séparer deux paquets qui sortent déjà
+        // l'un après l'autre dans un bac qu'on vide à la main.
+        travail.SeparationDemandee =
+            App.Services.Poste.SeparerLesCommandes &&
+            travail.Ressource?.Cle.StartsWith("minilab:", StringComparison.Ordinal) == true;
+
+        _file.Add(travail);
+        Renumeroter();
+
+        FileLog.Write($"Impression : commande {travail.Numero} mise en file derrière " +
+                      $"{celleDAvant} ({travail.Ressource?.Libelle})" +
+                      (travail.SeparationDemandee ? ", avec feuille blanche de séparation" : ""));
+
+        _note = $"Commande {travail.Numero} en attente derrière {celleDAvant} — " +
+                "elle partira toute seule.";
+        Prevenir();
+    }
+
+    /// <summary>Remet les rangs à jour : ils se lisent dans le bandeau, ils doivent être justes.</summary>
+    private void Renumeroter()
+    {
+        var rangs = new Dictionary<string, int>();
+
+        foreach (var attente in _file)
+        {
+            var cle = attente.Ressource?.Cle ?? "";
+            rangs[cle] = rangs.TryGetValue(cle, out var rang) ? rang + 1 : 1;
+            attente.Rang = rangs[cle];
+        }
+    }
+
+    /// <summary>
+    /// Retire une commande de la file : elle ne partira pas.
+    ///
+    /// Rien n'est perdu — elle n'avait rien rendu ni rien envoyé — et elle reste dans
+    /// « Commandes du jour », d'où on la relancera. C'est la même règle que partout
+    /// ailleurs : Studio ne réimprime jamais tout seul.
+    /// </summary>
+    public void RetirerDeLaFile(TravailImpression travail)
+    {
+        ArgumentNullException.ThrowIfNull(travail);
+        if (!_file.Remove(travail)) return;
+
+        travail.EnFile = false;
+        travail.Liberer();
+        Renumeroter();
+
+        FileLog.Write($"Impression : commande {travail.Numero} retirée de la file par l'opérateur");
+        _note = $"Commande {travail.Numero} retirée de la file — rien n'a été imprimé. " +
+                "Elle reste dans « Commandes du jour ».";
+        Prevenir();
+    }
+
+    /// <summary>
+    /// Met en pause, ou remet dans le tour. Une commande reprise part tout de suite si la
+    /// machine est libre : sans cela, elle attendrait la fin d'une commande qui n'existe pas.
+    /// </summary>
+    public void BasculerLaPause(TravailImpression travail)
+    {
+        ArgumentNullException.ThrowIfNull(travail);
+        if (!_file.Contains(travail)) return;
+
+        travail.EnPause = !travail.EnPause;
+
+        FileLog.Write($"Impression : commande {travail.Numero} " +
+                      (travail.EnPause ? "mise en pause dans la file" : "remise dans la file"));
+
+        if (!travail.EnPause) DemarrerLaSuite(travail.Ressource?.Cle, machineLiberee: null);
+        Prevenir();
+    }
+
+    /// <summary>
+    /// Fait partir la prochaine commande de cette machine, s'il y en a une et si elle
+    /// n'est pas en pause.
+    /// </summary>
+    /// <param name="machineLiberee">
+    /// La machine que la commande précédente vient de quitter, quand elle l'a dite : c'est
+    /// sur elle que sort la feuille blanche de séparation. Null quand on ne sort de nulle
+    /// part — une pause qu'on lève, par exemple.
+    /// </param>
+    private async void DemarrerLaSuite(string? cle, string? machineLiberee)
+    {
+        if (cle is null) return;
+        if (EstOccupee(cle)) return;
+
+        if (machineLiberee is { Length: > 0 }) _derniereMachine[cle] = machineLiberee;
+        else _derniereMachine.TryGetValue(cle, out machineLiberee);
+
+        var suivant = _file.FirstOrDefault(t => t.Ressource?.Cle == cle && !t.EnPause);
+        if (suivant is null) return;
+
+        _file.Remove(suivant);
+        suivant.EnFile = false;
+        Renumeroter();
+
+        // la machine est retenue AVANT le premier await : voir _clesEnDemarrage
+        _clesEnDemarrage.Add(cle);
+        Prevenir();
+
+        try
+        {
+            // LA FEUILLE BLANCHE, entre les deux commandes et non au milieu de l'une
+            // d'elles. Elle part sur la machine que la précédente vient de quitter — la
+            // seule dont on sache avec certitude qu'elle a sorti le papier d'avant.
+            if (suivant.SeparationDemandee && machineLiberee is { Length: > 0 } machine)
+            {
+                var lettre = machine[0];
+                var sortie = await Task.Run(() => App.Services.Printer.TirerFeuilleDeSeparation(lettre));
+
+                if (!sortie)
+                    _note = $"Commande {suivant.Numero} : la feuille blanche de séparation n'a pas " +
+                            "pu être tirée (voir le journal). La commande part quand même.";
+            }
+        }
+        finally
+        {
+            _clesEnDemarrage.Remove(cle);
+        }
+
+        Demarrer(suivant);
+    }
+
+    /// <summary>
+    /// Fait partir la commande pour de bon : c'est ici que commencent le rendu et les
+    /// envois, et donc le papier.
+    /// </summary>
+    private async void Demarrer(TravailImpression travail)
+    {
+        var commande = travail.Commande!;
+        var imprimer = travail.Imprimer!;
+        var apresSucces = travail.ApresSucces;
 
         _travaux.Add(travail);
         _note = null;
@@ -507,7 +876,15 @@ public sealed class SuiviImpressions : ObservableObject
 
         // Progress<T> rejoue sur le fil qui l'a créé — ici celui de l'interface — donc
         // les propriétés notifiées ne traversent jamais de frontière de thread
-        var avancement = new Progress<PrintProgress>(travail.Avancer);
+        var avancement = new Progress<PrintProgress>(rapport =>
+        {
+            travail.Avancer(rapport);
+
+            // La machine n'est nommée qu'à l'envoi : c'est le moment où les commandes qui
+            // attendent derrière peuvent enfin dire OÙ elles sortiront.
+            foreach (var attente in _file.Where(t => t.Ressource?.Cle == travail.Ressource?.Cle))
+                attente.MachineAttendue = travail.Machine;
+        });
 
         try
         {
@@ -562,15 +939,31 @@ public sealed class SuiviImpressions : ObservableObject
         }
         finally
         {
+            var machine = travail.Machine;
+            var cle = travail.Ressource?.Cle;
+
             _travaux.Remove(travail);
             travail.Liberer();
             Prevenir();
+
+            // La machine est libre : la suivante part, feuille blanche comprise. Dans le
+            // finally, donc quoi qu'il soit arrivé à celle-ci — arrêtée, en échec, sortie :
+            // une commande qui reste coincée dans la file parce que la précédente a mal
+            // fini est exactement le genre de commande qu'on retrouve le lendemain.
+            DemarrerLaSuite(cle, machine);
         }
     }
 
-    /// <summary>Arrête tout ce qui est en cours — le geste de panique, un seul bouton.</summary>
+    /// <summary>
+    /// Arrête tout ce qui est en cours — le geste de panique, un seul bouton.
+    ///
+    /// La file est vidée en premier : arrêter la commande en cours pendant qu'une autre
+    /// attend derrière la ferait partir aussitôt, ce qui est le contraire de ce qu'on
+    /// demande en appuyant là-dessus.
+    /// </summary>
     public void ToutArreter()
     {
+        foreach (var attente in _file.ToList()) RetirerDeLaFile(attente);
         foreach (var travail in _travaux.ToList()) travail.Annuler();
     }
 
@@ -878,5 +1271,7 @@ public sealed class SuiviImpressions : ObservableObject
         OnPropertyChanged(nameof(Message));
         OnPropertyChanged(nameof(Visibilite));
         OnPropertyChanged(nameof(EnAlerte));
+        OnPropertyChanged(nameof(FileActive));
+        OnPropertyChanged(nameof(NbEnFile));
     }
 }

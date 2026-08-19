@@ -53,13 +53,31 @@ namespace Studio.Core.Domain;
 /// C'est un choix de POSTE et non du dépôt — chez un collègue, ce sera un autre volume, ou
 /// aucun.
 /// </param>
+/// <param name="SeparerLesCommandes">
+/// Intercaler une feuille blanche entre deux commandes qui s'enchaînent sur la même
+/// machine du minilab.
+///
+/// Deux commandes tirées coup sur coup tombent dans le même bac, et rien ne dit où finit
+/// l'une et où commence l'autre : on trie trente photos à la main en espérant reconnaître
+/// les visages. La feuille sort au format le plus court du rouleau — 50 mm sur du 152 —
+/// juste avant les premiers tirages de la seconde.
+///
+/// <b>Vrai par défaut</b>, contrairement aux autres bascules de ce fichier : la file
+/// d'attente qui l'accompagne n'existait pas non plus, et une boutique qui enchaîne deux
+/// commandes veut les distinguer — c'est la demande qui a fait écrire tout ceci. Une
+/// boutique qui préfère économiser le papier décoche.
+///
+/// Ne vaut que pour le minilab : sur la DS620 une feuille blanche coûterait un panneau de
+/// sublimation entier, ruban compris, pour séparer deux paquets qu'on relève à la main.
+/// </param>
 public sealed record PosteSettings(
     string DiLandRacine = "",
     string ImprimanteGrandFormat = "",
     string ImprimanteSublimation = "",
     string AdresseRapport = "",
     bool CadrageAutoVisage = false,
-    IReadOnlyList<string>? SupportsMasques = null)
+    IReadOnlyList<string>? SupportsMasques = null,
+    bool SeparerLesCommandes = true)
 {
     /// <summary>Les supports masqués, jamais null — un fichier ancien n'en porte pas.</summary>
     public IReadOnlyList<string> Masques => SupportsMasques ?? [];

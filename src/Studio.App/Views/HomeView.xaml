@@ -162,18 +162,77 @@
             </Button>
         </UniformGrid>
 
-        <!-- 3. ce qui attend, puis le récepteur des commandes de bornes -->
+        <!-- 3. la file d'impression, ce qui attend, puis le récepteur des bornes -->
         <Grid Grid.Row="2">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
+            <!-- LA FILE D'IMPRESSION : ce qui est lancé mais pas encore parti.
+                 Violet, et surtout PAS l'orange des commandes de bornes : les deux
+                 bandeaux se ressemblent assez pour qu'on les confonde d'un coup d'œil, et
+                 ils ne se traitent pas du tout pareil — une borne se tire, une commande en
+                 file part toute seule. -->
+            <Border x:Name="FilePanel" Grid.Row="0" Background="#241733" CornerRadius="12"
+                    BorderBrush="#7E4FB8" BorderThickness="1"
+                    Padding="14,12" Margin="2,0,2,14" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="FileTitle" Text="File d'impression" FontSize="20" FontWeight="Bold"
+                               Foreground="#E3CBFF" Margin="0,0,0,10"/>
+
+                    <ItemsControl x:Name="FileList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#3B2456" CornerRadius="10" Padding="16,12"
+                                        Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="{Binding Numero}" FontSize="26"
+                                                   FontWeight="Bold" Foreground="White"
+                                                   VerticalAlignment="Center" Margin="0,0,18,0"/>
+
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding TitreFile}" FontSize="18"
+                                                       FontWeight="SemiBold" Foreground="White"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding DetailFile}" FontSize="14"
+                                                       Foreground="#DDFFFFFF"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding EtatFile}" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="#C9A8F0"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                    VerticalAlignment="Center">
+                                            <Button Style="{StaticResource ActionLigne}"
+                                                    Content="{Binding PauseLabel}"
+                                                    Tag="{Binding}" Click="OnFilePause"
+                                                    ToolTip="Une commande en pause ne partira pas quand la machine se libérera ; les suivantes passent devant."/>
+                                            <Button Style="{StaticResource ActionLigne}" Content="✕  Annuler"
+                                                    Tag="{Binding}" Click="OnFileAnnuler"
+                                                    Background="#99B3261E" Margin="14,0,0,0"
+                                                    ToolTip="Retire la commande de la file — rien n'a encore été imprimé, et elle reste dans « Commandes du jour »"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
             <!-- Les commandes mises de côté pour servir quelqu'un d'autre. Le bandeau
                  DISPARAÎT quand il n'y a rien en attente : un titre suivi du vide ferait
                  croire à un écran cassé, et mangerait la place de la liste des bornes. -->
-            <Border x:Name="AttentePanel" Grid.Row="0" Background="#1B2A17" CornerRadius="12"
+            <Border x:Name="AttentePanel" Grid.Row="1" Background="#1B2A17" CornerRadius="12"
                     Padding="14,12" Margin="2,0,2,14" Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock x:Name="AttenteTitle" Text="En attente" FontSize="20" FontWeight="Bold"
@@ -220,7 +279,7 @@
                 </StackPanel>
             </Border>
 
-            <DockPanel Grid.Row="1" Margin="2,0,2,10">
+            <DockPanel Grid.Row="2" Margin="2,0,2,10">
                 <Button DockPanel.Dock="Right" Style="{StaticResource Secondaire}" Margin="8,0,0,0"
                         Click="OnKioskHistory" AutomationProperties.Name="Historique des bornes">
                     Historique
@@ -233,7 +292,7 @@
                            Foreground="{DynamicResource TitleBrush}" VerticalAlignment="Center"/>
             </DockPanel>
 
-            <Border Grid.Row="2" Background="#0E141A" CornerRadius="12" Padding="8">
+            <Border Grid.Row="3" Background="#0E141A" CornerRadius="12" Padding="8">
                 <Grid>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="KioskList">

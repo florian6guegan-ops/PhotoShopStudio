@@ -1629,6 +1629,93 @@ public sealed class PrintOrchestrator
     }
 
     /// <summary>
+    /// Sort une feuille blanche sur une machine du minilab : le séparateur PHYSIQUE entre
+    /// deux commandes.
+    ///
+    /// Quand deux commandes s'enchaînent sur le même rouleau, les tirages tombent dans le
+    /// même bac et rien ne dit où finit l'une et où commence l'autre — l'opérateur trie
+    /// trente photos à la main en espérant reconnaître les visages. Une feuille vierge
+    /// entre les deux règle la question sans rien lire.
+    ///
+    /// <b>Le format le plus court du rouleau</b>, et non celui de la commande : ce papier
+    /// part à la poubelle, il n'a aucune raison de coûter un 15×20. Sur un rouleau de
+    /// 152 mm c'est un « 15xS » de 50 mm, soit un tiers d'un 10×15.
+    ///
+    /// Ne lève jamais : une séparation qui ne sort pas ne doit surtout pas empêcher la
+    /// commande suivante de partir. Rend vrai si la feuille est bien partie.
+    /// </summary>
+    public bool TirerFeuilleDeSeparation(char machine)
+    {
+        if (_minilab is null) return false;
+
+        try
+        {
+            var largeurRouleau = _minilab.LoadedPaperWidthMm(machine);
+            if (largeurRouleau <= 0)
+            {
+                Log?.Invoke($"Séparation : la machine {machine} ne dit pas quel rouleau elle porte, " +
+                            "aucune feuille blanche n'a été tirée.");
+                return false;
+            }
+
+            // le moins cher des formats que ce rouleau porte
+            var format = De100Formats.ForPaperWidth(largeurRouleau)
+                .OrderBy(f => De100Formats.ConsumedLengthMm(f, largeurRouleau))
+                .ThenBy(f => f.Name, StringComparer.Ordinal)
+                .FirstOrDefault();
+
+            if (format is null)
+            {
+                Log?.Invoke($"Séparation : aucun format ne tient sur le rouleau de " +
+                            $"{largeurRouleau} mm de la machine {machine}.");
+                return false;
+            }
+
+            // le côté qui n'est pas la largeur du rouleau : c'est la longueur de coupe
+            var longueur = format.ShortSideMm == largeurRouleau ? format.LengthMm : format.ShortSideMm;
+            var (largeurMm, longueurMm) = MinilabPrintSize(largeurRouleau, longueur, largeurRouleau);
+
+            const int dpi = 300;
+            var (cibleW, cibleH) = DefinitionAttendue(machine, largeurMm, longueurMm, dpi);
+
+            var fichier = Path.Combine(Path.GetTempPath(),
+                $"studio-separation-{cibleW}x{cibleH}.png");
+
+            if (!File.Exists(fichier))
+            {
+                using var blanche = new MagickImage(MagickColors.White, (uint)cibleW, (uint)cibleH);
+                EnTroisCanaux(blanche);
+                MagickInit.Write(blanche, fichier);
+            }
+
+            // Identifiant SANS le découpage « numéro-enveloppe-rang » : le suivi retrouve
+            // une commande en retirant les deux derniers segments (voir
+            // <see cref="OrderNumberOf"/>), et un séparateur qui lui ressemblerait viendrait
+            // fausser le compte des tirages d'une vraie commande. Un seul mot, aucun tiret :
+            // il ne désigne personne, et le verdict de la machine sera ignoré.
+            var job = new De100PrintJob(
+                JobId: $"SEPARATION{DateTime.Now:HHmmssfff}",
+                ImagePath: fichier,
+                WidthMm: largeurMm,
+                HeightMm: longueurMm,
+                PrintSizeName: format.Name,
+                Surface: De100Surface.Glossy,
+                Copies: 1);
+
+            var handle = _minilab.Submit([job], machine);
+
+            Log?.Invoke($"Séparation : feuille blanche {format.Name} envoyée à la machine {machine} " +
+                        $"(commande {handle}).");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Séparation : feuille blanche impossible sur la machine {machine} — {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Fait suivre à la COMMANDE l'état de ses enveloppes.
     ///
     /// Le statut de la commande n'était écrit qu'à sa création : toutes restaient

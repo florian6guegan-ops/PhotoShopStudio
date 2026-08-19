@@ -127,6 +127,34 @@ décision se prend depuis *Commandes du jour*, là où l'on voit ce qu'on renvoi
 > Cette règle n'est pas de la prudence de principe : une réimpression automatique a déjà
 > sorti **58 tirages en double** sur une file déjà à l'arrêt.
 
+### Deux commandes qui visent le même rouleau s'attendent
+
+Il reste trente tirages à sortir sur la commande A, un client arrive, on encaisse la
+commande B. **B ne part pas tout de suite** : elle s'affiche sur l'accueil, dans un bandeau
+violet qui dit combien de tirages elle porte et sur quelle machine ils sortiront, et elle
+part toute seule quand A est terminée. À ce moment-là elle quitte l'accueil et son
+avancement se lit dans le bandeau des machines, comme n'importe quelle commande en cours.
+
+Trois boutons sur la ligne : **Pause** — elle ne partira pas, les suivantes passent devant —,
+**Reprendre**, et **Annuler**, qui la retire de la file sans avoir rien imprimé. Elle reste
+dans *Commandes du jour*, d'où on la relance.
+
+**Aucun détournement vers une machine libre.** Deux commandes en brillant s'attendent même
+si la machine d'à côté ne fait rien : vous avez monté un rouleau, c'est celui-là que vous
+voulez. Ce qui vise une *autre* machine — une autre finition, la DS620 — part en parallèle
+sans attendre.
+
+Entre deux commandes qui s'enchaînent, Studio intercale une **feuille blanche** : elle sort
+au format le plus court du rouleau — 50 mm sur un rouleau de 152 — juste avant les premiers
+tirages de la suivante, et sépare les deux paquets dans le bac sans qu'on ait à reconnaître
+les visages. C'est une case dans *Paramètres → File d'impression*, **cochée par défaut** ;
+décochez-la pour économiser le papier. Elle ne concerne que le minilab : sur la DS620, une
+feuille blanche coûterait un panneau de sublimation entier, ruban compris.
+
+> La file vit en mémoire : si Studio est fermé avant qu'une commande en attente ne parte,
+> elle ne partira pas toute seule au redémarrage. Elle est dans *Commandes du jour*, intacte
+> et jamais imprimée — c'est la même règle que partout ailleurs, rien ne se lance sans vous.
+
 ### Les photos du client sont recopiées tout de suite
 
 Dès la création de la commande. Le client reprend sa carte immédiatement, et l'historique ne

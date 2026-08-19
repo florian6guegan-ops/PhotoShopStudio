@@ -615,6 +615,25 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Ce qui se passe quand deux commandes s'enchaînent. Le réglage vaut pour
+                     le POSTE : c'est lui qui a le bac sous les yeux. -->
+                <TextBlock Text="File d'impression" Style="{StaticResource Texte}"
+                           FontSize="26" FontWeight="Bold" Margin="0,28,0,4"/>
+
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <CheckBox x:Name="SeparationCheck" FontSize="18"
+                                  Foreground="{DynamicResource TextBrush}"
+                                  VerticalContentAlignment="Center"
+                                  Click="OnSeparationChange"
+                                  Content="Séparer les commandes par une feuille blanche"/>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                                   Margin="0,8,0,0"
+                                   Text="Quand une commande part sur une machine qui tire déjà, elle attend son tour — vous la voyez sur l'accueil, avec de quoi la mettre en pause ou l'annuler. Cochez ceci pour qu'une feuille blanche sorte entre les deux : elle prend le format le plus court du rouleau (5 cm sur un rouleau de 15) et sépare les deux paquets dans le bac. Ne vaut que pour le minilab — sur la DS620, une feuille coûterait un panneau de sublimation entier."/>
+                    </StackPanel>
+                </Border>
+
                 <!-- La mise à jour. On vérifie et on annonce ; on n'installe JAMAIS sans
                      que l'opérateur l'ait demandé — l'installation ferme l'application,
                      peut-être au milieu d'une commande. -->

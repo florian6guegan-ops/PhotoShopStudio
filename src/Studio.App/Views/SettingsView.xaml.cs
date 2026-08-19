@@ -346,6 +346,7 @@ public partial class SettingsView : UserControl
 
         RapportAdresseBox.Text = poste.AdresseRapport;
         CadrageAutoCheck.IsChecked = poste.CadrageAutoVisage;
+        SeparationCheck.IsChecked = poste.SeparerLesCommandes;
 
         RemplirLesSupports(poste);
     }
@@ -433,7 +434,18 @@ public partial class SettingsView : UserControl
         // On retient le LIBELLÉ tel qu'il s'affiche (« DILAND (E:) ») : il porte le nom de
         // volume ET la lettre, et la reconnaissance accepte l'un ou l'autre. Une clef qui
         // change de lettre reste donc masquée.
-        [.. _supports.Where(s => s.Masque).Select(s => s.Libelle)]);
+        [.. _supports.Where(s => s.Masque).Select(s => s.Libelle)],
+        SeparationCheck.IsChecked == true);
+
+    /// <summary>
+    /// La feuille blanche entre deux commandes. Enregistrée à la coche, comme le reste de
+    /// cet écran : il n'y a pas de bouton « Enregistrer » ici.
+    /// </summary>
+    private void OnSeparationChange(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        App.Services.SavePoste(SaisiePoste());
+    }
 
     /// <summary>
     /// Choisit le dossier de DiLand. On accepte le dossier d'INSTALLATION : personne ne
