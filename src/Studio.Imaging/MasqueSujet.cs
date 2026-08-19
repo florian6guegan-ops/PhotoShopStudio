@@ -112,6 +112,49 @@ public static class MasqueSujet
     private static readonly List<string> OrdreRetouches = [];
 
     /// <summary>
+    /// Le côté de l'entrée du réseau. Tout masque qu'il rend contient exactement ce
+    /// nombre-là d'échantillons par axe, quelle que soit la photo.
+    /// </summary>
+    public const uint CoteDuReseau = 1024;
+
+    /// <summary>
+    /// La taille à laquelle un masque se CALCULE et se GARDE : le rapport de la photo, et le
+    /// petit côté à <see cref="CoteDuReseau"/>. Jamais plus grand que la photo elle-même.
+    ///
+    /// <b>Un masque de 24 mégapixels n'apporte pas un échantillon de plus qu'un de 1,5.</b>
+    /// BiRefNet travaille sur une entrée FIGÉE à 1024 × 1024 et l'agrandit à la toute fin :
+    /// au-delà du petit côté à 1024, on n'agrandit plus que de l'interpolation — et on la
+    /// paie très cher.
+    ///
+    /// Ce qu'elle coûtait, mesuré le 19/08/2026 sur une photo de 6000 × 4000 (Quadro P2000) :
+    /// <list type="bullet">
+    /// <item>5,6 s pour ENCODER le masque en PNG à la mise en mémoire — plus que le réseau
+    /// lui-même, qui prend 5,9 s ;</item>
+    /// <item>0,4 s pour le redécoder à chaque reprise ;</item>
+    /// <item>et tout le chemin géométrique du rendu — rotation, recadrage, mise à l'échelle —
+    /// parcouru une seconde fois sur 24 Mpx au lieu de 1,5.</item>
+    /// </list>
+    /// Réduit, le même encodage tombe à 0,15 s. C'est l'essentiel des « 76,6 s de préparation
+    /// pour une photo » relevées à Arcueil le 19/08/2026 sur un envoi par courriel.
+    ///
+    /// <b>Et la qualité ne bouge pas</b> : les deux chemins interpolent la MÊME sortie de
+    /// 1024 × 1024, l'un vers 1500 px, l'autre vers 6000. Seul le nombre d'agrandissements
+    /// successifs change.
+    /// </summary>
+    public static (uint Largeur, uint Hauteur) TailleDeCalcul(uint largeur, uint hauteur)
+    {
+        if (largeur == 0 || hauteur == 0) return (largeur, hauteur);
+
+        var petitCote = Math.Min(largeur, hauteur);
+        if (petitCote <= CoteDuReseau) return (largeur, hauteur);
+
+        var facteur = CoteDuReseau / (double)petitCote;
+
+        return ((uint)Math.Max(1, Math.Round(largeur * facteur)),
+                (uint)Math.Max(1, Math.Round(hauteur * facteur)));
+    }
+
+    /// <summary>
     /// Vide la mémoire des masques. Sert quand le modèle de détourage change dans les
     /// réglages : les masques déjà calculés viennent de l'ancien.
     /// </summary>
@@ -307,11 +350,26 @@ public static class MasqueSujet
     /// sûr, mais elle relit toute l'image (176 ms) et distingue les tailles entre elles,
     /// donc l'aperçu et la planche ne se partageraient rien.
     /// </param>
-    public static MagickImage? Nu(MagickImage image, string? cle = null)
+    /// <param name="auRapportSeulement">
+    /// Vrai pour recevoir le masque à sa taille de CALCUL — le rapport de la photo, le petit
+    /// côté à <see cref="CoteDuReseau"/> — au lieu de la taille pleine de l'image.
+    ///
+    /// <b>C'est le chemin du rendu, et il divise le travail par seize.</b> Le rendu ne
+    /// composite pas le masque sur la photo entière : il lui fait d'abord subir la même
+    /// géométrie — rotation, redressement, recadrage, mise au format —, au terme de laquelle
+    /// il est de toute façon ramené à la taille du tirage. L'agrandir à 24 Mpx pour le faire
+    /// tourner puis le réduire était donc du travail pur, deux fois : à l'aller et sur chaque
+    /// opération géométrique. Voir <c>ImagePipeline.RenderInto</c>.
+    ///
+    /// Faux — le défaut — pour l'aperçu et pour tout appelant qui compose le masque
+    /// directement sur son image : celui-là a besoin des dimensions exactes.
+    /// </param>
+    public static MagickImage? Nu(MagickImage image, string? cle = null,
+        bool auRapportSeulement = false)
     {
         ArgumentNullException.ThrowIfNull(image);
 
-        return MasqueALaTaille(image, Empreinte(image, cle));
+        return MasqueALaTaille(image, Empreinte(image, cle), auRapportSeulement);
     }
 
     /// <summary>
@@ -324,14 +382,21 @@ public static class MasqueSujet
     /// temps d'une reprise en mémoire : 1,85 s mesurées le 13/08/2026, là où le seul
     /// redimensionnement se compte en dizaines de millisecondes.
     /// </summary>
-    private static MagickImage? MasqueALaTaille(MagickImage image, string empreinte)
+    private static MagickImage? MasqueALaTaille(
+        MagickImage image, string empreinte, bool auRapportSeulement = false)
     {
         var octets = Brut(image, empreinte);
         if (octets is null) return null;
 
         var masque = new MagickImage(octets);
 
-        if (masque.Width != image.Width || masque.Height != image.Height)
+        // La taille voulue : celle de l'image, ou sa taille de calcul quand l'appelant se
+        // charge lui-même de la géométrie. Voir le paramètre de Nu.
+        var (vouluL, vouluH) = auRapportSeulement
+            ? TailleDeCalcul(image.Width, image.Height)
+            : (image.Width, image.Height);
+
+        if (masque.Width != vouluL || masque.Height != vouluH)
         {
             // ⚠ LE RAPPORT DOIT CORRESPONDRE, et c'est ce contrôle qui manquait.
             //
@@ -364,7 +429,7 @@ public static class MasqueSujet
                 return null;
             }
 
-            masque.Resize(new MagickGeometry(image.Width, image.Height) { IgnoreAspectRatio = true });
+            masque.Resize(new MagickGeometry(vouluL, vouluH) { IgnoreAspectRatio = true });
         }
 
         return masque;
@@ -424,7 +489,23 @@ public static class MasqueSujet
             // Le même découpage que pour poser un fond blanc, au même endroit : réseau
             // d'abord, méthode par couleur ensuite. Sans ce repli, la correction du sujet
             // ne faisait rien du tout sur un poste où le réseau est éteint.
+            // ⚠ ON N'ÉCRIT QUE LES CALCULS, JAMAIS LES REPRISES.
+            //
+            // Un masque repris en mémoire coûte des millisecondes et se produit à chaque
+            // mouvement de curseur : le noter noierait le journal. Un CALCUL, lui, se compte
+            // en secondes et ne devrait arriver qu'une fois par photo — quand il arrive
+            // deux fois, c'est le défaut qu'on cherche, et le journal doit le dire. C'est
+            // exactement la question restée sans réponse à Arcueil le 19/08/2026 : le
+            // courriel a-t-il repayé le détourage, ou non ?
+            var chrono = System.Diagnostics.Stopwatch.StartNew();
+
             using var calcule = BackgroundRemoval.DecouperLeSujet(image);
+
+            if (calcule is not null)
+                Log?.Invoke(
+                    $"Détourage CALCULÉ en {chrono.Elapsed.TotalSeconds:0.0} s " +
+                    $"({calcule.Width}×{calcule.Height}) pour une photo de " +
+                    $"{image.Width}×{image.Height}.");
 
             if (calcule is null)
             {

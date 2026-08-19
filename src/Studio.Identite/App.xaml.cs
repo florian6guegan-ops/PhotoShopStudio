@@ -74,6 +74,12 @@ public partial class App : Application
             // l'écran des réglages est celui du Studio : il ne connaît pas cette
             // application, il demande simplement à qui sait faire
             Habillage.Appliquer = AppliquerLaPalette;
+
+            // Les cartes du poste se départagent ICI AUSSI, et c'est même ici que ça
+            // compte le plus : ce logiciel-ci détoure toute la journée. Voir
+            // Studio.App.App.MesurerLesCartes — en tâche de fond, une fois dans la vie du
+            // poste.
+            Studio.App.App.MesurerLesCartes();
         }
         catch (Exception ex)
         {

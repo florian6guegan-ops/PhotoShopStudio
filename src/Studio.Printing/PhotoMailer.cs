@@ -74,20 +74,59 @@ public static class PhotoMailer
         // récrire le même dessin. La copie octet pour octet est plus rapide, et elle est
         // même MEILLEURE — le client reçoit son fichier d'origine intact, ce que « la photo
         // d'origine, entière » promet, au lieu d'un JPEG réencodé une génération plus loin.
-        if (SansRedressementAFaire(sourcePath))
+        // ⚠ CHAQUE ÉTAPE EST CHRONOMÉTRÉE, ET C'EST CE QUI MANQUAIT.
+        //
+        // « L'envoi par courriel prend jusqu'à 1 min 30 » : le journal d'Arcueil disait bien
+        // « 1 photo préparée en 76,6 s », mais rien de plus — impossible de savoir si le
+        // temps partait dans le détourage, dans la lecture de la carte du client ou dans le
+        // rendu. Trois lignes de plus, et la prochaine plainte se diagnostique sans se
+        // déplacer.
+        var chrono = System.Diagnostics.Stopwatch.StartNew();
+
+        // ⚠ ET LE FOND DÉTOURÉ VAUT AUSSI POUR LA PHOTO ENTIÈRE.
+        //
+        // Arcueil, 19/08/2026, commande 19-002 : l'opérateur pose un fond blanc pour une
+        // photo canadienne, l'envoie au client — et le client ouvre une pièce jointe où le
+        // fond gris du studio est toujours là. Les deux fichiers RECADRÉS étaient bien
+        // détourés ; celui-ci, non, parce qu'il prenait le raccourci de la copie octet pour
+        // octet. « Il a fait un détourage fond blanc, qui n'a pas été gardé dans l'envoi. »
+        //
+        // Le raccourci reste bon quand il n'y a pas de fond à poser — c'est le cas courant,
+        // et le client reçoit alors son fichier d'origine intact. Mais un fond demandé est
+        // un fond demandé : il vaut pour les trois fichiers, sinon le client trie lui-même
+        // et se demande lequel est le bon.
+        //
+        // Le masque, lui, ne coûte rien de plus : c'est celui que le cadrage vient
+        // d'employer, repris en mémoire sous la même clé (voir MasqueSujet).
+        var fondADeposer = adjustments.GrayBackground
+            ? BackgroundRemoval.GrisIdentite
+            : adjustments.WhiteBackground ? MagickColors.White : null;
+
+        if (fondADeposer is null && SansRedressementAFaire(sourcePath))
             File.Copy(sourcePath, original, overwrite: true);
         else
             using (var entiere = MagickInit.Lire(sourcePath, 0))
             {
                 entiere.AutoOrient();
+
+                if (fondADeposer is not null
+                    && !BackgroundRemoval.PoserUnFond(entiere, fondADeposer, adjustments.CleDeLaPhoto))
+                    Log?.Invoke(
+                        "Courriel : le fond n'a pas pu être posé sur la photo entière — elle " +
+                        "part telle quelle. Les deux fichiers recadrés, eux, sont détourés.");
+
                 MagickInit.Write(entiere, original);
             }
+
+        var apresOriginal = Prendre(chrono);
 
         // Le cadrage passe par le pipeline de rendu : rotation, redressement, recadrage et
         // corrections y sont appliqués dans le bon ordre, et le client reçoit donc
         // exactement ce que l'opérateur a vu à l'écran.
         RendreLeCadrage(sourcePath, crop, rotationQuarterTurns, fineRotationDegrees,
             adjustments, haute);
+
+        var apresHaute = Prendre(chrono);
 
         // la version légère se tire de la haute définition plutôt que d'un second rendu :
         // deux rendus d'une photo de 24 Mpx coûteraient le double pour un résultat
@@ -98,7 +137,22 @@ public static class PhotoMailer
             MagickInit.Write(legere, basse);
         }
 
+        Log?.Invoke(
+            $"Courriel · {Path.GetFileName(sourcePath)} : original {apresOriginal:0.0} s · " +
+            $"cadrage haute définition {apresHaute:0.0} s · version légère {Prendre(chrono):0.0} s" +
+            (adjustments.WhiteBackground || adjustments.GrayBackground
+                ? " (fond détouré compris)"
+                : ""));
+
         return new PhotosDuClient(original, basse, haute);
+    }
+
+    /// <summary>Le temps écoulé depuis la dernière prise, en secondes, et l'on repart de zéro.</summary>
+    private static double Prendre(System.Diagnostics.Stopwatch chrono)
+    {
+        var ecoule = chrono.Elapsed.TotalSeconds;
+        chrono.Restart();
+        return ecoule;
     }
 
     /// <summary>

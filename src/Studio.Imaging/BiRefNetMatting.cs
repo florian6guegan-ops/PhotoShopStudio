@@ -164,6 +164,26 @@ public static class BiRefNetMatting
     private static string? _modeleCharge;
 
     /// <summary>
+    /// La carte sur laquelle faire tourner le réseau, ou null pour la faire CHOISIR par la
+    /// mesure (voir <see cref="ChoisirLaMeilleureCarte"/>).
+    ///
+    /// <b>Elle était en dur à zéro, et zéro n'est pas toujours la bonne.</b> Sur le poste
+    /// d'Arcueil, une Quadro K600 de 2013 — 1 Go de mémoire vidéo, pas de demi-précision
+    /// matérielle — cohabite avec une Intel UHD 630 qui calcule le fp16 nativement et puise
+    /// dans la mémoire du poste. Le réseau tournait sur la première.
+    ///
+    /// Posée par les réglages du poste une fois la mesure faite : on ne la refait pas à
+    /// chaque démarrage, une carte ne change pas toute seule.
+    /// </summary>
+    public static int? Carte { get; set; }
+
+    /// <summary>
+    /// Appelé quand la mesure a désigné une carte, pour que le poste s'en souvienne.
+    /// L'application y range le numéro dans <c>detourage.json</c>.
+    /// </summary>
+    public static Action<int, string>? CarteRetenue { get; set; }
+
+    /// <summary>
     /// Modèles écartés pour la séance, faute de mémoire vidéo.
     ///
     /// Vidé par <see cref="Reinitialiser"/> : changer de réglage doit redonner sa chance à
@@ -407,7 +427,8 @@ public static class BiRefNetMatting
                 options.EnableMemoryPattern = false;
                 options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
 
-                options.AppendExecutionProvider_DML(0);
+                // LA CARTE MESURÉE, et non la première venue. Voir Carte.
+                options.AppendExecutionProvider_DML(Carte ?? 0);
 
                 // ⚠ CE CHARGEMENT SE COMPTE EN SECONDES, et il tombe sur le PREMIER
                 // détourage de la séance — celui que l'opérateur attend devant un client.
@@ -431,6 +452,130 @@ public static class BiRefNetMatting
                 _session = null;
                 return null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Essaie le réseau sur CHAQUE carte du poste et retient la plus rapide.
+    ///
+    /// <b>Pourquoi mesurer plutôt que déduire.</b> Aucune propriété lisible ne classe ces
+    /// cartes : à Arcueil, la Quadro K600 annonce 1024 Mo de mémoire dédiée contre 128 à
+    /// l'Intel UHD 630, et c'est pourtant l'Intel qui gagne — elle calcule la demi-précision
+    /// nativement, là où le Kepler de 2013 ne la connaît pas, et elle puise dans les
+    /// gigaoctets du poste au lieu d'étouffer dans son gigaoctet. Un classement par mémoire
+    /// aurait choisi exactement la mauvaise.
+    ///
+    /// <b>Une fois, et l'on s'en souvient.</b> La mesure coûte un chargement de modèle et un
+    /// passage par carte — de quelques secondes à une minute sur une carte lente. Elle se
+    /// fait au DÉMARRAGE, en tâche de fond, pendant que l'opérateur ouvre sa caisse ; jamais
+    /// devant un client. Le résultat est rangé dans les réglages du poste
+    /// (<see cref="CarteRetenue"/>), et n'est refait que si on l'efface.
+    ///
+    /// Les cartes LOGICIELLES sont écartées sans être essayées : elles répondent à tout et ne
+    /// calculent rien de rapide.
+    /// </summary>
+    /// <returns>Le numéro retenu, ou null si aucune carte n'a pu faire tourner le réseau.</returns>
+    public static int? ChoisirLaMeilleureCarte()
+    {
+        var modele = ModeleRetenu;
+        if (modele is null)
+        {
+            Log?.Invoke("Choix de la carte : aucun modèle installé, il n'y a rien à mesurer.");
+            return null;
+        }
+
+        var cartes = CartesGraphiques.Lister().Where(c => !c.Logicielle).ToList();
+
+        // Une seule carte, ou aucune liste : il n'y a pas de choix à faire, et la mesure ne
+        // ferait que retarder le premier détourage.
+        if (cartes.Count <= 1)
+        {
+            Log?.Invoke(cartes.Count == 1
+                ? $"Choix de la carte : une seule sur ce poste — {cartes[0].Nom}."
+                : "Choix de la carte : DXGI n'en déclare aucune, on garde la carte 0.");
+            return cartes.Count == 1 ? cartes[0].Numero : null;
+        }
+
+        var mesures = new List<(CartesGraphiques.Carte Carte, double Secondes)>();
+
+        foreach (var carte in cartes)
+        {
+            var duree = MesurerUnPassage(modele, carte.Numero);
+
+            if (duree is null)
+            {
+                Log?.Invoke($"Choix de la carte : « {carte.Nom} » n'a pas pu faire tourner le réseau.");
+                continue;
+            }
+
+            Log?.Invoke($"Choix de la carte : « {carte.Nom} » fait un passage en {duree:0.0} s.");
+            mesures.Add((carte, duree.Value));
+        }
+
+        if (mesures.Count == 0)
+        {
+            Log?.Invoke("Choix de la carte : aucune n'a répondu — on garde la carte 0.");
+            return null;
+        }
+
+        var meilleure = mesures.OrderBy(m => m.Secondes).First();
+
+        Log?.Invoke(
+            $"Détourage : carte retenue « {meilleure.Carte.Nom} » (n° {meilleure.Carte.Numero}), " +
+            $"{meilleure.Secondes:0.0} s par photo" +
+            (mesures.Count > 1
+                ? $" — contre {mesures.OrderByDescending(m => m.Secondes).First().Secondes:0.0} s " +
+                  $"sur « {mesures.OrderByDescending(m => m.Secondes).First().Carte.Nom} »."
+                : "."));
+
+        CarteRetenue?.Invoke(meilleure.Carte.Numero, meilleure.Carte.Nom);
+        return meilleure.Carte.Numero;
+    }
+
+    /// <summary>
+    /// Ce que coûte UN passage du réseau sur cette carte, chargement compris, ou null si
+    /// elle n'en est pas capable.
+    ///
+    /// L'entrée est factice : on mesure la machine, pas la photo, et fabriquer une vraie
+    /// image ferait entrer dans la mesure un décodage qui ne dépend pas de la carte.
+    /// </summary>
+    private static double? MesurerUnPassage(string modele, int numero)
+    {
+        try
+        {
+            var options = new SessionOptions
+            {
+                EnableMemoryPattern = false,
+                ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            };
+            options.AppendExecutionProvider_DML(numero);
+
+            using var session = new InferenceSession(modele, options);
+
+            var entree = session.InputMetadata.First();
+            var nomSortie = session.OutputMetadata.First().Key;
+
+            var valeurs = new float[3 * Cote * Cote];
+
+            NamedOnnxValue tenseur = entree.Value.ElementType == typeof(Float16)
+                ? NamedOnnxValue.CreateFromTensor(entree.Key, EnDemiPrecision(valeurs))
+                : NamedOnnxValue.CreateFromTensor(entree.Key,
+                    new DenseTensor<float>(valeurs, [1, 3, Cote, Cote]));
+
+            var chrono = System.Diagnostics.Stopwatch.StartNew();
+
+            // Un seul passage à la fois, comme partout ailleurs : la mesure ne doit pas
+            // demander à la carte ce qu'un détourage lui demanderait en même temps.
+            lock (VerrouExecution)
+                using (session.Run([tenseur], [nomSortie])) { }
+
+            return chrono.Elapsed.TotalSeconds;
+        }
+        catch (Exception)
+        {
+            // carte absente, pilote trop ancien, mémoire insuffisante : elle est simplement
+            // hors course, et la mesure des autres continue
+            return null;
         }
     }
 
@@ -498,10 +643,23 @@ public static class BiRefNetMatting
 
     /// <summary>
     /// Transforme la sortie brute en masque : sigmoïde (le réseau rend des logits), puis
-    /// remise à la taille de la photo.
+    /// remise au RAPPORT de la photo — et non à sa taille.
+    ///
+    /// <b>Le masque était rendu en pleine résolution, et il n'y avait rien à y gagner.</b> Ce
+    /// que le réseau sait tient dans 1024 × 1024 : l'agrandir à 24 Mpx ici n'ajoutait pas un
+    /// échantillon, mais faisait payer un encodage PNG de 5,6 s à la mise en mémoire, puis
+    /// tout le chemin géométrique du rendu sur 24 Mpx au lieu de 1,5. Voir
+    /// <see cref="MasqueSujet.TailleDeCalcul"/> — c'est l'essentiel des 76,6 s d'un envoi par
+    /// courriel relevées à Arcueil le 19/08/2026.
+    ///
+    /// L'agrandissement final n'est pas perdu, il est seulement REPOUSSÉ : chaque appelant
+    /// reçoit le masque à la taille dont il a besoin (<see cref="MasqueSujet.Nu"/>), et le
+    /// rendu, lui, le fait passer par la même géométrie que la photo.
     /// </summary>
     private static ImageMagick.MagickImage EnMasque(float[] brut, uint largeur, uint hauteur)
     {
+        (largeur, hauteur) = MasqueSujet.TailleDeCalcul(largeur, hauteur);
+
         var opacites = new byte[Cote * Cote];
         for (var i = 0; i < opacites.Length; i++)
         {

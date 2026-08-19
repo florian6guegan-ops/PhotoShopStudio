@@ -76,7 +76,86 @@ public partial class MailSendView : UserControl
             VerifierLaConfiguration();
             RemplirLesMessages();
             AdresseBox.Focus();
+
+            // ⚠ LA PRÉPARATION COMMENCE ICI, PAS AU CLIC.
+            //
+            // Elle attendait le bouton « Envoyer » : l'opérateur tapait l'adresse, appuyait,
+            // et regardait alors la caisse se figer le temps d'un rendu de 24 Mpx — six
+            // secondes ici, soixante-seize à Arcueil le 19/08/2026. Or rien de ce travail ne
+            // dépend de l'adresse : les trois fichiers sont entièrement décidés par la photo,
+            // son cadrage et ses corrections, tous connus dès l'ouverture de l'écran.
+            //
+            // On les fabrique donc PENDANT qu'il tape. Le temps de saisir une adresse au
+            // clavier couvre le rendu, et « Envoyer » ne fait plus que l'envoi.
+            //
+            // Rien n'est facturé ni envoyé pour autant — un opérateur qui revient en arrière
+            // laisse simplement trois fichiers de plus dans le dossier du jour, exactement
+            // comme un envoi refusé, et ils resservent tels quels s'il revient.
+            LancerLaPreparation();
         };
+    }
+
+    /// <summary>
+    /// Les trois fichiers de chaque photo, en cours de fabrication ou déjà prêts.
+    /// Null tant que l'écran n'est pas chargé.
+    /// </summary>
+    private Task<PhotosDuClient[]>? _preparation;
+
+    /// <summary>
+    /// Le dossier du jour, décidé une fois : la préparation et l'envoi doivent nommer le
+    /// même, sans quoi l'envoi refabriquerait tout à côté.
+    /// </summary>
+    private string? _dossierPrepare;
+
+    /// <summary>
+    /// Met en route la fabrication des fichiers, sans rien attendre.
+    ///
+    /// Les erreurs ne sont PAS avalées ici : elles restent dans la tâche et remontent à
+    /// l'envoi, là où l'opérateur peut en faire quelque chose. Une photo illisible doit dire
+    /// « envoi impossible » au moment de l'envoi, pas afficher une alerte pendant qu'on tape
+    /// une adresse.
+    /// </summary>
+    private void LancerLaPreparation()
+    {
+        if (_preparation is not null) return;
+
+        // Le dossier porte la date : les fichiers RESTENT après l'envoi, pour qu'un envoi
+        // refusé se rejoue sans tout refabriquer — une photo de 24 Mpx coûte plusieurs
+        // secondes de rendu.
+        _dossierPrepare = Path.Combine(
+            App.Services.DataRoot, "courriel", DateTime.Now.ToString("yyyy-MM-dd"));
+
+        var horodatage = DateTime.Now.ToString("HHmmss");
+        var photos = _photos;
+        var dossier = _dossierPrepare;
+
+        _preparation = Task.Run(() =>
+        {
+            var chrono = System.Diagnostics.Stopwatch.StartNew();
+            var lots = new PhotosDuClient[photos.Count];
+
+            // DEUX À LA FOIS, pas davantage : une photo de 24 Mpx tient plusieurs centaines
+            // de méga-octets dans ImageMagick le temps du rendu, et le détourage du fond
+            // passe de toute façon par un verrou unique (le réseau ONNX ne se partage pas).
+            // Au-delà, on échangerait du temps contre de la mémoire — c'est ce qui fait
+            // tomber le poste, pas ce qui l'accélère.
+            Parallel.For(0, photos.Count,
+                new ParallelOptions { MaxDegreeOfParallelism = 2 },
+                i =>
+                {
+                    var photo = photos[i];
+                    lots[i] = PhotoMailer.Preparer(
+                        photo.SourcePath, photo.Crop, photo.RotationQuarterTurns,
+                        photo.FineRotationDegrees, photo.Adjustments, dossier,
+                        $"{horodatage}-{i + 1:00}");
+                });
+
+            FileLog.Write(
+                $"Courriel : {photos.Count} photo(s) préparée(s) en " +
+                $"{chrono.Elapsed.TotalSeconds:0.0} s, pendant la saisie de l'adresse.");
+
+            return lots;
+        });
     }
 
     /// <summary>
@@ -230,57 +309,32 @@ public partial class MailSendView : UserControl
         EtatText.Text = "Préparation des fichiers…";
         Mouse.OverrideCursor = CurseurStudio.Attente;
 
-        // Le dossier porte la date : les fichiers RESTENT après l'envoi, pour qu'un envoi
-        // refusé se rejoue sans tout refabriquer — une photo de 24 Mpx coûte plusieurs
-        // secondes de rendu.
-        var dossier = Path.Combine(
-            App.Services.DataRoot, "courriel", DateTime.Now.ToString("yyyy-MM-dd"));
-
         try
         {
-            // préparation ET envoi sur un fil de fond : un serveur SMTP qui ne répond pas
-            // gèlerait la caisse deux minutes (c'est le délai posé dans PhotoMailer)
+            var chrono = System.Diagnostics.Stopwatch.StartNew();
+
+            // ⚠ ON RÉCUPÈRE, ON NE REFABRIQUE PAS.
+            //
+            // La préparation a démarré à l'ouverture de l'écran (voir LancerLaPreparation) :
+            // le plus souvent elle est déjà finie quand l'opérateur a fini de taper, et cet
+            // await rend la main aussitôt. Quand elle ne l'est pas, on attend ce qui reste —
+            // jamais plus que ce qu'on aurait attendu de toute façon.
+            LancerLaPreparation();
+            var lots = await _preparation!;
+
+            var prepare = chrono.Elapsed;
+            EtatText.Text = "Envoi en cours…";
+
+            // envoi sur un fil de fond : un serveur SMTP qui ne répond pas gèlerait la
+            // caisse deux minutes (c'est le délai posé dans PhotoMailer)
             await Task.Run(() =>
             {
-                var chrono = System.Diagnostics.Stopwatch.StartNew();
-
-                // ⚠ PRÉPARATION EN PARALLÈLE, ENVOI ENSUITE.
-                //
-                // Les deux se faisaient photo par photo, en alternance : on rendait une
-                // photo de 24 Mpx (plusieurs secondes), on ouvrait une connexion SMTP pour
-                // elle seule, on téléversait, puis on recommençait. Rien ne recouvrait
-                // rien. « L'envoi des photos par mail est extrêmement long », 18/08/2026.
-                //
-                // DEUX À LA FOIS, pas davantage : une photo de 24 Mpx tient plusieurs
-                // centaines de méga-octets dans ImageMagick le temps du rendu, et le
-                // détourage du fond passe de toute façon par un verrou unique (le réseau
-                // ONNX ne se partage pas). Au-delà, on échangerait du temps contre de la
-                // mémoire — c'est ce qui fait tomber le poste, pas ce qui l'accélère.
-                var horodatage = DateTime.Now.ToString("HHmmss");
-
-                var lots = new PhotosDuClient[_photos.Count];
-
-                Parallel.For(0, _photos.Count,
-                    new ParallelOptions { MaxDegreeOfParallelism = 2 },
-                    i =>
-                    {
-                        var photo = _photos[i];
-                        lots[i] = PhotoMailer.Preparer(
-                            photo.SourcePath, photo.Crop, photo.RotationQuarterTurns,
-                            photo.FineRotationDegrees, photo.Adjustments, dossier,
-                            $"{horodatage}-{i + 1:00}");
-                    });
-
-                var prepare = chrono.Elapsed;
-                FileLog.Write(
-                    $"Courriel : {_photos.Count} photo(s) préparée(s) en {prepare.TotalSeconds:0.0} s.");
-
                 // UNE SEULE connexion pour tous les messages : voir EnvoyerPlusieurs
                 PhotoMailer.EnvoyerPlusieurs(reglages, adresses, lots, mot);
 
                 FileLog.Write(
                     $"Courriel : envoi terminé en {chrono.Elapsed.TotalSeconds:0.0} s " +
-                    $"(dont {prepare.TotalSeconds:0.0} s de préparation).");
+                    $"(dont {prepare.TotalSeconds:0.0} s d'attente de la préparation).");
             });
 
             EtatText.Text = "Envoi effectué.";
@@ -301,6 +355,12 @@ public partial class MailSendView : UserControl
         {
             Mouse.OverrideCursor = null;
             FileLog.Write("Envoi par courriel impossible", ex);
+
+            // UNE PRÉPARATION EN ÉCHEC NE DOIT PAS SE REJOUER TELLE QUELLE : une tâche
+            // fautive garde son exception pour toujours, et « réessayer » rendrait
+            // indéfiniment la même erreur sans jamais retoucher au disque. On la jette, le
+            // prochain essai repart d'une préparation neuve.
+            if (_preparation is { IsFaulted: true }) _preparation = null;
 
             // RIEN n'est facturé quand l'envoi échoue : le client n'a pas ses photos.
             EtatText.Text = "Envoi impossible — rien n'a été facturé.";

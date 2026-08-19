@@ -112,6 +112,33 @@ Un QR code à l'écran, le téléphone dépose les fichiers. Pas de câble, pas 
 **Envoyer au client** dépose la commande sur Dropbox et rend un lien, à donner de vive voix
 ou par courriel. Les fichiers s'effacent d'eux-mêmes au bout de quelques jours.
 
+### L'envoi par courriel ne fait plus attendre
+
+Les fichiers se fabriquent **pendant que l'opérateur tape l'adresse**, plus après le clic sur
+*Envoyer*. Rien de ce travail ne dépend de l'adresse : la photo, son cadrage et ses
+corrections sont connus dès l'ouverture de l'écran.
+
+Sur une photo de 6000×4000 en 50×70 avec fond blanc, l'attente après *Envoyer* passe de
+**onze secondes à zéro** — il ne reste que l'envoi lui-même. À Arcueil, où un envoi prenait
+jusqu'à une minute et demie, deux causes s'ajoutaient : le masque du sujet était réencodé en
+pleine définition à chaque usage, et le détourage tournait sur la **mauvaise carte
+graphique** (voir ci-dessous).
+
+Et dans le même temps qu'avant, on en fait plus : **la photo entière est détourée elle
+aussi**, pas seulement le cadrage. C'est la pièce jointe que le client recevait encore avec
+le fond du studio.
+
+### Le détourage choisit sa carte graphique
+
+Un poste à deux cartes ne dit pas laquelle calcule le plus vite, et Studio demandait la
+n° 0 en dur. À Arcueil, cette n° 0 était une Quadro K600 de 2013 : elle annonce huit fois
+plus de mémoire dédiée que l'Intel UHD 630 d'à côté, et elle perd — l'UHD calcule la demi-
+précision nativement.
+
+Studio **mesure donc les cartes une fois**, au premier démarrage et en tâche de fond, puis
+retient la gagnante dans ses réglages. Rien à faire, rien à choisir. Après un changement de
+carte ou de pilote, effacer la ligne `Carte` de `detourage.json` refait la mesure.
+
 ### L'état des machines est lu, pas supposé
 
 Un bandeau permanent : état, rouleau, encres, bac de maintenance, tirages restants **par
@@ -174,6 +201,12 @@ dossiers sans prévenir.
 Détection du visage, cadrage aux cotes réglementaires selon le document choisi, et un
 **gabarit de contrôle** qui montre si la tête est à la bonne hauteur et à la bonne taille
 avant d'imprimer la planche.
+
+Sur un document **étranger**, les planches françaises ne se doublent plus dans la liste :
+« 35×45 planche de 6 » et « 35×45 planche de 8 » tombent sur le même nombre de cases dès que
+la case n'est plus un 35×45, et l'opérateur avait une chance sur deux de facturer 15 €
+ce qui en vaut 10. Studio garde alors la moins chère. Sur le 35×45, chaque planche est à sa norme et les deux
+lignes restent.
 
 ### Le reste, en vrac
 

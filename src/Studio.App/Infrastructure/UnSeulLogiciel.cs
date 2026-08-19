@@ -48,7 +48,20 @@ public static class UnSeulLogiciel
     private static readonly TimeSpan DelaiDuRelais = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// L'AUTRE logiciel, s'il tourne déjà sur ce poste. Null quand la voie est libre.
+    /// L'AUTRE application qui tient déjà les machines sur ce poste. Null quand la voie est
+    /// libre.
+    ///
+    /// <b>« L'autre », c'est aussi UN AUTRE EXEMPLAIRE DE SOI-MÊME</b>, et cette classe l'a
+    /// longtemps nié : « deux fenêtres du même logiciel ne se disputent pas le relais, c'est
+    /// le même client qui le tient ». C'est vrai de deux FENÊTRES — WPF n'en ouvre qu'un
+    /// processus — et faux de deux PROCESSUS. Chacun démarre son propre relais ; le second
+    /// n'y arrive pas, le tube étant à instance unique, et l'application attend trente
+    /// secondes avant de se replier sur le pilote. <b>À chaque photo.</b>
+    ///
+    /// Arcueil, 19/08/2026 : un <c>Studio.Identite</c> de la 1.5.31 laissé vivant par la mise
+    /// à jour, un autre en 1.5.35 par-dessus. Trente secondes perdues sur chacune des cinq
+    /// planches de la commande 19-003, et le journal répétait « le relais DE100 a démarré
+    /// mais n'a pas ouvert la liaison » sans que rien ne dise pourquoi.
     /// </summary>
     /// <param name="moi">
     /// Le nom d'exécutable de l'application qui démarre, sans extension.
@@ -56,30 +69,52 @@ public static class UnSeulLogiciel
     /// <returns>Son nom lisible, à montrer à l'opérateur.</returns>
     public static string? LAutreQuiTourne(string moi)
     {
-        var autre = LAutre(moi);
-
-        try
+        foreach (var (exe, memeLogiciel) in new[] { (LAutre(moi), false), (moi, true) })
         {
-            // On ne compte que les AUTRES processus : deux fenêtres du même logiciel ne se
-            // disputent pas le relais, c'est le même client qui le tient.
-            var vivants = Process.GetProcessesByName(autre);
             try
             {
-                if (vivants.Length == 0) return null;
+                var vivants = Concurrents(exe, memeLogiciel);
+                try
+                {
+                    if (vivants.Length > 0)
+                        return memeLogiciel
+                            ? $"Un autre {NomLisible(exe)}"
+                            : NomLisible(exe);
+                }
+                finally
+                {
+                    foreach (var p in vivants) p.Dispose();
+                }
             }
-            finally
+            catch (Exception)
             {
-                foreach (var p in vivants) p.Dispose();
+                // Pas de droit de lecture sur la liste des processus : on ne bloque rien. Se
+                // tromper en refusant l'ouverture serait pire que le défaut qu'on prévient.
+                return null;
             }
-        }
-        catch (Exception)
-        {
-            // Pas de droit de lecture sur la liste des processus : on ne bloque rien. Se
-            // tromper en refusant l'ouverture serait pire que le défaut qu'on prévient.
-            return null;
         }
 
-        return NomLisible(autre);
+        return null;
+    }
+
+    /// <summary>
+    /// Les processus de <paramref name="exe"/> qui nous disputeraient le relais.
+    ///
+    /// <paramref name="memeLogiciel"/> écarte le nôtre : on cherche un CONCURRENT, et se
+    /// trouver soi-même refuserait tous les démarrages.
+    /// </summary>
+    private static Process[] Concurrents(string exe, bool memeLogiciel)
+    {
+        var vivants = Process.GetProcessesByName(exe);
+        if (!memeLogiciel) return vivants;
+
+        var moi = Environment.ProcessId;
+        var autres = vivants.Where(p => p.Id != moi).ToArray();
+
+        foreach (var p in vivants)
+            if (p.Id == moi) p.Dispose();
+
+        return autres;
     }
 
     /// <summary>
@@ -172,7 +207,13 @@ public static class UnSeulLogiciel
         Process[] vivants;
         try
         {
-            vivants = Process.GetProcessesByName(LAutre(moi));
+            // L'autre logiciel ET nos propres doublons : les deux tiennent un relais, les
+            // deux doivent partir. Voir LAutreQuiTourne.
+            vivants =
+            [
+                .. Concurrents(LAutre(moi), memeLogiciel: false),
+                .. Concurrents(moi, memeLogiciel: true),
+            ];
         }
         catch (Exception)
         {

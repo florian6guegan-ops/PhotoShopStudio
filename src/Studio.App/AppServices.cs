@@ -316,8 +316,38 @@ public sealed class AppServices
     {
         BiRefNetMatting.Actif = reglages.Actif;
         BiRefNetMatting.ModelePrefere = ModelePourCetteCarte(reglages);
+        BiRefNetMatting.Carte = reglages.Carte;
         BiRefNetMatting.Reinitialiser();
     }
+
+    /// <summary>
+    /// Fait mesurer les cartes du poste, si ça n'a jamais été fait, et retient la plus
+    /// rapide.
+    ///
+    /// <b>À appeler au DÉMARRAGE, en tâche de fond.</b> La mesure charge le modèle sur chaque
+    /// carte : quelques secondes sur une carte moderne, près d'une minute sur une carte de
+    /// 2013. C'est supportable pendant que l'opérateur ouvre sa caisse, et insupportable
+    /// devant un client — d'où le moment choisi, et d'où le fait qu'on ne la refait jamais
+    /// d'elle-même : le résultat est écrit dans <c>detourage.json</c>.
+    ///
+    /// Ne fait rien tant que le réseau est éteint : sur un poste qui détoure par la couleur,
+    /// il n'y a pas de carte à départager.
+    /// </summary>
+    public void MesurerLesCartesSiBesoin()
+    {
+        var reglages = Detourage;
+        if (!reglages.Actif || reglages.Carte is not null) return;
+
+        var choisie = BiRefNetMatting.ChoisirLaMeilleureCarte();
+        if (choisie is null) return;
+
+        // relu plutôt que réutilisé : l'opérateur a pu toucher aux réglages pendant la
+        // mesure, et on ne doit écraser que la carte
+        var actuels = DetourageSettings.Load(ConfigDir);
+        SaveDetourage(actuels with { Carte = choisie, CarteNom = _nomDeLaCarteRetenue });
+    }
+
+    private static string? _nomDeLaCarteRetenue;
 
     /// <summary>
     /// Le modèle qu'on demandera VRAIMENT au moteur, une fois la carte de ce poste
@@ -668,6 +698,13 @@ public sealed class AppServices
         // C'est la seule trace qui permette de comprendre un réglage sans effet.
         BiRefNetMatting.Log = message => FileLog.Write(message);
         BackgroundRemoval.Log = message => FileLog.Write(message);
+
+        // Et le seul qui dise si un détourage a été REFAIT : sans lui, un envoi lent ne
+        // s'explique pas — voir MasqueSujet.Brut, et les 76,6 s d'Arcueil du 19/08/2026.
+        Studio.Imaging.MasqueSujet.Log = message => FileLog.Write(message);
+
+        // La carte que la mesure a désignée : on la garde ici, SaveDetourage l'écrira.
+        BiRefNetMatting.CarteRetenue = (_, nom) => _nomDeLaCarteRetenue = nom;
         ImagePipeline.Log = message => FileLog.Write(message);
         DevMode.Log = message => FileLog.Write(message);
         PdfPages.Log = message => FileLog.Write(message);

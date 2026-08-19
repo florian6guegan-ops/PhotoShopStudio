@@ -638,7 +638,11 @@ public static class ImagePipeline
         var unFond = a.GrayBackground || a.WhiteBackground;
         if (!leSujet && !unFond) return null;
 
-        return MasqueSujet.Nu(image, a.CleDeLaPhoto);
+        // AU RAPPORT SEULEMENT : ce masque-ci ne se compose pas sur la photo entière, il
+        // traverse d'abord la même géométrie qu'elle et finit à la taille du tirage. Le
+        // rendre en 24 Mpx pour le recadrer ensuite en 8 était du travail pur — six secondes
+        // par photo sur l'envoi par courriel du 19/08/2026.
+        return MasqueSujet.Nu(image, a.CleDeLaPhoto, auRapportSeulement: true);
     }
 
     /// <summary>

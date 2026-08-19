@@ -262,8 +262,27 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // de la liste plutôt que proposés puis refusés à l'impression.
         var sheetProducts = App.Services.Catalog.Enabled
             .Where(p => p.Sheet is not null)
-            .Select(p => new ProductChoice(p, CapaciteDe(p, _document)))
+            .Select(p => new ProductChoice(p, CapaciteDe(p, _document), EstSaNorme(p, _document)))
             .Where(c => c.Capacite > 0)
+            // ⚠ SUR UN DOCUMENT ÉTRANGER, LES PLANCHES FRANÇAISES SE DOUBLENT.
+            //
+            // Le catalogue de la boutique porte deux planches, « 35×45 planche de 6 » à
+            // 10 € et « 35×45 planche de 8 » à 15 €. Ce qui les distingue — le nombre de
+            // cases — ne vaut QUE pour le 35×45 français : sur un passeport canadien de
+            // 50×70, la capacité se recalcule sur le document et les deux tombent sur le
+            // même nombre. L'opérateur voyait donc deux lignes rigoureusement identiques
+            // au prix près, et une chance sur deux de facturer 15 € ce qui en vaut 10.
+            //
+            // Même papier, même capacité, et aucune des deux n'est à sa norme : c'est UNE
+            // offre, pas deux. On garde la moins chère — le client n'a pas à payer le
+            // hasard d'un clic.
+            //
+            // <b>Et seulement là</b> : sur le 35×45, chaque planche est à SA norme, les six
+            // et les huit sont deux offres réelles, et les deux lignes restent.
+            .GroupBy(c => c.SaNorme
+                ? c.Product.Code
+                : $"{c.Product.PrinterName}|{c.Product.WidthMm:0.#}x{c.Product.HeightMm:0.#}|{c.Capacite}")
+            .Select(g => g.OrderBy(c => c.Product.Price).First())
             .ToList();
         ProductCombo.ItemsSource = sheetProducts;
         ProductCombo.SelectedIndex = 0;
@@ -291,11 +310,44 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         _ = new ToucheFenetre(this, OnFenetreKeyDown, auDepart: () => RedressementArme = false);
     }
 
+    /// <summary>
+    /// Au-delà de ce nombre de planches, on demande confirmation avant d'imprimer.
+    ///
+    /// Cinq : de quoi couvrir la famille venue à quatre et la commande double, sans jamais
+    /// s'interposer sur le geste courant. Voir l'usage — commande 19-003 du 19/08/2026.
+    /// </summary>
+    private const int SeuilDeConfirmationDuLot = 5;
+
     /// <param name="Capacite">Cases du document visé qui tiennent sur ce papier.</param>
-    private sealed record ProductChoice(Product Product, int Capacite)
+    /// <param name="SaNorme">
+    /// Vrai quand la case déclarée au produit EST celle du document visé. Faux dès qu'on
+    /// pose un document étranger sur une planche française : le nom du produit ne décrit
+    /// alors plus ce qui sortira.
+    /// </param>
+    private sealed record ProductChoice(Product Product, int Capacite, bool SaNorme)
     {
-        public string Label => $"{Product.Name} — {Capacite} par planche — {Product.Price:0.00} €";
+        /// <summary>
+        /// <b>Le nom du produit ment sur un document étranger.</b> « Photos d'identité 35×45
+        /// (planche de 8) » annonce un format et un nombre dont ni l'un ni l'autre ne sortira
+        /// quand la case est un 50×70 canadien. On nomme alors le PAPIER, qui est ce que
+        /// l'opérateur choisit vraiment ici, et la capacité dit le reste.
+        /// </summary>
+        public string Label => SaNorme
+            ? $"{Product.Name} — {Capacite} par planche — {Product.Price:0.00} €"
+            : $"{Product.WidthMm:0.#} × {Product.HeightMm:0.#} mm — {Capacite} par planche — " +
+              $"{Product.Price:0.00} €";
     }
+
+    /// <summary>
+    /// La case déclarée à ce produit est-elle celle du document visé ?
+    ///
+    /// Un demi-millimètre de tolérance : les normes se saisissent au dixième et les
+    /// catalogues à l'entier, un 35 face à un 35,0 ne doit pas se lire comme un autre format.
+    /// </summary>
+    private static bool EstSaNorme(Product product, IdDocumentSpec document) =>
+        product.Sheet is { } sheet
+        && Math.Abs(sheet.CellWidthMm - document.WidthMm) <= 0.5
+        && Math.Abs(sheet.CellHeightMm - document.HeightMm) <= 0.5;
 
     /// <summary>
     /// Nombre de photos du document visé qui tiennent sur ce papier, 0 si pas même une.
@@ -2598,6 +2650,40 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 "le lot — ou remontez le compteur « Planches ».",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
+        }
+
+        // ⚠ UN GROS LOT SE CONFIRME. Un clic ne doit pas engager toute la carte du client.
+        //
+        // Arcueil, 19/08/2026, commande 19-003 : quatre-vingt-une planches parties d'un seul
+        // « Imprimer ». La bande portait les 81 photos de la carte, quelqu'un a touché
+        // « ☑ tout » à l'écran de choix, et le poste identité imprime SANS récapitulatif —
+        // rien entre le clic et le papier. Trois feuilles étaient sorties quand la machine
+        // s'est arrêtée d'elle-même, et les soixante-dix-huit autres attendaient leur tour.
+        //
+        // Le seuil est haut exprès : une planche, deux, quatre, c'est le geste ordinaire du
+        // comptoir et il ne doit RIEN demander — c'est ce qui sépare ce logiciel d'ID Maker.
+        // Au-delà de cinq, ce n'est plus un client devant soi, c'est un lot, et un lot mérite
+        // une phrase.
+        var feuilles = planches.Sum(p => p.Quantite);
+
+        if (feuilles > SeuilDeConfirmationDuLot)
+        {
+            var reponse = MessageBox.Show(
+                $"Vous allez sortir {feuilles} planches, sur {planches.Count} photo(s).\n\n" +
+                $"Cela fait {feuilles} feuilles de papier, l'une après l'autre.\n\n" +
+                "Si vous n'attendiez qu'une photo de client, revenez en arrière : c'est " +
+                "probablement toute la carte qui a été retenue.\n\nImprimer les " +
+                $"{feuilles} planches ?",
+                "Studio Photo", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
+            if (reponse != MessageBoxResult.Yes)
+            {
+                FileLog.Write(
+                    $"Impression identité abandonnée par l'opérateur : {feuilles} planches " +
+                    $"sur {planches.Count} photo(s) retenue(s).");
+                return;
+            }
         }
 
         // POSTE IDENTITÉ : on imprime, sans écran intermédiaire.

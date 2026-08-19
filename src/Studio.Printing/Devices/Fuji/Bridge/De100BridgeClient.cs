@@ -155,14 +155,60 @@ public sealed class De100BridgeClient : IAsyncDisposable
 
         try
         {
-            await _pipe.ConnectAsync((int)_timeout.TotalMilliseconds, cancellation);
+            var liaison = _pipe.ConnectAsync((int)_timeout.TotalMilliseconds, cancellation);
+
+            // ⚠ UN RELAIS MORT N'OUVRIRA JAMAIS SA LIAISON : on n'attend pas le délai.
+            //
+            // Cette attente était sèche — trente secondes, quoi qu'il arrive. Or l'échec le
+            // plus fréquent est instantané et définitif : le relais démarre, ne peut pas
+            // créer son tube parce qu'un AUTRE relais le tient déjà (« toutes les instances
+            // des canaux de communication sont occupées »), et meurt dans la seconde. On
+            // attendait alors vingt-neuf secondes de plus pour apprendre ce que le système
+            // avait déjà dit.
+            //
+            // Arcueil, 19/08/2026 : deux Studio Photo Identité ouverts ensemble — voir
+            // UnSeulLogiciel, qui referme cette porte-là. Trente secondes perdues sur
+            // CHAQUE photo de chaque commande, à ne rien faire, avant de se replier sur le
+            // pilote. « L'impression est beaucoup trop longue », signalé le jour même.
+            //
+            // Le repli lui-même est bon et ne change pas : ce qui change est qu'on y arrive
+            // en une demi-seconde au lieu d'une demi-minute.
+            using var course = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            var surveillance = LeRelaisEstMort(course.Token);
+
+            var gagnant = await Task.WhenAny(liaison, surveillance);
+            course.Cancel(); // la course est jugée : on relâche la surveillance
+
+            if (gagnant != liaison)
+            {
+                // ⚠ LA RAISON SE LIT AVANT DE RANGER, et c'est tout l'intérêt.
+                //
+                // AbandonnerLaConnexion oublie le processus (_host = null) : appelée
+                // d'abord, elle emportait le code de sortie du relais et sa sortie
+                // d'erreur, et il ne restait que le message par défaut — « il a démarré
+                // mais n'a pas ouvert la liaison », qui ne dit rien à personne. C'est le
+                // « toutes les instances des canaux de communication sont occupées » qu'on
+                // veut lire : il nomme la vraie panne, un autre logiciel déjà ouvert.
+                var raison = DescribeStartupFailure(hostPath);
+                AbandonnerLaConnexion();
+                throw new IOException(raison);
+            }
+
+            await liaison;
         }
         catch (TimeoutException)
         {
             // le plus souvent le relais est mort au démarrage : sa sortie d'erreur dit
-            // pourquoi, et c'est bien plus utile qu'un « pas de réponse »
+            // pourquoi, et c'est bien plus utile qu'un « pas de réponse ». Relevée AVANT le
+            // rangement, qui oublie le processus — voir ci-dessus.
+            var raison = DescribeStartupFailure(hostPath);
             AbandonnerLaConnexion();
-            throw new TimeoutException(DescribeStartupFailure(hostPath));
+            throw new TimeoutException(raison);
+        }
+        catch (IOException)
+        {
+            // déjà expliquée ci-dessus, et la connexion déjà défaite
+            throw;
         }
         catch
         {
@@ -178,6 +224,38 @@ public sealed class De100BridgeClient : IAsyncDisposable
 
         Log?.Invoke("Relais DE100 connecté.");
     }
+
+    /// <summary>
+    /// Se termine quand le relais qu'on vient de lancer est mort SANS avoir ouvert sa
+    /// liaison. Ne se termine jamais s'il n'y a pas de relais à observer.
+    ///
+    /// <b>Le battement de grâce n'est pas une précaution de style.</b> Le relais peut très
+    /// bien accepter la connexion puis s'arrêter aussitôt — c'est ce qu'il fait à chaque
+    /// déconnexion normale. Sans ce délai, une liaison réussie perdrait la course contre la
+    /// mort du processus qui vient de l'accepter, et l'on jetterait une connexion valide.
+    /// </summary>
+    private async Task LeRelaisEstMort(CancellationToken cancellation)
+    {
+        try
+        {
+            if (_host is not { } relais)
+            {
+                await Task.Delay(Timeout.Infinite, cancellation);
+                return;
+            }
+
+            await relais.WaitForExitAsync(cancellation);
+            await Task.Delay(BattementApresLaMort, cancellation);
+        }
+        catch (OperationCanceledException)
+        {
+            // la liaison a gagné la course, ou l'appelant a renoncé : il n'y a plus rien à
+            // surveiller. Le résultat de cette tâche n'est plus lu.
+        }
+    }
+
+    /// <summary>Ce qu'on laisse à une liaison en cours d'aboutir après la mort du relais.</summary>
+    private static readonly TimeSpan BattementApresLaMort = TimeSpan.FromMilliseconds(300);
 
     /// <summary>
     /// Défait ce qu'une connexion ratée laisse derrière elle : le tube, et surtout le RELAIS.

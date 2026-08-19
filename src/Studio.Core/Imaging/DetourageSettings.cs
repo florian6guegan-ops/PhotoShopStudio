@@ -36,9 +36,29 @@ namespace Studio.Core.Imaging;
 /// réussit la première photo puis échoue sur la seconde (<c>DmlFusedNode</c>, constaté le
 /// 03/08/2026). Voir <see cref="MemoireVideoRecommandeeGo"/>.
 /// </param>
+/// <param name="Carte">
+/// Numéro DirectML de la carte graphique retenue, ou null tant qu'aucune mesure n'a été
+/// faite sur ce poste.
+///
+/// <b>Le zéro en dur choisissait parfois la mauvaise.</b> Sur le poste d'Arcueil, une Quadro
+/// K600 de 2013 (1 Go, sans demi-précision matérielle) cohabite avec une Intel UHD 630 —
+/// et rien de lisible ne dit laquelle va le plus vite : la K600 annonce huit fois plus de
+/// mémoire dédiée, et perd. On mesure donc, une fois, et on retient (voir
+/// <c>BiRefNetMatting.ChoisirLaMeilleureCarte</c>).
+///
+/// Effacer ce champ refait la mesure au prochain démarrage : c'est ce qu'il faut faire après
+/// un changement de carte ou de pilote.
+/// </param>
+/// <param name="CarteNom">
+/// Le nom de la carte retenue, tel que le pilote le déclare. Il ne sert à RIEN au code — il
+/// sert à l'exploitant, qui relit son fichier de réglages et doit pouvoir vérifier que le
+/// numéro désigne encore la même carte.
+/// </param>
 public sealed record DetourageSettings(
     bool Actif = false,
-    bool ModelePuissant = false)
+    bool ModelePuissant = false,
+    int? Carte = null,
+    string? CarteNom = null)
 {
     /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
     public const string FileName = "detourage.json";

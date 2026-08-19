@@ -65,7 +65,33 @@ public partial class App : Application
         }
 
         FaireLeMenageDropbox();
+        MesurerLesCartes();
     }
+
+    /// <summary>
+    /// Fait départager les cartes graphiques du poste, une seule fois dans sa vie.
+    ///
+    /// <b>Au démarrage et en tâche de fond</b>, pour la même raison que le ménage Dropbox
+    /// ci-dessous : la mesure charge le réseau sur chaque carte et peut prendre une minute
+    /// sur une carte ancienne. Le matin, pendant qu'on ouvre la caisse, cela ne coûte rien ;
+    /// devant un client, ce serait insupportable.
+    ///
+    /// Elle ne se rejoue jamais d'elle-même — le résultat est écrit dans les réglages du
+    /// poste. Voir <c>AppServices.MesurerLesCartesSiBesoin</c>.
+    /// </summary>
+    public static void MesurerLesCartes() => Task.Run(() =>
+    {
+        try
+        {
+            Services?.MesurerLesCartesSiBesoin();
+        }
+        catch (Exception ex)
+        {
+            // Une mesure ratée n'est pas une panne : on garde la carte 0, qui est ce que
+            // faisait le logiciel avant qu'on sache choisir.
+            Infrastructure.FileLog.Write("Mesure des cartes graphiques impossible", ex);
+        }
+    });
 
     /// <summary>
     /// Retire du Dropbox du studio les envois périmés, une fois par démarrage.

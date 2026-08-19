@@ -382,7 +382,13 @@ public static class BackgroundRemoval
         // 4000 × 6016 coûtait 28 s ici (Magick.NET est mono-fil sur ce poste, mesuré le
         // 03/08/2026). L'agrandissement qui suit lisse encore.
         resultat.Blur(0, Math.Max(1.0, TailleMasque * AdoucissementRelatif));
-        resultat.Resize(new ImageMagick.MagickGeometry(image.Width, image.Height)
+
+        // AU RAPPORT DE LA PHOTO, PAS À SA TAILLE — la même règle que pour le réseau, et
+        // pour la même raison : ce masque a été calculé sur 900 px de côté, l'étirer à
+        // 24 Mpx ici ne fait qu'ajouter de l'interpolation à encoder, à ranger et à
+        // repromener. Voir MasqueSujet.TailleDeCalcul.
+        var (largeur, hauteur) = MasqueSujet.TailleDeCalcul(image.Width, image.Height);
+        resultat.Resize(new ImageMagick.MagickGeometry(largeur, hauteur)
             { IgnoreAspectRatio = true });
 
         return resultat;
