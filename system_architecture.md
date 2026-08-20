@@ -2752,3 +2752,96 @@ Le choix vaut pour CE format : une photo passée à un autre produit repart en t
 ordinaire, ce qui garde aussi la grille pleine — une ligne montée ne mélange qu'un format. Et
 il voyage dans `TravailEnAttente` : perdu à la reprise, il ferait ressortir la commande sur
 deux fois plus de papier sans que personne s'en aperçoive.
+
+## L'historique des 30 jours : un journal à part, et pourquoi pas les commandes
+
+Studio Photo Identité garde les photos **faites** — imprimées ou envoyées par courriel —
+trente jours, avec le réglage exact de chacune, pour les rouvrir sans rien remettre.
+Une photo simplement OUVERTE n'y entre pas : la carte d'un client en porte quatre-vingts.
+
+Le journal vit dans `identite\historique\` (`HistoriqueIdentite`), un fichier par photo, et
+non dans les commandes. **Deux raisons dures :**
+
+- les commandes **ne gardent pas les repères** de crâne et de menton (`TraduireIdentite` le
+  documente). Une planche rouverte sans eux relance la détection de visage et écrase le
+  placement manuel — c'est-à-dire précisément ce qu'on vient chercher ;
+- une photo **envoyée par courriel** n'est pas reconnaissable comme une identité dans une
+  commande : elle porte le produit « envoi courriel », sans taille de case.
+
+Écrire les repères dans `OrderItem` reviendrait à changer l'enregistrement **comptable** pour
+un confort d'écran. Les commandes restent la vérité comptable ; le journal n'est qu'un index
+de travail — il ne facture rien et ne solde rien.
+
+Ce qu'il porte est un `TravailEnAttente`, le même objet que les planches mises de côté : une
+seule forme à faire évoluer, et `IdPhotoView(TravailEnAttente)` sait déjà la rouvrir.
+**Une tuile touchée rouvre la photo SUR L'ÉCRAN DE TRAVAIL**, avec un `Id` neuf — donc avec
+« Imprimer » et « Envoyer par e-mail », qui sont ceux de l'écran. Pas d'écran séparé aux
+fonctions limitées.
+
+La clé d'une entrée est **le fichier ET la journée** : imprimer puis envoyer la même photo
+fait une tuile et deux pastilles, pas deux tuiles. Le nom du fichier du journal en est déduit
+(SHA-256 tronqué) : retrouver une entrée est une lecture, jamais un parcours de dossier.
+
+⚠ Le bouton « 🕘 Photos récentes · 30 j » n'est visible que si `Mode.IsIdentite` — le
+LOGICIEL, pas la session (`EnIdentiteVerrouille`) : sortir par le PIN pour dépanner ne doit
+pas faire disparaître l'historique sous les doigts de l'opérateur. Le journal, lui, est écrit
+par les deux applications, qui partagent la racine de données.
+
+### ⚠ Une photo a DEUX noms, et la reprise a besoin des deux
+
+Le nom du **client** (`IMG_1234.jpg`) est celui que l'opérateur reconnaît : il part dans la
+commande, dans les messages, et sur la tuile de l'historique. Le nom **sur le disque** est
+celui du fichier qu'on lit vraiment — et dès qu'on passe par l'historique, c'est celui de la
+copie de travail (`IMG_1234-ab12cd34.jpg`), puisque la carte du client est repartie avec lui.
+
+La bande de gauche se remplit depuis les CHEMINS : elle porte donc le nom sur le disque, alors
+que la fiche a gardé celui du client. `AppliquerLAttente` cherchait le second et ne trouvait
+rien : **la boucle sautait toutes les photos et la planche revenait vide de tout réglage** —
+cadrage, repères, fond blanc, corrections à neutre, sans erreur à l'écran ni une ligne au
+journal. Une planche mise de côté, elle, est reprise sur le support du client, où les deux
+noms se confondent : le défaut ne touchait QUE l'historique, c'est-à-dire tout ce que cette
+passe existe pour rendre.
+
+`PhotoIdentiteEnAttente` porte donc les deux (`FileName` et `NomSurLeDisque`), et
+`RepriseDeLaPlanche` — sorti du code-behind pour être essayable, comme `CopieDeTravail` —
+indexe par l'un et par l'autre, **le nom du client d'abord** : deux clients apportent souvent
+un `IMG_1234.jpg`, et reprendre le cadrage d'une inconnue sortirait le visage de quelqu'un
+d'autre. La photo retrouvée est ensuite **renommée** au nom du client, pour que la commande
+suivante et la tuile suivante ne portent pas le nom d'une copie.
+
+## Les masques de détourage SURVIVENT au lancement
+
+`MasqueSujet` garde quatre masques en mémoire, et ils meurent avec l'application. Ils sont
+désormais écrits sous `cache\masques\<méthode>\<empreinte>.png` : lecture mémoire → **disque**
+→ réseau. Une photo rouverte le lendemain retrouve son fond blanc en quelques millisecondes
+au lieu de repayer plusieurs secondes de réseau — et surtout, elle retrouve **le même** : sur
+une carte à 4 Go, c'est le second passage qui manque de mémoire et rend un fond dégradé.
+
+⚠ **Un sous-dossier par méthode** (`couleur`, `birefnet-lite-fp16`, `birefnet-portrait-fp16`).
+Sans lui, changer de modèle dans les réglages ne changerait plus rien à ce qui sort, et le
+réglage passerait pour inopérant — défaut invisible et pénible à retrouver.
+
+⚠ Les octets ne viennent plus forcément de nous : signature PNG vérifiée à la lecture, fichier
+abîmé effacé, décodage protégé. Un masque illisible fait **renoncer à la correction**, jamais
+éclater un rendu — c'est déjà la règle de cette classe.
+
+`DejaEnMemoire` regarde le disque aussi, sinon l'écran annonce six secondes d'attente pour
+aller lire un fichier en cinq millisecondes.
+
+## Le cache se purge à 30 jours, et c'est la MÊME rétention que l'historique
+
+`cache\travail` reçoit une copie de chaque photo ouverte au comptoir — c'est ce qui la sauve
+du retrait de la carte du client. **Rien ne le purgeait**, sur quatre postes.
+`MenageDuCache` efface les journées de plus de trente jours (la date vient du **nom** du
+dossier, comme l'archivage des commandes, et non d'une date d'écriture qu'une sauvegarde
+rafraîchit) et les masques de plus de trente jours.
+
+La rétention est celle de l'historique, et ce n'est pas une coïncidence : **la fiche et les
+pixels qu'elle désigne doivent disparaître ensemble.** C'est ce qui impose la règle la moins
+évidente du lot — une copie de travail d'un AUTRE jour est recopiée dans le dossier du jour
+(`MettreALAbriAsync`). Sans cela, une photo rouverte le vingtième jour et réimprimée laisse
+une fiche vivante jusqu'au cinquantième, pointant sur un fichier effacé au trentième.
+
+Le ménage tourne dans les DEUX applications (`AppServices.MenageDuCacheEnFond`) : c'est le
+poste identité qui ouvre des cartes toute la journée. L'entretien complet — archivage des
+commandes, sauvegarde — reste au Studio de la boutique.

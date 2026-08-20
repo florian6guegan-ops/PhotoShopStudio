@@ -43,6 +43,11 @@ public partial class FenetreIdentite : Window
         {
             AccueilStudio.Rentrer();
 
+            // Le ménage du cache : ce poste ouvre des cartes toute la journée, donc c'est
+            // lui qui remplit `cache\travail`. Pas l'entretien complet — l'archivage des
+            // commandes et la sauvegarde appartiennent au Studio de la boutique.
+            Studio.App.App.Services.MenageDuCacheEnFond();
+
             // Le bandeau de mise a jour : il n'installe rien, il annonce. La surveillance
             // est partagee avec la fenetre du Studio complet — c'est elle qui sait que ce
             // logiciel-ci suit les publications « identite-v », et pas celles du Studio.

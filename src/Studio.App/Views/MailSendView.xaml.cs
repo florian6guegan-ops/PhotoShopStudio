@@ -40,6 +40,7 @@ public partial class MailSendView : UserControl
     private readonly IReadOnlyList<PhotoAEnvoyer> _photos;
     private readonly string? _nomClient;
     private readonly bool _revenirEnArriere;
+    private readonly Action<Order>? _surEnvoi;
     private bool _envoiEnCours;
 
     /// <param name="photos">Les photos à envoyer. Le prix suit leur nombre.</param>
@@ -62,12 +63,20 @@ public partial class MailSendView : UserControl
     /// Faux par défaut — depuis les commandes, l'envoi CLÔT le geste et l'accueil est la
     /// bonne destination.
     /// </param>
+    /// <param name="surEnvoi">
+    /// Appelé quand l'envoi a RÉUSSI et qu'il est facturé, avec la commande.
+    ///
+    /// Sert à l'écran d'identité, qui porte alors sa photo à l'historique des trente jours.
+    /// Le placer ici, et pas au clic, est la règle même de cet écran : « rien n'est facturé
+    /// quand l'envoi échoue » — rien ne doit être historisé non plus.
+    /// </param>
     public MailSendView(IReadOnlyList<PhotoAEnvoyer> photos, string? nomClient = null,
-        bool revenirEnArriere = false)
+        bool revenirEnArriere = false, Action<Order>? surEnvoi = null)
     {
         _photos = photos;
         _nomClient = nomClient;
         _revenirEnArriere = revenirEnArriere;
+        _surEnvoi = surEnvoi;
         InitializeComponent();
 
         Loaded += (_, _) =>
@@ -339,6 +348,18 @@ public partial class MailSendView : UserControl
 
             EtatText.Text = "Envoi effectué.";
             var commande = Facturer(destinataire);
+
+            // La photo est partie : elle entre à l'historique des trente jours, si l'écran
+            // appelant sait quoi y mettre. Un échec ici ne doit pas faire croire à un envoi
+            // raté — les photos SONT chez le client.
+            try
+            {
+                _surEnvoi?.Invoke(commande);
+            }
+            catch (Exception ex)
+            {
+                FileLog.Write("Photo non portée à l'historique des photos d'identité", ex);
+            }
 
             Mouse.OverrideCursor = null;
             MessageBox.Show(

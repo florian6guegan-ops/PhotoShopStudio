@@ -19,6 +19,28 @@ public static class MasqueSujet
     public static Action<string>? Log { get; set; }
 
     /// <summary>
+    /// Où garder les masques D'UN LANCEMENT À L'AUTRE — <c>cache\masques</c> sous les données
+    /// du poste. Null (le défaut) : mémoire seule, comme avant.
+    ///
+    /// <b>Ce que ça règle.</b> Les quatre masques gardés ici meurent avec l'application.
+    /// Rouvrir le lendemain une photo à fond blanc — c'est tout l'objet de l'historique des
+    /// trente jours — repayait donc un passage complet du réseau : 5,9 s mesurées sur la
+    /// Quadro P2000, davantage sur les postes des boutiques, et le second passage est celui
+    /// qui manque de mémoire vidéo et sort un fond dégradé. Demande de l'exploitant, le
+    /// 19/08/2026 : « lorsqu'une photo a été détourée, il faut qu'elle garde ce détourage
+    /// pour ne pas avoir à remettre le fond ».
+    ///
+    /// Ce sont les octets du masque NU, à sa taille de calcul — quelques dizaines de
+    /// kilooctets, exactement ce que la mémoire range déjà.
+    ///
+    /// ⚠ <b>Chaque méthode de détourage a son sous-dossier</b> (voir <see cref="Methode"/>) :
+    /// un masque calculé par le réseau et un masque calculé par couleur ne se valent pas, et
+    /// changer de modèle dans les réglages doit changer ce qui sort — sans quoi le réglage
+    /// passerait pour inopérant, défaut invisible et pénible à retrouver.
+    /// </summary>
+    public static string? Dossier { get; set; }
+
+    /// <summary>
     /// Ce qu'a duré le dernier détourage sur ce poste — celui du sujet comme celui d'un
     /// fond blanc, c'est le même travail et il est mesuré au même endroit.
     /// </summary>
@@ -57,7 +79,19 @@ public static class MasqueSujet
         ArgumentException.ThrowIfNullOrEmpty(cle);
 
         lock (Verrou)
-            return Connus.ContainsKey(cle);
+            if (Connus.ContainsKey(cle)) return true;
+
+        // Le disque compte AUSSI : un masque gardé d'un lancement à l'autre revient en
+        // quelques millisecondes, et annoncer six secondes d'attente pour aller le lire
+        // ferait exactement le clignotement que cette méthode existe pour éviter.
+        try
+        {
+            return Fichier(cle) is { } chemin && File.Exists(chemin);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -155,10 +189,35 @@ public static class MasqueSujet
     }
 
     /// <summary>
-    /// Vide la mémoire des masques. Sert quand le modèle de détourage change dans les
-    /// réglages : les masques déjà calculés viennent de l'ancien.
+    /// Vide la mémoire des masques, ET ce que le disque en garde. Sert quand le modèle de
+    /// détourage change dans les réglages : les masques déjà calculés viennent de l'ancien.
+    ///
+    /// ⚠ Le disque n'en dépend PAS pour rester juste : chaque méthode a son sous-dossier
+    /// (voir <see cref="Dossier"/>), donc changer de modèle change de dossier, que celle-ci
+    /// soit appelée ou non. C'est voulu — elle ne l'est aujourd'hui par personne.
     /// </summary>
     public static void Oublier()
+    {
+        OublierLaMemoire();
+
+        try
+        {
+            if (Dossier is { Length: > 0 } racine && Directory.Exists(racine))
+                Directory.Delete(racine, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // un fichier tenu ouvert : les masques restants seront relus, ce qui est au
+            // pire un contour d'hier — jamais une panne
+        }
+    }
+
+    /// <summary>
+    /// Vide la mémoire SEULE, en laissant le disque. C'est ce que fait un redémarrage de
+    /// l'application — et c'est précisément l'état qu'il faut savoir reproduire pour
+    /// vérifier que les masques survivent au lancement.
+    /// </summary>
+    public static void OublierLaMemoire()
     {
         lock (Verrou)
         {
@@ -388,7 +447,22 @@ public static class MasqueSujet
         var octets = Brut(image, empreinte);
         if (octets is null) return null;
 
-        var masque = new MagickImage(octets);
+        MagickImage masque;
+
+        try
+        {
+            masque = new MagickImage(octets);
+        }
+        catch (MagickException ex)
+        {
+            // Les octets ne viennent plus forcément de nous : depuis que les masques
+            // survivent au lancement (voir Dossier), ils peuvent avoir été écrits par une
+            // version antérieure, ou abîmés sur le disque. On renonce à la correction
+            // plutôt que d'éclater dans un rendu qui n'y peut rien — c'est déjà la règle de
+            // cette classe.
+            Log?.Invoke($"Masque du sujet illisible, ignoré : {ex.Message}");
+            return null;
+        }
 
         // La taille voulue : celle de l'image, ou sa taille de calcul quand l'appelant se
         // charge lui-même de la géométrie. Voir le paramètre de Nu.
@@ -481,6 +555,17 @@ public static class MasqueSujet
         {
             if (Deja(empreinte) is { } entretemps) return entretemps;
 
+            // LE DISQUE AVANT LE RÉSEAU. Une photo détourée hier, rouverte depuis
+            // l'historique des trente jours, retrouve son masque en quelques millisecondes
+            // au lieu de repayer six secondes de réseau — et surtout, elle retrouve LE
+            // MÊME : un second passage sur une carte à court de mémoire vidéo sort un fond
+            // dégradé (voir les postes des boutiques, 4 Go).
+            if (SurLeDisque(empreinte) is { } garde)
+            {
+                Ranger(empreinte, garde);
+                return garde;
+            }
+
             // Le réseau d'abord quand il est allumé, la méthode par couleur ensuite —
             // le même ordre que pour poser un fond, et pour la même raison : la seconde
             // marche toujours, en une seconde, et une photo d'identité a précisément le
@@ -515,20 +600,119 @@ public static class MasqueSujet
 
             var octets = calcule.ToByteArray(MagickFormat.Png);
 
-            lock (Verrou)
-            {
-                Connus[empreinte] = octets;
-                Ordre.Remove(empreinte);
-                Ordre.Add(empreinte);
+            Ranger(empreinte, octets);
 
-                while (Ordre.Count > MemoireMaximale)
-                {
-                    Connus.Remove(Ordre[0]);
-                    Ordre.RemoveAt(0);
-                }
-            }
+            // et sur le disque, pour les lancements suivants : c'est ce qui fait qu'une
+            // photo de l'historique ne redemande jamais son fond
+            RangerSurLeDisque(empreinte, octets);
 
             return octets;
+        }
+    }
+
+    /// <summary>Met un masque nu en mémoire, et fait sortir le plus ancien s'il le faut.</summary>
+    private static void Ranger(string empreinte, byte[] octets)
+    {
+        lock (Verrou)
+        {
+            Connus[empreinte] = octets;
+            Ordre.Remove(empreinte);
+            Ordre.Add(empreinte);
+
+            while (Ordre.Count > MemoireMaximale)
+            {
+                Connus.Remove(Ordre[0]);
+                Ordre.RemoveAt(0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// La méthode qui produit les masques en ce moment — elle nomme le sous-dossier du
+    /// disque.
+    ///
+    /// ⚠ C'est le réglage COURANT, pas forcément celui qui a servi : quand le réseau est
+    /// allumé mais échoue, <c>BackgroundRemoval.DecouperLeSujet</c> se replie sur la méthode
+    /// par couleur et le masque obtenu est rangé sous le nom du réseau. C'est déjà ce que
+    /// fait la mémoire de ce fichier depuis toujours — le disque ne change rien à l'affaire,
+    /// il la fait seulement durer. Un poste où le réseau échoue systématiquement est un poste
+    /// à régler, pas un cache à contourner.
+    /// </summary>
+    private static string Methode() => BiRefNetMatting.Actif
+        ? Path.GetFileNameWithoutExtension(BiRefNetMatting.ModelePrefere ?? "reseau")
+        : "couleur";
+
+    /// <summary>
+    /// Le fichier d'un masque sur le disque, ou null quand rien n'est réglé.
+    ///
+    /// Le nom est l'empreinte hachée : la clé porte le CHEMIN de la photo, avec ses accents,
+    /// ses espaces et sa longueur — rien dont on puisse faire un nom de fichier.
+    /// </summary>
+    private static string? Fichier(string empreinte)
+    {
+        if (Dossier is not { Length: > 0 } racine) return null;
+
+        var octets = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(empreinte));
+
+        return Path.Combine(racine, Methode(),
+            $"{Convert.ToHexString(octets)[..32].ToLowerInvariant()}.png");
+    }
+
+    /// <summary>La signature d'un PNG : 8 octets, et c'est tout ce qu'on peut vérifier vite.</summary>
+    private static readonly byte[] SignaturePng = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    /// <summary>
+    /// Le masque gardé sur le disque pour cette empreinte, ou null.
+    ///
+    /// La signature est vérifiée avant de rendre les octets : un fichier tronqué — coupure
+    /// de courant pendant l'écriture — ferait éclater le décodage bien plus loin, dans un
+    /// rendu qui n'y peut rien.
+    /// </summary>
+    private static byte[]? SurLeDisque(string empreinte)
+    {
+        if (Fichier(empreinte) is not { } chemin) return null;
+
+        try
+        {
+            if (!File.Exists(chemin)) return null;
+
+            var octets = File.ReadAllBytes(chemin);
+            if (octets.Length > SignaturePng.Length &&
+                octets.Take(SignaturePng.Length).SequenceEqual(SignaturePng))
+                return octets;
+
+            Log?.Invoke($"Masque du sujet abîmé sur le disque, effacé : {chemin}");
+            File.Delete(chemin);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // le disque n'est pas une obligation : on recalculera
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Range un masque sur le disque, à côté puis en remplaçant : un fichier à moitié écrit
+    /// serait relu tel quel au prochain lancement.
+    /// </summary>
+    private static void RangerSurLeDisque(string empreinte, byte[] octets)
+    {
+        if (Fichier(empreinte) is not { } chemin) return;
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(chemin)!);
+
+            var provisoire = chemin + ".tmp";
+            File.WriteAllBytes(provisoire, octets);
+            File.Move(provisoire, chemin, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // disque plein, dossier en lecture seule : le masque reste en mémoire, et le
+            // détourage se refera au prochain lancement. Rien à arrêter pour si peu.
         }
     }
 

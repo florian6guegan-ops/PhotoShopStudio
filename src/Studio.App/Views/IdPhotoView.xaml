@@ -615,6 +615,15 @@
                                 MinHeight="46" Padding="12,0" FontSize="15" Margin="0,8,0,0"
                                 Click="OnOuvrirDesPhotos"
                                 ToolTip="Carte mémoire, téléphone, dossier…">📂  Ouvrir des photos</Button>
+
+                        <!-- L'AUTRE FAÇON D'OUVRIR UNE PHOTO : celles qu'on a déjà faites.
+                             Même détour que le précédent, et pour la même raison — une
+                             planche de vignettes ne tient pas dans un panneau de 360 px.
+                             Masqué hors de Studio Photo Identité (voir le code-behind). -->
+                        <Button x:Name="HistoriqueButton" Style="{StaticResource FlatButton}" MinWidth="0"
+                                MinHeight="46" Padding="12,0" FontSize="15" Margin="0,8,0,0"
+                                Click="OnOuvrirLHistorique" Visibility="Collapsed"
+                                ToolTip="Les photos imprimées ou envoyées ces trente derniers jours, à rouvrir telles qu'elles étaient — fond, cadrage et corrections compris.">🕘  Photos récentes · 30 j</Button>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

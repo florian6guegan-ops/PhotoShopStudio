@@ -1,127 +1,176 @@
-# Plan d'implémentation — le montage des agrandissements
+# Plan d'implémentation — l'historique de 30 jours de Studio Photo Identité
 
-Demande de l'exploitant, 12/08/2026. Le plan de la 7ᵉ passe est archivé dans `task.md`.
+Demande de l'exploitant, 19/08/2026. Le plan de la passe précédente reste dans `task.md`.
 
-Point de départ : `main`, **1505/1508 essais verts** (les 3 restants sont
-`De100BridgeIntegrationTests`, qui démarrent leur propre relais sur un tube à instance unique
-déjà tenu par l'application en service — défaut d'environnement, pas de code). Version
-publiée : 1.4.6, les trois boutiques y sont ou peuvent y aller.
+> « dans studio photo identité il faut implémenter l'historique de 30 jours sur toutes les
+> photos faites, il faut également garder les modifications qui ont été faites, fond blanc
+> correction etc, et qu'elles soient toujours capables d'envoyer par mail. Par ailleurs
+> lorsqu'une photo a été détourée, il faut qu'elle garde ce détourage dans l'historique pour
+> ne pas avoir à remettre le fond etc »
 
----
-
-## Ce qui est demandé
-
-> « si j'ai 2 24×30, qu'il fasse le montage directement en fonction du papier choisi si ça
-> rentre dans la taille de papier, sinon il les met une par une »
-
-Aujourd'hui, un agrandissement rend **un fichier par tirage**. Deux 24×30 donnent deux
-fichiers, que l'opérateur imprime l'un après l'autre — deux feuilles de 40×60, dont la
-moitié part à la chute à chaque fois. Or deux 24×30 tiennent exactement dans un 40×60
-(240 × 600 dans 400 × 600).
-
-**Trois décisions ont été prises par l'exploitant** avant d'écrire une ligne :
-
-| | Décision |
-|---|---|
-| Circuit | **Grand format (Epson) UNIQUEMENT.** Pas le minilab : son papier le plus large fait 210 mm, deux 24×30 n'y tiendront jamais. Pas la DNP : son cas 15×20 → deux 10×15 est déjà traité depuis la 1.3.15 |
-| Prix | **Inchangé — N × le prix du format.** Le montage est une économie de papier pour la boutique, invisible du client. Deux 24×30 restent deux 24×30 au ticket |
-| Papier | **L'opérateur le choisit.** Il sait quel rouleau est chargé ; on ne le devine pas |
-
-⚠ **La décision de prix est la plus importante du lot, et elle diverge de l'existant.** La
-tuile « Personnalisé » de l'impression rapide facture LE PAPIER (`CustomSheetLayout.Choose`
-départage sur le prix, règle posée le 02/08/2026). Ici, non : les lignes de commande restent
-ce qu'elles sont, seul le RENDU change. Il ne faut donc surtout pas réutiliser `Choose` pour
-décider quoi que ce soit — uniquement `Capacity` et `Distribute`.
+C'est le point **5** de la maquette validée le 14/08 : le bouton « 🕘 Photos récentes · 30 j »,
+et la règle qui l'accompagne — *« les photos des 30 jours se rouvrent SUR CE MÊME ÉCRAN → tout
+y est (réimprimer, e-mail, télécharger, changer pays/format), pas d'écran séparé aux fonctions
+limitées »*.
 
 ---
 
-## Ce qui existe déjà, et qu'il ne faut pas réécrire
+## Ce qui existe déjà, et qu'il ne faut surtout pas réécrire
 
-Toute la géométrie est faite, éprouvée et couverte d'essais :
+| Brique | Où | Ce qu'elle donne |
+|---|---|---|
+| `IdentiteEnAttente` / `PhotoIdentiteEnAttente` | `Studio.Store/TravailEnAttente.cs` | **La forme exacte du travail d'une planche** : norme du document, cadrage, repères crâne/menton/tête, axe du visage, redressement, N&B, fond blanc, fond gris, corrections fines, photos par planche, quantité |
+| `AttenteStore` | idem | Un fichier JSON par entrée, rétention **30 jours**, purge à la lecture, écriture atomique, fichier abîmé ignoré |
+| `IdPhotoView(TravailEnAttente)` | `Views/IdPhotoView.xaml.cs:230` | **Rouvre une planche telle qu'elle a été laissée**, sur l'écran de travail complet |
+| `ConstruireLAttente()` / `AppliquerLAttente()` | idem, l. 2857 / 2933 | La traduction dans les deux sens, déjà éprouvée en boutique |
+| `TravailDepuisCommande` | `Studio.Store` | Le précédent : traduire un enregistrement en travail reprenable, **avec un Guid NEUF** |
+| `MettreALAbriAsync` | `IdPhotoView.xaml.cs:564` | La photo est déjà recopiée en local (`cache\travail\<jour>\`) à son ouverture |
+| `MasqueSujet` | `Studio.Imaging` | Le détourage et sa mémoire — 4 masques, **en RAM seulement** |
+| `ThumbnailService` | `Studio.Core` | Vignettes en cache, pour la grille de l'historique |
 
-- `CustomSheetLayout.CapacityDetaillee(papier, cellW, cellH, gap)` → combien de cases par
-  planche, avec rotation de la case ET de la planche ;
-- `CustomSheetLayout.Distribute(quantités, parPlanche)` → la répartition sur N planches,
-  en gardant les exemplaires d'une même photo groupés ;
-- `ImagePipeline.RenderCustomSheetToFile(...)` → le rendu d'une planche de photos
-  DIFFÉRENTES à la même taille, avec traits de coupe.
-
-Elles ne servent aujourd'hui qu'à `CustomSizeView` (impression rapide → Personnalisé).
-
----
-
-## 1. Le choix du papier, dans le parcours agrandissement
-
-`PrintFormatView` mène aujourd'hui de la tuile de format directement au choix des photos.
-On intercale, **pour la famille `Enlargement` seulement**, le choix de la feuille.
-
-- [ ] 1.1 `FeuilleGrandFormat` : les produits `ManualFile` du catalogue, comme candidats
-      de feuille — 30×40, 40×50, 40×60, 50×70, 60×90, 70×100…
-- [ ] 1.2 Un écran (ou un volet de `PrintFormatView`) qui, pour le format retenu, annonce
-      **par feuille candidate** : combien de tirages y tiennent, et combien de feuilles il
-      faudra. C'est ce qui permet d'annoncer la consommation avant d'engager quoi que ce soit
-- [ ] 1.3 ⚠ **« Une par feuille » reste un choix explicite**, en tête de liste. C'est le
-      comportement actuel, et il doit rester atteignable en un geste : un opérateur qui
-      découpe lui-même ne veut pas d'un montage
-- [ ] 1.4 Le choix est retenu sur l'enveloppe, pas sur le produit : deux commandes du même
-      format peuvent partir sur des feuilles différentes
-
-## 2. Le rendu composé
-
-- [ ] 2.1 `PrintOrchestrator.RenderEnvelope` : sur le circuit `ManualFile`, si une feuille
-      est retenue et que la capacité est ≥ 2, composer au lieu de rendre une par une
-- [ ] 2.2 `Distribute` répartit ; `RenderCustomSheetToFile` rend chaque planche
-- [ ] 2.3 ⚠ **Capacité 1 = comportement d'avant, à l'octet près.** Un montage à une case par
-      feuille n'est pas un montage : c'est un tirage avec des traits de coupe en plus, et une
-      régression silencieuse pour tous les postes qui ne demandent rien
-- [ ] 2.4 Les traits de coupe : indispensables ici, l'opérateur massicote la feuille
-
-## 3. Le prix ne bouge pas
-
-- [ ] 3.1 ⚠ Les lignes de l'enveloppe restent inchangées : `TotalPrints`, `Total`, le
-      ticket, les statistiques. **Seul le nombre de FICHIERS rendus change**
-- [ ] 3.2 Un essai qui le prouve : deux 24×30 montés sur une feuille coûtent exactement le
-      même prix que deux 24×30 rendus séparément
-
-## 4. Ce que l'écran grand format doit comprendre
-
-- [ ] 4.1 `LargeFormatPrintView` reçoit une planche déjà composée : elle a la taille de la
-      feuille, elle doit sortir à 100 %, sans « ajuster au support »
-- [ ] 4.2 Vérifier que la densité posée par `ImagePipeline` survit au chemin (voir la note
-      « Résolution absente = 300 ppp » : un fichier sans densité part trois fois trop grand)
-
-## 5. Essais
-
-- [x] 5.1 Capacité : 2 × 24×30 sur 40×60 → 2 ; sur 30×40 → 1 ; sur 50×70 → **4**.
-
-      ⚠ **Deux erreurs de calcul à la main dans ce plan, corrigées par les essais :**
-
-      - le 50×70 en porte **quatre**, pas deux : deux colonnes de 240 mm font 482 avec
-        l'écart, et 482 rentre dans 500 ;
-      - sur le 40×60, c'est la **FEUILLE** qui se couche, pas la case. `Capacity` essaie
-        les deux sens de la planche, ce que le calcul à la main avait oublié. Couchée, la
-        feuille offre 600 mm où deux tirages de 240 se posent DEBOUT, côte à côte : le
-        cadrage portrait est gardé tel quel et le fichier sort en 60 × 40.
-
-      La rotation de l'image à la pose reste nécessaire — mais pour les sélections
-      **mêlant portraits et paysages**, pas pour le cas de base.
-- [ ] 5.2 `Distribute` sur des quantités mêlées (3 photos × 2 exemplaires sur 2 par feuille)
-- [ ] 5.3 ⚠ Le prix, avec et sans montage — l'essai qui garde la caisse honnête
-- [ ] 5.4 Capacité 1 → aucun changement de comportement
-- [ ] 5.5 Le catalogue réel des trois boutiques ne change de comportement nulle part tant
-      qu'aucune feuille n'est choisie
+**Rien de la donnée n'est à inventer.** Tout ce que l'exploitant demande de garder est déjà
+décrit par `PhotoIdentiteEnAttente`, à une exception près : le détourage lui-même.
 
 ---
 
-## Ce que je ne fais PAS dans cette passe
+## Les quatre décisions du plan
 
-- **Le minilab et la DNP** : hors périmètre, décidé.
-- **Toucher au « Personnalisé » de l'impression rapide** : sa règle de prix est différente et
-  assumée. Les deux mécaniques partagent la géométrie, pas la politique.
-- **Choisir le papier automatiquement** : l'exploitant a tranché, c'est lui qui choisit.
+### 1. Un journal à part, `identite\historique\`, et non les commandes
 
-## Le risque principal
+Les commandes (`orders\`) gardent déjà les photos et les réglages 90 jours, et
+`TravailDepuisCommande.TraduireIdentite` sait les rouvrir. **Ce n'est pourtant pas la bonne
+source**, pour deux raisons écrites dans le code lui-même :
 
-Le circuit `ManualFile` est celui des grands tirages, ceux qui coûtent cher en papier et en
-temps. Une régression y est chère. D'où le point 2.3 : **tant qu'aucune feuille n'est
-retenue, pas une ligne de comportement ne change**, et c'est ce que vérifie l'essai 5.5.
+- ⚠ **les repères de crâne et de menton ne sont PAS dans la commande** (`TraduireIdentite` le
+  documente) : une planche rouverte depuis une commande revient avec `Prete = false` et
+  relance la détection de visage. Le placement manuel — celui qu'on rouvre justement pour ne
+  pas le refaire — est perdu ;
+- **une photo envoyée par courriel n'est pas reconnaissable comme identité** dans une
+  commande : elle porte le produit « envoi courriel », sans taille de case. Elle
+  n'apparaîtrait donc jamais dans l'historique, alors que l'exploitant demande *toutes* les
+  photos faites.
+
+Écrire les repères dans `OrderItem` reviendrait à changer l'enregistrement **comptable** pour
+un confort d'écran. On fait donc un journal à part, qui a exactement la forme du travail :
+
+```
+D:\PhotoStudioData\identite\historique\<guid>.json     (un fichier par photo faite)
+```
+
+Contenu : un `TravailEnAttente` — le même objet, la même sérialisation, les mêmes essais —
+augmenté de ce que l'historique seul demande : quand, ce qui a été fait (imprimée / envoyée /
+les deux), le numéro de commande, et le nom du fichier du client. `HistoriqueIdentite` est le
+jumeau d'`AttenteStore` : rétention 30 jours, purge à la lecture, un fichier par entrée.
+
+Les commandes restent la vérité comptable ; le journal n'est qu'un index de travail. Il ne
+facture rien et ne solde rien.
+
+### 2. Une photo FAITE, c'est une photo imprimée ou envoyée — tranché le 19/08
+
+> « il faudrait que la photo aille dans l'historique à partir du moment où elle a été
+> envoyée par mail ou imprimée, et pas dès qu'elle a été ouverte »
+
+Pas les photos simplement ouvertes : la carte d'un client en porte quatre-vingts, et
+l'historique se remplirait de ce qu'on n'a fait que regarder.
+
+- à l'**impression** : `TirageIdentite.LancerAsync` gagne un rappel `surCommande`, appelé une
+  fois la commande CRÉÉE — le moment exact où le papier est engagé. L'écran y porte ses
+  photos retenues (`Quantite > 0`), et lui seul le peut : il est le seul à tenir les repères
+  de crâne et de menton ;
+- à l'**envoi par courriel** : `MailSendView` gagne un rappel `surEnvoi`, appelé **après
+  l'envoi réussi et sa facturation**. C'est la règle même de cet écran — « rien n'est facturé
+  quand l'envoi échoue » : rien ne doit être historisé non plus ;
+- **une entrée par photo et par journée** (clé : fichier + jour). Le client qui repart avec sa
+  planche ET son courriel n'a fait faire qu'une photo : une tuile, deux pastilles 🖨 ✉. Le
+  travail gardé est le DERNIER — l'opérateur a pu recadrer entre les deux —, l'heure gardée
+  est celle du PREMIER geste.
+
+### 3. Les pixels doivent survivre 30 jours, et le ménage doit suivre
+
+L'entrée pointe sur la **copie locale** faite par `MettreALAbriAsync` (`cache\travail\<jour>\`) :
+elle est déjà sous `DataRoot` et survit au retrait de la carte du client. Deux compléments :
+
+- la mise à l'abri est **garantie** avant d'écrire l'entrée (si la copie a échoué, on retombe
+  sur la copie du dossier de la commande, qui existe toujours) ;
+- ⚠ **`cache\travail` n'est purgé par rien aujourd'hui** — il grossit indéfiniment sur les
+  quatre postes. Il reçoit la même rétention de 30 jours que le journal : l'entrée et ses
+  pixels disparaissent ensemble. C'est la règle déjà posée par `KioskOrderJournal.Purge` —
+  *« ce sont des photos de clients, et une copie qu'on ne sait plus rattacher à personne n'a
+  aucune raison de rester »*.
+
+### 4. Le détourage se garde SUR LE DISQUE
+
+C'est la partie neuve, et la demande explicite : *« qu'elle garde ce détourage dans
+l'historique pour ne pas avoir à remettre le fond »*.
+
+Aujourd'hui `MasqueSujet` garde **4 masques en RAM**, perdus à la fermeture de l'application.
+Rouvrir dans trois jours une photo à fond blanc repaierait un passage complet du réseau —
+5,9 s mesurés sur la Quadro P2000, davantage sur kodakidpc — et rejouerait le défaut connu du
+second passage (mémoire « le fond qui se dégrade »).
+
+`MasqueSujet` gagne donc un **étage disque** sous le cache du poste :
+
+```
+D:\PhotoStudioData\cache\masques\<modèle>\<empreinte>.png
+```
+
+- on lit : mémoire → disque → réseau ; on écrit dans les deux ;
+- le masque gardé est le **masque nu**, à sa taille de calcul (petit côté 1024) : quelques
+  dizaines de Ko, et c'est déjà celui que la mémoire garde ;
+- ⚠ **le nom du modèle est dans le chemin.** `MasqueSujet.Oublier()` est appelé quand
+  l'exploitant change de modèle de détourage dans les réglages ; un masque sur disque qui
+  survivrait à ce changement ferait « changer de modèle ne change plus rien », défaut
+  invisible et pénible à trouver. `Oublier()` vide donc aussi le dossier ;
+- l'empreinte est celle qui existe déjà (`CleDuFichier` : chemin | taille | date d'écriture),
+  passée au SHA-256 pour faire un nom de fichier ;
+- même rétention de 30 jours que le reste du cache.
+
+**Le bénéfice dépasse l'historique** : le récapitulatif, l'impression et le courriel ne
+repaieront plus le réseau d'un lancement de l'application à l'autre.
+
+---
+
+## L'écran
+
+Un bouton **« 🕘 Photos récentes · 30 j »** dans le bloc d'actions du panneau de droite de
+`IdPhotoView.xaml`, à côté de « 📂 Ouvrir des photos » — les deux seules sorties de la page,
+plus celle-ci, qui n'en est qu'une variante : *ouvrir une photo qu'on a déjà faite*.
+
+`IdHistoriqueView` : une grille de vignettes, la plus récente d'abord, une tuile par photo —
+vignette, jour et heure, norme visée, « 6 photos », et une pastille ✉ / 🖨 pour dire ce qui a
+été fait. Un toucher rouvre la photo **sur l'écran de travail**, avec tout : cadrage, repères,
+fond blanc déjà calculé, corrections, quantité — et donc les boutons Imprimer et Envoyer par
+courriel, qui sont ceux de l'écran.
+
+⚠ `IdPhotoView` est **partagé** avec le Studio complet, et le bouton ne doit s'y voir **que
+dans Studio Photo Identité** — tranché le 19/08. Le Studio complet garde « Commandes du
+jour » pour retrouver une planche.
+
+La condition est `App.Services.Mode.IsIdentite`, et **pas** `AccueilStudio.EnIdentiteVerrouille` :
+c'est le LOGICIEL qui répond à la question, pas la session. Sortir par le PIN pour dépanner
+ne doit pas faire disparaître l'historique sous les doigts de l'opérateur.
+
+Le journal, lui, est écrit par les deux applications — elles partagent la racine de données,
+et une planche tirée dans l'une doit se retrouver dans l'autre.
+
+---
+
+## Les incréments, dans l'ordre — compilés et essayés un par un
+
+1. **`HistoriqueIdentite`** (`Studio.Store`) : le journal, sa rétention, sa purge, sa
+   traduction en travail reprenable (Guid neuf). Essais unitaires : écriture/relecture, purge
+   à 30 jours, fichier abîmé ignoré, mise à jour d'une entrée existante.
+2. **L'alimentation** : `TirageIdentite.LancerAsync` (planches retenues seulement) et
+   `MailSendView` + `IdPhotoView.OnSendByMail` (sur envoi réussi). Essais : le lot à zéro
+   n'entre pas, l'envoi échoué n'entre pas, deux gestes sur la même photo = une entrée.
+3. **`IdHistoriqueView`** + le bouton + la réouverture. C'est là que l'exploitant regarde
+   tourner.
+4. **Le masque sur disque** dans `MasqueSujet` + le modèle dans le chemin + `Oublier()` qui
+   vide le dossier. Essais : relecture après vidage de la mémoire, invalidation au changement
+   de modèle.
+5. **La purge de `cache\travail` et de `cache\masques`** à 30 jours, dans l'entretien du
+   démarrage (`RunMaintenanceInBackground`, à côté de `Archiver.ArchiveOldOrders`).
+
+Point de départ : `main` à `becdf87` (version 1.5.36). ⚠ L'arbre porte déjà trois fichiers
+modifiés non validés sur la file d'impression (`RessourceDImpression`, `SuiviImpressions`,
+`FileDImpressionTests`) — ils ne sont pas de cette passe et ne seront pas touchés.

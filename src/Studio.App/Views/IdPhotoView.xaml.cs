@@ -247,6 +247,18 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         _copiesVoulues = photosParPlanche;
         InitializeComponent();
 
+        // ⚠ L'HISTORIQUE N'EST QU'À STUDIO PHOTO IDENTITÉ — voulu par l'exploitant le
+        // 19/08/2026. Cet écran est PARTAGÉ avec le Studio complet, qui garde « Commandes
+        // du jour » pour retrouver une planche.
+        //
+        // La condition est le LOGICIEL (`Mode.IsIdentite`, posé par le code au démarrage de
+        // Studio.Identite) et non la session (`AccueilStudio.EnIdentiteVerrouille`) : sortir
+        // par le PIN pour dépanner ne doit pas faire disparaître le bouton sous les doigts
+        // de l'opérateur.
+        HistoriqueButton.Visibility = App.Services.Mode.IsIdentite
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
         TitleText.Text = _document.Country == "France"
             ? $"Photo d'identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
             : $"{_document.Country} — {_document.Document} ({_document.WidthMm:0.#}×{_document.HeightMm:0.#} mm)";
@@ -565,18 +577,48 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     {
         var source = item.Path;
 
-        // déjà chez nous : rien à copier (une reprise, ou une photo déjà mise à l'abri)
-        if (source.StartsWith(App.Services.DataRoot, StringComparison.OrdinalIgnoreCase)) return;
+        var travail = Path.Combine(App.Services.CacheDir, "travail");
+        var dossier = Path.Combine(travail, DateTime.Now.ToString("yyyyMMdd"));
 
+        // déjà dans le dossier du JOUR : rien à copier
+        if (source.StartsWith(dossier, StringComparison.OrdinalIgnoreCase)) return;
+
+        // Chez nous, mais ailleurs que dans les copies de travail : le dossier d'une
+        // commande, qui est durable de son côté. Le recopier ne protégerait rien.
+        if (source.StartsWith(App.Services.DataRoot, StringComparison.OrdinalIgnoreCase) &&
+            !source.StartsWith(travail, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // ⚠ UNE COPIE DE TRAVAIL D'UN AUTRE JOUR EST RECOPIÉE DANS CELUI-CI.
+        //
+        // C'est ce qui tient l'historique des trente jours : son entrée est datée du jour du
+        // geste, et le ménage efface les dossiers de copies passé le même délai. Une photo
+        // rouverte le vingtième jour et réimprimée ferait sinon une fiche vivante jusqu'au
+        // cinquantième, pointant sur un fichier effacé au trentième — une tuile « fichier
+        // effacé » pendant vingt jours. Le jour de la copie suit le jour du geste.
         try
         {
-            var dossier = Path.Combine(App.Services.CacheDir, "travail",
-                DateTime.Now.ToString("yyyyMMdd"));
             Directory.CreateDirectory(dossier);
 
-            var empreinte = Math.Abs(source.GetHashCode()).ToString("x8");
-            var copie = Path.Combine(dossier,
-                $"{Path.GetFileNameWithoutExtension(source)}-{empreinte}{Path.GetExtension(source)}");
+            // ⚠ LE NOM DE LA COPIE EST TOUJOURS LE MÊME POUR UNE MÊME PHOTO — c'est ce qui
+            // fait que son DÉTOURAGE la suit.
+            //
+            // Il venait de `source.GetHashCode()`, c'est-à-dire du chemin, et par un hachage
+            // que .NET tire au sort à chaque démarrage : la copie changeait de nom au moindre
+            // déplacement, et même d'un lancement à l'autre. Or la clé du masque est faite du
+            // nom, de la taille et de la date (voir CleDuFichier) : un nom neuf, c'est un
+            // détourage entièrement repayé — celui que l'historique existe pour épargner.
+            //
+            // Le nom du fichier du CLIENT, la taille et la date : trois choses qu'une copie
+            // conserve, et qui désignent la photo et non l'endroit où elle se trouve.
+            // Une copie qu'on déplace d'une journée à l'autre GARDE SON NOM : elle a déjà été
+            // nommée une fois pour toutes, et la renommer ferait exactement ce que le
+            // paragraphe ci-dessus interdit.
+            var nom = source.StartsWith(travail, StringComparison.OrdinalIgnoreCase)
+                ? Path.GetFileName(source)
+                : CopieDeTravail.Nom(item.Name, source);
+
+            var copie = Path.Combine(dossier, nom);
 
             if (!File.Exists(copie))
                 await Task.Run(() => File.Copy(source, copie, overwrite: true));
@@ -795,21 +837,32 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// imprimer n'envoie rien. Un client peut vouloir les deux, ou l'un des deux, et le
     /// prix n'est pas le même.
     /// </summary>
-    private void OnSendByMail(object sender, RoutedEventArgs e)
+    private async void OnSendByMail(object sender, RoutedEventArgs e)
     {
-        if (_current is null)
+        if (_current is not { } photo)
         {
             MessageBox.Show("Choisissez d'abord une photo dans la bande du bas.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
+        // le travail de l'écran appartient à la photo : sans ce dépôt, l'historique
+        // garderait le cadrage d'AVANT la dernière retouche
+        SauverDansLaPhoto();
+
+        // dernier moment où la carte du client est encore là — voir MettreALAbriLeLotAsync
+        await MettreALAbriAsync(photo);
+
         // revenirEnArriere : l'envoi ne doit pas emporter la photo en cours — l'opérateur
         // enchaîne souvent sur la planche pour le même client. Voir MailSendView.
         Navigator.Go(
             new MailSendView([new MailSendView.PhotoAEnvoyer(
-                    _current.Path, _crop, 0, _redressement, ReglagesRetenus())],
-                revenirEnArriere: true),
+                    photo.Path, _crop, 0, _redressement, ReglagesRetenus())],
+                revenirEnArriere: true,
+
+                // l'envoi RÉUSSI, et lui seul : rien n'est facturé quand il échoue, rien
+                // ne doit être historisé non plus
+                surEnvoi: commande => NoterDansLHistorique([photo], commande, envoyee: true)),
             "Envoyer les photos par courriel");
     }
 
@@ -849,10 +902,18 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// Un nom stable pour les pixels d'un fichier, qui sert de clé au cache des masques de
     /// détourage (voir <see cref="MasqueSujet.Nu"/>).
     ///
-    /// <b>Le chemin ne suffit pas.</b> Une photo reprise à la borne, ou un fichier réécrit
+    /// <b>Le nom seul ne suffit pas.</b> Une photo reprise à la borne, ou un fichier réécrit
     /// sous le même nom, rendrait un masque qui n'est plus le sien — et le sujet sortirait
     /// découpé sur la silhouette de quelqu'un d'autre. La taille et la date de dernière
     /// écriture referment ce trou pour le prix d'un appel système.
+    ///
+    /// ⚠ <b>Le DOSSIER n'en fait pas partie, et c'est voulu.</b> La même photo change de
+    /// dossier au fil de sa vie : le support du client, la copie du jour, la copie d'un jour
+    /// suivant quand on la rouvre depuis l'historique (voir <c>MettreALAbriAsync</c>). Avec le
+    /// chemin complet, chacun de ces déplacements donnait une clé neuve — donc un détourage
+    /// entièrement repayé, ce que l'historique des trente jours existe précisément pour
+    /// éviter. Trois photos différentes qui partageraient à la fois le nom, la taille à
+    /// l'octet et la date à la fraction de seconde sont la même photo.
     ///
     /// Volontairement DIFFÉRENTE de la clé de l'aperçu (<c>{chemin}#{_departNumero}</c>),
     /// qui nomme les pixels réduits d'un aperçu précis. Celle-ci nomme le FICHIER, et c'est
@@ -862,24 +923,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// Null si le fichier est illisible : on retombe alors sur l'empreinte des pixels, plus
     /// lente mais toujours juste.
     /// </summary>
-    private static string? CleDuFichier(string? chemin)
-    {
-        if (string.IsNullOrWhiteSpace(chemin)) return null;
-
-        try
-        {
-            var fichier = new FileInfo(chemin);
-            if (!fichier.Exists) return null;
-
-            return string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                $"{fichier.FullName}|{fichier.Length}|{fichier.LastWriteTimeUtc.Ticks}");
-        }
-        catch (Exception)
-        {
-            // chemin trop long, disque retiré, droits : l'empreinte des pixels prendra le relais
-            return null;
-        }
-    }
+    private static string? CleDuFichier(string? chemin) => CopieDeTravail.Cle(chemin);
 
     /// <summary>
     /// Place les deux anneaux : sur la tête détectée si elle l'a été, sinon à une position
@@ -2496,6 +2540,17 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     /// <summary>
+    /// Les photos faites ces trente derniers jours.
+    ///
+    /// Même détour que « Ouvrir des photos », et il est justifié pour la même raison : une
+    /// planche de vignettes ne tient pas dans un panneau de 360 pixels. Ce qui compte est
+    /// qu'on en REVIENNE sur cette page-ci, avec la photo et tout son réglage — voir
+    /// <see cref="IdHistoriqueView"/>.
+    /// </summary>
+    private void OnOuvrirLHistorique(object sender, RoutedEventArgs e) =>
+        Navigator.Go(new IdHistoriqueView(), "Photos récentes · 30 jours");
+
+    /// <summary>
     /// La page telle qu'elle doit S'OUVRIR : directement sur les photos quand on sait où
     /// elles sont — la carte du client, ou le dossier réglé sur le poste.
     ///
@@ -2617,6 +2672,13 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         var finition = FinishCombo.SelectedItem as string;
 
+        // Le lot qui va sortir, et dont les pixels doivent survivre trente jours : on
+        // rattrape ici les mises à l'abri qui auraient échoué à l'ouverture, pendant que la
+        // carte du client est encore dans le lecteur. ⚠ AVANT de bâtir les planches, qui
+        // portent les chemins.
+        var retenues = _photos.Where(p => LotIdentite.EstRetenue(p.Quantite)).ToList();
+        await MettreALAbriLeLotAsync(retenues);
+
         // ⚠ ON N'IMPRIME QUE CE QUI A ÉTÉ RETENU.
         //
         // Cette ligne fabriquait une planche pour CHAQUE photo de la bande, et le
@@ -2628,8 +2690,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // Le garde-fou existait pourtant en aval — TirageIdentite laisse de côté les planches
         // à zéro exemplaire, c'est écrit dans sa documentation — mais ce Math.Max le
         // désarmait : plus aucune planche n'arrivait à zéro.
-        var planches = _photos
-            .Where(p => LotIdentite.EstRetenue(p.Quantite))
+        var planches = retenues
             .Select(p => new IdSheetRecapView.Planche(
                 p.Path,
                 p.Crop,
@@ -2697,7 +2758,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         if (AccueilStudio.EnIdentiteVerrouille)
         {
             PrintButton.IsEnabled = false;
-            if (!await TirageIdentite.LancerAsync(planches, _document, _attenteId))
+
+            // La commande créée, les photos sont FAITES : elles entrent à l'historique des
+            // trente jours, avec leurs repères — que la commande, elle, ne garde pas.
+            if (!await TirageIdentite.LancerAsync(planches, _document, _attenteId,
+                    surCommande: commande =>
+                        NoterDansLHistorique(retenues, commande, imprimee: true)))
                 PrintButton.IsEnabled = true;
             return;
         }
@@ -2868,45 +2934,157 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         AvecSousDossiers = _avecSousDossiers,
         Titre = _enAttente?.Titre is { Length: > 0 } deja ? deja : TitreDeLaPlanche(),
         Resume = ResumeDeLAttente,
-        Identite = new IdentiteEnAttente
-        {
-            Country = _document.Country,
-            Document = _document.Document,
-            WidthMm = _document.WidthMm,
-            HeightMm = _document.HeightMm,
-            HeadMinMm = _document.HeadMinMm,
-            HeadMaxMm = _document.HeadMaxMm,
-            CrownMarginMm = _document.CrownMarginMm,
-            TargetHeadOverrideMm = _document.TargetHeadOverrideMm,
-            Chemins = _cheminsImposes is null ? [] : [.. _cheminsImposes],
-            PhotoCourante = _current?.Name,
-            Photos = _photos.Select(p => new PhotoIdentiteEnAttente
-            {
-                FileName = p.Name,
-                Selected = p.Selected,
-                Quantity = p.Quantite,
-                Copies = p.Copies,
-                Prete = p.Prete,
-                CropX = p.Crop.X,
-                CropY = p.Crop.Y,
-                CropWidth = p.Crop.Width,
-                CropHeight = p.Crop.Height,
-                CrownX = p.Crown?.X,
-                CrownY = p.Crown?.Y,
-                ChinX = p.Chin?.X,
-                ChinY = p.Chin?.Y,
-                HeadX = p.Head?.X,
-                HeadY = p.Head?.Y,
-                HeadWidth = p.Head?.Width,
-                HeadHeight = p.Head?.Height,
-                AxeVisage = p.AxeVisage,
-                Redressement = p.Redressement,
-                NoirEtBlanc = p.NoirEtBlanc,
-                FondBlanc = p.FondBlanc,
-                Corrections = p.Corrections.Clone(),
-            }).ToList(),
-        },
+        Identite = LaPlanche(_photos, _cheminsImposes, _current?.Name),
     };
+
+    /// <summary>
+    /// La planche, telle qu'on la met de côté ou qu'on la porte à l'historique : la norme
+    /// visée et le travail de chaque photo.
+    ///
+    /// Un seul endroit, parce qu'il y a deux sorties — la mise de côté et l'historique des
+    /// trente jours — et qu'un champ oublié d'un côté serait un réglage perdu en silence.
+    /// C'est déjà arrivé trois fois au fond gris (voir <see cref="AppliquerLAttente"/>).
+    /// </summary>
+    /// <param name="photos">Les photos à garder : toute la bande, ou une seule.</param>
+    private IdentiteEnAttente LaPlanche(
+        IReadOnlyList<StripItem> photos, IReadOnlyList<string>? chemins, string? photoCourante) => new()
+    {
+        Country = _document.Country,
+        Document = _document.Document,
+        WidthMm = _document.WidthMm,
+        HeightMm = _document.HeightMm,
+        HeadMinMm = _document.HeadMinMm,
+        HeadMaxMm = _document.HeadMaxMm,
+        CrownMarginMm = _document.CrownMarginMm,
+        TargetHeadOverrideMm = _document.TargetHeadOverrideMm,
+        Chemins = chemins is null ? [] : [.. chemins],
+        PhotoCourante = photoCourante,
+        Photos = photos.Select(p => new PhotoIdentiteEnAttente
+        {
+            FileName = p.Name,
+
+            // ⚠ LES DEUX NOMS, PARCE QU'ILS DIFFÈRENT DÈS QU'ON PASSE PAR L'HISTORIQUE.
+            //
+            // `Chemins` désigne alors la COPIE de travail (« IMG_1234-ab12cd34.jpg ») quand
+            // `FileName` porte le nom du client (« IMG_1234.jpg »). C'est par le premier que
+            // la bande se remplit, et donc par lui que la reprise doit retrouver la photo —
+            // voir RepriseDeLaPlanche.
+            NomSurLeDisque = RepriseDeLaPlanche.NomSurLeDisque(p.Name, p.Path),
+
+            Selected = p.Selected,
+            Quantity = p.Quantite,
+            Copies = p.Copies,
+            Prete = p.Prete,
+            CropX = p.Crop.X,
+            CropY = p.Crop.Y,
+            CropWidth = p.Crop.Width,
+            CropHeight = p.Crop.Height,
+            CrownX = p.Crown?.X,
+            CrownY = p.Crown?.Y,
+            ChinX = p.Chin?.X,
+            ChinY = p.Chin?.Y,
+            HeadX = p.Head?.X,
+            HeadY = p.Head?.Y,
+            HeadWidth = p.Head?.Width,
+            HeadHeight = p.Head?.Height,
+            AxeVisage = p.AxeVisage,
+            Redressement = p.Redressement,
+            NoirEtBlanc = p.NoirEtBlanc,
+            FondBlanc = p.FondBlanc,
+            FondGris = p.FondGris,
+            Corrections = p.Corrections.Clone(),
+        }).ToList(),
+    };
+
+    // ----- l'historique des trente jours -----
+
+    /// <summary>
+    /// Porte à l'historique les photos qui viennent d'être FAITES — imprimées, ou envoyées
+    /// par courriel.
+    ///
+    /// <b>Une photo faite, c'est une photo sortie</b> — tranché par l'exploitant le
+    /// 19/08/2026. Pas une photo ouverte : la carte d'un client en porte quatre-vingts, et
+    /// l'historique se remplirait de ce qu'on a seulement regardé.
+    ///
+    /// <b>Pourquoi ici et pas dans la commande.</b> Cet écran est le seul à tenir les repères
+    /// de crâne et de menton, l'axe du visage et le drapeau <c>Prete</c> — la commande ne les
+    /// garde pas, et une photo rouverte sans eux relance la détection de visage et écrase le
+    /// placement manuel qu'on vient justement chercher.
+    ///
+    /// Rien de ce qui se passe ici ne doit empêcher quoi que ce soit : le papier est déjà
+    /// parti, ou les photos sont déjà chez le client.
+    /// </summary>
+    private void NoterDansLHistorique(
+        IReadOnlyList<StripItem> photos, Order? commande, bool imprimee = false, bool envoyee = false)
+    {
+        var quand = DateTimeOffset.Now;
+
+        foreach (var photo in photos)
+        {
+            try
+            {
+                App.Services.HistoriqueIdentite.Noter(new PhotoFaite
+                {
+                    // ⚠ le chemin de la COPIE LOCALE, jamais celui du support : la carte du
+                    // client repart avec lui le jour même, et c'est exactement ce à quoi
+                    // l'historique doit survivre. Voir MettreALAbriAsync.
+                    Cle = PhotoFaite.CleDe(photo.Path, quand),
+                    Chemin = photo.Path,
+                    NomDuFichier = photo.Name,
+                    FaiteLe = quand,
+                    Imprimee = imprimee,
+                    Envoyee = envoyee,
+                    Commande = commande?.DisplayNumber,
+                    Resume = ResumeDeLaPhoto(photo),
+                    Travail = new TravailEnAttente
+                    {
+                        // un identifiant NEUF : cette entrée ne désigne aucune planche mise
+                        // de côté, et la rouvrir ne doit en effacer aucune
+                        Id = Guid.NewGuid(),
+                        SavedAt = quand,
+                        PhotosDirectory = System.IO.Path.GetDirectoryName(photo.Path) ?? "",
+                        AvecSousDossiers = false,
+                        Titre = TitreDeLaPlanche(),
+                        Resume = ResumeDeLaPhoto(photo),
+
+                        // UNE seule photo, et son chemin imposé : l'historique se parcourt
+                        // par photos, et rouvrir une tuile ne doit pas ramener les
+                        // quatre-vingts autres de la carte du client
+                        Identite = LaPlanche([photo], [photo.Path], photo.Name),
+                    },
+                });
+            }
+            catch (Exception ex)
+            {
+                FileLog.Write($"Photo « {photo.Name} » non portée à l'historique", ex);
+            }
+        }
+    }
+
+    /// <summary>Ce que la tuile de l'historique affiche : « France · 35×45 mm · 6 photos ».</summary>
+    private string ResumeDeLaPhoto(StripItem photo)
+    {
+        var norme = _document.Country == "France"
+            ? $"France · {_document.WidthMm:0.#}×{_document.HeightMm:0.#} mm"
+            : $"{_document.Country} · {_document.Document}";
+
+        var copies = photo.Copies > 0 ? photo.Copies : CopiesParDefaut();
+        return $"{norme} · {copies} photos";
+    }
+
+    /// <summary>
+    /// Refait la mise à l'abri des photos qui l'auraient manquée, avant de les porter à
+    /// l'historique.
+    ///
+    /// Elle a lieu à l'ouverture de chaque photo, et elle échoue en silence par choix —
+    /// perdre la photo à l'écran serait pire. Mais une entrée d'historique qui pointe sur la
+    /// carte du client ne vaut rien dès qu'il l'a reprise : ici, le support est encore là,
+    /// c'est le dernier moment où la copie coûte zéro.
+    /// </summary>
+    private static async Task MettreALAbriLeLotAsync(IEnumerable<StripItem> photos)
+    {
+        foreach (var photo in photos) await MettreALAbriAsync(photo);
+    }
 
     private string TitreDeLaPlanche() => _document.Country == "France"
         ? $"Identité {_document.WidthMm:0.#}×{_document.HeightMm:0.#}"
@@ -2932,11 +3110,25 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </summary>
     private void AppliquerLAttente(IdentiteEnAttente identite)
     {
-        var parNom = identite.Photos.ToDictionary(p => p.FileName, StringComparer.OrdinalIgnoreCase);
+        // ⚠ LES DEUX NOMS, ET LE NOM DU CLIENT D'ABORD.
+        //
+        // Une planche mise de côté est reprise depuis le support du client : ses photos y
+        // portent le nom du client. Une entrée d'historique, elle, désigne la COPIE de
+        // travail — la bande porte alors « IMG_1234-ab12cd34.jpg » là où la fiche a gardé
+        // « IMG_1234.jpg ». Avec le seul nom du client, aucune photo ne se retrouvait, la
+        // boucle les sautait toutes, et la planche revenait vide de tout réglage sans que
+        // rien ne le dise. La règle et ses essais sont dans RepriseDeLaPlanche.
+        var parNom = RepriseDeLaPlanche.ParNom(identite.Photos);
 
         foreach (var photo in _photos)
         {
             if (!parNom.TryGetValue(photo.Name, out var garde)) continue;
+
+            // La bande a été remplie depuis les chemins ; si c'étaient des copies de
+            // travail, elle porte leur nom. On lui rend celui du client — c'est celui que
+            // l'opérateur reconnaît, celui qui part dans la commande, et celui que la
+            // prochaine tuile de l'historique doit afficher.
+            photo.NommerCommeLeClient(garde.FileName);
 
             photo.Crop = new CropSpec(garde.CropX, garde.CropY, garde.CropWidth, garde.CropHeight);
             photo.Crown = garde.CrownX is { } cx && garde.CrownY is { } cy ? new NormPoint(cx, cy) : null;
@@ -2980,11 +3172,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         private ImageSource? _thumbnail;
         private bool _selected;
         private int _quantite = 1;
+        private string _name;
 
         public StripItem(string path)
         {
             Path = path;
-            Name = System.IO.Path.GetFileName(path);
+            _name = System.IO.Path.GetFileName(path);
         }
 
         /// <summary>
@@ -2994,14 +3187,35 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         public string Path { get; private set; }
 
         /// <summary>
-        /// Le nom que l'opérateur reconnaît. Figé à l'ouverture : il doit rester celui du
-        /// fichier du client, pas celui de la copie de travail — c'est lui qu'on retrouve
-        /// dans la commande et dans les messages d'erreur.
+        /// Le nom que l'opérateur reconnaît : celui du fichier du client, pas celui de la
+        /// copie de travail — c'est lui qu'on retrouve dans la commande et dans les messages
+        /// d'erreur.
+        ///
+        /// Il ne suit JAMAIS la copie (voir <see cref="SuivreLaCopie"/>). Il ne change qu'à
+        /// la reprise d'un travail qui, lui, connaît le nom d'origine — voir
+        /// <see cref="NommerCommeLeClient"/>.
         /// </summary>
-        public string Name { get; }
+        public string Name
+        {
+            get => _name;
+            private set => Set(ref _name, value);
+        }
 
         /// <summary>La photo est désormais lue depuis la copie locale.</summary>
         public void SuivreLaCopie(string chemin) => Path = chemin;
+
+        /// <summary>
+        /// Rend à la photo le nom du fichier du client, quand la bande a été remplie depuis
+        /// une copie de travail — c'est le cas de l'historique des trente jours, dont les
+        /// chemins désignent <c>cache\travail\&lt;jour&gt;\IMG_1234-ab12cd34.jpg</c>.
+        ///
+        /// Sans lui, une photo rouverte puis réimprimée reparaissait à l'historique sous le
+        /// nom de sa copie, et sa commande aussi.
+        /// </summary>
+        public void NommerCommeLeClient(string? nom)
+        {
+            if (!string.IsNullOrWhiteSpace(nom)) Name = nom;
+        }
 
         /// <summary>Rang dans le lot, à partir de 1 — celui de l'écran de sélection.</summary>
         public int Rang { get; init; }

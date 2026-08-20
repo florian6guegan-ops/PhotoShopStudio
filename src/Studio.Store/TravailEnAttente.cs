@@ -55,8 +55,29 @@ public sealed class PhotoEnAttente
 /// </summary>
 public sealed class PhotoIdentiteEnAttente
 {
-    /// <summary>Nom du fichier, jamais le rang : voir <see cref="PhotoEnAttente"/>.</summary>
+    /// <summary>
+    /// Le nom que l'opérateur reconnaît — celui du fichier que le CLIENT a apporté, jamais
+    /// le rang : voir <see cref="PhotoEnAttente"/>.
+    /// </summary>
     public string FileName { get; set; } = "";
+
+    /// <summary>
+    /// Le nom du fichier tel qu'il est SUR LE DISQUE, quand il diffère de
+    /// <see cref="FileName"/>.
+    ///
+    /// ⚠ <b>C'est lui qui retrouve la photo à la reprise</b>, et sans lui l'historique des
+    /// trente jours rendait des planches vides de tout réglage. Une entrée d'historique
+    /// désigne la COPIE de travail (<c>IMG_1234-ab12cd34.jpg</c>) et non le fichier du
+    /// client (<c>IMG_1234.jpg</c>) : la bande, remplie depuis ces chemins, portait donc le
+    /// nom de la copie, <c>AppliquerLAttente</c> cherchait celui du client, ne trouvait rien
+    /// et sautait la photo — cadrage, repères, fond blanc et corrections repartaient à
+    /// neutre, en silence et sans une ligne au journal. C'est-à-dire exactement ce que
+    /// l'historique existe pour épargner.
+    ///
+    /// Null pour une planche mise de côté, dont les chemins sont ceux du support du client :
+    /// les deux noms s'y confondent.
+    /// </summary>
+    public string? NomSurLeDisque { get; set; }
 
     public bool Selected { get; set; }
     public int Quantity { get; set; } = 1;

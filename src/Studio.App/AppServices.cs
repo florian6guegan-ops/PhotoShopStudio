@@ -113,6 +113,23 @@ public sealed class AppServices
     public AttenteStore CommandesEnAttente =>
         _attenteStore ??= new AttenteStore(Path.Combine(DataRoot, "attente"));
 
+    private HistoriqueIdentite? _historiqueIdentite;
+
+    /// <summary>
+    /// Les photos d'identité faites ces trente derniers jours — imprimées ou envoyées —
+    /// avec le réglage exact de chacune.
+    ///
+    /// <b>À ne pas confondre avec les commandes.</b> Les commandes disent ce qui a été
+    /// facturé ; celle-ci dit comment la photo était RÉGLÉE, repères de crâne et de menton
+    /// compris, pour la refaire sans rien remettre. Voir <see cref="HistoriqueIdentite"/>.
+    ///
+    /// Les deux applications l'alimentent : elles partagent la racine de données, et une
+    /// planche tirée dans l'une doit se retrouver dans l'autre.
+    /// </summary>
+    public HistoriqueIdentite HistoriqueIdentite =>
+        _historiqueIdentite ??= new HistoriqueIdentite(
+            Path.Combine(DataRoot, "identite", "historique"));
+
     private readonly Lazy<FaceDetector> _faces = new(() => new FaceDetector(
         Path.Combine(AppContext.BaseDirectory, "models", "face_detection_yunet_2023mar.onnx")));
 
@@ -529,9 +546,41 @@ public sealed class AppServices
         _ = Task.Run(() => Firewall.EnsureRule(Upload.Port));
     }
 
+    /// <summary>
+    /// Le ménage du cache du poste, en tâche de fond : copies de travail et masques de
+    /// détourage de plus de trente jours.
+    ///
+    /// <b>À part de <see cref="RunMaintenanceInBackground"/>, et appelé par les DEUX
+    /// applications.</b> L'entretien complet archive les commandes et lance la sauvegarde —
+    /// des gestes sur les données de la boutique, qu'un second logiciel ouvert en même temps
+    /// n'a pas à refaire. Le ménage du cache, lui, doit tourner sur le poste identité : c'est
+    /// LUI qui ouvre des cartes toute la journée, donc lui qui remplit <c>cache\travail</c>.
+    /// </summary>
+    public void MenageDuCacheEnFond()
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var dossiers = MenageDuCache.PurgerLesCopiesDeTravail(CacheDir);
+                var masques = MenageDuCache.PurgerLesMasques(CacheDir);
+
+                if (dossiers > 0 || masques > 0)
+                    FileLog.Write($"Ménage du cache : {dossiers} journée(s) de copies de " +
+                                  $"travail et {masques} masque(s) de détourage effacés.");
+            }
+            catch (Exception ex)
+            {
+                FileLog.Write("Ménage du cache impossible", ex);
+            }
+        });
+    }
+
     /// <summary>Entretien au démarrage (poste opérateur) : archivage des vieilles commandes + sauvegarde si échue.</summary>
     public void RunMaintenanceInBackground()
     {
+        MenageDuCacheEnFond();
+
         _ = Task.Run(() =>
         {
             try
@@ -702,6 +751,12 @@ public sealed class AppServices
         // Et le seul qui dise si un détourage a été REFAIT : sans lui, un envoi lent ne
         // s'explique pas — voir MasqueSujet.Brut, et les 76,6 s d'Arcueil du 19/08/2026.
         Studio.Imaging.MasqueSujet.Log = message => FileLog.Write(message);
+
+        // LES MASQUES SURVIVENT AU LANCEMENT. Sans ce dossier, une photo rouverte depuis
+        // l'historique des trente jours repayait son détourage en entier — et le second
+        // passage est celui qui manque de mémoire vidéo sur les cartes des boutiques. Un
+        // sous-dossier par méthode : changer de modèle doit changer ce qui sort.
+        Studio.Imaging.MasqueSujet.Dossier = Path.Combine(dataRoot, "cache", "masques");
 
         // La carte que la mesure a désignée : on la garde ici, SaveDetourage l'écrira.
         BiRefNetMatting.CarteRetenue = (_, nom) => _nomDeLaCarteRetenue = nom;

@@ -36,6 +36,18 @@ public static class TirageIdentite
     /// l'accueil continuerait de proposer « Reprendre » sur une planche déjà tirée — et on
     /// la tirerait deux fois.
     /// </param>
+    /// <param name="surCommande">
+    /// Appelé une fois la commande CRÉÉE, avec elle.
+    ///
+    /// C'est le moment exact où la photo devient « faite » : le papier est engagé et le
+    /// numéro existe. L'écran s'en sert pour porter ses photos à l'historique des trente
+    /// jours — il est le seul à tenir les repères de crâne et de menton, que la commande, elle,
+    /// ne garde pas. Avant l'appel, rien n'est parti ; après, la page est déjà rentrée à
+    /// l'accueil.
+    ///
+    /// Une exception venue d'ici n'arrête pas le tirage : elle est journalisée et le papier
+    /// part quand même — l'historique est un confort, la commande est le geste.
+    /// </param>
     /// <returns>
     /// Faux si rien n'est parti : l'appelant remet son bouton en service. L'opérateur a
     /// déjà été prévenu à l'écran, il n'y a rien à ajouter.
@@ -43,7 +55,8 @@ public static class TirageIdentite
     public static async Task<bool> LancerAsync(
         IReadOnlyList<IdSheetRecapView.Planche> planches,
         IdDocumentSpec document,
-        Guid? attenteId)
+        Guid? attenteId,
+        Action<Order>? surCommande = null)
     {
         ArgumentNullException.ThrowIfNull(planches);
 
@@ -83,6 +96,17 @@ public static class TirageIdentite
             // d'objet. Le laisser ferait proposer « Reprendre » sur l'accueil pour une
             // planche déjà tirée, et on la tirerait deux fois.
             if (attenteId is { } attente) services.CommandesEnAttente.Effacer(attente);
+
+            // La photo est faite : elle entre à l'historique des trente jours. Un échec
+            // ici ne doit rien arrêter — le papier part, et c'est ce qui compte.
+            try
+            {
+                surCommande?.Invoke(commande);
+            }
+            catch (Exception ex)
+            {
+                FileLog.Write("Planche non portée à l'historique des photos d'identité", ex);
+            }
 
             Mouse.OverrideCursor = null;
 

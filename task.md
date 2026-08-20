@@ -1,87 +1,157 @@
-# Exécution — 12/08/2026, soir : le montage des agrandissements
+# Exécution — 19/08/2026 : l'historique de 30 jours de Studio Photo Identité
 
-Suite de `implementation_plan.md`, validé par l'exploitant. Circuit grand format (Epson)
-uniquement, prix inchangé, papier choisi par l'opérateur.
+Suite de `implementation_plan.md`. Photos **faites** (imprimées ou envoyées), travail gardé
+en entier, détourage gardé sur le disque, bouton dans Studio Photo Identité seulement.
+
+**1810 essais verts sur 1813** (39 neufs). Les 3 restants sont `De100BridgeIntegrationTests`,
+qui démarrent leur propre relais sur un tube à instance unique déjà tenu par le
+`Studio.De100Host.exe` du comptoir — défaut d'environnement connu, pas de code. Point de
+départ : `main` à `becdf87` (1.5.36).
+
+⚠ Tout a été compilé et essayé en **Release** : le Studio complet tourne en permanence sur ce
+poste et tient `bin\Debug`. Il n'a pas été fermé — c'est l'application du comptoir.
 
 ---
 
-## A. Ce que la lecture du code a imposé, et que le plan ne disait pas ⚠
+## A. Ce que la lecture du code a donné, et qui a évité d'écrire un journal de plus
 
-- [x] A1 ⛔ **FAUX, corrigé par les essais.** J'avais calculé à la main qu'il fallait coucher
-      la CASE. C'est la **FEUILLE** qui se couche : `Capacity` essaie aussi les deux sens de
-      la planche, ce que le calcul oubliait. Feuille couchée, ses 600 mm de large portent
-      deux tirages DEBOUT côte à côte — le cadrage portrait est gardé tel quel, et le fichier
-      sort en 60 × 40. Même erreur sur le 50×70, qui en porte **quatre** et non deux :
-      480 mm + 2 d'écart rentrent dans 500.
+- [x] A1 **`PhotoIdentiteEnAttente` garde DÉJÀ tout ce que l'exploitant demande** : cadrage,
+      repères crâne/menton/tête, axe du visage, redressement, N&B, fond blanc, fond gris,
+      corrections fines, photos par planche, quantité. Rien à inventer côté données.
+- [x] A2 **`IdPhotoView(TravailEnAttente)` sait déjà rouvrir une planche** sur l'écran de
+      travail complet. C'est ce qui satisfait « qu'elles soient toujours capables d'envoyer
+      par mail » sans écrire une seule ligne d'envoi : on rouvre SUR l'écran qui a le bouton.
+- [x] A3 **Les commandes ne pouvaient pas servir de source** : elles ne gardent pas les
+      repères (`TraduireIdentite` le documente), et une photo envoyée par courriel n'y est pas
+      reconnaissable comme identité — elle n'aurait jamais paru dans l'historique.
 
-      À retenir : ne pas refaire à la main ce que `CustomSheetLayout` fait déjà. Les deux
-      erreurs venaient de là, et les essais les ont attrapées toutes les deux.
-- [x] A2 **Le reste du raisonnement tient, et sert quand même.** Le circuit
-      des agrandissements oriente sa toile PAR PHOTO (`CropMath.OrientCanvas`) : un portrait
-      sort en 24×30, un paysage en 30×24. Rendre un portrait dans une case couchée le
-      recadrerait dans le mauvais sens — sur un tirage grand format, c'est la panne chère.
-      Le cas se produit dès qu'une sélection MÊLE portraits et paysages : l'empreinte est
-      unique pour toute la grille, les photos non
-- [x] A3 **Ce qu'on fait donc** : chaque photo est rendue à SON orientation, puis
-      l'image rendue est TOURNÉE d'un quart de tour au moment de la poser sur la feuille.
-      Le cadrage est intact ; l'opérateur massicote et redresse le tirage, qui retrouve son
-      sens. C'est exactement ce que fait déjà la planche identité debout
-      (`ImagePipeline`, « composée debout puis TOURNÉE »)
-- [x] A4 Résultat : une sélection **mêlant portraits et paysages** se monte sans rien casser —
-      toutes les cases occupent la même empreinte, chacune à son sens
+## B. ⚠ Un défaut trouvé en chemin, et corrigé
 
-## B. Le modèle : le montage n'est PAS une planche personnalisée ⚠
+- [x] B1 **`ConstruireLAttente` n'écrivait PAS `FondGris`.** `AppliquerLAttente` le lisait
+      (avec un avertissement en trois lignes disant que c'était la troisième fois que ce champ
+      manquait quelque part) — mais personne ne l'écrivait. Une planche mise de côté en fond
+      gris revenait donc avec le fond du studio, sans rien d'anormal à l'écran ni au journal.
+      **Quatrième fois pour ce champ-là.**
+- [x] B2 La cause de fond est traitée : les deux sorties passent désormais par UNE méthode,
+      `LaPlanche(photos, chemins, photoCourante)` — mise de côté et historique lisent la même.
+      Un champ ajouté à `StripItem` se pose maintenant à un seul endroit.
 
-- [x] B1 `OrderLine.MontageSheetCode` : le code de la FEUILLE, ou null. Null = le
-      comportement d'aujourd'hui, un fichier par tirage
-- [x] B2 ⚠ **Ne pas toucher à `IsCustomSheet`.** Elle bascule `Total` sur le papier ; ici le
-      prix reste `UnitPrice × TotalPrints`. Les deux mécaniques partagent la géométrie, pas
-      la politique de prix
-- [x] B3 `DraftItem.MontageSheetCode`, en dernier paramètre : les appelants passent les
-      précédents par position
-- [x] B4 `OrderService` le reporte sur la ligne, comme il le fait déjà pour `CustomSheet`
+## C. Le journal (incrément 1)
 
-## C. La géométrie : `MontageFeuille`
+- [x] C1 `Studio.Store/HistoriqueIdentite.cs` : `PhotoFaite` (clé, premier geste, dernier
+      geste, nom du fichier, chemin de la copie locale, 🖨/✉, n° de commande, résumé, et le
+      `TravailEnAttente` complet) + le magasin — un fichier par photo, rétention 30 jours,
+      purge à la lecture, écriture atomique, fichier abîmé ignoré.
+- [x] C2 **Le nom du fichier est DÉDUIT de la clé** (SHA-256 tronqué) : retrouver une entrée
+      est une lecture, pas un parcours de dossier. Avec un identifiant tiré au sort, chaque
+      geste aurait relu tout le dossier.
+- [x] C3 `Noter` **fusionne** avec l'entrée du jour : drapeaux et n° de commande repris,
+      travail remplacé par le dernier. Imprimée puis envoyée = une tuile, deux pastilles.
+- [x] C4 8 essais.
 
-- [x] C1 `PlanMontage` : feuille retenue, places par feuille, sens de la case, sens de la
-      feuille. Le nombre de feuilles se déduit du nombre de tirages
-- [x] C2 ⚠ **Capacité < 2 → pas de plan du tout** (`null`). Un montage à une case par
-      feuille n'est pas un montage : c'est un tirage avec des traits de coupe en plus. C'est
-      la garde du point 2.3 du plan, posée dans la géométrie plutôt que répétée partout
-- [x] C3 `Candidats` : les feuilles où le format tient au moins deux fois, la plus petite
-      d'abord — c'est celle qui gâche le moins
+## D. L'alimentation (incrément 2)
 
-## D. Le rendu
+- [x] D1 `AppServices.HistoriqueIdentite` → `identite\historique\`.
+- [x] D2 `TirageIdentite.LancerAsync(…, surCommande)` — appelé la commande créée, exceptions
+      avalées et journalisées : le papier est déjà parti, rien ne doit l'arrêter.
+- [x] D3 `MailSendView(…, surEnvoi)` — appelé après `Facturer`, donc après un envoi réussi.
+- [x] D4 `IdPhotoView.NoterDansLHistorique` : une entrée par photo retenue, avec le chemin de
+      la **copie locale** et une planche à UNE photo (rouvrir une tuile ne doit pas ramener
+      les quatre-vingts autres de la carte).
+- [x] D5 `OnSendByMail` dépose le travail et met la photo à l'abri AVANT de partir : sans le
+      dépôt, l'historique garderait le cadrage d'avant la dernière retouche.
 
-- [x] D1 `ImagePipeline.RenderCustomSheetToFile` accepte une **empreinte** explicite, et
-      tourne d'un quart de tour toute case qui arrive transposée. Paramètre facultatif en
-      dernier : les appelants d'aujourd'hui (planches du minilab) ne changent pas d'un octet
-- [x] D2 `PrintOrchestrator.RenderMontage` : capacité, répartition, une planche par fichier
-- [x] D3 ⚠ **Repli silencieux sur le comportement d'avant** si la feuille est introuvable,
-      hors circuit grand format, ou trop petite pour deux tirages. Une commande ne doit
-      jamais échouer parce qu'un catalogue a bougé entre la prise et le tirage
-- [x] D4 Traits de coupe et contour : l'opérateur massicote la feuille
+## E. L'écran (incrément 3)
 
-## E. L'écran
+- [x] E1 `IdHistoriqueView` : planche virtualisée, vignettes par tranches en parallèle
+      (même mécanique que le choix des photos), tuile = vignette + quand + norme + pastille.
+- [x] E2 Une tuile touchée rouvre la photo **sur l'écran de travail**, avec un `Id` NEUF —
+      l'entrée ne désigne aucune planche mise de côté, la rouvrir ne doit rien effacer.
+- [x] E3 Fichier disparu : la tuile le dit (grisée, « fichier effacé ») et ne s'ouvre pas.
+- [x] E4 Bouton « 🕘 Photos récentes · 30 j » sous « 📂 Ouvrir des photos », **masqué hors de
+      Studio Photo Identité**. La condition est `Mode.IsIdentite` (le LOGICIEL) et non
+      `EnIdentiteVerrouille` (la session) : sortir par le PIN ne doit pas faire disparaître le
+      bouton sous les doigts de l'opérateur.
 
-- [x] E1 `MontageFeuilleView`, intercalé entre la tuile de format et le choix des photos,
-      **famille agrandissement seulement**
-- [x] E2 ⚠ **« Une par feuille » en tête de liste**, et c'est le choix par défaut. Un
-      opérateur qui découpe lui-même ne veut pas d'un montage
-- [x] E3 Chaque feuille annonce ce qu'elle donne : combien par feuille, et le gâchis
-- [x] E4 Aucun candidat → l'écran ne s'affiche pas, on enchaîne comme avant
-- [x] E5 `PhotoGridView` porte le choix jusqu'à la commande, et ne l'applique qu'aux photos
-      du format pour lequel il a été fait
+## F. Le détourage qui ne se refait pas (incrément 4)
 
-## F. Essais
+- [x] F1 `MasqueSujet.Dossier` → `cache\masques\<méthode>\<empreinte>.png`. Lecture :
+      mémoire → **disque** → réseau. Écriture dans les deux.
+- [x] F2 **Un sous-dossier par méthode** (`couleur`, `birefnet-lite-fp16`, …) : changer de
+      modèle dans les réglages change de dossier. Sans cela, le réglage passerait pour
+      inopérant — défaut invisible et pénible à retrouver.
+- [x] F3 `DejaEnMemoire` regarde le disque aussi : sinon l'écran annonçait six secondes
+      d'attente pour aller lire un fichier en cinq millisecondes.
+- [x] F4 Écriture atomique (fichier `.tmp` puis remplacement), signature PNG vérifiée à la
+      lecture, fichier abîmé effacé, décodage protégé — les octets ne viennent plus forcément
+      de nous.
+- [x] F5 `Oublier()` vide aussi le disque ; `OublierLaMemoire()` reproduit un redémarrage.
+- [x] F6 5 essais, dont « après un redémarrage, le masque revient du disque » et « le masque
+      d'une méthode ne ressort pas pour une autre ».
 
-- [x] F1 Capacité : 24×30 → 2 sur 40×50 et sur 40×60, 1 sur 30×40 (donc pas de montage),
-      **4** sur 50×70. Les deux dernières valeurs corrigent le plan (voir A1)
-- [x] F7 La feuille retenue survit à une mise de côté : perdue, la reprise repartirait sur
-      deux fois plus de papier sans que personne s'en aperçoive
-- [x] F2 Répartition sur quantités mêlées
-- [x] F3 ⚠ **Le prix, avec et sans montage** — l'essai qui garde la caisse honnête
-- [x] F4 Capacité 1 → aucun plan, donc aucun changement de comportement
-- [x] F5 Une sélection portrait + paysage se monte sur la même feuille
-- [x] F6 Les planches du minilab d'aujourd'hui rendent exactement pareil (non-régression
-      de `RenderCustomSheetToFile`)
+## F bis. ⚠ Le piège qui rendait tout ce travail inutile
+
+- [x] Fb1 **La clé du masque contenait le CHEMIN COMPLET**, et le nom de la copie venait de
+      `chemin.GetHashCode()` — que .NET tire au sort à chaque démarrage du processus. Une
+      photo rouverte depuis l'historique change de dossier (voir G3) : elle recevait donc une
+      clé neuve, et **repayait son détourage en entier**. C'est-à-dire exactement ce que
+      l'exploitant demande d'éviter.
+- [x] Fb2 `Infrastructure/CopieDeTravail` : `Nom(nomDuClient, source)` et `Cle(chemin)`, tous
+      deux faits du **nom + taille + date** — trois choses qu'une copie conserve (`File.Copy`
+      garde la date d'écriture). On nomme la PHOTO, jamais l'endroit où elle est.
+- [x] Fb3 Une copie déplacée d'une journée à l'autre **garde son nom** : elle a été nommée une
+      fois pour toutes.
+- [x] Fb4 Sorti de `IdPhotoView` pour être ESSAYABLE — la règle est trop fragile pour vivre
+      dans un code-behind de 3 000 lignes que rien ne couvre. 7 essais.
+
+## G. Le ménage (incrément 5)
+
+- [x] G1 ⚠ **Rien ne purgeait `cache\travail`** : une copie par photo ouverte, sur quatre
+      postes, depuis le 14/08. `Studio.Store/MenageDuCache.cs` : dossiers de copies datés de
+      plus de 30 jours (la date vient du NOM du dossier, comme l'archivage des commandes), et
+      masques de plus de 30 jours.
+- [x] G2 `AppServices.MenageDuCacheEnFond()`, appelé par les DEUX applications —
+      `RunMaintenanceInBackground` (Studio) et `FenetreIdentite` (Identité). L'entretien
+      complet, lui, reste au Studio : archivage et sauvegarde sont des gestes sur les données
+      de la boutique, qu'un second logiciel n'a pas à refaire.
+- [x] G3 **Une copie de travail d'un autre jour est recopiée dans celui du jour**
+      (`MettreALAbriAsync`). C'est ce qui aligne les deux rétentions : sans cela, une photo
+      rouverte le 20ᵉ jour et réimprimée aurait laissé une fiche vivante jusqu'au 50ᵉ,
+      pointant sur un fichier effacé au 30ᵉ.
+- [x] G4 5 essais.
+
+## H. ⚠ Le défaut qui vidait les planches rouvertes (20/08)
+
+Noté la veille comme un « détail cosmétique » — la tuile suivante portait le nom de la COPIE
+et non celui du client. **C'en était la trace visible, pas la cause.**
+
+- [x] H1 `AppliquerLAttente` retrouve les photos **par leur nom de fichier**. La bande est
+      remplie depuis `Identite.Chemins` : pour une entrée d'historique, ce sont les copies de
+      travail, donc `IMG_1234-ab12cd34.jpg`. La fiche, elle, avait gardé `FileName = IMG_1234.jpg`.
+      Aucune correspondance : **la boucle sautait toutes les photos**, et la planche rouverte
+      revenait à neutre — cadrage, repères crâne/menton, fond blanc, corrections. Sans erreur
+      à l'écran, sans une ligne au journal. C'est-à-dire toute la demande de l'exploitant.
+- [x] H2 Une planche **mise de côté** est reprise sur le support du client, où les deux noms
+      se confondent : elle marchait, et c'est pour cela que rien ne l'a signalé.
+- [x] H3 `PhotoIdentiteEnAttente.NomSurLeDisque` (null quand il n'apprend rien), écrit par
+      `LaPlanche` — l'unique sortie de B2, donc les deux chemins l'ont d'un coup.
+- [x] H4 `Infrastructure/RepriseDeLaPlanche` : le nom à garder, et l'index à deux clés.
+      **Le nom du client passe d'abord** — deux clients apportent souvent un `IMG_1234.jpg`,
+      et reprendre le cadrage d'une inconnue sortirait le visage de quelqu'un d'autre.
+      Sorti du code-behind pour être essayable, comme `CopieDeTravail` (Fb4). **14 essais.**
+- [x] H5 `StripItem.Name` devient notifiant et la photo retrouvée est **renommée au nom du
+      client** : la commande suivante et la tuile suivante ne portent plus celui d'une copie.
+      C'est le « détail cosmétique » du 19/08, réglé par la même correction.
+
+---
+
+## Ce qui reste à faire
+
+- [ ] **Le regarder tourner.** Rien de tout ceci n'a été vu à l'écran : le Studio complet
+      tourne en permanence sur ce poste (comptoir) et tient `bin\Debug` — tout a été compilé
+      et essayé en **Release**. À ouvrir sur Studio Photo Identité : imprimer une planche,
+      rouvrir la tuile, vérifier que le fond blanc revient SANS attente.
+- [ ] Publier (`identite-v1.5.37`) et poser sur les postes — ⚠ `tools\Publier.ps1` ne démarre
+      plus sur ce PC, les étapes sont à refaire à la main.
+- [ ] Décider si le Studio complet doit avoir le bouton lui aussi. Le journal, lui, est déjà
+      alimenté par les deux applications.
