@@ -387,13 +387,14 @@ public sealed class AppServices
 
         // Une carte qui n'annonce pas sa mémoire garde le bénéfice du doute : on ne retire
         // pas un choix sur une absence d'information, et le repli rattrape de toute façon.
-        if (CarteGraphique.Principale() is not { MemoireGo: { } go }) return reglages.ModeleDemande;
-        if (go >= DetourageSettings.MemoireVideoMinimaleGo) return reglages.ModeleDemande;
+        // La règle est dans DetourageSettings — elle vivait ici EN DOUBLE des réglages.
+        var go = CarteGraphique.Principale()?.MemoireGo;
+        if (DetourageSettings.AssezDeMemoirePourLeModelePuissant(go)) return reglages.ModeleDemande;
 
         FileLog.Write(
             $"Détourage : « {DetourageSettings.ModelePuissantFichier} » demandé, mais la carte " +
             $"de ce poste n'a que {go:0.#} Go de mémoire vidéo pour " +
-            $"{DetourageSettings.MemoireVideoMinimaleGo:0} exigés — " +
+            $"{DetourageSettings.MemoireVideoRecommandeeGo:0} recommandés — " +
             $"« {DetourageSettings.ModeleLeger} » utilisé à sa place.");
 
         return DetourageSettings.ModeleLeger;

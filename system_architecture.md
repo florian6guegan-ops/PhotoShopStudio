@@ -2809,6 +2809,31 @@ un `IMG_1234.jpg`, et reprendre le cadrage d'une inconnue sortirait le visage de
 d'autre. La photo retrouvée est ensuite **renommée** au nom du client, pour que la commande
 suivante et la tuile suivante ne portent pas le nom d'une copie.
 
+## ⚠ Une mémoire vidéo MESURÉE ne se compare pas à un chiffre commercial
+
+Le modèle de détourage « portrait » demande de la mémoire vidéo, et le seuil a été relevé
+deux fois — dans les deux sens, pour la même raison de fond.
+
+- **12/08/2026** : seuil à 6, comparaison `>= 6`. La GTX 1660 SUPER de Créteil annonce
+  6,0 Go tout ronds : elle passait, et elle a échoué en boutique. Seuil monté à 8.
+- **20/08/2026** : la RTX 5060 du Kremlin-Bicêtre annonce **7,96 Go** pour une carte de
+  8 Go. Comparée à 8, elle échoue — et avec elle **toute carte grand public de 8 Go**,
+  puisqu'elles réservent toutes un peu de mémoire avant de la déclarer. Le modèle puissant
+  était devenu inatteignable en pratique, sans que rien ne le dise.
+
+D'où `MargeDeMesureGo = 0,5` : le plancher comparé au relevé est `8 − 0,5`, quand `8` reste
+ce qu'on annonce à l'exploitant. Un demi-gigaoctet rattrape l'écart de déclaration sans
+laisser entrer la classe du dessous — **il ne se vend rien entre 6 et 8 Go**.
+
+⚠ Et la règle vit dans **`DetourageSettings.AssezDeMemoirePourLeModelePuissant`**, une seule
+fois. Elle était recopiée à TROIS endroits — le choix du modèle au démarrage
+(`AppServices`), l'avertissement des réglages et le grisage du bouton
+(`ReglagesDetourageView`). Trois copies d'un même seuil, c'est ainsi qu'un seuil diverge.
+
+⚠ Le chiffre lui-même ne vient pas de WMI : `Win32_VideoController.AdapterRAM` est un
+`uint32` et plafonne à 4 Go. Le relevé juste est au registre, en
+`HardwareInformation.qwMemorySize`.
+
 ## Les masques de détourage SURVIVENT au lancement
 
 `MasqueSujet` garde quatre masques en mémoire, et ils meurent avec l'application. Ils sont

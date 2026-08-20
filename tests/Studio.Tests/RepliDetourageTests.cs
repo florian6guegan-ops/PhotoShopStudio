@@ -171,6 +171,55 @@ public class RepliDetourageTests : IDisposable
             "on ne peut pas exiger plus que ce qu'on recommande");
     }
 
+    /// <summary>
+    /// ⚠ <b>Le seuil rond qui écartait les cartes qu'il visait</b>, relevé le 20/08/2026.
+    ///
+    /// Les valeurs sont celles des quatre postes, lues au registre (<c>qwMemorySize</c>) :
+    /// une carte annonce toujours un peu moins que ce qu'il y a d'écrit sur sa boîte. La
+    /// RTX 5060 du Kremlin-Bicêtre déclare <b>7,96 Go</b> — comparée à 8, elle échouait, et
+    /// avec elle toute carte grand public de 8 Go. Le modèle puissant était devenu
+    /// inatteignable en pratique, sans que rien ne le dise.
+    /// </summary>
+    [Theory]
+    [InlineData(7.96, true, "RTX 5060 du Kremlin-Bicetre — une carte de 8 Go")]
+    [InlineData(8.0, true, "8 Go tout ronds")]
+    [InlineData(12.0, true, "au-dessus, sans discussion")]
+    [InlineData(6.0, false, "GTX 1660 SUPER de Creteil — a echoue en boutique")]
+    [InlineData(5.0, false, "Quadro P2000 de l'atelier — a echoue le 03/08")]
+    [InlineData(1.0, false, "Quadro K600 de kodakidpc")]
+    public void La_memoire_declaree_est_comparee_AVEC_une_marge(
+        double declaree, bool attendu, string carte)
+    {
+        Assert.True(
+            DetourageSettings.AssezDeMemoirePourLeModelePuissant(declaree) == attendu,
+            $"{carte} : {declaree:0.##} Go declares, on attendait " +
+            (attendu ? "qu'elle passe" : "qu'elle soit ecartee"));
+    }
+
+    /// <summary>
+    /// Une carte muette garde le bénéfice du doute : on ne retire pas un choix sur une
+    /// absence d'information, et le repli rattrape un modèle qui n'aurait pas tenu.
+    /// </summary>
+    [Fact]
+    public void Une_carte_qui_n_annonce_rien_reste_capable()
+    {
+        Assert.True(DetourageSettings.AssezDeMemoirePourLeModelePuissant(null));
+    }
+
+    /// <summary>
+    /// La marge rattrape l'écart de DÉCLARATION, pas une classe de cartes entière : rien
+    /// ne se vend entre 6 et 8 Go, donc un demi-gigaoctet ne peut laisser passer que des
+    /// cartes de 8 Go qui s'annoncent mal.
+    /// </summary>
+    [Fact]
+    public void La_marge_ne_descend_pas_jusqu_a_la_classe_du_dessous()
+    {
+        Assert.True(DetourageSettings.MargeDeMesureGo > 0,
+            "sans marge, une carte de 8 Go qui en declare 7,96 est ecartee");
+        Assert.True(DetourageSettings.MargeDeMesureGo <= 1,
+            "au-dela, on laisserait entrer les cartes de 7 Go et moins");
+    }
+
     private static Exception PanneDeMemoire() => new InvalidOperationException(
         "[ErrorCode:RuntimeException] Non-zero status code returned while running " +
         "DmlFusedNode_0_0 node. Name:'DmlFusedNode_0_0' Status Message: ");

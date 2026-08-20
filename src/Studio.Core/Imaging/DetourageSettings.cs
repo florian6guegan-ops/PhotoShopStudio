@@ -91,10 +91,43 @@ public sealed record DetourageSettings(
     /// Cela reste un avertissement doublé d'un choix grisé, jamais une panne : le repli
     /// existe, et il tombe désormais sur le modèle léger plutôt que sur la couleur.
     /// </summary>
-    public const double MemoireVideoMinimaleGo = 8;
+    public const double MemoireVideoMinimaleGo = MemoireVideoRecommandeeGo - MargeDeMesureGo;
 
     /// <summary>Ce qu'on conseille réellement d'avoir pour le modèle puissant.</summary>
     public const double MemoireVideoRecommandeeGo = 8;
+
+    /// <summary>
+    /// L'écart entre la capacité qu'une carte porte sur sa boîte et celle qu'elle DÉCLARE.
+    ///
+    /// ⚠ <b>Sans cette marge, un seuil rond écarte les cartes qu'il visait.</b> Relevé le
+    /// 20/08/2026 sur la RTX 5060 du Kremlin-Bicêtre : <c>qwMemorySize</c> annonce
+    /// <b>7,96 Go</b> pour une carte de 8 Go. Comparée à 8, elle échoue — et avec elle
+    /// TOUTE carte grand public de 8 Go, puisqu'elles réservent toutes un peu de mémoire
+    /// avant de la déclarer. Le modèle puissant devenait donc inatteignable en pratique.
+    ///
+    /// C'est le même piège que la GTX 1660 SUPER de Créteil (<c>6 &lt; 6</c> est faux),
+    /// retourné : <b>une valeur mesurée ne se compare pas à un chiffre commercial.</b>
+    ///
+    /// Un demi-gigaoctet suffit à rattraper l'écart de déclaration sans rien laisser passer
+    /// d'autre : les 6 Go de Créteil et les 5 Go de l'atelier restent écartés, et il n'existe
+    /// pas de carte vendue entre 6 et 8 Go.
+    /// </summary>
+    public const double MargeDeMesureGo = 0.5;
+
+    /// <summary>
+    /// Cette carte peut-elle porter le modèle puissant ?
+    ///
+    /// <b>La règle vit ICI et nulle part ailleurs.</b> Elle était recopiée à trois endroits
+    /// — le choix du modèle au démarrage, l'avertissement des réglages, et le grisage du
+    /// bouton — ce qui est précisément ce qui laisse un seuil diverger d'une copie à l'autre.
+    ///
+    /// Une carte qui n'annonce pas sa mémoire passe pour capable : on ne retire pas un choix
+    /// à quelqu'un sur un doute, et le repli rattrape de toute façon un modèle qui n'aurait
+    /// pas tenu.
+    /// </summary>
+    /// <param name="memoireGo">Le relevé de la carte, ou null si elle ne le donne pas.</param>
+    public static bool AssezDeMemoirePourLeModelePuissant(double? memoireGo) =>
+        memoireGo is not { } go || go >= MemoireVideoMinimaleGo;
 
     /// <summary>Le fichier de modèle demandé par ces réglages.</summary>
     public string ModeleDemande => ModelePuissant ? ModelePuissantFichier : ModeleLeger;

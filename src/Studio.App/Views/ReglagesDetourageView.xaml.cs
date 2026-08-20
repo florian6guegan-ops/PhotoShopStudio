@@ -95,7 +95,7 @@ public partial class ReglagesDetourageView : UserControl
                 "En son absence, c'est le modèle « lite » qui sera utilisé.");
 
         if (CarteGraphique.Principale() is { MemoireGo: { } go } carte &&
-            go < DetourageSettings.MemoireVideoMinimaleGo)
+            !DetourageSettings.AssezDeMemoirePourLeModelePuissant(go))
             avertissements.Add(
                 $"La carte de ce poste ({carte.Nom}) n'a que {go:0.#} Go de mémoire vidéo, " +
                 $"pour {DetourageSettings.MemoireVideoRecommandeeGo:0} Go recommandés.\n\n" +
@@ -117,13 +117,12 @@ public partial class ReglagesDetourageView : UserControl
     /// <summary>
     /// La carte de ce poste peut-elle porter le modèle puissant ?
     ///
-    /// Une carte qui n'annonce pas sa mémoire passe pour capable : on ne retire pas un
-    /// choix à quelqu'un sur un doute, et le repli sur la méthode couleur rattrape de
-    /// toute façon un modèle qui n'aurait pas tenu.
+    /// La règle elle-même est dans <see cref="DetourageSettings"/> : elle était recopiée
+    /// ici, dans l'avertissement ci-dessus et dans le choix du modèle au démarrage — trois
+    /// copies d'un même seuil, et c'est ainsi qu'un seuil finit par diverger.
     /// </summary>
     private static bool LaCarteTientLeModelePuissant() =>
-        CarteGraphique.Principale() is not { MemoireGo: { } go } ||
-        go >= DetourageSettings.MemoireVideoMinimaleGo;
+        DetourageSettings.AssezDeMemoirePourLeModelePuissant(CarteGraphique.Principale()?.MemoireGo);
 
     private void DecrireLeMateriel()
     {
@@ -147,7 +146,7 @@ public partial class ReglagesDetourageView : UserControl
         MaterielText.Text = $"Carte de ce poste : {carte}." +
                             (assez
                                 ? ""
-                                : $" Il lui faut {DetourageSettings.MemoireVideoMinimaleGo:0} Go de " +
+                                : $" Il lui faut {DetourageSettings.MemoireVideoRecommandeeGo:0} Go de " +
                                   "mémoire vidéo pour le modèle « portrait » : le choix est grisé " +
                                   "ci-dessus, et le modèle « lite » reste le bon sur ce poste.");
     }
