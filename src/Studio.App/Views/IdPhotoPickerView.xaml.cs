@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
+using Studio.Core.Domain;
 using Studio.Imaging.Geometry;
 using Studio.Sources;
 
@@ -43,17 +44,27 @@ public partial class IdPhotoPickerView : UserControl
     /// </summary>
     private readonly int? _photosParPlanche;
 
+    /// <summary>
+    /// Ce que le raccourci d'origine fabrique : planche ordinaire, planche de rentrée, ou
+    /// planche accompagnée d'un 10×15. Porté jusqu'au cadrage, comme
+    /// <see cref="_photosParPlanche"/>, et pour la même raison : c'est là-bas qu'il agit.
+    /// </summary>
+    private readonly GenreDePlanche _genre;
+
     /// <param name="rootPath">Dossier des photos.</param>
     /// <param name="document">Norme visée ; null = norme française.</param>
     /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
     /// <param name="photosParPlanche">Photos par planche imposées, ou null pour la planche pleine.</param>
+    /// <param name="genre">Ce que la tuile d'origine fabrique. Voir <see cref="GenreDePlanche"/>.</param>
     public IdPhotoPickerView(string rootPath, IdDocumentSpec? document = null,
-        bool avecSousDossiers = true, int? photosParPlanche = null)
+        bool avecSousDossiers = true, int? photosParPlanche = null,
+        GenreDePlanche genre = GenreDePlanche.Standard)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
         _document = document ?? IdDocumentSpec.France;
         _photosParPlanche = photosParPlanche;
+        _genre = genre;
 
         InitializeComponent();
 
@@ -242,7 +253,7 @@ public partial class IdPhotoPickerView : UserControl
         var chemins = CheminsRetenus();
         if (chemins.Count == 0) return;
 
-        Navigator.Go(new IdPhotoView(chemins, _document, _photosParPlanche),
+        Navigator.Go(new IdPhotoView(chemins, _document, _photosParPlanche, _genre),
             $"{_document.Country} — cadrer {chemins.Count} photo(s)");
     }
 

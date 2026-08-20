@@ -579,14 +579,35 @@ public sealed class De100Driver : IDisposable
             throw new De100Exception($"{call} a échoué ({result}).", result);
     }
 
+    /// <summary>
+    /// Range ce qui est à nous. <b>N'APPELLE PAS <c>PIF_Close</c>, et c'est délibéré.</b>
+    ///
+    /// <c>PIF_Close</c> ne referme pas seulement notre session : il fait EFFACER par PUD les
+    /// fichiers d'état des machines, <c>C:\PUD\Info\A_PrinterInfo.txt</c> et son jumeau. Or
+    /// PUD ne les écrit qu'à son inventaire de démarrage. Sans eux,
+    /// <c>PIF_DevGetPrinterInfo</c> rend <c>FileIoError</c>, DiLand boucle sur son
+    /// « PrinterInfoAccess [Load] RetryCount » dix fois par seconde et ne finit jamais de
+    /// charger. Relancer PUD à la main n'y suffit pas : il faut redémarrer le poste.
+    /// Créteil, 10/08/2026 — une heure de boutique immobilisée.
+    ///
+    /// <b>Ce qu'on perd en ne l'appelant pas : rien.</b> Les deux seuls porteurs d'un
+    /// De100Driver sont des processus qui meurent juste après — le relais
+    /// (<c>Studio.De100Host</c>, une session par tirage ou par ouverture) et la sonde
+    /// (<c>Studio.DeviceProbe</c>). Le système rend leurs ressources natives de toute façon.
+    /// On échangeait donc une fermeture ordonnée dont personne ne profite contre un risque
+    /// qui a déjà coûté un redémarrage en pleine journée.
+    ///
+    /// ⚠ Le danger était surtout LATENT : le relais est presque toujours TUÉ par
+    /// l'application, et un <c>finally</c> ne s'exécute pas sur un Kill. En fiabilisant les
+    /// fermetures propres (voir <c>De100BridgeClient.LacherLaFoisDavant</c>, 20/08/2026), on
+    /// allait justement le réveiller.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
         _sweepTimer.Dispose();
-        try { De100Interop.PIF_Close(); }
-        catch (DllNotFoundException) { /* SDK absent : rien à fermer */ }
     }
 }
 

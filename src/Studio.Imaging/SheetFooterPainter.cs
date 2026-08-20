@@ -25,8 +25,28 @@ public static class SheetFooterPainter
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(footer);
 
-        var pose = SheetFooterLayout.Place(
-            footer, (int)sheet.Width, (int)sheet.Height, photosBottom, dpi);
+        Poser(sheet, footer, SheetFooterLayout.Place(
+            footer, (int)sheet.Width, (int)sheet.Height, photosBottom, dpi));
+    }
+
+    /// <summary>
+    /// Écrit la bande dans un RECTANGLE DONNÉ, et non sous toute la planche.
+    ///
+    /// C'est ce dont la planche de rentrée a besoin : son portrait descend jusqu'au bord, et
+    /// la seule place libre est sous le bloc d'identités. Voir
+    /// <see cref="SheetFooterLayout.Place(SheetFooter, PixelRect, int, bool)"/>.
+    /// </summary>
+    public static void Draw(
+        MagickImage sheet, SheetFooter footer, PixelRect bande, int dpi, bool empile = false)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        ArgumentNullException.ThrowIfNull(footer);
+
+        Poser(sheet, footer, SheetFooterLayout.Place(footer, bande, dpi, empile));
+    }
+
+    private static void Poser(MagickImage sheet, SheetFooter footer, FooterPlacement? pose)
+    {
         if (pose is null) return;
 
         // les images d'abord, le texte ensuite : un logo à fond blanc effacerait sinon la
@@ -38,7 +58,8 @@ public static class SheetFooterPainter
             PoserImage(sheet, fichier, logo);
 
         if (pose.Date is { } date)
-            EcrireLaDate(sheet, footer, date, pose.Mention is null, pose.CorpsDatePx);
+            EcrireLaDate(sheet, footer, date,
+                pose.Mention is null || pose.DateCentree, pose.CorpsDatePx);
 
         if (pose.Mention is { } mention && footer.PorteDuTexte)
             EcrireLaMention(sheet, footer.Mention, footer.NomMagasin, mention);
@@ -74,8 +95,14 @@ public static class SheetFooterPainter
         // l'heure flotte au-dessus de la date.
         var ligneDeBase = zone.Y + (zone.Height + corps * 0.72) / 2;
 
+        // ⚠ Centrée SUR SA ZONE, et non sur la feuille.
+        //
+        // Elle se centrait sur « sheet.Width », ce qui revenait au même tant que la bande
+        // courait d'un bord à l'autre. La planche de rentrée a rompu cette évidence : sa
+        // bande ne fait que la largeur du bloc d'identités, et la date allait donc s'écrire
+        // au milieu de la feuille, PAR-DESSUS le portrait (20/08/2026).
         var gauche = seule
-            ? (sheet.Width - (largeurJour + ecart + largeurHeure)) / 2.0
+            ? zone.X + (zone.Width - (largeurJour + ecart + largeurHeure)) / 2.0
             : zone.X;
 
         // Le corps est donné en PIXELS : ImageMagick dessine à 72 points par pouce quelle

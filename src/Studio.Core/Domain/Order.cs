@@ -199,6 +199,17 @@ public sealed class OrderItem
 
     /// <summary>Hauteur de la case ; voir <see cref="SheetCellWidthMm"/>.</summary>
     public double? SheetCellHeightMm { get; set; }
+
+    /// <summary>
+    /// Planche de la RENTRÉE : le cadrage du PORTRAIT, celui qui montre les épaules.
+    ///
+    /// Une planche de rentrée porte deux cadrages de la même photo — la case normée dans
+    /// <see cref="Crop"/>, le portrait ici — et la commande doit garder les deux : une
+    /// réimpression trois jours plus tard doit sortir la même feuille, au pixel près.
+    ///
+    /// Null sur toutes les autres planches, et sur tous les tirages.
+    /// </summary>
+    public CropSpec? CropGrandePhoto { get; set; }
     /// <summary>Nom de la finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
     public string? Finish { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();

@@ -370,6 +370,13 @@ public partial class OrdersView : UserControl
                 HeadMaxMm = document.HeadMaxMm,
                 CrownMarginMm = document.CrownMarginMm,
                 TargetHeadOverrideMm = document.TargetHeadOverrideMm,
+
+                // LE FORMAT VENDU se relit sur le PAPIER : c'est lui qui porte « grande
+                // photo ». Sans cela, rouvrir une planche de rentrée la rouvrait en planche
+                // ordinaire, où son papier est filtré de la liste — l'écran annonçait alors
+                // qu'aucun papier ne peut porter le document, sur une planche qui vient d'en
+                // sortir une.
+                Genre = GenreDeLaPlanche(ligne),
             };
 
             var articles = ligne.Retenues
@@ -433,6 +440,28 @@ public partial class OrdersView : UserControl
     ///    bornes de visage : mieux vaut un gabarit à la bonne taille sans contrôle de
     ///    conformité que l'écran des tirages.
     /// </summary>
+    /// <summary>
+    /// Le format vendu par la planche de cette commande, relu sur son PAPIER.
+    ///
+    /// <b>Seule la planche de rentrée se reconnaît</b> : c'est son produit qui porte
+    /// « grande photo ». Une planche accompagnée d'une 10×15 se présente, elle, comme une
+    /// planche ordinaire suivie d'un tirage à zéro euro — rien ne les distingue à coup sûr
+    /// d'une planche et d'un tirage commandés ensemble, et se tromper referait sortir une
+    /// feuille en trop. On la rouvre donc en planche ordinaire, ce qui est le geste sûr :
+    /// l'opérateur ajoute la grande photo s'il la veut.
+    /// </summary>
+    private static GenreDePlanche GenreDeLaPlanche(OrderRow ligne)
+    {
+        var papiers = ligne.Retenues
+            .SelectMany(e => e.Lines)
+            .Where(EstIdentite)
+            .Select(l => App.Services.Catalog.Find(l.ProductCode));
+
+        return papiers.Any(p => p?.Sheet is { GrandePhoto: true })
+            ? GenreDePlanche.Rentree
+            : GenreDePlanche.Standard;
+    }
+
     private static IdDocumentSpec? DocumentDeLaPlanche(OrderRow ligne)
     {
         var articles = ligne.Retenues

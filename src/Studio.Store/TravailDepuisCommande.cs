@@ -127,6 +127,14 @@ public static class TravailDepuisCommande
                 CropWidth = article.Crop.Width,
                 CropHeight = article.Crop.Height,
 
+                // Le cadre du portrait, sur une planche de rentrée : la commande l'a gardé,
+                // et le rouvrir sans lui referait proposer le cadre déduit — donc un autre
+                // portrait que celui qui est déjà sorti sur le papier.
+                CropGrandeX = article.CropGrandePhoto?.X,
+                CropGrandeY = article.CropGrandePhoto?.Y,
+                CropGrandeWidth = article.CropGrandePhoto?.Width,
+                CropGrandeHeight = article.CropGrandePhoto?.Height,
+
                 Redressement = article.FineRotationDegrees,
 
                 // Les trois cases vivent DANS les réglages une fois la commande écrite

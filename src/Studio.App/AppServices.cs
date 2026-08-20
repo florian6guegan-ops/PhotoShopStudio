@@ -413,6 +413,22 @@ public sealed class AppServices
     });
 
     /// <summary>
+    /// Le papier de la planche de RENTRÉE, dérivé de la planche d'identité du poste à la
+    /// première utilisation.
+    ///
+    /// Il ne peut pas être livré au catalogue : une mise à jour ne touche jamais au
+    /// <c>products.json</c> d'un poste qui tourne. Voir <see cref="PlancheRentreeProduit"/>,
+    /// qui explique pourquoi il se fabrique et ce qu'il reprend du papier existant.
+    /// </summary>
+    /// <param name="planche">La planche d'identité dont on reprend machine, ICC et DEVMODE.</param>
+    public Product ProduitPlancheDeRentree(Product planche) =>
+        PlancheRentreeProduit.Obtenir(Catalog, planche, produit =>
+        {
+            ProductCatalog.Save(ProductsJson, Catalog.All.Append(produit));
+            ReloadCatalog();
+        });
+
+    /// <summary>
     /// Le WiFi du magasin, pour le code QR de connexion de l'écran « téléphone ».
     ///
     /// Il est saisi à la main parce que ce poste n'a PAS de carte sans fil : Windows n'a

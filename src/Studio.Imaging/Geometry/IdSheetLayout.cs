@@ -114,10 +114,28 @@ public static class IdSheetLayout
         var blockH = rows * cellHeight + (rows - 1) * gap;
         var originX = (sheetWidth - blockW) / 2;
 
-        // la réserve est prise en bas : le bloc se centre sur la hauteur restante, et ne
-        // remonte jamais au point de mordre sur les repères de coupe du haut
+        // la réserve est prise en bas : le bloc se centre sur la hauteur restante
         var utile = Math.Max(blockH, sheetHeight - bottomReserve);
-        var originY = Math.Max(tickLength, (utile - blockH) / 2);
+
+        // ⚠ LE BLOC SE CENTRE. IL N'EST PLUS POUSSÉ POUR DÉGAGER LES REPÈRES.
+        //
+        // Il l'était — <c>Math.Max(tickLength, centre)</c> — pour qu'aucune case ne
+        // recouvre les traits de coupe du haut. Or ce décalage ne sert à rien quand la
+        // planche est LARGE (le centre est déjà plus bas que les repères) et il fait des
+        // dégâts quand elle est JUSTE : le bloc descendait sous le bord, le garde-fou
+        // ci-dessous le rattrapait en le collant AU BORD BAS, et le massicot de la machine
+        // — qui rogne près d'un millimètre et demi par bord sur un tirage à fond perdu —
+        // mangeait le bas de la photo.
+        //
+        // Mesuré le 20/08/2026, commande 20-033 : un 7 × 10 sur un 10×15. Centre à 11 px,
+        // repères à 35, bloc posé à 22 px avec ZÉRO en bas — 22 px de marge en haut, rien
+        // en bas, alors que la planche en avait 11 à donner de chaque côté. « Les 7x10 sont
+        // rognés en partie. »
+        //
+        // Ce sont donc les REPÈRES qui cèdent : ils se raccourcissent à la marge disponible
+        // (voir <see cref="BuildCutTicks"/>). Un repère écourté se pardonne ; un tirage
+        // rogné se refait.
+        var originY = Math.Max(0, (utile - blockH) / 2);
         if (originY + blockH > sheetHeight) originY = Math.Max(0, sheetHeight - blockH);
 
         var cells = new List<PixelRect>(copies);
@@ -141,6 +159,13 @@ public static class IdSheetLayout
     /// <summary>
     /// Repères de coupe dans les marges : pour chaque bord vertical de cellule, deux
     /// ticks en haut et en bas de la planche ; idem horizontalement.
+    ///
+    /// ⚠ <b>Ils tiennent dans la MARGE, et ne mordent jamais sur une photo.</b> Leur
+    /// longueur est ramenée à ce que le bloc laisse libre de son côté — verticalement pour
+    /// les traits du haut et du bas, horizontalement pour ceux des flancs. Une planche
+    /// juste n'en porte donc plus, et c'est le bon arbitrage : c'est le bloc qui était
+    /// poussé jusqu'au bord pour leur faire place, et le massicot de la machine y prenait
+    /// un bout de la photo (voir <see cref="Layout"/>).
     /// </summary>
     private static List<CutTick> BuildCutTicks(
         int sheetWidth, int sheetHeight, IReadOnlyList<PixelRect> cells, int tickLength)
@@ -155,17 +180,26 @@ public static class IdSheetLayout
             ys.Add(cell.Bottom);
         }
 
+        // la marge réellement libre de chaque côté du bloc
+        var haut = Math.Min(tickLength, Math.Max(0, Math.Min(ys.Min, sheetHeight - ys.Max)));
+        var flanc = Math.Min(tickLength, Math.Max(0, Math.Min(xs.Min, sheetWidth - xs.Max)));
+
         var ticks = new List<CutTick>();
-        foreach (var x in xs)
-        {
-            ticks.Add(new CutTick(x, 0, x, tickLength));
-            ticks.Add(new CutTick(x, sheetHeight - tickLength, x, sheetHeight));
-        }
-        foreach (var y in ys)
-        {
-            ticks.Add(new CutTick(0, y, tickLength, y));
-            ticks.Add(new CutTick(sheetWidth - tickLength, y, sheetWidth, y));
-        }
+
+        if (haut > 0)
+            foreach (var x in xs)
+            {
+                ticks.Add(new CutTick(x, 0, x, haut));
+                ticks.Add(new CutTick(x, sheetHeight - haut, x, sheetHeight));
+            }
+
+        if (flanc > 0)
+            foreach (var y in ys)
+            {
+                ticks.Add(new CutTick(0, y, flanc, y));
+                ticks.Add(new CutTick(sheetWidth - flanc, y, sheetWidth, y));
+            }
+
         return ticks;
     }
 }

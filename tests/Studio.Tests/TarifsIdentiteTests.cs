@@ -49,6 +49,47 @@ public class TarifsIdentiteTests
         Assert.Equal(10m, new TarifsIdentite().Pour(pays));
     }
 
+    /// <summary>
+    /// Les deux formats de la rentrée, fixés par l'exploitant le 20/08/2026 : 11 € la
+    /// planche de rentrée, 12 € la planche accompagnée d'une 10×15.
+    /// </summary>
+    [Fact]
+    public void Les_formats_de_rentree_ont_leur_prix()
+    {
+        var tarifs = new TarifsIdentite();
+
+        Assert.Equal(11m, tarifs.RentreeEur);
+        Assert.Equal(12m, tarifs.PlancheEtTirageEur);
+
+        Assert.Equal(11m, tarifs.Pour("France", GenreDePlanche.Rentree));
+        Assert.Equal(12m, tarifs.Pour("France", GenreDePlanche.PlancheEtTirage));
+    }
+
+    /// <summary>
+    /// <b>La majoration « document étranger » ne s'applique pas aux formats de saison.</b>
+    /// Elle paie la recherche d'une norme exotique ; une photo de rentrée n'en a pas, et
+    /// facturer quinze euros une planche annoncée onze se verrait en caisse.
+    /// </summary>
+    [Theory]
+    [InlineData("France")]
+    [InlineData("Espagne")]
+    [InlineData(null)]
+    public void Le_prix_de_rentree_ne_depend_pas_du_pays(string? pays)
+    {
+        Assert.Equal(11m, new TarifsIdentite().Pour(pays, GenreDePlanche.Rentree));
+        Assert.Equal(12m, new TarifsIdentite().Pour(pays, GenreDePlanche.PlancheEtTirage));
+    }
+
+    /// <summary>La planche ordinaire, elle, garde le prix du document.</summary>
+    [Fact]
+    public void La_planche_ordinaire_garde_le_prix_du_document()
+    {
+        var tarifs = new TarifsIdentite();
+
+        Assert.Equal(10m, tarifs.Pour("France", GenreDePlanche.Standard));
+        Assert.Equal(15m, tarifs.Pour("Espagne", GenreDePlanche.Standard));
+    }
+
     [Fact]
     public void Les_deux_tarifs_se_reglent()
     {

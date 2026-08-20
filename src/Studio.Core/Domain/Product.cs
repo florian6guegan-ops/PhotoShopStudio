@@ -69,6 +69,18 @@ public sealed class SheetSpec
     /// l'exige pour les photos d'identité, qui doivent être récentes.
     /// </summary>
     public bool DateStamp { get; set; } = true;
+
+    /// <summary>
+    /// Planche de la RENTRÉE : les cases d'identité tiennent sur une partie du papier, et
+    /// un PORTRAIT du même visage occupe tout le reste. Voir <c>PlancheRentree</c>.
+    ///
+    /// <b>Le nombre de cases reste <see cref="Copies"/></b> — quatre sur la planche vendue
+    /// à la rentrée — mais il n'est plus « ce que le papier porte » : c'est la part
+    /// laissée aux identités, et le portrait prend ce qui n'a pas été pris. Une planche
+    /// dont ce drapeau est levé ne se remplit donc jamais complètement d'identités, et
+    /// <c>MaxCopies</c> n'a pas de sens sur elle.
+    /// </summary>
+    public bool GrandePhoto { get; set; }
 }
 
 /// <summary>
@@ -272,6 +284,10 @@ public sealed class Product
             CutMarks = Sheet.CutMarks,
             CutBorder = Sheet.CutBorder,
             DateStamp = Sheet.DateStamp,
+            // FullBleed manquait : dupliquer une planche à marges en refaisait une à fond
+            // perdu, donc des photos jointives là où l'opérateur voulait des repères.
+            FullBleed = Sheet.FullBleed,
+            GrandePhoto = Sheet.GrandePhoto,
         },
         Enabled = Enabled,
     };

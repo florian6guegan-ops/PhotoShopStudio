@@ -61,8 +61,10 @@ public sealed class PreviewRenderer : IDisposable
         _reduite = MagickInit.Lire(sourcePath, maxSide);
         _reduite.AutoOrient();
 
-        if (_reduite.GetColorProfile() is { } profil)
-            _reduite.TransformColorSpace(profil, ColorProfiles.SRGB);
+        // L'espace de la source, profil embarqué OU déclaration EXIF : l'aperçu doit suivre
+        // exactement la règle du rendu, sinon l'écran cesse de ressembler au papier. Voir
+        // EspaceCouleurSource.
+        EspaceCouleurSource.RamenerEnSrgb(_reduite);
 
         _reduite.Resize(new MagickGeometry((uint)maxSide, (uint)maxSide));
 

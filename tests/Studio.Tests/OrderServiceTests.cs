@@ -124,4 +124,61 @@ public class OrderServiceTests : IDisposable
         var b = _service.CreateOrder("Operateur", new[] { Draft(MakePhoto("2.jpg"), P10x15) });
         Assert.Equal(a.DailyNumber + 1, b.DailyNumber);
     }
+
+    /// <summary>
+    /// DEUX TAILLES LIBRES SUR LE MÊME PAPIER FONT DEUX LIGNES.
+    ///
+    /// C'est le cas courant : un 7 × 10 et un 5,5 × 8 se casent tous deux sur du 10×15, donc
+    /// sur le même produit du catalogue. Le regroupement se faisait sur le seul code
+    /// produit et la ligne prenait <c>productGroup.First().CustomSheet</c> — la seconde
+    /// taille aurait été tirée aux cotes de la première, sans un mot.
+    ///
+    /// Le défaut était hors d'atteinte tant que l'écran imposait une taille unique à toute
+    /// la commande. Il a cessé de le faire le 20/08/2026 : « j'ai voulu mélanger 10×15 et
+    /// 7 × 10, tout est sorti en 7 × 10 ».
+    /// </summary>
+    [Fact]
+    public void Deux_tailles_libres_sur_le_meme_papier_font_deux_lignes()
+    {
+        var sept = new CustomSheetSpec(70, 100, SheetCount: 1, CellBorderMm: 0);
+        var cinq = new CustomSheetSpec(55, 80, SheetCount: 1, CellBorderMm: 0);
+
+        var commande = _service.CreateOrder("Operateur",
+        [
+            Draft(MakePhoto("a.jpg"), P10x15) with { CustomSheet = sept },
+            Draft(MakePhoto("b.jpg"), P10x15) with { CustomSheet = cinq },
+        ]);
+
+        var lignes = commande.Envelopes.SelectMany(e => e.Lines).ToList();
+
+        Assert.Equal(2, lignes.Count);
+        Assert.All(lignes, l => Assert.Equal("10x15", l.ProductCode));
+
+        // chaque ligne garde SES cotes de case
+        Assert.Contains(lignes, l => l.CustomCellWidthMm == 70 && l.CustomCellHeightMm == 100);
+        Assert.Contains(lignes, l => l.CustomCellWidthMm == 55 && l.CustomCellHeightMm == 80);
+
+        // et chacune sa photo, aucune n'a été absorbée par l'autre
+        Assert.All(lignes, l => Assert.Single(l.Items));
+    }
+
+    /// <summary>
+    /// La contrepartie : deux photos de la MÊME taille libre restent UNE ligne. Sans quoi
+    /// chaque photo se facturerait sa propre planche.
+    /// </summary>
+    [Fact]
+    public void Deux_photos_de_la_meme_taille_libre_restent_une_ligne()
+    {
+        var sept = new CustomSheetSpec(70, 100, SheetCount: 1, CellBorderMm: 0);
+
+        var commande = _service.CreateOrder("Operateur",
+        [
+            Draft(MakePhoto("a.jpg"), P10x15) with { CustomSheet = sept },
+            Draft(MakePhoto("b.jpg"), P10x15) with { CustomSheet = sept },
+        ]);
+
+        var ligne = Assert.Single(commande.Envelopes.SelectMany(e => e.Lines));
+        Assert.Equal(2, ligne.Items.Count);
+        Assert.Equal(70, ligne.CustomCellWidthMm);
+    }
 }

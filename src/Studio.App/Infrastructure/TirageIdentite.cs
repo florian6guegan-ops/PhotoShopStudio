@@ -31,6 +31,11 @@ public static class TirageIdentite
     /// </summary>
     /// <param name="planches">Le lot. Celles à zéro exemplaire sont laissées de côté.</param>
     /// <param name="document">La norme visée : elle fixe la case ET le prix.</param>
+    /// <param name="genre">
+    /// Ce qu'on vend : la planche ordinaire, celle de la rentrée, ou la planche accompagnée
+    /// d'un tirage 10×15. Il décide de DEUX choses, et de rien d'autre — le prix, et la
+    /// feuille supplémentaire. Voir <see cref="GenreDePlanche"/>.
+    /// </param>
     /// <param name="attenteId">
     /// La planche mise de côté que cette impression solde, s'il y en a une. Sans elle,
     /// l'accueil continuerait de proposer « Reprendre » sur une planche déjà tirée — et on
@@ -56,7 +61,8 @@ public static class TirageIdentite
         IReadOnlyList<IdSheetRecapView.Planche> planches,
         IdDocumentSpec document,
         Guid? attenteId,
-        Action<Order>? surCommande = null)
+        Action<Order>? surCommande = null,
+        GenreDePlanche genre = GenreDePlanche.Standard)
     {
         ArgumentNullException.ThrowIfNull(planches);
 
@@ -74,7 +80,10 @@ public static class TirageIdentite
 
         // Le prix vient du DOCUMENT, pas du papier : 10 € pour un document français, 15 €
         // pour un étranger. C'est le même produit du catalogue dans les deux cas.
-        var prix = services.TarifsIdentite.Pour(document.Country);
+        //
+        // Les deux formats de la rentrée ont le leur — 11 € et 12 € —, le même pour tous
+        // les pays : ce sont des produits de saison, pas des démarches administratives.
+        var prix = services.TarifsIdentite.Pour(document.Country, genre);
 
         var articles = aTirer
             .Select(p => new DraftItem(
@@ -83,8 +92,50 @@ public static class TirageIdentite
                 // la case suit le DOCUMENT, jamais celle inscrite au produit
                 SheetCell: new SheetCellSize(document.WidthMm, document.HeightMm),
                 // et le PRIX aussi : c'est le document qui le fixe, pas le papier
-                UnitPriceOverride: prix))
+                UnitPriceOverride: prix,
+                // le cadrage du portrait, sur la planche de rentrée : la commande doit le
+                // garder, sans quoi une réimpression sortirait un autre cadrage
+                CropGrande: genre == GenreDePlanche.Rentree ? p.CropGrande : null))
             .ToList();
+
+        // LA FEUILLE EN PLUS, quand c'est « la planche ET une 10×15 ».
+        //
+        // Un article de plus dans la MÊME commande, jamais une seconde commande : le client
+        // passe une fois en caisse, et le ticket porte une ligne « planche » et une ligne
+        // « tirage ». Son prix est à zéro — les douze euros sont déjà sur la planche —,
+        // faute de quoi le format se facturerait deux fois.
+        //
+        // Un catalogue sans 10×15 utilisable ne fait pas échouer le tirage : la planche
+        // part, et l'opérateur est prévenu qu'il manque le papier. Mieux vaut une feuille
+        // manquante qu'un client sans rien.
+        if (genre == GenreDePlanche.PlancheEtTirage)
+        {
+            var papier = PortraitDeLaPlanche.TirageQuiAccompagne(aTirer[0].Produit);
+
+            if (papier is null)
+            {
+                MessageBox.Show(
+                    "Aucun 10×15 activé au catalogue : la planche va sortir seule.\n\n" +
+                    "Ouvrez Catalogue et activez un tirage 10×15 pour que la grande photo " +
+                    "parte avec.",
+                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            else
+            {
+                var cotes = PortraitDeLaPlanche.Cotes(genre, aTirer[0].Produit, document, 1);
+
+                articles.AddRange(aTirer.Select(p => new DraftItem(
+                    p.SourcePath, papier, p.Quantite,
+                    PortraitDeLaPlanche.Cadre(p.SourcePath, p.Crop, p.CropGrande, cotes,
+                        p.RedressementDegres),
+                    0, p.RedressementDegres,
+                    // La finition de la planche ne se recopie PAS : c'est un DEVMODE nommé
+                    // du produit planche, et le 10×15 a les siens. Null = les réglages
+                    // pilote par défaut de son propre produit.
+                    FitMode.Fill, p.Reglages, null, null,
+                    UnitPriceOverride: 0m)));
+            }
+        }
 
         Mouse.OverrideCursor = CurseurStudio.Attente;
 

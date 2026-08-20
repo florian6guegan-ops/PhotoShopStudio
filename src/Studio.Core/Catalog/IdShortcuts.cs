@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Studio.Core.Domain;
 
 namespace Studio.Core.Catalog;
 
@@ -38,8 +39,20 @@ public enum IdShortcutKind
 /// Ne vaut que pour un <see cref="IdShortcutKind.Document"/> : un produit tiré tel quel n'a
 /// pas de planche.
 /// </param>
+/// <param name="Planche">
+/// Ce que la tuile fabrique : la planche ordinaire, celle de la rentrée, ou la planche
+/// accompagnée d'un 10×15. Voir <see cref="GenreDePlanche"/>.
+///
+/// <b>Le genre fait partie de l'identité de la tuile</b>, au même titre que le nombre :
+/// trois tuiles peuvent viser la norme française et ne différer que par lui — ce sont trois
+/// ventes différentes, à trois prix différents.
+///
+/// Absent des fichiers écrits avant la rentrée 2026 : le désérialiseur y lit donc
+/// <see cref="GenreDePlanche.Standard"/>, qui est bien ce qu'ils décrivaient.
+/// </param>
 public sealed record IdShortcut(
-    IdShortcutKind Kind, string Cle, string Libelle, int? Photos = null);
+    IdShortcutKind Kind, string Cle, string Libelle, int? Photos = null,
+    GenreDePlanche Planche = GenreDePlanche.Standard);
 
 /// <summary>
 /// Les formats mis en avant sur l'écran de choix du document d'identité.
@@ -68,12 +81,39 @@ public static class IdShortcuts
     public const string FileName = "id-raccourcis.json";
 
     /// <summary>
+    /// Les deux formats de la RENTRÉE, demandés le 20/08/2026.
+    ///
+    /// Ils tiennent dans les DEUX logiciels : la boutique en vend au comptoir comme le
+    /// poste identité, et c'est la même famille qui les demande. On les pose donc une fois
+    /// ici, plutôt que de les recopier dans les deux listes de défauts — c'est la règle du
+    /// dépôt, les BOUTONS se doublent, ce qu'ils font, non.
+    ///
+    /// <b>Les postes qui ont déjà réglé leurs raccourcis ne les verront pas apparaître</b> :
+    /// leur <c>id-raccourcis.json</c> l'emporte sur ces défauts, et c'est voulu — un
+    /// logiciel qui remet des tuiles qu'on a retirées est insupportable. Il faut les ajouter
+    /// depuis l'écran des raccourcis, qui sait désormais poser un genre.
+    ///
+    /// ⚠ DÉCLARÉ AVANT <see cref="Defaults"/>, et il doit le rester : les initialiseurs de
+    /// champs statiques s'exécutent dans l'ordre du fichier, et une liste qui en épand une
+    /// autre déclarée plus bas la lirait NULLE — la classe entière refusait alors de
+    /// s'initialiser, module d'identité compris.
+    /// </summary>
+    public static IReadOnlyList<IdShortcut> FormatsDeRentree { get; } =
+    [
+        new(IdShortcutKind.Document, "France|Passeport / CNI", "Rentrée — 4 + 1 grande",
+            PlancheDeRentree.IdentitesParDefaut, GenreDePlanche.Rentree),
+        new(IdShortcutKind.Document, "France|Passeport / CNI", "Planche + une 10×15",
+            null, GenreDePlanche.PlancheEtTirage),
+    ];
+
+    /// <summary>
     /// Ce que la boutique tire tous les jours, faute de fichier de configuration : la
-    /// norme française et l'E-Photo, exactement les deux demandés le 03/08/2026.
+    /// norme française, les deux formats de la rentrée, et l'E-Photo.
     /// </summary>
     public static IReadOnlyList<IdShortcut> Defaults { get; } =
     [
         new(IdShortcutKind.Document, "France|Passeport / CNI", "France"),
+        .. FormatsDeRentree,
         new(IdShortcutKind.Produit, "e-photo-dnp", "E-Photo"),
     ];
 
@@ -93,6 +133,7 @@ public static class IdShortcuts
     [
         new(IdShortcutKind.Document, "France|Passeport / CNI", "France"),
         new(IdShortcutKind.Document, "France|Passeport / CNI", "France — planche de 6", 6),
+        .. FormatsDeRentree,
         new(IdShortcutKind.Produit, "e-photo-dnp", "E-Photo"),
     ];
 

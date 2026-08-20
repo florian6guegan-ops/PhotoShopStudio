@@ -46,9 +46,21 @@
                                 <TextBlock Text="{Binding Libelle}" FontSize="30" FontWeight="Bold"
                                            Foreground="White" HorizontalAlignment="Center"
                                            TextTrimming="CharacterEllipsis"/>
+
+                                <!-- Le texte long, pour les tuiles qui s'expliquent en mots. -->
                                 <TextBlock Text="{Binding Detail}" FontSize="16" Foreground="#DDFFFFFF"
                                            HorizontalAlignment="Center" Margin="0,8,0,0"
-                                           TextAlignment="Center" TextWrapping="Wrap"/>
+                                           TextAlignment="Center" TextWrapping="Wrap"
+                                           Visibility="{Binding DetailVisible}"/>
+
+                                <!-- Le SCHÉMA de la planche, pour les formats de la rentrée :
+                                     « 4 photos d'identité + 1 grande, sur la même feuille »
+                                     s'enroulait sur trois lignes et se coupait au milieu d'un
+                                     mot. Stretch="Uniform" : le dessin garde le rapport du
+                                     papier, on ne vend pas une planche déformée. -->
+                                <Image Source="{Binding Schema}" Height="74" Margin="0,10,0,0"
+                                       Stretch="Uniform" Visibility="{Binding SchemaVisible}"
+                                       RenderOptions.BitmapScalingMode="HighQuality"/>
                             </StackPanel>
                         </Button>
                     </DataTemplate>

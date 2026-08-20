@@ -83,6 +83,13 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         // une seconde : sans cela, chaque aller-retour laisserait un doublon sur l'accueil
         _attenteId = enAttente?.Id ?? Guid.NewGuid();
 
+        // Une mise de côté d'AVANT le 20/08/2026 ne porte la taille libre que sur le
+        // travail : toutes ses photos étaient forcément à cette taille-là, l'écran n'en
+        // admettait pas deux. Une mise de côté d'après la porte photo par photo — et une
+        // photo sans taille y est donc une photo AU CATALOGUE, pas une photo oubliée.
+        _attenteSansTaillesParPhoto =
+            enAttente is { CustomWidthMm: > 0 } && enAttente.Photos.All(p => p.CustomWidthMm <= 0);
+
         InitializeComponent();
 
         // LA TAILLE LIBRE FIGURE DANS LA LISTE, et pas seulement derrière « Modifier ».
@@ -183,6 +190,12 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     private CustomSize? _taillePerso;
 
     /// <summary>
+    /// Vrai quand la mise de côté reprise ne porte les tailles libres QUE sur le travail —
+    /// c'est-à-dire d'avant le mélange. Voir le constructeur.
+    /// </summary>
+    private readonly bool _attenteSansTaillesParPhoto;
+
+    /// <summary>
     /// Le produit de travail du format personnalisé : il n'est PAS au catalogue.
     ///
     /// Il n'existe que pour donner à tout l'écran — cadres de recadrage, vignettes, écran
@@ -192,6 +205,78 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// ce code fantôme ne descend jusqu'à la commande.
     /// </summary>
     private Product? _produitPerso;
+
+    /// <summary>
+    /// Un produit fantôme PAR TAILLE LIBRE rencontrée, retenu par son code.
+    ///
+    /// <b>Sans ce cache, deux tailles ne se distinguaient pas.</b> Le fantôme s'appelait
+    /// « perso » quelle que soit la taille, et <see cref="PhotoItem.Product"/> ne change
+    /// rien quand le CODE ne change pas — passer une photo de 7 × 10 à 5,5 × 8 laissait donc
+    /// le cadre au format d'avant, sans rien dire. Le code porte maintenant les cotes.
+    /// </summary>
+    private readonly Dictionary<string, Product> _produitsPerso = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Pose une taille libre sur une photo : sa taille ET son produit fantôme, ensemble.
+    ///
+    /// ⚠ <b>Les deux ne se séparent pas.</b> Une photo qui porterait le fantôme sans sa
+    /// taille tomberait dans le groupe « format du catalogue » à l'impression, et partirait
+    /// à la commande sous un code — <c>perso-70x100</c> — que le catalogue ne connaît pas.
+    /// </summary>
+    private void PoserLaTaille(PhotoItem photo, CustomSize taille)
+    {
+        photo.TaillePerso = taille;
+        photo.Product = ProduitPour(taille);
+    }
+
+    /// <summary>Le produit fantôme d'une taille libre, fabriqué une seule fois.</summary>
+    private Product ProduitPour(CustomSize taille)
+    {
+        var code = $"perso-{taille.WidthMm:0.#}x{taille.HeightMm:0.#}";
+        if (_produitsPerso.TryGetValue(code, out var deja)) return deja;
+
+        var produit = new Product
+        {
+            Code = code,
+            Name = $"Personnalisé {taille.Libelle}",
+            WidthMm = taille.WidthMm,
+            HeightMm = taille.HeightMm,
+            Dpi = 300,
+            Price = 0,
+            DefaultFit = FitMode.Fill,
+            Output = ProductOutput.FujiMinilab,
+        };
+
+        _produitsPerso[code] = produit;
+        return produit;
+    }
+
+    /// <summary>
+    /// Les tailles libres réellement posées sur la sélection, chacune avec ses photos.
+    ///
+    /// <b>Une commande peut en porter plusieurs</b> depuis le 20/08/2026 : la bascule ne
+    /// vise plus que les photos cochées, si bien qu'un client peut repartir avec des 10×15
+    /// et des 7 × 10 dans la même enveloppe. Chaque taille devient sa propre ligne — son
+    /// papier, ses planches, son prix.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ Le regroupement se fait sur les COTES, et non sur le record entier.
+    /// <c>CustomSize</c> compare aussi son papier et son contour : une taille reprise d'une
+    /// mise de côté, qui n'en porte pas, ne serait alors PAS égale à la même taille choisie
+    /// à l'écran, et le 7 × 10 se retrouverait en deux lignes.
+    /// </remarks>
+    private static List<(CustomSize? Taille, List<PhotoItem> Photos)> GroupesDeTaille(
+        IEnumerable<PhotoItem> selection) =>
+        selection
+            .GroupBy(p => (p.TaillePerso?.WidthMm, p.TaillePerso?.HeightMm, p.TaillePerso?.BorderMm))
+            .Select(g => (g.First().TaillePerso, g.ToList()))
+            .ToList();
+
+    /// <summary>La taille libre d'une photo mise de côté, ou null si elle est au catalogue.</summary>
+    private static CustomSize? TaillePersoDe(PhotoEnAttente photo) =>
+        photo.CustomWidthMm > 0 && photo.CustomHeightMm > 0
+            ? new CustomSize(photo.CustomWidthMm, photo.CustomHeightMm)
+            : null;
 
     /// <summary>Un papier proposé à l'opérateur, ou le choix automatique.</summary>
     /// <param name="Papier">Null = « Automatique », le logiciel décide au meilleur prix.</param>
@@ -206,17 +291,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
     private void PasserEnTaillePersonnalisee(CustomSize taille)
     {
-        _produitPerso = new Product
-        {
-            Code = "perso",
-            Name = $"Personnalisé {taille.Libelle}",
-            WidthMm = taille.WidthMm,
-            HeightMm = taille.HeightMm,
-            Dpi = 300,
-            Price = 0,
-            DefaultFit = FitMode.Fill,
-            Output = ProductOutput.FujiMinilab,
-        };
+        _produitPerso = ProduitPour(taille);
 
         // La liste des produits cède la place à celle des PAPIERS : l'opérateur peut
         // imposer le format de sortie au lieu de subir le calcul — il est le seul à savoir
@@ -293,18 +368,30 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         _taillePerso = taille;
         PasserEnTaillePersonnalisee(taille);
 
-        // le format de TOUTES les photos change, cochées ou non : la planche est une seule
-        // ligne de commande, elle ne peut pas mélanger deux tailles
-        foreach (var photo in _photos)
+        // ⚠ LA BASCULE NE VISE QUE LES PHOTOS COCHÉES.
+        //
+        // Elle posait le format sur TOUTES, cochées ou non, au motif que « la planche est
+        // une seule ligne de commande, elle ne peut pas mélanger deux tailles ». C'était
+        // vrai de la LIGNE, pas de la commande : chaque taille a désormais la sienne. Un
+        // 10×15 réglé juste avant n'est donc plus écrasé en silence — signalé le
+        // 20/08/2026, « j'ai voulu mélanger 10×15 et 7×10, tout est sorti en 7×10 ».
+        //
+        // Rien de coché = tout le monde : c'est le geste du comptoir, où l'opérateur
+        // bascule le lot entier sans avoir rien sélectionné.
+        var visees = _photos.Where(p => p.Selected).ToList();
+        if (visees.Count == 0) visees = [.. _photos];
+
+        foreach (var photo in visees)
         {
-            photo.Product = _produitPerso;
+            PoserLaTaille(photo, taille);
 
             // le contour demandé avec la taille suit la bascule : une planche dont la moitié
             // des photos porte le trait ne se coupe pas
             AppliquerLeContourPerso(photo);
         }
 
-        FileLog.Write($"Bascule en taille personnalisée {taille.Libelle} sur {_photos.Count} photo(s)");
+        FileLog.Write($"Bascule en taille personnalisée {taille.Libelle} sur {visees.Count} " +
+                      $"photo(s) sur {_photos.Count}");
         UpdateSummary();
     }
 
@@ -420,11 +507,13 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         if (_cadragesBorne is null) return;
         if (!_cadragesBorne.TryGetValue(photo.Name, out var cadrage)) return;
 
-        // 1. le produit — en taille personnalisée c'est le produit fantôme qui l'emporte,
-        //    une planche ne peut pas mélanger deux formats
-        photo.Product = EnTaillePersonnalisee
-            ? _produitPerso
-            : ProduitDuCatalogue(cadrage.CodeProduit) ?? DefaultProduct;
+        // 1. le produit — la commande de borne s'ouvre en taille libre quand l'opérateur
+        //    l'a demandée à l'ouverture, et TOUTES ses photos y passent : c'est ce qu'il a
+        //    demandé pour ce client-là. La taille est posée AVEC le produit fantôme, jamais
+        //    sans — une photo qui porterait le fantôme sans sa taille partirait à la
+        //    commande sous un code absent du catalogue.
+        if (_taillePerso is { } taille) PoserLaTaille(photo, taille);
+        else photo.Product = ProduitDuCatalogue(cadrage.CodeProduit) ?? DefaultProduct;
 
         // 1 bis. la finition que le client a choisie à la borne. Hors de la liste des
         //    quatre affectations sensibles : elle ne touche ni au cadre ni au recadrage,
@@ -521,9 +610,25 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         if (!AttentesARendre.TryGetValue(photo.Name, out var file) || file.Count == 0) return;
         var enregistree = file.Dequeue();
 
-        photo.Product = EnTaillePersonnalisee
-            ? _produitPerso
-            : ProduitDuCatalogue(enregistree.ProductCode) ?? photo.Product ?? DefaultProduct;
+        // ⚠ CHAQUE PHOTO RETROUVE SA TAILLE, et non celle de la barre d'outils.
+        //
+        // Une mise de côté peut mélanger les tailles depuis le 20/08/2026. Reprendre le
+        // travail en posant `_produitPerso` sur tout le monde les ramènerait toutes à la
+        // dernière réglée — c'est exactement le défaut qu'on vient de retirer de la bascule.
+        //
+        // Les mises de côté d'AVANT ne portent rien photo par photo : on retombe alors sur
+        // la taille du travail, qui est bien la leur à toutes.
+        var sienne = TaillePersoDe(enregistree) ?? (_attenteSansTaillesParPhoto ? _taillePerso : null);
+
+        if (sienne is { } taille)
+        {
+            PoserLaTaille(photo, taille);
+        }
+        else
+        {
+            photo.TaillePerso = null;
+            photo.Product = ProduitDuCatalogue(enregistree.ProductCode) ?? photo.Product ?? DefaultProduct;
+        }
 
         photo.Finish = enregistree.Finish;
         photo.RotationQuarterTurns = enregistree.RotationQuarterTurns;
@@ -707,6 +812,10 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                     Selected = p.Selected,
                     Quantity = p.Quantity,
                     ProductCode = p.Product?.Code,
+                    // la taille libre suit la PHOTO : une commande mélangée doit se
+                    // retrouver telle quelle, chacune à son format
+                    CustomWidthMm = p.TaillePerso?.WidthMm ?? 0,
+                    CustomHeightMm = p.TaillePerso?.HeightMm ?? 0,
                     Finish = p.Finish,
                     CropX = p.Crop.X,
                     CropY = p.Crop.Y,
@@ -1351,9 +1460,14 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// Le papier retenu pour la sélection en cours, ou null si rien n'est coché — ou si la
     /// taille demandée ne tient sur aucun papier du catalogue.
     /// </summary>
-    private (CustomSheetPlan Plan, Product Papier)? PlancheRetenue(IReadOnlyList<PhotoItem> selection)
+    private (CustomSheetPlan Plan, Product Papier)? PlancheRetenue(
+        IReadOnlyList<PhotoItem> selection, CustomSize? pour = null)
     {
-        if (_taillePerso is not { } taille || selection.Count == 0) return null;
+        // ⚠ LA TAILLE EST CELLE DU GROUPE, pas celle de la barre d'outils. Une commande
+        // peut en porter plusieurs, et chacune se pose sur SON papier : prendre
+        // `_taillePerso` reviendrait à compter toutes les planches au format que
+        // l'opérateur a réglé en dernier.
+        if ((pour ?? _taillePerso) is not { } taille || selection.Count == 0) return null;
 
         var cases = selection.Sum(p => p.Quantity);
         if (cases < 1) return null;
@@ -1384,28 +1498,52 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             return;
         }
 
-        var cases = selection.Sum(p => p.Quantity);
+        // Une taille par groupe, un papier par taille, un prix par papier. Les photos
+        // restées à un format du CATALOGUE gardent le leur — c'est ce qui permet de vendre
+        // des 10×15 et des 7 × 10 dans la même enveloppe.
+        var morceaux = new List<string>();
+        var total = 0m;
+        var complet = true;
 
-        if (PlancheRetenue(selection) is not { } retenue)
+        foreach (var (taillePosee, photos) in GroupesDeTaille(selection))
         {
-            TotalText.Text = "";
-            CountText.Text = PapierImpose is { } impose
-                ? $"{_taillePerso!.Libelle} ne tient pas sur le {impose} : choisissez un autre papier"
-                : $"{_taillePerso!.Libelle} : aucun papier du catalogue ne convient";
-            PrintButton.IsEnabled = false;
-            return;
+            var cases = photos.Sum(p => p.Quantity);
+
+            if (taillePosee is not { } taille)
+            {
+                // format du catalogue : le prix se compte tirage par tirage, comme avant
+                foreach (var parProduit in photos.Where(p => p.Product is not null)
+                             .GroupBy(p => p.Product!.Code))
+                {
+                    var produit = parProduit.First().Product!;
+                    var n = parProduit.Sum(p => p.Quantity);
+                    morceaux.Add($"{n} × {produit.Name}");
+                    total += produit.UnitPriceFor(n) * n;
+                }
+                continue;
+            }
+
+            if (PlancheRetenue(photos, taille) is not { } retenue)
+            {
+                complet = false;
+                morceaux.Add(PapierImpose is { } impose
+                    ? $"{taille.Libelle} ne tient pas sur le {impose}"
+                    : $"{taille.Libelle} : aucun papier ne convient");
+                continue;
+            }
+
+            var (plan, papier) = retenue;
+            morceaux.Add(
+                $"{cases} en {taille.Libelle} → {plan.Sheets} planche" +
+                $"{(plan.Sheets > 1 ? "s" : "")} {papier.Name}");
+            total += plan.Paper.TotalPrice(plan.Sheets);
         }
 
-        var (plan, papier) = retenue;
+        CountText.Text = string.Join(" · ", morceaux)
+                         + (PapierImpose is null || !complet ? "" : " · papier imposé");
 
-        CountText.Text =
-            $"{cases} photo{(cases > 1 ? "s" : "")} en {_taillePerso!.Libelle} → " +
-            $"{plan.Sheets} planche{(plan.Sheets > 1 ? "s" : "")} {papier.Name} " +
-            $"({plan.PerSheet} par planche)" +
-            (PapierImpose is null ? "" : " · papier imposé");
-
-        TotalText.Text = $"{plan.Paper.TotalPrice(plan.Sheets):0.00} €";
-        PrintButton.IsEnabled = true;
+        TotalText.Text = complet ? $"{total:0.00} €" : "";
+        PrintButton.IsEnabled = complet && morceaux.Count > 0;
     }
 
     /// <summary>
@@ -2158,37 +2296,45 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         var services = App.Services;
 
-        // taille personnalisée : le produit fantôme cède la place au PAPIER retenu, et
-        // chaque photo devient une case de planche
-        CustomSheetSpec? planche = null;
-        var produitDeLaLigne = (Product?)null;
-        if (EnTaillePersonnalisee)
+        // ⚠ UNE LIGNE PAR TAILLE, et non une par commande.
+        //
+        // Le produit fantôme cède la place au PAPIER retenu, et chaque photo devient une
+        // case de planche — mais chaque taille a son papier, ses planches et son prix. Les
+        // photos restées à un format du catalogue gardent le leur et se tirent normalement.
+        var items = new List<DraftItem>();
+
+        foreach (var (taillePosee, photos) in GroupesDeTaille(selected))
         {
-            if (PlancheRetenue(selected) is not { } retenue)
+            CustomSheetSpec? planche = null;
+            Product? produitDeLaLigne = null;
+
+            if (taillePosee is { } taille)
             {
-                MessageBox.Show(
-                    $"Une photo de {_taillePerso!.Libelle} ne tient sur aucun papier du catalogue. " +
-                    "Rien n'a été commandé.",
-                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                if (PlancheRetenue(photos, taille) is not { } retenue)
+                {
+                    MessageBox.Show(
+                        $"Une photo de {taille.Libelle} ne tient sur aucun papier du catalogue. " +
+                        "Rien n'a été commandé.",
+                        "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                produitDeLaLigne = retenue.Papier;
+                planche = new CustomSheetSpec(
+                    taille.WidthMm, taille.HeightMm, retenue.Plan.Sheets, taille.BorderMm);
             }
 
-            produitDeLaLigne = retenue.Papier;
-            planche = new CustomSheetSpec(
-                _taillePerso!.WidthMm, _taillePerso.HeightMm, retenue.Plan.Sheets,
-                _taillePerso.BorderMm);
-        }
-
-        var items = selected
-            .Select(p =>
+            items.AddRange(photos.Select(p =>
             {
                 var produit = produitDeLaLigne ?? p.Product!;
                 return new DraftItem(p.Path, produit, p.Quantity, p.Crop,
                     p.RotationQuarterTurns, p.FineRotationDegrees, p.FitOverride, p.Adjustments, null,
                     p.Finish, p.CutBorder, planche,
                     MontageSheetCode: FeuilleDeMontagePour(produit));
-            })
-            .ToList();
+            }));
+        }
+
+        if (items.Count == 0) return;
 
         PrintButton.IsEnabled = false;
         Mouse.OverrideCursor = CurseurStudio.Attente;
@@ -2828,6 +2974,21 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 _cartChanged();
             }
         }
+
+        /// <summary>
+        /// La taille libre à laquelle CETTE photo se vend, ou null pour un format du
+        /// catalogue.
+        ///
+        /// <b>Elle était portée par l'ÉCRAN, pas par la photo</b>, et c'est ce qui
+        /// interdisait de mélanger : basculer en taille libre posait le format sur toutes
+        /// les photos, cochées ou non, et un 10×15 réglé juste avant était écrasé sans un
+        /// mot. Signalé le 20/08/2026 — « j'ai voulu mélanger 10×15 et 7×10, tout est sorti
+        /// en 7×10 ».
+        ///
+        /// Elle voyage avec la photo jusqu'à la commande, où chaque taille devient sa
+        /// propre ligne : son papier, ses planches, son prix.
+        /// </summary>
+        public CustomSize? TaillePerso { get; set; }
 
         /// <summary>Finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
         public string? Finish

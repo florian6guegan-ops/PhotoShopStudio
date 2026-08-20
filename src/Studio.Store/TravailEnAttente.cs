@@ -39,6 +39,23 @@ public sealed class PhotoEnAttente
 
     public bool CutBorder { get; set; }
 
+    /// <summary>
+    /// Cotes de la taille LIBRE à laquelle cette photo se vend, ou zéro pour un format du
+    /// catalogue.
+    ///
+    /// <b>Elles étaient portées par le TRAVAIL, une seule paire pour tout le lot</b>
+    /// (<see cref="TravailEnAttente.CustomWidthMm"/>), parce que l'écran imposait alors une
+    /// taille unique à toute la commande. Depuis le 20/08/2026 il n'en impose plus : une
+    /// mise de côté doit donc retrouver CHAQUE photo à sa taille, sans quoi reprendre une
+    /// commande mélangée les ramènerait toutes à la dernière réglée.
+    ///
+    /// Les paires du travail restent lues pour les mises de côté d'avant.
+    /// </summary>
+    public double CustomWidthMm { get; set; }
+
+    /// <inheritdoc cref="CustomWidthMm"/>
+    public double CustomHeightMm { get; set; }
+
     public ImageAdjustments Adjustments { get; set; } = new();
 
     [JsonIgnore]
@@ -95,6 +112,16 @@ public sealed class PhotoIdentiteEnAttente
     public double CropY { get; set; }
     public double CropWidth { get; set; } = 1;
     public double CropHeight { get; set; } = 1;
+
+    /// <summary>
+    /// Le cadre de la GRANDE photo, sur les formats de la rentrée : null tant que
+    /// l'opérateur ne l'a pas repris à la main, auquel cas il se déduit du cadre
+    /// d'identité (voir <c>CadrageElargi</c>). Les quatre valeurs vont ensemble.
+    /// </summary>
+    public double? CropGrandeX { get; set; }
+    public double? CropGrandeY { get; set; }
+    public double? CropGrandeWidth { get; set; }
+    public double? CropGrandeHeight { get; set; }
 
     /// <summary>Sommet du crâne, en fraction de l'image ; null = pas encore posé.</summary>
     public double? CrownX { get; set; }
@@ -153,6 +180,17 @@ public sealed class IdentiteEnAttente
 
     /// <summary>Nom du fichier affiché au moment de la mise de côté, pour y revenir.</summary>
     public string? PhotoCourante { get; set; }
+
+    /// <summary>
+    /// Le FORMAT VENDU : planche ordinaire, planche de rentrée, ou planche accompagnée
+    /// d'une 10×15.
+    ///
+    /// Sans lui, une planche de rentrée mise de côté reprenait en planche ordinaire — et
+    /// son papier, filtré de la liste, disparaissait : l'écran annonçait qu'aucun papier ne
+    /// pouvait porter le document. Absent des travaux écrits avant la rentrée 2026, où il
+    /// vaut donc <see cref="GenreDePlanche.Standard"/> — ce qu'ils étaient.
+    /// </summary>
+    public GenreDePlanche Genre { get; set; } = GenreDePlanche.Standard;
 
     public List<PhotoIdentiteEnAttente> Photos { get; set; } = [];
 }

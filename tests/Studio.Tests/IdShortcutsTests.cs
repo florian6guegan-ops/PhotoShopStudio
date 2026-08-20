@@ -1,3 +1,4 @@
+using Studio.Core.Domain;
 using Studio.Core.Catalog;
 using Studio.Imaging.Geometry;
 
@@ -21,13 +22,24 @@ public class IdShortcutsTests
             new IdDocumentSpec("Espagne", "Passport", 26, 32, 25, 29),
         };
 
-        var france = IdShortcuts.Defaults.Single(r => r.Kind == IdShortcutKind.Document);
-        var trouve = IdDocumentCatalog.FindByKey(referentiel, france.Cle);
+        // TOUTES les tuiles livrées doivent tomber sur une norme, pas seulement la
+        // première : les formats de la rentrée visent la même norme française, et une
+        // tuile qui ne se résout pas disparaît de l'écran sans le moindre message.
+        var documents = IdShortcuts.Defaults
+            .Where(r => r.Kind == IdShortcutKind.Document)
+            .ToList();
 
-        Assert.NotNull(trouve);
-        Assert.Equal("France", trouve!.Country);
-        Assert.Equal(35, trouve.WidthMm);
-        Assert.Equal(45, trouve.HeightMm);
+        Assert.NotEmpty(documents);
+
+        foreach (var tuile in documents)
+        {
+            var trouve = IdDocumentCatalog.FindByKey(referentiel, tuile.Cle);
+
+            Assert.NotNull(trouve);
+            Assert.Equal("France", trouve!.Country);
+            Assert.Equal(35, trouve.WidthMm);
+            Assert.Equal(45, trouve.HeightMm);
+        }
     }
 
     /// <summary>Une entrée du référentiel se retrouve par sa clé, casse comprise.</summary>
@@ -215,10 +227,69 @@ public class IdShortcutsTests
             Assert.Single(relu);
             Assert.Null(relu[0].Photos);
             Assert.Equal("France|ID Card", relu[0].Cle);
+
+            // et le format vendu, absent lui aussi, se relit comme la planche ordinaire :
+            // c'est bien ce que ces fichiers-là décrivaient
+            Assert.Equal(GenreDePlanche.Standard, relu[0].Planche);
         }
         finally
         {
             Directory.Delete(dossier, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Le FORMAT VENDU survit à l'aller-retour par le fichier, et il s'y écrit en toutes
+    /// lettres : un poste qui relit « 1 » au lieu de « Rentree » facturerait le mauvais
+    /// prix sans que rien ne le signale.
+    /// </summary>
+    [Fact]
+    public void SavePuisLoad_ConserveLeFormatVendu()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "studio-raccourcis-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dossier);
+        try
+        {
+            var voulu = new[]
+            {
+                new IdShortcut(IdShortcutKind.Document, "France|Passeport / CNI", "France"),
+                new IdShortcut(IdShortcutKind.Document, "France|Passeport / CNI",
+                    "Rentrée", 4, GenreDePlanche.Rentree),
+                new IdShortcut(IdShortcutKind.Document, "France|Passeport / CNI",
+                    "Planche + 10×15", null, GenreDePlanche.PlancheEtTirage),
+            };
+
+            IdShortcuts.Save(dossier, voulu);
+            var relu = IdShortcuts.Load(dossier);
+
+            Assert.Equal(voulu, relu);
+            Assert.Equal(GenreDePlanche.Standard, relu[0].Planche);
+            Assert.Equal(GenreDePlanche.Rentree, relu[1].Planche);
+            Assert.Equal(GenreDePlanche.PlancheEtTirage, relu[2].Planche);
+
+            Assert.Contains("Rentree",
+                File.ReadAllText(Path.Combine(dossier, IdShortcuts.FileName)));
+        }
+        finally
+        {
+            Directory.Delete(dossier, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Les deux formats de la rentrée sont livrés aux DEUX logiciels : la boutique en vend
+    /// au comptoir comme le poste identité.
+    /// </summary>
+    [Fact]
+    public void LesFormatsDeRentree_SontLivresAuxDeuxLogiciels()
+    {
+        foreach (var format in IdShortcuts.FormatsDeRentree)
+        {
+            Assert.Contains(format, IdShortcuts.Defaults);
+            Assert.Contains(format, IdShortcuts.DefautsIdentite);
+        }
+
+        Assert.Contains(IdShortcuts.Defaults, r => r.Planche == GenreDePlanche.Rentree);
+        Assert.Contains(IdShortcuts.Defaults, r => r.Planche == GenreDePlanche.PlancheEtTirage);
     }
 }

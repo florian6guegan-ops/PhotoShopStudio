@@ -23,6 +23,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -45,11 +46,26 @@
                         MinWidth="220" MinHeight="48" FontSize="18" Margin="0,0,0,8"
                         Click="OnAjouterDocument">➕ Ajouter ce document</Button>
 
-                <ComboBox x:Name="ProduitCombo" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                <!-- LE FORMAT VENDU, et non le papier : la même norme donne trois ventes
+                     différentes selon qu'on sort la planche seule, la planche de rentrée
+                     avec son portrait, ou la planche accompagnée d'une 10×15. C'est ici
+                     qu'un poste ajoute les formats de saison — un poste qui a déjà réglé
+                     ses raccourcis ne reçoit PAS les nouveaux défauts, et c'est voulu. -->
+                <ComboBox x:Name="GenreCombo" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                          FontSize="18" Padding="10,8"
+                          DisplayMemberPath="Libelle" Margin="0,0,12,8"
+                          ToolTip="Ce que la tuile fabrique : la planche seule, la planche de rentrée (photos d'identité + une grande sur la même feuille), ou la planche plus un tirage 10×15."
+                          AutomationProperties.Name="Format vendu"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource Hint}"
+                           VerticalAlignment="Center" Margin="0,0,0,8" TextWrapping="Wrap"
+                           MaxWidth="220"
+                           Text="S'applique au document ajouté ci-dessus."/>
+
+                <ComboBox x:Name="ProduitCombo" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                           FontSize="18" Padding="10,8"
                           DisplayMemberPath="Libelle" Margin="0,0,12,0"
                           AutomationProperties.Name="Produit à ajouter"/>
-                <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource FlatButton}"
+                <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource FlatButton}"
                         MinWidth="220" MinHeight="48" FontSize="18"
                         Click="OnAjouterProduit">➕ Ajouter ce produit</Button>
             </Grid>

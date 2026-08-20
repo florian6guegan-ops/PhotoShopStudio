@@ -1892,19 +1892,46 @@ public sealed class PrintOrchestrator
                             // les planches sortaient au format français.
                             var cellW = MmPx.ToPixels(item.SheetCellWidthMm ?? sheet.CellWidthMm, product.Dpi);
                             var cellH = MmPx.ToPixels(item.SheetCellHeightMm ?? sheet.CellHeightMm, product.Dpi);
-                            ImagePipeline.RenderIdSheetToFile(new RenderRequest(
-                                    sourcePath, cellW, cellH,
-                                    item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees, FitMode.Fill, 0,
-                                    reglages, iccPath),
-                                item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
-                                targetW, targetH, output, product.Dpi,
-                                sheet.CutBorder,
-                                // la date de la commande, pas l'heure du rendu : une planche
-                                // rejouée après un incident doit porter la même mention
-                                sheet.DateStamp
-                                    ? SheetFooter.Pour(order.CreatedAt.DateTime, Marque)
-                                    : null,
-                                sheet.FullBleed);
+
+                            var caseIdentite = new RenderRequest(
+                                sourcePath, cellW, cellH,
+                                item.Crop, item.RotationQuarterTurns, item.FineRotationDegrees, FitMode.Fill, 0,
+                                reglages, iccPath);
+
+                            // la date de la commande, pas l'heure du rendu : une planche
+                            // rejouée après un incident doit porter la même mention
+                            var bande = sheet.DateStamp
+                                ? SheetFooter.Pour(order.CreatedAt.DateTime, Marque)
+                                : null;
+
+                            if (sheet.GrandePhoto)
+                            {
+                                // PLANCHE DE RENTRÉE : les identités, plus le portrait.
+                                //
+                                // Son cadrage est celui que l'opérateur a posé, et il est
+                                // gardé par la commande. À défaut — une commande d'avant ce
+                                // format, ou un article dont le cadrage large s'est perdu —
+                                // on reprend celui de l'identité : le portrait sortira
+                                // serré, mais il sortira, et la planche reste vendable.
+                                var portrait = caseIdentite with
+                                {
+                                    Crop = item.CropGrandePhoto ?? item.Crop,
+                                };
+
+                                ImagePipeline.RenderPlancheRentreeToFile(
+                                    caseIdentite, portrait,
+                                    item.SheetCopiesOverride ?? sheet.Copies,
+                                    sheet.GapMm, sheet.CutMarks,
+                                    targetW, targetH, output, product.Dpi,
+                                    sheet.CutBorder, bande, sheet.FullBleed);
+                            }
+                            else
+                            {
+                                ImagePipeline.RenderIdSheetToFile(caseIdentite,
+                                    item.SheetCopiesOverride ?? sheet.Copies, sheet.GapMm, sheet.CutMarks,
+                                    targetW, targetH, output, product.Dpi,
+                                    sheet.CutBorder, bande, sheet.FullBleed);
+                            }
                         }
                         else
                         {
@@ -2132,7 +2159,8 @@ public sealed class PrintOrchestrator
                                 // demander mettrait le blanc autour de la feuille entière.
                                 MmPx.ToPixels(line.CustomCellBorderMm ?? 0, product.Dpi),
                                 ReglagesDuTirage(item.Adjustments, product),
-                                IccPath(product, item.Finish)),
+                                IccPath(product, item.Finish),
+                                item.CutBorder),
                             place.Copies);
                     })
                     .ToList();
@@ -2145,8 +2173,7 @@ public sealed class PrintOrchestrator
                     MmPx.ToPixels(plan.SheetWidthMm, product.Dpi),
                     MmPx.ToPixels(plan.SheetHeightMm, product.Dpi),
                     output, product.Dpi,
-                    // le contour est le seul repère utile : on coupe une planche aux ciseaux
-                    cutBorder: true);
+                    cutBorder: ContourDemande(cellules));
             }
 
             yield return new RenderedPage(output, 1, plan.SheetWidthMm, plan.SheetHeightMm,
@@ -2253,8 +2280,7 @@ public sealed class PrintOrchestrator
                     MmPx.ToPixels(plan.LargeurMm, dpi),
                     MmPx.ToPixels(plan.HauteurMm, dpi),
                     output, dpi,
-                    // la feuille se massicote : le contour est le seul repère utile
-                    cutBorder: true,
+                    cutBorder: ContourDemande(cellules),
                     footprint: (empreinteW, empreinteH));
 
                 Log?.Invoke($"Montage {Path.GetFileName(output)} : {feuilles[n].Sum(c => c.Copies)} " +
@@ -2302,6 +2328,28 @@ public sealed class PrintOrchestrator
             IccPath(product, item.Finish),
             item.CutBorder);
     }
+
+    /// <summary>
+    /// Le contour de découpe est-il demandé sur cette planche ?
+    ///
+    /// ⚠ <b>Il était posé D'OFFICE, et la case de l'opérateur ne servait à rien.</b> Les
+    /// deux rendus de planche personnalisée passaient <c>cutBorder: true</c> en dur, au
+    /// motif que « le contour est le seul repère utile : on coupe une planche aux ciseaux ».
+    /// L'argument se tient — mais il ne se décide pas ici : l'écran des tailles libres offre
+    /// la case, <c>CustomSize.ContourNoir</c> la porte, <c>order.json</c> l'enregistre
+    /// (<c>"CutBorder": false</c>) et le rendu l'ignorait. Signalé le 20/08/2026 : « il y
+    /// était d'office sans avoir coché l'option ».
+    ///
+    /// <b>Il suffit qu'UNE case le demande.</b> On ne coupe pas une planche à moitié : le
+    /// trait sert à massicoter la feuille entière, et l'écran pose de toute façon le même
+    /// choix sur toutes les photos lors de la bascule.
+    ///
+    /// ⚠ Les REPÈRES DANS LES MARGES (<c>cutMarks</c>) ne suivent pas cette case : ils sont
+    /// hors des photos, ils aident le massicot sans marquer le tirage, et aucun réglage ne
+    /// les vise. À changer le jour où l'opérateur le demande, pas avant.
+    /// </summary>
+    private static bool ContourDemande(IEnumerable<ImagePipeline.SheetCell> cellules) =>
+        cellules.Any(c => c.Request.CutBorder);
 
     /// <summary>Profil ICC applicable : celui de la finition (média) l'emporte sur celui du produit.</summary>
     private string? IccPath(Product product, string? finish)

@@ -208,10 +208,39 @@ la case n'est plus un 35×45, et l'opérateur avait une chance sur deux de factu
 ce qui en vaut 10. Studio garde alors la moins chère. Sur le 35×45, chaque planche est à sa norme et les deux
 lignes restent.
 
+**Les deux formats de la rentrée**, ajoutés en tuiles sur l'écran de choix du document :
+
+| Tuile | Ce qui sort | Prix |
+|---|---|---|
+| **Rentrée — 4 + 1 grande** | Une seule feuille : quatre photos d'identité à la norme, et un portrait d'environ **84 × 105 mm** sur ce qu'elles laissent | 11 € |
+| **Planche + une 10×15** | Deux feuilles : la planche habituelle, et un tirage 10×15 du même visage | 12 € |
+
+Le portrait n'exige **aucun cadrage supplémentaire** : Studio élargit tout seul le cadre de
+l'identité autour du visage, pour prendre les épaules. La carte *La grande photo* du panneau
+dit les cotes exactes qui sortiront, et le bouton **Cadrer la grande photo** permet de
+reprendre ce cadre quand la proposition ne convient pas.
+
+Les deux prix se règlent dans *Paramètres*, comme les tarifs d'identité — ils ne dépendent
+pas du pays du document : c'est un produit de saison, pas une démarche administrative.
+
+> **Sur un poste qui a déjà réglé ses raccourcis, les deux tuiles n'apparaissent pas
+> toutes seules** : son fichier de raccourcis l'emporte sur les formats livrés, et un
+> logiciel qui remet des tuiles qu'on a retirées est insupportable. Elles s'ajoutent en
+> deux clics dans *Paramètres → Raccourcis d'identité*, où la liste déroulante **Format
+> vendu** propose les trois formats.
+>
+> Le papier de la planche de rentrée, lui, se fabrique tout seul à la première vente : il
+> est dérivé de la planche d'identité du poste et en reprend la machine, le profil ICC et
+> les réglages pilote. Rien à saisir au Catalogue.
+
 ### Le reste, en vrac
 
 - **Mettre une commande de côté** pour servir quelqu'un d'autre, et la reprendre.
-- **Formats libres** et agrandissements sur mesure, sans toucher au catalogue.
+- **Formats libres** et agrandissements sur mesure, sans toucher au catalogue. Depuis la
+  1.5.40, **plusieurs formats libres cohabitent dans la même commande** : la bascule ne
+  change que les photos cochées, chaque taille prend son papier, et le bandeau du bas compte
+  les planches et le prix format par format. Rien de coché = tout le lot bascule, comme
+  avant.
 - **Corriger toute une sélection d'un coup** — exposition, contraste, température, N&B, yeux
   rouges.
 - **Contour de découpe** imprimé sur le bord quand le tirage sort avec des marges.

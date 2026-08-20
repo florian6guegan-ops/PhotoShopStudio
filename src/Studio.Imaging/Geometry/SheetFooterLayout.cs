@@ -94,13 +94,21 @@ public sealed record SheetFooter(
 /// laisse une planche pleine — et la largeur réservée ici en dépend. Les deux doivent
 /// tomber sur la même valeur, sinon la date déborde de sa zone.
 /// </param>
+/// <param name="DateCentree">
+/// Vrai quand la date occupe sa propre ligne et doit s'y centrer.
+///
+/// Le peintre le déduisait de « la mention est absente », ce qui allait tant que les deux
+/// se partageaient une seule ligne. Sur une bande empilée elles en ont chacune une, et la
+/// date collée à gauche sous une mention centrée penche visiblement.
+/// </param>
 public sealed record FooterPlacement(
     PixelRect Band,
     PixelRect? Date,
     PixelRect? Mention,
     PixelRect? Qr,
     PixelRect? Logo,
-    int CorpsDatePx);
+    int CorpsDatePx,
+    bool DateCentree = false);
 
 /// <summary>
 /// Découpe de la bande basse. Fonctions pures, vérifiables au pixel — comme
@@ -243,13 +251,39 @@ public static class SheetFooterLayout
     /// </summary>
     /// <returns>Null si l'espace restant ne permet même pas d'écrire la date.</returns>
     public static FooterPlacement? Place(
-        SheetFooter footer, int sheetWidth, int sheetHeight, int photosBottom, int dpi)
+        SheetFooter footer, int sheetWidth, int sheetHeight, int photosBottom, int dpi) =>
+        Place(footer,
+            new PixelRect(0, photosBottom, sheetWidth, sheetHeight - photosBottom), dpi);
+
+    /// <summary>
+    /// Découpe la bande dans un RECTANGLE DONNÉ, et non sous toute la planche.
+    ///
+    /// <b>Pourquoi ce détour.</b> La planche de rentrée n'a pas de bas commun : le portrait
+    /// descend jusqu'au bord de la feuille, et la seule place libre est sous le bloc
+    /// d'identités — un rectangle deux fois moins large que la planche, mais deux fois plus
+    /// haut que la bande ordinaire. La découpe sur une ligne n'y tient pas : la date y prend
+    /// 42 des 63 millimètres utiles, et « PHOTOS CONFORMES aux normes des documents
+    /// officiels » devrait s'écrire dans le millimètre qui reste.
+    /// </summary>
+    /// <param name="bande">
+    /// La zone libre, jusqu'au BORD DE LA FEUILLE : la marge basse en est retirée ici, une
+    /// seule fois, comme pour la bande pleine largeur.
+    /// </param>
+    /// <param name="empile">
+    /// Vrai pour écrire la mention SUR SA PROPRE LIGNE, la date en dessous. C'est ce qui
+    /// permet à une bande étroite de porter autre chose qu'une date.
+    /// </param>
+    public static FooterPlacement? Place(
+        SheetFooter footer, PixelRect bande, int dpi, bool empile = false)
     {
         ArgumentNullException.ThrowIfNull(footer);
 
+        var sheetWidth = bande.Width;
+
         // La bande s'arrête AVANT le bord : ce qui descend plus bas part au massicot de la
         // machine. C'est la même protection qu'à gauche et à droite.
-        var hauteur = sheetHeight - photosBottom - MmPx.ToPixels(MargeBasseMm, dpi);
+        var hauteur = bande.Height - MmPx.ToPixels(MargeBasseMm, dpi);
+        var photosBottom = bande.Y;
 
         // La date s'écrit au corps de DiLand quand la place le permet, et se resserre
         // jusqu'à son minimum lisible quand la planche est pleine — c'est ce qui permet à
@@ -262,7 +296,7 @@ public static class SheetFooterLayout
         // se taire
         if (corpsDate < MmPx.ToPixels(CorpsDateMinimalMm, dpi)) return null;
 
-        var band = new PixelRect(0, photosBottom, sheetWidth, hauteur);
+        var band = new PixelRect(bande.X, photosBottom, sheetWidth, hauteur);
         var marge = MmPx.ToPixels(MargeMm, dpi);
         var margeBord = MmPx.ToPixels(MargeBordMm, dpi);
 
@@ -280,17 +314,22 @@ public static class SheetFooterLayout
         if (footer.DateSeule || hauteur < MmPx.ToPixels(HauteurMinimaleMm, dpi) || utile <= 0)
             return new FooterPlacement(
                 band,
-                Date: new PixelRect(0, photosBottom, sheetWidth, hauteur),
+                Date: new PixelRect(bande.X, photosBottom, sheetWidth, hauteur),
                 Mention: null, Qr: null, Logo: null, CorpsDatePx: corpsDate);
+
+        if (empile)
+            return Empiler(footer, band, corpsDate, marge, margeBord, utile,
+                MmPx.ToPixels(CorpsDateMinimalMm, dpi));
 
         // centré dans la bande, et non collé sous les photos : quand la bande est plus
         // haute que ce qu'elle porte, le texte doit respirer des deux côtés
         var y = photosBottom + (hauteur - utile) / 2;
+        var gaucheBande = bande.X;
 
         // De droite à gauche : le logo puis le QR, tous deux carrés sur la hauteur utile.
         // Ils sont dimensionnés AVANT la mention parce qu'ils ne se compriment pas — un
         // code QR trop petit cesse d'être lu, là où un texte se resserre.
-        var droite = sheetWidth - margeBord;
+        var droite = gaucheBande + sheetWidth - margeBord;
 
         PixelRect? logo = null;
         if (!string.IsNullOrWhiteSpace(footer.LogoPath))
@@ -311,7 +350,7 @@ public static class SheetFooterLayout
 
         // La date garde le corps de DiLand, et la bande est taillée pour l'accueillir.
         var largeurDate = LargeurDeLaDate(corpsDate);
-        var date = new PixelRect(margeBord, y, largeurDate, utile);
+        var date = new PixelRect(gaucheBande + margeBord, y, largeurDate, utile);
 
         // La mention prend ce qui sépare la date de ce qui est à droite. Elle est centrée
         // sur CET espace et non sur la planche : centrée sur la planche, elle chevaucherait
@@ -326,6 +365,100 @@ public static class SheetFooterLayout
             mention = new PixelRect(gauche, y, largeurMention, utile);
 
         return new FooterPlacement(band, date, mention, qr, logo, corpsDate);
+    }
+
+    /// <summary>
+    /// La bande sur DEUX LIGNES : la mention en haut, la date en dessous.
+    ///
+    /// C'est la découpe d'une bande ÉTROITE ET HAUTE — celle qui tient sous le bloc
+    /// d'identités d'une planche de rentrée, 71 mm de large pour une dizaine de haut. Sur
+    /// une ligne, la date y prendrait les deux tiers de la largeur et il ne resterait pas de
+    /// quoi écrire la mention ; en hauteur, la place ne manque pas.
+    ///
+    /// <b>La mention passe en premier</b>, et pas seulement dans l'ordre de lecture : c'est
+    /// elle qui a besoin de hauteur — deux lignes, dont une en capitales —, la date se
+    /// contentant du corps auquel elle reste lisible.
+    /// </summary>
+    private static FooterPlacement Empiler(
+        SheetFooter footer, PixelRect band, int corpsDate, int marge, int margeBord, int utile,
+        int corpsDateMinimal)
+    {
+        var interieur = Math.Max(1, band.Width - 2 * margeBord);
+
+        // ⚠ MARGES DE MOITIÉ, et ce n'est pas de la coquetterie.
+        //
+        // Aux marges pleines, l'air mangeait 46 % d'une bande de 12 mm — deux fois 1,2 mm
+        // en haut et en bas, 1,2 de plus entre les lignes — et il ne restait pas de quoi
+        // écrire. La bande empilée est déjà en retrait sous les photos et loin du bord
+        // droit : elle n'a pas besoin d'être bordée deux fois.
+        var air = Math.Max(1, marge / 2);
+        var libre = band.Height - 2 * air;
+
+        // ⚠ LA MENTION SE SERT AVANT LA DATE, à l'inverse du partage d'origine.
+        //
+        // Elle porte DEUX lignes là où la date n'en porte qu'une : lui donner trois
+        // cinquièmes de la place revenait à écrire chacune de ses lignes deux fois plus
+        // petite que la date — « PHOTOS CONFORMES » en plus discret que l'heure. On la sert
+        // donc à sa taille nominale, la même que sur une planche ordinaire, dès que la
+        // bande la porte.
+        var ligneMention = Math.Min(utile, libre - air - corpsDateMinimal);
+
+        // <b>Et la date ne dépasse pas sa voisine.</b> Sur une bande pleine largeur, elle
+        // s'écrit deux fois plus gros que la mention et personne n'y trouve à redire : elles
+        // sont côte à côte, la date à gauche, l'annonce au milieu. EMPILÉES et centrées,
+        // c'est un titre au-dessus d'un autre — la plus grosse devient la principale, et
+        // l'horodatage passerait pour l'objet de la planche.
+        var ligneDate = Math.Clamp(
+            Math.Min(corpsDate, ligneMention * 5 / 8),
+            corpsDateMinimal,
+            Math.Max(corpsDateMinimal, libre - air - ligneMention));
+
+        // Pas la place des deux : la date passe avant la mention. C'est elle qui prouve
+        // qu'une photo d'identité est récente ; la mention n'est qu'une affirmation.
+        if (ligneMention <= 0 || ligneDate <= 0)
+            return new FooterPlacement(band, band, null, null, null, corpsDate, DateCentree: true);
+
+        var haut = band.Y + (band.Height - (ligneMention + air + ligneDate)) / 2;
+        var mention = new PixelRect(band.X + margeBord, haut, interieur, ligneMention);
+
+        // Le logo et le code QR partagent la LIGNE DE LA MENTION, à droite. Sur celle de la
+        // date ils n'auraient que trois millimètres de côté, et un code QR de trois
+        // millimètres ne se scanne pas.
+        PixelRect? logo = null;
+        PixelRect? qr = null;
+        var droite = mention.Right;
+
+        if (!string.IsNullOrWhiteSpace(footer.LogoPath))
+        {
+            var largeur = Math.Min(ligneMention * 2, band.Width / 4);
+            logo = new PixelRect(droite - largeur, haut, largeur, ligneMention);
+            droite = logo.X - marge;
+        }
+
+        if (footer.QrPng is { Length: > 0 })
+        {
+            qr = new PixelRect(droite - ligneMention, haut, ligneMention, ligneMention);
+            droite = qr.X - marge;
+        }
+
+        // S'ils ne laissent pas à la mention de quoi s'écrire, ce sont EUX qui sautent :
+        // c'est la mention qu'on est venu chercher en empilant.
+        var largeurMention = droite - mention.X;
+        if (largeurMention <= ligneMention)
+        {
+            logo = null;
+            qr = null;
+            largeurMention = interieur;
+        }
+
+        return new FooterPlacement(
+            band,
+            Date: new PixelRect(band.X + margeBord, haut + ligneMention + air,
+                interieur, ligneDate),
+            Mention: mention with { Width = largeurMention },
+            Qr: qr, Logo: logo,
+            CorpsDatePx: Math.Min(corpsDate, ligneDate),
+            DateCentree: true);
     }
 
     /// <summary>

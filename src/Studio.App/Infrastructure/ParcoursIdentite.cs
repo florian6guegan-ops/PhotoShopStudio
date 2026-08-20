@@ -24,9 +24,11 @@ public static class ParcoursIdentite
                 // Une NORME : on choisit le support, puis les photos, puis on cadre.
                 // `photos` est le nombre imposé par le raccourci — « planche de 6 » — qu'il
                 // faut porter jusqu'au cadrage, seul endroit où il veut dire quelque chose.
-                (document, photos) =>
+                // `genre` dit ce qu'on fabrique — planche ordinaire, planche de rentrée,
+                // planche accompagnée d'un 10×15 —, et voyage jusqu'au même endroit.
+                (document, photos, genre) =>
                     Navigator.Go(new SourcePickerView((racine, profond) =>
-                            Navigator.Go(new IdPhotoPickerView(racine, document, profond, photos),
+                            Navigator.Go(new IdPhotoPickerView(racine, document, profond, photos, genre),
                                 $"{document.Country} — choisir les photos")),
                         "Photos d'identité — choisir le support"),
 

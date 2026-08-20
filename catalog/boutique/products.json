@@ -1189,7 +1189,8 @@
       "FullBleed": true,
       "LayoutGapMm": 1,
       "CutBorder": true,
-      "DateStamp": true
+      "DateStamp": true,
+      "GrandePhoto": false
     },
     "Enabled": true,
     "PriceTiers": [],
@@ -1269,5 +1270,41 @@
     "Enabled": true,
     "PriceTiers": [],
     "Channel": ""
+  },
+  {
+    "Code": "ID-RENTREE",
+    "Name": "Rentr\u00E9e \u2014 4 photos d\u0027identit\u00E9 \u002B 1 grande",
+    "WidthMm": 156.1,
+    "HeightMm": 105,
+    "PrinterName": "DP-DS620",
+    "Output": "Printer",
+    "MinilabMachineId": null,
+    "MinilabPrintSizeName": null,
+    "PrinterChannel": null,
+    "Dpi": 300,
+    "Price": 11,
+    "DefaultFit": "Fill",
+    "BorderMm": 0,
+    "ABordBlanc": false,
+    "FenetreMm": {},
+    "IccProfile": "DS620(MA)_Vivid.icm",
+    "PrintExposure": 0,
+    "DevmodeFile": "devmode-ID-FR-6.bin",
+    "Finishes": [],
+    "Sheet": {
+      "Copies": 4,
+      "CellWidthMm": 35,
+      "CellHeightMm": 45,
+      "GapMm": 0.2,
+      "CutMarks": true,
+      "FullBleed": true,
+      "LayoutGapMm": 1,
+      "CutBorder": true,
+      "DateStamp": true,
+      "GrandePhoto": true
+    },
+    "Enabled": true,
+    "PriceTiers": [],
+    "Channel": "DP-DS620"
   }
 ]

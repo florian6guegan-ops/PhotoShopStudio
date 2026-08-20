@@ -140,6 +140,106 @@ public static class ImagePipeline
         MagickInit.Write(sheet, outputPath);
     }
 
+    /// <summary>
+    /// Planche de la RENTRÉE : quelques photos d'identité, et le PORTRAIT du même visage
+    /// sur tout ce qu'elles laissent.
+    ///
+    /// Deux cadrages de la même photo cohabitent donc sur la feuille : la case normée,
+    /// serrée comme l'exige le guichet, et le portrait qui montre les épaules. C'est la
+    /// seule planche du logiciel où une case ne ressemble pas à sa voisine — voir
+    /// <see cref="Geometry.PlancheRentree"/> pour le pourquoi de la disposition.
+    ///
+    /// <b>La planche ne bascule jamais debout</b>, contrairement à
+    /// <see cref="RenderIdSheetToFile"/>. Là-bas, tourner le papier gagnait une rangée
+    /// entière ; ici le portrait s'étire sur ce qui reste, quel que soit le sens : il n'y a
+    /// rien à gagner, et une planche qui change d'orientation selon le document ferait
+    /// massicoter l'opérateur autrement d'un client à l'autre.
+    /// </summary>
+    /// <param name="cellRequest">La case d'identité : dimensions = celles de la norme.</param>
+    /// <param name="grandeRequest">
+    /// Le portrait. Ses dimensions cibles sont IGNORÉES et remplacées par celles de la case
+    /// calculée — elle ne se connaît qu'après la disposition. Tout le reste (cadrage,
+    /// redressement, réglages, profil ICC) est repris tel quel.
+    /// </param>
+    /// <param name="identites">Nombre de cases à la norme. Voir <c>SheetSpec.GrandePhoto</c>.</param>
+    public static void RenderPlancheRentreeToFile(
+        RenderRequest cellRequest, RenderRequest grandeRequest, int identites,
+        double gapMm, bool cutMarks,
+        int sheetWidthPx, int sheetHeightPx, string outputPath, int dpi = 300,
+        bool cutBorder = true, SheetFooter? footer = null, bool fullBleed = true)
+    {
+        ArgumentNullException.ThrowIfNull(cellRequest);
+        ArgumentNullException.ThrowIfNull(grandeRequest);
+
+        // même règle qu'à la planche ordinaire : à fond perdu, l'écart n'est plus réglable,
+        // il vaut la place où le trait de coupe s'inscrit sans mordre sur les photos
+        var gapPx = fullBleed
+            ? MmPx.ToPixels(SheetSpec.EcartFondPerduMm, dpi)
+            : MmPx.ToPixels(gapMm, dpi);
+        var tickPx = !fullBleed && cutMarks ? MmPx.ToPixels(3, dpi) : 0;
+
+        var layout = PlancheRentree.Layout(
+            sheetWidthPx, sheetHeightPx,
+            cellRequest.TargetWidthPx, cellRequest.TargetHeightPx,
+            gapPx, identites, tickPx,
+            bottomReserve: SheetFooterLayout.ReserveMinimalePx(footer, dpi),
+            largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, dpi),
+            airEnHaut: MmPx.ToPixels(PlancheRentree.AirEnHautMm, dpi))
+            ?? throw new InvalidOperationException(
+                $"{identites} photos de {cellRequest.TargetWidthPx}×{cellRequest.TargetHeightPx} px " +
+                $"ne laissent pas la place d'un portrait sur {sheetWidthPx}×{sheetHeightPx} px.");
+
+        using var sheet = new MagickImage(MagickColors.White, (uint)sheetWidthPx, (uint)sheetHeightPx);
+
+        // la densité AVANT de dessiner : les corps de police sont en points, et ImageMagick
+        // les convertit d'après la résolution de l'image
+        sheet.Density = new Density(dpi, dpi, DensityUnit.PixelsPerInch);
+
+        // la case d'identité n'est rendue qu'UNE fois, puis recopiée : c'est le même visage
+        using (var cell = Render(cellRequest, dpi))
+            foreach (var rect in layout.Identites)
+                sheet.Composite(cell, rect.X, rect.Y, CompositeOperator.Over);
+
+        // le portrait est rendu AUX COTES DE SA CASE, en « remplir » : la case est déjà au
+        // rapport voulu par le cadrage (voir CadrageElargi), et ce qui déborde d'un pixel
+        // ou deux doit disparaître plutôt que laisser un liseré blanc
+        using (var grande = Render(
+                   grandeRequest with
+                   {
+                       TargetWidthPx = layout.Grande.Width,
+                       TargetHeightPx = layout.Grande.Height,
+                       Fit = FitMode.Fill,
+                       BorderPx = 0,
+                   }, dpi))
+            sheet.Composite(grande, layout.Grande.X, layout.Grande.Y, CompositeOperator.Over);
+
+        // à partir d'ici, la planche se traite comme une planche ordinaire : les cases sont
+        // des cases, qu'elles portent une identité ou le portrait
+        var cases = new SheetLayoutResult(
+            layout.Toutes, layout.CutTicks, layout.Colonnes, layout.Rangees);
+
+        if (cases.CutTicks.Count > 0)
+        {
+            var drawables = new Drawables().StrokeColor(new MagickColor("#9E9E9E")).StrokeWidth(1);
+            foreach (var tick in cases.CutTicks)
+                drawables.Line(tick.X1, tick.Y1, tick.X2, tick.Y2);
+            sheet.Draw(drawables);
+        }
+
+        if (cutBorder)
+            DrawCutBorders(sheet, cases, dpi);
+
+        // ⚠ LA BANDE VA SOUS LE BLOC D'IDENTITÉS, PAS SOUS TOUTE LA PLANCHE, et sur deux
+        // lignes. Le portrait descend maintenant jusqu'au bord de la feuille : « le bas de
+        // la dernière case » — la règle de la planche ordinaire — tomberait sur le bord et
+        // ne laisserait rien. C'est d'ailleurs ce qui privait cette planche de sa mention
+        // avant le 20/08/2026, quand le portrait s'arrêtait pile sur la réserve minimale.
+        if (footer is not null)
+            SheetFooterPainter.Draw(sheet, footer, layout.BandeBasse, dpi, empile: true);
+
+        MagickInit.Write(sheet, outputPath);
+    }
+
     /// <summary>Une photo et le nombre de cases qu'elle occupe sur la planche.</summary>
     public sealed record SheetCell(RenderRequest Request, int Copies);
 
@@ -558,14 +658,15 @@ public static class ImagePipeline
     /// <summary>
     /// Ramène la source dans l'espace de travail sRGB. Une photo d'appareil peut porter
     /// un profil AdobeRGB ou Display P3 : sans cette conversion, ses pixels sont lus comme
-    /// du sRGB et les couleurs sortent fausses (rouges éteints, vert délavé). Sans profil
-    /// embarqué, on suppose sRGB — la convention des JPEG grand public.
+    /// du sRGB et les couleurs sortent fausses (rouges éteints, vert délavé).
+    ///
+    /// <b>Le profil embarqué ne suffit pas</b> : un reflex réglé en Adobe RGB n'en met
+    /// aucun et ne le déclare que dans l'EXIF. La règle, et le cas qui l'a fait écrire,
+    /// sont dans <see cref="EspaceCouleurSource"/> — partagés avec l'aperçu et les
+    /// vignettes, pour que l'écran ressemble au papier.
     /// </summary>
-    private static void NormalizeToSrgb(MagickImage image)
-    {
-        if (image.GetColorProfile() is { } embedded)
-            image.TransformColorSpace(embedded, ColorProfiles.SRGB);
-    }
+    private static void NormalizeToSrgb(MagickImage image) =>
+        EspaceCouleurSource.RamenerEnSrgb(image);
 
     private static void RenderInto(MagickImage image, RenderRequest request, int dpi)
     {

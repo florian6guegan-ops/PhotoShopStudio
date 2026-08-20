@@ -28,6 +28,12 @@ internal static class De100Interop
     [DllImport(Dll)]
     internal static extern int PIF_Open();
 
+    /// <summary>
+    /// ⚠ <b>DÉCLARÉ, JAMAIS APPELÉ — et il ne doit pas le redevenir.</b> Il fait effacer les
+    /// fichiers d'état de PUD, après quoi DiLand ne charge plus et seul un redémarrage du
+    /// poste rattrape la chose. Le raisonnement complet est sur <c>De100Driver.Dispose</c>.
+    /// Il reste ici parce que la surface du SDK se lit mieux entière que trouée.
+    /// </summary>
     [DllImport(Dll)]
     internal static extern int PIF_Close();
 

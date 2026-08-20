@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Studio.Core.Domain;
 using Studio.Store;
 
@@ -234,9 +235,16 @@ public class HistoriqueIdentiteTests : IDisposable
     /// </summary>
     private void Vieillir(TimeSpan de, string? seulement = null)
     {
+        // ⚠ LES MÊMES OPTIONS QUE LE MAGASIN, et il faut qu'elles le restent : il écrit ses
+        // énumérations en toutes lettres (« Standard »), et les relire avec les options par
+        // défaut de System.Text.Json — qui les attend en nombres — fait échouer la lecture
+        // dès qu'une énumération entre dans la fiche. C'est arrivé à l'ajout du format vendu
+        // sur la planche d'identité, le 20/08/2026.
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+
         foreach (var chemin in Directory.EnumerateFiles(_dossier, "*.json"))
         {
-            var photo = JsonSerializer.Deserialize<PhotoFaite>(File.ReadAllText(chemin));
+            var photo = JsonSerializer.Deserialize<PhotoFaite>(File.ReadAllText(chemin), options);
             if (photo is null) continue;
             if (seulement is not null &&
                 !Path.GetFileName(photo.Chemin).Equals(seulement, StringComparison.OrdinalIgnoreCase))
@@ -246,7 +254,7 @@ public class HistoriqueIdentiteTests : IDisposable
                 ? photo.ModifieeLe - de
                 : photo.ModifieeLe + de;
 
-            File.WriteAllText(chemin, JsonSerializer.Serialize(photo));
+            File.WriteAllText(chemin, JsonSerializer.Serialize(photo, options));
         }
     }
 }

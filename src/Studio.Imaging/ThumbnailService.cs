@@ -128,6 +128,15 @@ public sealed class ThumbnailService
             (int)image.BaseWidth, (int)image.BaseHeight, image.Orientation);
 
         image.AutoOrient();
+
+        // L'ESPACE DE LA SOURCE, comme au rendu et à l'aperçu.
+        //
+        // La vignette n'est pas qu'une image de liste : c'est elle que le récapitulatif de
+        // planche donne à composer (voir IdSheetRecapView.RendreUnePlanche). Sans cette
+        // ligne, une photo Adobe RGB s'y montrait dans ses couleurs fausses, et l'opérateur
+        // validait une planche qui ne ressemblait pas à celle qui allait sortir.
+        EspaceCouleurSource.RamenerEnSrgb(image);
+
         image.Thumbnail((uint)demande, (uint)demande); // conserve les proportions dans la boîte
         image.Quality = 82;
         var bytes = image.ToByteArray(MagickFormat.Jpeg);
@@ -228,10 +237,26 @@ public sealed class ThumbnailService
     private string CheminCache(string sourcePath, int box) =>
         Path.Combine(_cacheDir, CacheKey(sourcePath, box) + ".jpg");
 
+    /// <summary>
+    /// La façon dont une vignette est FABRIQUÉE, et non ce dont elle est tirée.
+    ///
+    /// <b>À changer dès que le rendu d'une vignette change</b> : la clé du cache ne regarde
+    /// que le fichier source, si bien qu'une photo déjà vue garderait sa vignette d'avant
+    /// pour toujours. C'est arrivé le 20/08/2026 avec la lecture de l'espace de couleur
+    /// (voir <see cref="EspaceCouleurSource"/>) : sans ce marqueur, les photos Adobe RGB
+    /// déjà ouvertes seraient restées dans leurs couleurs fausses, y compris à l'écran de
+    /// récapitulatif qui compose la planche à partir d'elles.
+    ///
+    /// Le cache entier est recalculé une fois après la mise à jour, vignette par vignette,
+    /// à mesure qu'on les regarde. Les anciennes partent au ménage du cache.
+    /// </summary>
+    private const string VersionDuRendu = "couleur-2";
+
     private static string CacheKey(string path, int box)
     {
         var info = new FileInfo(path);
-        var raw = $"{path.ToLowerInvariant()}|{info.Length}|{info.LastWriteTimeUtc.Ticks}|{box}";
+        var raw = $"{path.ToLowerInvariant()}|{info.Length}|{info.LastWriteTimeUtc.Ticks}|{box}"
+                  + $"|{VersionDuRendu}";
         return Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(raw)))[..24];
     }
 }

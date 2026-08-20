@@ -72,6 +72,11 @@ public sealed record DraftItem(
     /// </summary>
     decimal? UnitPriceOverride = null,
     /// <summary>
+    /// Planche de la RENTRÉE : le cadrage du PORTRAIT, plus large que la case normée.
+    /// Null partout ailleurs. Voir <see cref="OrderItem.CropGrandePhoto"/>.
+    /// </summary>
+    CropSpec? CropGrande = null,
+    /// <summary>
     /// Montage : code de la FEUILLE sur laquelle composer les agrandissements, ou null pour
     /// un fichier par tirage.
     ///
@@ -141,7 +146,18 @@ public sealed class OrderService
                 PrinterChannel = channelGroup.Key.Channel,
             };
 
-            foreach (var productGroup in channelGroup.GroupBy(i => i.Product.Code))
+            // ⚠ LA PLANCHE ENTRE DANS LA CLÉ, et pas seulement le produit.
+            //
+            // Le regroupement se faisait sur le seul code produit, et la ligne prenait
+            // ensuite `productGroup.First().CustomSheet`. Deux TAILLES LIBRES tombant sur le
+            // même papier — un 7 × 10 et un 5,5 × 8 casés tous deux sur du 10×15, ce qui est
+            // le cas courant — n'auraient donc fait qu'une ligne, et la seconde taille
+            // aurait été tirée aux cotes de la première, en silence.
+            //
+            // Le défaut était jusqu'ici hors d'atteinte : l'écran imposait une taille unique
+            // à toute la commande. Il a cessé de le faire le 20/08/2026, et cette clé est ce
+            // qui rend le mélange sûr.
+            foreach (var productGroup in channelGroup.GroupBy(i => (i.Product.Code, i.CustomSheet)))
             {
                 var product = productGroup.First().Product;
                 // le tarif dégressif se calcule sur le total du produit dans la commande,
@@ -185,6 +201,7 @@ public sealed class OrderService
                         SheetCopiesOverride = item.SheetCopiesOverride,
                         SheetCellWidthMm = item.SheetCell?.WidthMm,
                         SheetCellHeightMm = item.SheetCell?.HeightMm,
+                        CropGrandePhoto = item.CropGrande,
                         Finish = item.Finish,
                         Adjustments = item.Adjustments,
                     });

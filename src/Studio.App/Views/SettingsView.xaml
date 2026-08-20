@@ -419,9 +419,24 @@
                                      Margin="0,6,0,0" MinWidth="140"
                                      TextChanged="OnTarifIdentiteChange"/>
                         </StackPanel>
-                        <StackPanel>
+                        <StackPanel Margin="0,0,32,0">
                             <TextBlock Text="Document étranger" Style="{StaticResource Hint}"/>
                             <TextBox x:Name="TarifIdEtrangerBox" FontSize="20" Padding="12,10"
+                                     Margin="0,6,0,0" MinWidth="140"
+                                     TextChanged="OnTarifIdentiteChange"/>
+                        </StackPanel>
+                        <!-- Les deux formats de la rentrée. Leur prix ne dépend pas du
+                             pays : c'est un produit de saison, pas une démarche
+                             administrative. -->
+                        <StackPanel Margin="0,0,32,0">
+                            <TextBlock Text="Rentrée : 4 + 1 grande" Style="{StaticResource Hint}"/>
+                            <TextBox x:Name="TarifIdRentreeBox" FontSize="20" Padding="12,10"
+                                     Margin="0,6,0,0" MinWidth="140"
+                                     TextChanged="OnTarifIdentiteChange"/>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Planche + une 10×15" Style="{StaticResource Hint}"/>
+                            <TextBox x:Name="TarifIdPlancheEtTirageBox" FontSize="20" Padding="12,10"
                                      Margin="0,6,0,0" MinWidth="140"
                                      TextChanged="OnTarifIdentiteChange"/>
                         </StackPanel>

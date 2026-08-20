@@ -562,6 +562,23 @@
                             </StackPanel>
                         </Grid>
 
+                        <!-- LE PORTRAIT des deux formats de la rentrée.
+                             Il est proposé, jamais exigé : le cadre large est posé tout seul
+                             autour du visage (CadrageElargi), et l'opérateur ne touche à ce
+                             bouton que s'il veut le reprendre. Un jour de rentrée, un geste
+                             de plus par enfant se paie en file d'attente. -->
+                        <StackPanel x:Name="PortraitCard" Visibility="Collapsed">
+                            <TextBlock Style="{StaticResource TitreModule}" Text="LA GRANDE PHOTO"
+                                       Margin="0,16,0,0"/>
+                            <TextBlock x:Name="PortraitText" Style="{StaticResource Hint}" FontSize="12"
+                                       TextWrapping="Wrap" Margin="0,0,0,6"
+                                       Text="Cadre large posé automatiquement autour du visage."/>
+                            <Button x:Name="PortraitButton" Style="{StaticResource FlatButton}"
+                                    MinWidth="0" MinHeight="42" Padding="12,0" FontSize="15"
+                                    Click="OnCadrerLaGrande"
+                                    ToolTip="Reprendre le cadrage de la grande photo : épaules, décentrage, zoom.">🖼  Cadrer la grande photo</Button>
+                        </StackPanel>
+
                         <TextBlock Style="{StaticResource TitreModule}" Text="FOND &amp; SUJET" Margin="0,16,0,0"/>
                         <CheckBox x:Name="WhiteBackgroundCheck" Style="{StaticResource CaseCochable}"
                                   Margin="0,0,0,6"

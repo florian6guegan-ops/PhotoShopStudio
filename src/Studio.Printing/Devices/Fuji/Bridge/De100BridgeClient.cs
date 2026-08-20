@@ -64,6 +64,13 @@ public sealed class De100BridgeClient : IAsyncDisposable
     private CancellationTokenSource? _readLoop;
     private bool _disposed;
 
+    /// <summary>
+    /// Le lien est ouvert ET la boucle de lecture le surveille encore. Voir
+    /// <see cref="IsConnected"/> : c'est le seul témoin qui dise la vérité sur un relais mort.
+    /// Volatile parce qu'il est posé sur le fil de l'appelant et effacé sur celui de la boucle.
+    /// </summary>
+    private volatile bool _lienOuvert;
+
     /// <summary>Journal optionnel : branché sur FileLog par l'application.</summary>
     public Action<string>? Log { get; set; }
 
@@ -76,8 +83,26 @@ public sealed class De100BridgeClient : IAsyncDisposable
     /// <param name="timeout">Délai d'attente d'une réponse du relais.</param>
     public De100BridgeClient(TimeSpan? timeout = null) => _timeout = timeout ?? DefaultTimeout;
 
-    /// <summary>Vrai si le relais est démarré et connecté.</summary>
-    public bool IsConnected => _pipe?.IsConnected == true;
+    /// <summary>
+    /// Vrai si le relais est démarré et connecté.
+    ///
+    /// ⚠ <b><c>NamedPipeClientStream.IsConnected</c> NE SUFFIT PAS, et c'est contre-intuitif :
+    /// il reste VRAI sur un relais mort.</b> Il ne rend pas l'état du tube, il rend le dernier
+    /// état connu de l'objet — mis à jour par une opération qui échoue, jamais par la
+    /// disparition d'en face. Une lecture asynchrone qui bute sur un tube rompu se termine en
+    /// « fin de fichier », zéro octet, sans marquer le flux comme brisé.
+    ///
+    /// Mesuré le 20/08/2026 : relais TUÉ, et vingt secondes plus tard le client se disait
+    /// toujours connecté. La suite est mécanique — <c>ConnectAsync</c> sort par « déjà
+    /// connecté » et ne rebranche rien, <c>SendAsync</c> écrit dans le vide, l'envoi direct
+    /// échoue, et <c>PrintOrchestrator</c> se replie sur le pilote Windows. <b>Pour tous les
+    /// tirages suivants, jusqu'au redémarrage de l'application</b>, et sans un mot à
+    /// l'opérateur.
+    ///
+    /// D'où le drapeau : la boucle de lecture est le seul témoin fiable — elle s'arrête
+    /// exactement quand le lien meurt, quelle qu'en soit la raison.
+    /// </summary>
+    public bool IsConnected => _lienOuvert && _pipe?.IsConnected == true;
 
     /// <summary>
     /// Emplacements où chercher le relais : à côté de l'application, dans un sous-dossier
@@ -113,11 +138,38 @@ public sealed class De100BridgeClient : IAsyncDisposable
         File.Exists(exePath) && File.Exists(Path.ChangeExtension(exePath, ".dll"));
 
     /// <summary>
-    /// Démarre le relais s'il ne tourne pas, puis s'y connecte.
+    /// Lâche le relais d'avant s'il en reste un, en démarre un neuf, et s'y connecte.
+    ///
+    /// <b>Elle en démarre TOUJOURS un</b> — elle ne cherche pas à réutiliser celui qui
+    /// tournerait déjà. C'est voulu tant que le tube n'accepte qu'une instance : deux
+    /// applications sur un poste, c'est ce qu'interdit <c>UnSeulLogiciel</c>, pas ce qu'on
+    /// arbitre ici. La seule chose qu'on se doit, c'est de ne pas se faire obstacle à
+    /// soi-même.
     /// </summary>
     public async Task ConnectAsync(CancellationToken cancellation = default)
     {
         if (IsConnected) return;
+
+        // ⚠ ON LÂCHE LA FOIS D'AVANT AVANT D'EN REDEMANDER UNE, et c'est tout le sujet.
+        //
+        // Cette méthode n'avait qu'une seule porte de sortie anticipée — « déjà connecté ».
+        // Dans tous les AUTRES cas elle écrasait _host puis _pipe par les nouveaux, sans
+        // refermer les anciens. Or un tube que personne ne referme reste OUVERT : le relais
+        // d'en face garde son instance, et comme il n'en sert qu'UNE
+        // (maxNumberOfServerInstances: 1), le relais qu'on vient de lancer ne peut pas
+        // créer la sienne. Il meurt sur « toutes les instances des canaux de communication
+        // sont occupées », et l'on se replie sur le pilote Windows.
+        //
+        // Maisons-Alfort, 20/08/2026, commande 20-013 : le relais du tirage précédent
+        // (13:03) tenait encore le tube à 13:05, deux minutes plus tard. La planche est
+        // sortie par le pilote au lieu de l'envoi direct, et rien ne le disait à
+        // l'opérateur. Le tube s'est libéré tout seul à 13:06 — le ramasse-miettes avait
+        // fini par refermer la poignée abandonnée. D'où le caractère intermittent : la
+        // panne dure ce que dure un GC.
+        //
+        // Le lien perdu ne se voyait pas non plus : voir <see cref="ReadLoopAsync"/>, la
+        // fermeture silencieuse du tube ne laissait aucune trace au journal.
+        LacherLaFoisDavant();
 
         var hostPath = FindHost()
             ?? throw new FileNotFoundException(
@@ -219,6 +271,15 @@ public sealed class De100BridgeClient : IAsyncDisposable
         _reader = new StreamReader(_pipe, new UTF8Encoding(false));
         _writer = new StreamWriter(_pipe, new UTF8Encoding(false)) { AutoFlush = true };
 
+        // ⚠ AVANT de lancer la boucle, jamais après : sur un relais déjà mort elle s'arrête
+        // aussitôt et efface le drapeau. Le poser ensuite, c'est se déclarer connecté
+        // par-dessus le témoin qui vient de dire le contraire.
+        //
+        // La boucle PRÉCÉDENTE, elle, ne peut plus l'effacer : LacherLaFoisDavant l'a
+        // annulée ET a refermé son tube tout en haut de cette méthode, et il s'est écoulé
+        // depuis un démarrage de processus et une ouverture de tube.
+        _lienOuvert = true;
+
         _readLoop = new CancellationTokenSource();
         _ = Task.Run(() => ReadLoopAsync(_readLoop.Token), CancellationToken.None);
 
@@ -257,6 +318,31 @@ public sealed class De100BridgeClient : IAsyncDisposable
     /// <summary>Ce qu'on laisse à une liaison en cours d'aboutir après la mort du relais.</summary>
     private static readonly TimeSpan BattementApresLaMort = TimeSpan.FromMilliseconds(300);
 
+    /// <summary>Ce qu'on laisse au relais d'avant pour mourir, et donc rendre le tube.</summary>
+    private static readonly TimeSpan BattementDeLaReleve = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Referme ce qu'une tentative PRÉCÉDENTE a laissé ouvert, avant d'en lancer une autre.
+    ///
+    /// <b>Ne rien faire ici coûte un tirage.</b> Les chemins d'échec de
+    /// <see cref="ConnectAsync"/> rangent déjà derrière eux ; ce qui ne l'était pas, c'est la
+    /// connexion qui a RÉUSSI puis dont le lien s'est rompu en silence. Le client se voyait
+    /// alors « non connecté » et repartait de zéro, en abandonnant une poignée de tube encore
+    /// ouverte — donc en empêchant son propre remplaçant d'exister.
+    ///
+    /// On journalise, parce que c'est le seul endroit d'où l'on peut dire que le lien d'avant
+    /// était mort sans le dire. Silencieux, ce raccommodage cacherait la panne qu'il répare.
+    /// </summary>
+    private void LacherLaFoisDavant()
+    {
+        if (_pipe is null && _host is null && _readLoop is null) return;
+
+        Log?.Invoke("Relais DE100 : le lien précédent n'était plus vivant. On le referme avant " +
+                    "d'en ouvrir un autre — sans quoi son relais garderait le tube pour lui.");
+
+        AbandonnerLaConnexion();
+    }
+
     /// <summary>
     /// Défait ce qu'une connexion ratée laisse derrière elle : le tube, et surtout le RELAIS.
     ///
@@ -270,12 +356,36 @@ public sealed class De100BridgeClient : IAsyncDisposable
     /// </summary>
     private void AbandonnerLaConnexion()
     {
+        _lienOuvert = false;
+
+        // La boucle de lecture EN PREMIER : elle attend une ligne sur le tube qu'on va
+        // refermer, et elle partage _pending avec la connexion suivante. Laissée vivante,
+        // elle se réveille plus tard sur la mort de l'ANCIEN tube et vide les attentes de la
+        // NOUVELLE — « Le relais DE100 s'est arrêté » sur un relais qui va très bien.
+        try { _readLoop?.Cancel(); }
+        catch (ObjectDisposedException) { /* déjà rangée */ }
+        Ferme(_readLoop);
+        _readLoop = null;
+
+        // Le tube AVANT ses habillages : le relais peut l'avoir déjà refermé de son côté, et
+        // fermer le writer en premier tenterait alors d'écrire dans un tube mort. Même ordre
+        // que DisposeAsync, pour la même raison.
         Ferme(_pipe);
+        Ferme(_writer);
+        Ferme(_reader);
         _pipe = null;
+        _writer = null;
+        _reader = null;
 
         try
         {
             if (_host is { HasExited: false }) _host.Kill(entireProcessTree: true);
+
+            // ⚠ TUER N'EST PAS AVOIR RENDU LE TUBE. Kill demande la fin, il ne l'attend pas :
+            // c'est le système qui referme les poignées du mourant, et le nom du tube reste
+            // pris jusque-là. Repartir aussitôt, c'est lancer un relais qui tombera sur le
+            // tube de celui qu'on vient d'abattre — la panne même qu'on répare.
+            _host?.WaitForExit((int)BattementDeLaReleve.TotalMilliseconds);
         }
         catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException
                                        or System.ComponentModel.Win32Exception)
@@ -538,7 +648,19 @@ public sealed class De100BridgeClient : IAsyncDisposable
             while (!cancellation.IsCancellationRequested && _reader is not null)
             {
                 var line = await _reader.ReadLineAsync(cancellation);
-                if (line is null) break;
+                if (line is null)
+                {
+                    // ⚠ LA PANNE MUETTE. Le tube s'est refermé d'en face. À l'ARRÊT c'est
+                    // normal — DisposeAsync vient d'en donner l'ordre — mais en pleine vie
+                    // c'est la seule chose qui explique un « Démarrage du relais » de trop au
+                    // tirage suivant. Vingt journaux d'affilée n'en portaient aucune trace :
+                    // les deux sorties bruyantes de cette boucle sont attrapées plus bas,
+                    // celle-ci, la plus fréquente, sortait sans rien dire.
+                    if (!cancellation.IsCancellationRequested && !_disposed)
+                        Log?.Invoke("Relais DE100 : le lien s'est refermé sans un mot. Le " +
+                                    "prochain envoi devra relancer un relais.");
+                    break;
+                }
                 if (!De100Protocol.TryDecode(line, out var message)) continue;
 
                 switch (message.Kind)
@@ -567,6 +689,12 @@ public sealed class De100BridgeClient : IAsyncDisposable
         }
         finally
         {
+            // ⚠ CETTE LIGNE EST TOUT CE QUI SÉPARE UN RELAIS MORT D'UN RELAIS VIVANT.
+            // Cette boucle s'arrête exactement quand le lien meurt ; le tube, lui, continue
+            // de se dire connecté (voir IsConnected). Sans ce drapeau, l'application garde
+            // pour toujours un relais qui n'existe plus.
+            _lienOuvert = false;
+
             // ne jamais laisser un appelant attendre une réponse qui ne viendra plus
             foreach (var waiter in _pending.Values)
                 waiter.TrySetException(new InvalidOperationException("Le relais DE100 s'est arrêté."));

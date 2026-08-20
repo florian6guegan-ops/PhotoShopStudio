@@ -69,11 +69,24 @@ public class IdSheetRenderTests : IDisposable
             MmPx.ToPixels(gapMm, Dpi), copies, MmPx.ToPixels(3, Dpi));
 
     /// <summary>
-    /// Bande réservée en bas quand la planche est horodatée : la mention de 5 mm et l'air
-    /// autour. Doit rester en accord avec ImagePipeline, faute de quoi les mesures
-    /// porteraient sur la mauvaise zone.
+    /// Bande réservée en bas quand la planche est horodatée.
+    ///
+    /// ⚠ <b>DEMANDÉE au même calcul que le rendu, et non recopiée.</b> Elle valait 7 mm en
+    /// dur ici pendant que <c>ImagePipeline</c> en demandait 6,5 à
+    /// <c>SheetFooterLayout.ReserveMinimalePx</c> — six pixels d'écart, donc un bloc de
+    /// photos posé trois pixels plus bas dans la mesure que sur l'image.
+    ///
+    /// L'écart ne se voyait pas : <c>IdSheetLayout</c> poussait alors le bloc à la longueur
+    /// des repères de coupe dès que le centre tombait plus haut, ce qui ramenait les deux
+    /// réserves au MÊME résultat. Ce décalage a été retiré le 20/08/2026 — il collait le
+    /// bloc au bord bas sur une planche juste, et le massicot de la machine y prenait un
+    /// bout de la photo — et l'écart est aussitôt ressorti.
+    ///
+    /// Le commentaire disait déjà « doit rester en accord avec ImagePipeline » : on ne le
+    /// lui demande plus, on le lui prend.
     /// </summary>
-    private static int BandeHorodatage => MmPx.ToPixels(7, Dpi);
+    private static int BandeHorodatage =>
+        SheetFooterLayout.ReserveMinimalePx(DateSeule(DateTime.Now), Dpi);
 
     /// <summary>Disposition réellement produite lorsque la planche porte la date.</summary>
     private static SheetLayoutResult DispositionRendue(int copies = 8, int? cellHeightPx = null) =>

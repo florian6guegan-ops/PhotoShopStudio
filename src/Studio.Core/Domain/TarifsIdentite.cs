@@ -20,8 +20,39 @@ public sealed class TarifsIdentite
     /// <summary>Planche d'un document étranger.</summary>
     public decimal EtrangerEur { get; set; } = 15m;
 
+    /// <summary>
+    /// La planche de la RENTRÉE : quatre photos d'identité et un portrait, sur la même
+    /// feuille. Onze euros, fixés par l'exploitant le 20/08/2026.
+    ///
+    /// <b>Un prix unique, quel que soit le pays.</b> C'est un produit de saison qu'on vend
+    /// à des familles, pas une démarche administrative : la majoration « document
+    /// étranger » n'a pas d'objet ici — elle paie la recherche d'une norme exotique, et la
+    /// photo de rentrée n'en a pas.
+    /// </summary>
+    public decimal RentreeEur { get; set; } = 11m;
+
+    /// <summary>
+    /// La planche ordinaire ET un tirage 10×15 du même visage : douze euros, même raison
+    /// et même date que <see cref="RentreeEur"/>.
+    /// </summary>
+    public decimal PlancheEtTirageEur { get; set; } = 12m;
+
     /// <summary>Le prix d'une planche pour ce pays émetteur.</summary>
     public decimal Pour(string? pays) => EstLaFrance(pays) ? FranceEur : EtrangerEur;
+
+    /// <summary>
+    /// Le prix de CE genre de planche, pour ce pays.
+    ///
+    /// Les deux formats de la rentrée ont leur propre prix, le même pour tous les pays ;
+    /// la planche ordinaire garde le sien, qui dépend du document. Voir
+    /// <see cref="GenreDePlanche"/>.
+    /// </summary>
+    public decimal Pour(string? pays, GenreDePlanche genre) => genre switch
+    {
+        GenreDePlanche.Rentree => RentreeEur,
+        GenreDePlanche.PlancheEtTirage => PlancheEtTirageEur,
+        _ => Pour(pays),
+    };
 
     /// <summary>
     /// Le référentiel écrit le pays en toutes lettres (« France », « Espagne »…) : c'est

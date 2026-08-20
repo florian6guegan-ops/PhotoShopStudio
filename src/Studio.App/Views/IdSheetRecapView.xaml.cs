@@ -32,6 +32,11 @@ public partial class IdSheetRecapView : UserControl
     /// <param name="Rang">Numéro de la photo dans le lot, à partir de 1.</param>
     /// <param name="Copies">Vignettes sur une planche.</param>
     /// <param name="Quantite">Planches identiques à tirer.</param>
+    /// <param name="CropGrande">
+    /// Le cadrage de la GRANDE photo, sur les deux formats de la rentrée. Null ailleurs —
+    /// et null aussi tant que personne ne l'a réglé, auquel cas il se déduit du cadre
+    /// d'identité (voir <c>PortraitDeLaPlanche.Cadre</c>).
+    /// </param>
     public sealed record Planche(
         string SourcePath,
         CropSpec Crop,
@@ -41,7 +46,8 @@ public partial class IdSheetRecapView : UserControl
         int Quantite,
         Product Produit,
         string? Finition,
-        int Rang)
+        int Rang,
+        CropSpec? CropGrande = null)
     {
         /// <summary>La quantité change sur cet écran : elle n'est pas figée à l'arrivée.</summary>
         public int Quantite { get; set; } = Quantite;
@@ -51,7 +57,14 @@ public partial class IdSheetRecapView : UserControl
     /// Prix d'UNE planche, décidé par le pays du document : 10 € pour un document français,
     /// 15 € pour un étranger (réglable dans Paramètres). Voir <see cref="TarifsIdentite"/>.
     /// </summary>
-    private decimal PrixDeLaPlanche => App.Services.TarifsIdentite.Pour(_document.Country);
+    private decimal PrixDeLaPlanche =>
+        App.Services.TarifsIdentite.Pour(_document.Country, _genre);
+
+    /// <summary>
+    /// Ce qu'on vend : planche ordinaire, planche de rentrée, ou planche accompagnée d'un
+    /// 10×15. Il fixe le PRIX affiché ici, et suit jusqu'au tirage.
+    /// </summary>
+    private readonly GenreDePlanche _genre;
 
     private readonly List<Planche> _planches;
     private readonly IdDocumentSpec _document;
@@ -78,12 +91,17 @@ public partial class IdSheetRecapView : UserControl
     /// l'accueil continuerait de proposer « Reprendre » sur une planche déjà tirée — et on
     /// la tirerait deux fois.
     /// </param>
+    /// <param name="genre">
+    /// Ce qu'on vend. Il fixe le prix affiché, et voyage jusqu'au tirage — c'est lui qui
+    /// décide de la feuille supplémentaire. Voir <see cref="GenreDePlanche"/>.
+    /// </param>
     public IdSheetRecapView(
         IReadOnlyList<Planche> planches,
         IdDocumentSpec document,
         Action<int>? surModifier = null,
         Action? surRemplacer = null,
-        Guid? attenteId = null)
+        Guid? attenteId = null,
+        GenreDePlanche genre = GenreDePlanche.Standard)
     {
         ArgumentNullException.ThrowIfNull(planches);
 
@@ -92,12 +110,18 @@ public partial class IdSheetRecapView : UserControl
         _surModifier = surModifier;
         _surRemplacer = surRemplacer;
         _attenteId = attenteId;
+        _genre = genre;
 
         InitializeComponent();
 
-        TitleText.Text = _planches.Count == 1
-            ? "Récapitulatif de la planche"
-            : $"Récapitulatif — {_planches.Count} planches";
+        TitleText.Text = _genre switch
+        {
+            GenreDePlanche.Rentree when _planches.Count == 1 => "Récapitulatif — planche de rentrée",
+            GenreDePlanche.PlancheEtTirage when _planches.Count == 1 =>
+                "Récapitulatif — planche et grande photo",
+            _ when _planches.Count == 1 => "Récapitulatif de la planche",
+            _ => $"Récapitulatif — {_planches.Count} planches",
+        };
 
         Loaded += async (_, _) =>
         {
@@ -134,6 +158,26 @@ public partial class IdSheetRecapView : UserControl
             ? SheetFooterLayout.ReserveMinimalePx(
                 SheetFooter.Pour(DateTime.Now, App.Services.Marque), PppApercuVoulu)
             : 0;
+
+        // PLANCHE DE RENTRÉE : ce n'est plus un compte de cases qu'il faut vérifier, mais
+        // que la disposition tienne encore à cette définition — les cases ET le portrait.
+        // Si elle ne tient pas, on rend l'aperçu à la définition du tirage plutôt que de
+        // montrer une planche qui ne ressemble pas à ce qui sortira.
+        if (planche.Produit.Sheet is { GrandePhoto: true } rentree)
+        {
+            var tient = PlancheRentree.Layout(
+                MmPx.ToPixels(planche.Produit.WidthMm, PppApercuVoulu),
+                MmPx.ToPixels(planche.Produit.HeightMm, PppApercuVoulu),
+                MmPx.ToPixels(_document.WidthMm, PppApercuVoulu),
+                MmPx.ToPixels(_document.HeightMm, PppApercuVoulu),
+                MmPx.ToPixels(rentree.LayoutGapMm, PppApercuVoulu),
+                planche.Copies,
+                bottomReserve: bande,
+                largeurMinimaleGrandePx:
+                    MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, PppApercuVoulu));
+
+            return tient is not null ? PppApercuVoulu : planche.Produit.Dpi;
+        }
 
         var capacite = IdSheetLayout.MeilleureCapacite(
             MmPx.ToPixels(planche.Produit.WidthMm, PppApercuVoulu),
@@ -230,6 +274,44 @@ public partial class IdSheetRecapView : UserControl
         File.WriteAllBytes(source, App.Services.Thumbnails.GetJpeg(planche.SourcePath, 1440));
 
         var sheet = planche.Produit.Sheet ?? new SheetSpec();
+
+        var caseIdentite = new RenderRequest(
+            source,
+            MmPx.ToPixels(_document.WidthMm, ppp),
+            MmPx.ToPixels(_document.HeightMm, ppp),
+            planche.Crop, 0, planche.RedressementDegres,
+            FitMode.Fill, 0,
+            planche.Reglages);
+
+        // PLANCHE DE RENTRÉE : l'aperçu doit montrer le PORTRAIT, pas huit identités.
+        // C'est même ce qu'on vient vérifier ici — le cadre large est posé automatiquement,
+        // et c'est le seul endroit où l'opérateur le voit avant le papier.
+        if (sheet.GrandePhoto)
+        {
+            var cotes = PortraitDeLaPlanche.Cotes(
+                GenreDePlanche.Rentree, planche.Produit, _document, planche.Copies);
+
+            ImagePipeline.RenderPlancheRentreeToFile(
+                caseIdentite,
+                caseIdentite with
+                {
+                    // la vignette a les proportions de l'original : le cadre large s'y pose
+                    // au même endroit, puisqu'il est en coordonnées relatives
+                    Crop = PortraitDeLaPlanche.Cadre(
+                        planche.SourcePath, planche.Crop, planche.CropGrande, cotes,
+                        planche.RedressementDegres),
+                },
+                planche.Copies, sheet.GapMm, sheet.CutMarks,
+                MmPx.ToPixels(planche.Produit.WidthMm, ppp),
+                MmPx.ToPixels(planche.Produit.HeightMm, ppp),
+                feuille, ppp,
+                sheet.CutBorder,
+                sheet.DateStamp ? SheetFooter.Pour(DateTime.Now, App.Services.Marque) : null,
+                sheet.FullBleed);
+
+            // jamais composée debout : voir RenderPlancheRentreeToFile
+            return File.ReadAllBytes(feuille);
+        }
 
         ImagePipeline.RenderIdSheetToFile(
             new RenderRequest(
@@ -361,8 +443,17 @@ public partial class IdSheetRecapView : UserControl
         // TarifsIdentite.
         var total = PrixDeLaPlanche * feuilles;
 
-        TotalText.Text = $"{feuilles} planche{(feuilles > 1 ? "s" : "")} · {total:0.00} €" +
-                         (feuilles > 1 ? $"  ({PrixDeLaPlanche:0.00} € la planche)" : "");
+        // Le format se dit dans le total : « 1 planche · 12,00 € » ne laisse pas deviner
+        // qu'une seconde feuille va sortir, et c'est justement ce que le client a payé.
+        var quoi = _genre switch
+        {
+            GenreDePlanche.PlancheEtTirage => $"planche{(feuilles > 1 ? "s" : "")} + 10×15",
+            GenreDePlanche.Rentree => $"planche{(feuilles > 1 ? "s" : "")} de rentrée",
+            _ => $"planche{(feuilles > 1 ? "s" : "")}",
+        };
+
+        TotalText.Text = $"{feuilles} {quoi} · {total:0.00} €" +
+                         (feuilles > 1 ? $"  ({PrixDeLaPlanche:0.00} € l'unité)" : "");
         ImprimerButton.IsEnabled = !_impressionLancee && feuilles > 0;
 
         DireSiLeDetourageAChange();
@@ -461,7 +552,7 @@ public partial class IdSheetRecapView : UserControl
 
         // Le tirage lui-même vit dans TirageIdentite : le poste identité imprime sans passer
         // par cet écran, et les deux chemins doivent produire exactement la même commande.
-        if (await TirageIdentite.LancerAsync(_planches, _document, _attenteId)) return;
+        if (await TirageIdentite.LancerAsync(_planches, _document, _attenteId, genre: _genre)) return;
 
         _impressionLancee = false;
         ImprimerButton.IsEnabled = true;

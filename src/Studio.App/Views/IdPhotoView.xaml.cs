@@ -46,6 +46,19 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </summary>
     private readonly int? _copiesVoulues;
 
+    /// <summary>
+    /// Ce que cet écran fabrique : la planche ordinaire, celle de la rentrée, ou la planche
+    /// accompagnée d'un tirage 10×15.
+    ///
+    /// Il vient de la tuile qui a ouvert le parcours et ne change plus : les trois se
+    /// cadrent exactement pareil — un visage dans un gabarit normé — et ne divergent qu'au
+    /// moment d'engager le papier. Voir <see cref="GenreDePlanche"/>.
+    /// </summary>
+    private readonly GenreDePlanche _genre;
+
+    /// <summary>Vrai quand la planche porte un PORTRAIT à côté des cases d'identité.</summary>
+    private bool AvecPortrait => _genre is GenreDePlanche.Rentree or GenreDePlanche.PlancheEtTirage;
+
     private StripItem? _current;
     private BitmapSource? _displayBitmap;
 
@@ -204,9 +217,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// <param name="chemins">Photos retenues à l'écran précédent, dans l'ordre du choix.</param>
     /// <param name="document">Norme visée. Null = norme française.</param>
     /// <param name="photosParPlanche">Photos par planche imposées, ou null pour la planche pleine.</param>
+    /// <param name="genre">Ce que la tuile d'origine fabrique. Voir <see cref="GenreDePlanche"/>.</param>
     public IdPhotoView(IReadOnlyList<string> chemins, IdDocumentSpec? document = null,
-        int? photosParPlanche = null)
-        : this("", document, false, chemins, photosParPlanche)
+        int? photosParPlanche = null, GenreDePlanche genre = GenreDePlanche.Standard)
+        : this("", document, false, chemins, photosParPlanche, genre)
     {
     }
 
@@ -216,9 +230,11 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </param>
     /// <param name="avecSousDossiers">Descendre ou non sous <paramref name="rootPath"/>.</param>
     /// <param name="photosParPlanche">Photos par planche imposées, ou null pour la planche pleine.</param>
+    /// <param name="genre">Ce que la tuile d'origine fabrique. Voir <see cref="GenreDePlanche"/>.</param>
     public IdPhotoView(string rootPath, IdDocumentSpec? document = null,
-        bool avecSousDossiers = true, int? photosParPlanche = null)
-        : this(rootPath, document, avecSousDossiers, null, photosParPlanche)
+        bool avecSousDossiers = true, int? photosParPlanche = null,
+        GenreDePlanche genre = GenreDePlanche.Standard)
+        : this(rootPath, document, avecSousDossiers, null, photosParPlanche, genre)
     {
     }
 
@@ -231,21 +247,37 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         : this(travail?.PhotosDirectory ?? "",
                DocumentDe(travail?.Identite ?? throw new ArgumentNullException(nameof(travail))),
                travail.AvecSousDossiers,
-               travail.Identite.Chemins.Count > 0 ? travail.Identite.Chemins : null)
+               travail.Identite.Chemins.Count > 0 ? travail.Identite.Chemins : null,
+               // Ce que la planche portait à la mise de côté : le nombre de cases est repris
+               // photo par photo (voir AppliquerLAttente), le FORMAT vendu, lui, vaut pour
+               // toute la planche — et sans lui son papier disparaîtrait de la liste.
+               photosParPlanche: null,
+               genre: travail.Identite.Genre)
     {
         _enAttente = travail;
         _attenteId = travail.Id;
     }
 
     private IdPhotoView(string rootPath, IdDocumentSpec? document, bool avecSousDossiers,
-        IReadOnlyList<string>? chemins, int? photosParPlanche = null)
+        IReadOnlyList<string>? chemins, int? photosParPlanche = null,
+        GenreDePlanche genre = GenreDePlanche.Standard)
     {
         _rootPath = rootPath;
         _avecSousDossiers = avecSousDossiers;
         _cheminsImposes = chemins;
         _document = document ?? IdDocumentSpec.France;
         _copiesVoulues = photosParPlanche;
+        _genre = genre;
         InitializeComponent();
+
+        // La planche de rentrée demande un papier qui n'existe au catalogue d'aucun poste :
+        // il se fabrique ici, à la première vente, depuis la planche d'identité en service.
+        // Voir PlancheRentreeProduit — et faire ceci AVANT de remplir la liste des papiers,
+        // qui est juste en dessous.
+        if (_genre == GenreDePlanche.Rentree) AssurerLePapierDeRentree();
+
+        // La carte du portrait n'a de sens que sur les deux formats qui en portent un.
+        PortraitCard.Visibility = AvecPortrait ? Visibility.Visible : Visibility.Collapsed;
 
         // ⚠ L'HISTORIQUE N'EST QU'À STUDIO PHOTO IDENTITÉ — voulu par l'exploitant le
         // 19/08/2026. Cet écran est PARTAGÉ avec le Studio complet, qui garde « Commandes
@@ -272,8 +304,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // passeport espagnol (26 × 32) tient à douze sur le papier où le français (35 × 45)
         // tient à huit. Les papiers qui ne peuvent pas porter une seule case sont écartés
         // de la liste plutôt que proposés puis refusés à l'impression.
+        // ⚠ LA PLANCHE DE RENTRÉE NE SE MÉLANGE PAS AUX AUTRES PAPIERS.
+        //
+        // Elle porte un portrait à la place de la moitié de ses cases : la proposer pour une
+        // planche ordinaire sortirait une feuille à moitié vide au prix d'une planche
+        // pleine, et proposer une planche ordinaire quand on vend le format de rentrée
+        // sortirait huit identités et aucun portrait. Ce sont deux ventes, et l'écran ne
+        // montre que les papiers de celle qui est en cours.
         var sheetProducts = App.Services.Catalog.Enabled
-            .Where(p => p.Sheet is not null)
+            .Where(p => p.Sheet is { } s && s.GrandePhoto == (_genre == GenreDePlanche.Rentree))
             .Select(p => new ProductChoice(p, CapaciteDe(p, _document), EstSaNorme(p, _document)))
             .Where(c => c.Capacite > 0)
             // ⚠ SUR UN DOCUMENT ÉTRANGER, LES PLANCHES FRANÇAISES SE DOUBLENT.
@@ -374,6 +413,44 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// disparaissait du tirage sans que rien ne le signale. Une photo de moins vaut mieux
     /// qu'une planche sans date, qui ne prouve plus qu'elle est récente.
     /// </summary>
+    /// <summary>
+    /// Fabrique le papier de la planche de rentrée si le catalogue du poste ne l'a pas
+    /// encore, en le dérivant de la planche d'identité en service.
+    ///
+    /// <b>Pourquoi ici et pas au démarrage.</b> Un poste qui ne vend jamais ce format n'a
+    /// aucune raison de voir un produit de plus au Catalogue ; celui-ci apparaît à la
+    /// première vente, comme le produit « envoi par courriel ». Voir
+    /// <see cref="PlancheRentreeProduit"/>, qui dit pourquoi il ne peut pas être livré.
+    ///
+    /// Un échec n'arrête rien : la liste des papiers restera vide, et l'écran le dit déjà
+    /// avec la phrase qu'il faut — mieux vaut cela qu'une exception au comptoir.
+    /// </summary>
+    private void AssurerLePapierDeRentree()
+    {
+        var services = App.Services;
+        if (services.Catalog.Enabled.Any(p => p.Sheet is { GrandePhoto: true })) return;
+
+        // La planche d'identité dont on reprend machine, profil ICC et DEVMODE : celle qui
+        // est À LA NORME du document visé d'abord — c'est le papier que ce poste utilise
+        // pour ce document —, la plus garnie ensuite.
+        var planche = services.Catalog.Enabled
+            .Where(p => p.Sheet is { GrandePhoto: false })
+            .OrderByDescending(p => EstSaNorme(p, _document))
+            .ThenByDescending(p => p.Sheet!.Copies)
+            .FirstOrDefault();
+
+        if (planche is null) return;
+
+        try
+        {
+            services.ProduitPlancheDeRentree(planche);
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write("Papier de la planche de rentrée impossible à créer au catalogue", ex);
+        }
+    }
+
     private static int CapaciteDe(Product product, IdDocumentSpec document)
     {
         if (product.Sheet is not { } sheet) return 0;
@@ -385,6 +462,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             ? SheetFooterLayout.ReserveMinimalePx(
                 SheetFooter.Pour(DateTime.Now, App.Services.Marque), product.Dpi)
             : 0;
+
+        // PLANCHE DE RENTRÉE : ce n'est plus « ce que le papier porte », mais « ce qu'on
+        // peut poser sans faire disparaître le portrait ». Sur la planche 10×15 française,
+        // c'est quatre — au-delà, une troisième colonne de cases réduirait le portrait à une
+        // bande de quelques centimètres.
+        if (sheet.GrandePhoto) return CapaciteDeRentree(product, document, bande);
 
         // La MEILLEURE des deux orientations : le rendu tournera le papier si le document
         // y tient davantage — un carré de 50 mm passe de trois photos à quatre.
@@ -399,6 +482,43 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             MmPx.ToPixels(sheet.LayoutGapMm, product.Dpi),
             bande).Copies;
     }
+
+    /// <summary>
+    /// Combien de photos d'identité on peut poser sur une planche de rentrée sans réduire
+    /// le portrait à une lisière.
+    ///
+    /// On demande à la géométrie, case par case, jusqu'à ce qu'elle refuse : c'est
+    /// exactement le calcul qui posera la planche au rendu, et deux façons de compter
+    /// finiraient par diverger — la planche a déjà payé cette leçon (voir
+    /// <c>SheetSpec.LayoutGapMm</c>). Une fois qu'une colonne de plus ne passe plus, aucune
+    /// n'est jamais repassée : on s'arrête au premier refus.
+    /// </summary>
+    private static int CapaciteDeRentree(Product product, IdDocumentSpec document, int bande)
+    {
+        if (product.Sheet is not { } sheet) return 0;
+
+        var sheetW = MmPx.ToPixels(product.WidthMm, product.Dpi);
+        var sheetH = MmPx.ToPixels(product.HeightMm, product.Dpi);
+        var cellW = MmPx.ToPixels(document.WidthMm, product.Dpi);
+        var cellH = MmPx.ToPixels(document.HeightMm, product.Dpi);
+        var gap = MmPx.ToPixels(sheet.LayoutGapMm, product.Dpi);
+        var mini = MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, product.Dpi);
+
+        var max = 0;
+        for (var n = 1; n <= MaximumRaisonnableDeCases; n++)
+        {
+            if (PlancheRentree.Layout(sheetW, sheetH, cellW, cellH, gap, n,
+                    bottomReserve: bande, largeurMinimaleGrandePx: mini) is null) break;
+            max = n;
+        }
+        return max;
+    }
+
+    /// <summary>
+    /// Au-delà, on ne cherche plus : douze cases d'un passeport étranger à petites cases,
+    /// c'est déjà plus que ce qu'un 10×15 porte avec un portrait à côté.
+    /// </summary>
+    private const int MaximumRaisonnableDeCases = 12;
 
     private async Task LoadStripAsync()
     {
@@ -2418,10 +2538,126 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         CopiesText.Text = _copies.ToString();
 
         if (_current is not null) _current.Copies = _copies;
+
+        // Une case de plus, c'est un portrait plus étroit : la carte doit dire les nouvelles
+        // cotes tout de suite, avant qu'on cadre dessus.
+        AnnoncerLaGrande();
     }
 
     private int MaxCopiesForSelectedProduct() =>
         ProductCombo.SelectedItem is ProductChoice choice ? choice.Capacite : 1;
+
+    // ----- la grande photo (formats de la rentrée) -----
+
+    /// <summary>
+    /// Les cotes de la grande photo pour le papier retenu et le nombre de cases affiché,
+    /// ou null quand ce format n'en porte pas.
+    /// </summary>
+    private (double LargeurMm, double HauteurMm)? CotesDeLaGrande() =>
+        ProductCombo.SelectedItem is ProductChoice choice
+            ? PortraitDeLaPlanche.Cotes(_genre, choice.Product, _document, _copies)
+            : null;
+
+    /// <summary>
+    /// Dit, sous le bouton, ce qui sortira vraiment — « 84 × 97 mm, sur la planche » — et
+    /// si le cadre a été repris à la main.
+    ///
+    /// L'opérateur doit pouvoir le lire AVANT d'imprimer : une grande photo de rentrée
+    /// n'est pas un 10×15, et ne pas le dire ferait promettre au client autre chose que ce
+    /// que la machine sortira.
+    /// </summary>
+    private void AnnoncerLaGrande()
+    {
+        if (!AvecPortrait) return;
+
+        var repris = _current?.CropGrande is not null;
+
+        if (CotesDeLaGrande() is not { } cotes)
+        {
+            // Deux empêchements bien différents, et l'opérateur doit savoir lequel : sur la
+            // planche de rentrée, il n'y a plus de place ; sur l'autre format, c'est le
+            // papier du tirage qui manque au catalogue.
+            PortraitText.Text = _genre == GenreDePlanche.Rentree
+                ? "Aucune place pour la grande photo sur ce papier : descendez le nombre " +
+                  "de photos d'identité."
+                : "Aucun 10×15 activé au catalogue : la planche sortira seule. Ouvrez " +
+                  "Catalogue et activez un tirage 10×15.";
+
+            PortraitButton.IsEnabled = false;
+            return;
+        }
+
+        PortraitButton.IsEnabled = true;
+        PortraitText.Text = _genre == GenreDePlanche.Rentree
+            ? $"{cotes.LargeurMm:0.#} × {cotes.HauteurMm:0.#} mm, sur la même feuille — " +
+              (repris ? "cadre repris à la main." : "cadre large posé automatiquement.")
+            : $"Tirage {cotes.LargeurMm:0.#} × {cotes.HauteurMm:0.#} mm, sur une feuille à part — " +
+              (repris ? "cadre repris à la main." : "cadre large posé automatiquement.");
+    }
+
+    /// <summary>
+    /// Reprendre le cadrage de la grande photo, dans l'éditeur de recadrage ordinaire.
+    ///
+    /// Le cadre proposé y est déjà posé : l'opérateur ouvre, décale, et valide. Le produit
+    /// passé à l'éditeur est un FAUX — il ne sert qu'à porter le rapport de la case, qui
+    /// dépend du papier, du document et du nombre de cases, et qu'aucun produit du catalogue
+    /// ne décrit.
+    /// </summary>
+    private void OnCadrerLaGrande(object sender, RoutedEventArgs e)
+    {
+        if (_current is null)
+        {
+            MessageBox.Show("Choisissez d'abord une photo dans la bande de gauche.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (CotesDeLaGrande() is not { } cotes)
+        {
+            MessageBox.Show(
+                "La grande photo n'a pas de place sur ce papier.\n\n" +
+                "Descendez le nombre de photos d'identité de la planche.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // le cadrage courant de l'identité doit être à jour : c'est de lui que se déduit
+        // le cadre large qu'on va montrer
+        SauverDansLaPhoto();
+
+        var photo = _current;
+        var depart = PortraitDeLaPlanche.Cadre(photo.Path, photo.Crop, photo.CropGrande, cotes,
+            photo.Redressement);
+
+        var gabarit = new Product
+        {
+            Code = "grande-photo",
+            Name = _genre == GenreDePlanche.Rentree
+                ? "Grande photo de la planche"
+                : "Grande photo — tirage 10×15",
+            WidthMm = cotes.LargeurMm,
+            HeightMm = cotes.HauteurMm,
+            Dpi = (ProductCombo.SelectedItem as ProductChoice)?.Product.Dpi ?? 300,
+            DefaultFit = FitMode.Fill,
+        };
+
+        Navigator.Go(
+            new CropEditorView(photo.Path, gabarit,
+                new CropEditorView.State(depart, 0, FitMode.Fill),
+                // ⚠ Pas de Navigator.Back() ici : l'éditeur rentre TOUT SEUL après avoir
+                // appelé ce retour (voir CropEditorView.Apply). En appeler un second
+                // remonterait d'un écran de trop — on quitterait le cadrage.
+                //
+                // Le quart de tour rendu par l'éditeur est ignoré : l'écran d'identité n'en
+                // pose jamais (il redresse en degrés), et le cadre d'identité comme celui-ci
+                // sont posés sur l'image telle qu'elle s'affiche.
+                etat =>
+                {
+                    photo.CropGrande = etat.Crop;
+                    AnnoncerLaGrande();
+                }),
+            "Cadrer la grande photo");
+    }
 
     /// <summary>
     /// D'où repart le compteur quand rien n'a encore été réglé : le nombre demandé par le
@@ -2431,7 +2667,18 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// de six demandée sur un papier qui n'en prend que quatre en donnera quatre, plutôt
     /// qu'une impression refusée après l'annonce du prix.
     /// </summary>
-    private int CopiesParDefaut() => _copiesVoulues ?? MaxCopiesForSelectedProduct();
+    private int CopiesParDefaut()
+    {
+        if (_copiesVoulues is { } voulues) return voulues;
+
+        // LA PLANCHE DE RENTRÉE NE SE REMPLIT PAS : elle porte quatre identités et un
+        // portrait. Repartir de « ce que le papier porte » — six ou huit cases — écraserait
+        // le portrait jusqu'à sa largeur minimale, alors que c'est lui qu'on vend.
+        // Le compteur reste libre : l'opérateur peut monter ou descendre.
+        return _genre == GenreDePlanche.Rentree
+            ? Math.Min(PlancheDeRentree.IdentitesParDefaut, MaxCopiesForSelectedProduct())
+            : MaxCopiesForSelectedProduct();
+    }
 
     /// <summary>
     /// Changer de produit repart de la planche PLEINE.
@@ -2486,7 +2733,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             new IdDocumentPickerView(
                 // Une NORME : la page se refait sur le nouveau gabarit, avec les mêmes
                 // photos — et avec le nombre que le raccourci demande, s'il en demande un.
-                (document, photos) => Revenir(new IdPhotoView(chemins, document, photos)),
+                (document, photos, genre) => Revenir(new IdPhotoView(chemins, document, photos, genre)),
 
                 // UN PRODUIT tiré tel quel — l'E-Photo.
                 //
@@ -2514,10 +2761,23 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     ///
     /// <b>C'est le seul détour qui reste, et il est justifié</b> — parcourir un support ne
     /// tient pas dans un panneau. La norme en cours est emportée : on ne la redemande pas.
+    ///
+    /// ⚠ <b>LE GENRE ET LE NOMBRE PARTENT AVEC ELLE, et c'est le défaut du 20/08/2026.</b>
+    /// Seule la norme était emportée ; on repartait donc en planche ORDINAIRE et pleine.
+    ///
+    /// Invisible dans le Studio complet, où l'on choisit le format PUIS le support PUIS les
+    /// photos, dans cet ordre — le genre voyage alors par <c>ParcoursIdentite</c> et ne
+    /// repasse jamais par ici. Sur Studio Photo Identité c'est l'inverse : l'écran de
+    /// cadrage EST l'accueil, on y choisit le format par « changer de document » et l'on
+    /// ouvre les photos APRÈS. Ce détour-ci était donc sur le chemin normal, et il effaçait
+    /// la vente : tuiles de rentrée bien visibles, planche d'identité ordinaire sur le
+    /// papier (commandes 20-026 et 20-027, rendues en <c>env01-ID-FR-6</c>).
     /// </summary>
     private void OnOuvrirDesPhotos(object sender, RoutedEventArgs e)
     {
         var document = _document;
+        var copies = _copiesVoulues;
+        var genre = _genre;
 
         // ON VA DIRECTEMENT AUX PHOTOS quand on sait où elles sont.
         //
@@ -2527,14 +2787,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // des supports ne reste que pour les cas où la question se pose vraiment.
         if (DepartDesPhotos() is { } depart)
         {
-            Navigator.Go(new IdPhotoPickerView(depart, document, avecSousDossiers: true),
+            Navigator.Go(
+                new IdPhotoPickerView(depart, document, avecSousDossiers: true, copies, genre),
                 $"{document.Country} — choisir les photos");
             return;
         }
 
         Navigator.Go(
             new SourcePickerView((racine, profond) =>
-                Navigator.Go(new IdPhotoPickerView(racine, document, profond),
+                Navigator.Go(new IdPhotoPickerView(racine, document, profond, copies, genre),
                     $"{document.Country} — choisir les photos")),
             "Choisir le support");
     }
@@ -2700,7 +2961,18 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 p.Quantite,
                 choice.Product,
                 finition,
-                p.Rang))
+                p.Rang,
+                // Le cadre de la GRANDE photo, sur les deux formats de la rentrée : celui
+                // que l'opérateur a posé, ou celui qu'on déduit du cadre d'identité. Il est
+                // calculé ICI, une fois, plutôt qu'au rendu de chaque planche — c'est une
+                // lecture de fichier par photo, et le récapitulatif comme l'impression
+                // doivent partir du MÊME cadre, sans quoi l'aperçu mentirait.
+                AvecPortrait
+                    ? PortraitDeLaPlanche.Cadre(p.Path, p.Crop, p.CropGrande,
+                        PortraitDeLaPlanche.Cotes(_genre, choice.Product, _document,
+                            p.Copies > 0 ? p.Copies : choice.Capacite),
+                        p.Redressement)
+                    : null))
             .ToList();
 
         if (planches.Count == 0)
@@ -2763,7 +3035,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             // trente jours, avec leurs repères — que la commande, elle, ne garde pas.
             if (!await TirageIdentite.LancerAsync(planches, _document, _attenteId,
                     surCommande: commande =>
-                        NoterDansLHistorique(retenues, commande, imprimee: true)))
+                        NoterDansLHistorique(retenues, commande, imprimee: true),
+                    genre: _genre))
                 PrintButton.IsEnabled = true;
             return;
         }
@@ -2772,7 +3045,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             new IdSheetRecapView(planches, _document,
                 surModifier: RevenirSurLaPhoto,
                 surRemplacer: RevenirAuChoixDesPhotos,
-                attenteId: _attenteId),
+                attenteId: _attenteId,
+                genre: _genre),
             planches.Count == 1 ? "Récapitulatif de la planche" : "Récapitulatif des planches");
     }
 
@@ -2959,6 +3233,9 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         TargetHeadOverrideMm = _document.TargetHeadOverrideMm,
         Chemins = chemins is null ? [] : [.. chemins],
         PhotoCourante = photoCourante,
+        // Le FORMAT VENDU suit la planche : sans lui, une planche de rentrée reprise
+        // revenait en planche ordinaire, et son papier — filtré de la liste — disparaissait.
+        Genre = _genre,
         Photos = photos.Select(p => new PhotoIdentiteEnAttente
         {
             FileName = p.Name,
@@ -2979,6 +3256,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             CropY = p.Crop.Y,
             CropWidth = p.Crop.Width,
             CropHeight = p.Crop.Height,
+            CropGrandeX = p.CropGrande?.X,
+            CropGrandeY = p.CropGrande?.Y,
+            CropGrandeWidth = p.CropGrande?.Width,
+            CropGrandeHeight = p.CropGrande?.Height,
             CrownX = p.Crown?.X,
             CrownY = p.Crown?.Y,
             ChinX = p.Chin?.X,
@@ -3131,6 +3412,15 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             photo.NommerCommeLeClient(garde.FileName);
 
             photo.Crop = new CropSpec(garde.CropX, garde.CropY, garde.CropWidth, garde.CropHeight);
+
+            // Le cadre de la grande photo, quand il avait été repris à la main. Les quatre
+            // valeurs vont ensemble : une seule manquante et l'on repart du cadre déduit,
+            // plutôt que de composer un rectangle avec des zéros.
+            photo.CropGrande = garde.CropGrandeX is { } gx && garde.CropGrandeY is { } gy
+                               && garde.CropGrandeWidth is { } gw && garde.CropGrandeHeight is { } gh
+                ? new CropSpec(gx, gy, gw, gh)
+                : null;
+
             photo.Crown = garde.CrownX is { } cx && garde.CrownY is { } cy ? new NormPoint(cx, cy) : null;
             photo.Chin = garde.ChinX is { } mx && garde.ChinY is { } my ? new NormPoint(mx, my) : null;
             photo.Head = garde.HeadX is { } hx && garde.HeadY is { } hy
@@ -3230,6 +3520,17 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // — le travail de l'opérateur, photo par photo —
 
         public CropSpec Crop { get; set; } = CropSpec.Full;
+
+        /// <summary>
+        /// Le cadre de la GRANDE photo, sur les deux formats de la rentrée.
+        ///
+        /// Null tant que personne ne l'a demandé : il est alors déduit du cadre d'identité
+        /// au moment d'imprimer (voir <c>CadrageElargi</c>), ce qui est le cas courant — un
+        /// jour de rentrée, on ne recadre pas deux fois par enfant. Dès que l'opérateur
+        /// touche au cadre large, sa version est ici et l'emporte.
+        /// </summary>
+        public CropSpec? CropGrande { get; set; }
+
         public NormPoint? Crown { get; set; }
         public NormPoint? Chin { get; set; }
         public NormRect? Head { get; set; }

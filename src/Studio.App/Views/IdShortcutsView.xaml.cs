@@ -67,6 +67,14 @@ public partial class IdShortcutsView : UserControl
         PhotosCombo.ItemsSource = parPlanche;
         PhotosCombo.SelectedIndex = 0;
 
+        GenreCombo.ItemsSource = new List<ChoixGenre>
+        {
+            new(GenreDePlanche.Standard),
+            new(GenreDePlanche.Rentree),
+            new(GenreDePlanche.PlancheEtTirage),
+        };
+        GenreCombo.SelectedIndex = 0;
+
         if (DocumentCombo.Items.Count > 0) DocumentCombo.SelectedIndex = 0;
         if (ProduitCombo.Items.Count > 0) ProduitCombo.SelectedIndex = 0;
     }
@@ -93,9 +101,15 @@ public partial class IdShortcutsView : UserControl
 
         // Le nombre est dit ICI aussi : deux raccourcis peuvent viser la même norme et ne
         // différer que par lui, et la liste serait alors illisible.
-        var planche = raccourci.Photos is { } photos
-            ? $", planche de {photos}"
-            : ", planche pleine";
+        var planche = raccourci.Planche switch
+        {
+            GenreDePlanche.Rentree =>
+                $", rentrée : {raccourci.Photos ?? PlancheDeRentree.IdentitesParDefaut} + 1 grande",
+            GenreDePlanche.PlancheEtTirage => raccourci.Photos is { } n
+                ? $", planche de {n} + une 10×15"
+                : ", planche pleine + une 10×15",
+            _ => raccourci.Photos is { } n ? $", planche de {n}" : ", planche pleine",
+        };
 
         return new Ligne(raccourci,
             spec is null
@@ -108,17 +122,33 @@ public partial class IdShortcutsView : UserControl
     {
         if (DocumentCombo.SelectedItem is not ChoixDocument choix) return;
 
-        var photos = (PhotosCombo.SelectedItem as ChoixPhotos)?.Nombre;
+        var genre = (GenreCombo.SelectedItem as ChoixGenre)?.Genre ?? GenreDePlanche.Standard;
+
+        // La planche de rentrée part sur QUATRE cases quand rien n'est demandé : c'est le
+        // format vendu, et « planche pleine » n'a pas de sens sur elle — le portrait prend
+        // ce que les cases laissent.
+        var photos = (PhotosCombo.SelectedItem as ChoixPhotos)?.Nombre
+                     ?? (genre == GenreDePlanche.Rentree
+                         ? PlancheDeRentree.IdentitesParDefaut
+                         : (int?)null);
+
         var cle = IdShortcuts.DocumentKey(choix.Spec.Country, choix.Spec.Document);
-        if (Existe(IdShortcutKind.Document, cle, photos)) return;
+        if (Existe(IdShortcutKind.Document, cle, photos, genre)) return;
 
-        // Le libellé porte le nombre : sans lui, la tuile « France » de la planche de six
-        // serait le sosie de celle de la planche pleine, sur l'écran comme dans cette liste.
-        var libelle = photos is { } n
-            ? $"{choix.Spec.Country} — planche de {n}"
-            : choix.Spec.Country;
+        // Le libellé porte le nombre ET le format : sans eux, la tuile « France » de la
+        // planche de six serait le sosie de celle de la planche pleine, et celle de la
+        // rentrée le sosie des deux — sur l'écran comme dans cette liste.
+        var libelle = genre switch
+        {
+            GenreDePlanche.Rentree =>
+                $"{choix.Spec.Country} — rentrée, {photos} + 1 grande",
+            GenreDePlanche.PlancheEtTirage =>
+                $"{choix.Spec.Country} — planche + une 10×15",
+            _ when photos is { } n => $"{choix.Spec.Country} — planche de {n}",
+            _ => choix.Spec.Country,
+        };
 
-        _raccourcis.Add(new IdShortcut(IdShortcutKind.Document, cle, libelle, photos));
+        _raccourcis.Add(new IdShortcut(IdShortcutKind.Document, cle, libelle, photos, genre));
         Afficher();
     }
 
@@ -138,12 +168,19 @@ public partial class IdShortcutsView : UserControl
     /// « France — planche de 6 » visent la même norme et sont pourtant deux ventes
     /// différentes. Sans lui dans la comparaison, la seconde serait refusée comme doublon.
     /// </summary>
-    private bool Existe(IdShortcutKind genre, string cle, int? photos)
+    /// <param name="planche">
+    /// Le FORMAT VENDU, qui fait lui aussi partie de l'identité du raccourci : la même
+    /// norme et le même nombre donnent trois ventes différentes — planche seule, rentrée,
+    /// planche accompagnée d'une 10×15 — à trois prix différents.
+    /// </param>
+    private bool Existe(IdShortcutKind genre, string cle, int? photos,
+        GenreDePlanche planche = GenreDePlanche.Standard)
     {
         var deja = _raccourcis.Any(r =>
             r.Kind == genre
             && r.Cle.Equals(cle, StringComparison.OrdinalIgnoreCase)
-            && r.Photos == photos);
+            && r.Photos == photos
+            && r.Planche == planche);
 
         if (deja) MessageText.Text = "Ce format est déjà dans les raccourcis.";
         return deja;
@@ -217,6 +254,17 @@ public partial class IdShortcutsView : UserControl
     private sealed record ChoixPhotos(int? Nombre)
     {
         public string Libelle => Nombre is { } n ? $"Planche de {n}" : "Planche pleine";
+    }
+
+    /// <summary>Ce que la tuile fabrique, dit dans les mots du comptoir.</summary>
+    private sealed record ChoixGenre(GenreDePlanche Genre)
+    {
+        public string Libelle => Genre switch
+        {
+            GenreDePlanche.Rentree => "Rentrée — photos d'identité + une grande sur la même feuille",
+            GenreDePlanche.PlancheEtTirage => "Planche + un tirage 10×15 à part",
+            _ => "Planche d'identité seule",
+        };
     }
 
     private sealed record Ligne(IdShortcut Raccourci, string Detail)

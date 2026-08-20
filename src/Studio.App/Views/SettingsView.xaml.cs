@@ -91,12 +91,14 @@ public partial class SettingsView : UserControl
     {
         TarifIdFranceBox.Text = tarifs.FranceEur.ToString("0.00");
         TarifIdEtrangerBox.Text = tarifs.EtrangerEur.ToString("0.00");
+        TarifIdRentreeBox.Text = tarifs.RentreeEur.ToString("0.00");
+        TarifIdPlancheEtTirageBox.Text = tarifs.PlancheEtTirageEur.ToString("0.00");
         DireOuEnEstLeTarifIdentite(tarifs);
     }
 
     /// <summary>
-    /// Enregistre à chaque frappe, comme le reste de cet écran — mais uniquement si les
-    /// DEUX cases contiennent un prix lisible. Un montant à moitié tapé ne doit pas se
+    /// Enregistre à chaque frappe, comme le reste de cet écran — mais uniquement si TOUTES
+    /// les cases contiennent un prix lisible. Un montant à moitié tapé ne doit pas se
     /// retrouver dans la configuration.
     /// </summary>
     private void OnTarifIdentiteChange(object sender, RoutedEventArgs e)
@@ -104,14 +106,23 @@ public partial class SettingsView : UserControl
         if (!IsLoaded) return;
 
         if (LirePrix(TarifIdFranceBox.Text) is not { } france ||
-            LirePrix(TarifIdEtrangerBox.Text) is not { } etranger)
+            LirePrix(TarifIdEtrangerBox.Text) is not { } etranger ||
+            LirePrix(TarifIdRentreeBox.Text) is not { } rentree ||
+            LirePrix(TarifIdPlancheEtTirageBox.Text) is not { } plancheEtTirage)
         {
             TarifIdEtatText.Text = "Saisissez un montant, par exemple 10 ou 12,50. " +
                                    "Tant qu'il n'est pas lisible, l'ancien tarif s'applique.";
             return;
         }
 
-        var tarifs = new TarifsIdentite { FranceEur = france, EtrangerEur = etranger };
+        var tarifs = new TarifsIdentite
+        {
+            FranceEur = france,
+            EtrangerEur = etranger,
+            RentreeEur = rentree,
+            PlancheEtTirageEur = plancheEtTirage,
+        };
+
         App.Services.SaveTarifsIdentite(tarifs);
         DireOuEnEstLeTarifIdentite(tarifs);
     }
@@ -119,7 +130,9 @@ public partial class SettingsView : UserControl
     private void DireOuEnEstLeTarifIdentite(TarifsIdentite tarifs) =>
         TarifIdEtatText.Text =
             $"Une planche française est facturée {tarifs.FranceEur:0.00} €, " +
-            $"une étrangère {tarifs.EtrangerEur:0.00} €.";
+            $"une étrangère {tarifs.EtrangerEur:0.00} €. " +
+            $"Rentrée : {tarifs.RentreeEur:0.00} € la planche à quatre avec sa grande photo, " +
+            $"{tarifs.PlancheEtTirageEur:0.00} € la planche accompagnée d'une 10×15.";
 
     /// <summary>
     /// Un montant saisi à la main. La virgule ET le point sont acceptés : le pavé numérique
