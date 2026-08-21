@@ -3078,11 +3078,32 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             set
             {
                 if (_product?.Code == value?.Code) return;
+
+                var avant = _product;
                 _product = value;
 
-                // le format change, donc le cadre : on repart d'un cadrage centré au
-                // nouveau format, et la vignette le montre aussitôt
-                OublierCadre();
+                // ⚠ LE CADRE NE SE REFAIT QUE SI LA FORME CHANGE.
+                //
+                // Il se refaisait à CHAQUE changement de produit, même quand le nouveau
+                // cadre dans exactement la même forme : passer un 20×25 en « bord blanc
+                // 20×25 » jetait le recadrage que l'opérateur venait de poser à la main,
+                // photo par photo, sans rien lui demander — et c'est pourtant le même
+                // papier, à un liseré de cinq millimètres près. Signalé au comptoir le
+                // 21/08/2026.
+                //
+                // La règle et son seuil vivent dans Product.MemeForme, où ils sont
+                // éprouvés : ce qui se décide ici change ce qui sort sur le papier.
+                //
+                // ⚠ MÊME FORME NE VEUT PAS DIRE MÊME FENÊTRE. Le cadre est bâti sur
+                // `FenetreMm`, qui passe bien de 203 × 256 à 193 × 246 : le garder tel quel
+                // laisserait un cadre calculé pour l'ancienne fenêtre, et le tirage sortirait
+                // au rapport d'avant. On le REFAIT donc dans tous les cas — mais en gardant
+                // le cadrage, que `Cadre` sait reprendre par `SetFromCropSpec`.
+                if (Product.MemeForme(avant, value)) _cadre = null;
+                else OublierCadre();
+
+                // la vignette suit dans les deux cas : le liseré se voit, même à cadrage
+                // inchangé
                 RefreshThumbnail();
 
                 OnPropertyChanged(nameof(ProductLabel));

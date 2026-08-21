@@ -187,6 +187,55 @@ public sealed class Product
     public (double Width, double Height) FenetreMm => ABordBlanc
         ? (WidthMm - 2 * BorderMm, HeightMm - 2 * BorderMm)
         : (WidthMm, HeightMm);
+
+    /// <summary>
+    /// Écart de rapport en deçà duquel deux produits cadrent dans la MÊME forme, en pour
+    /// cent.
+    ///
+    /// <b>Cinq, et ce n'est pas un chiffre rond pris au hasard.</b> Mesuré sur les 43
+    /// produits actifs du catalogue, le 21/08/2026 :
+    ///
+    ///     ce qu'il FAUT garder, au maximum   3,45 %   (10×15 ↔ bord blanc 10×15)
+    ///     premiere forme vraiment differente  6,28 %   (13×18 ↔ 20×30)
+    ///
+    /// Rien entre les deux : le seuil tombe au milieu d'une bande vide, avec de la marge
+    /// des deux côtés. Tout ce qui passe dessous est soit le même papier à liseré près,
+    /// soit le même format à une autre taille — un 10×15 et un 20×30 sont tous deux en
+    /// deux tiers, et le cadrage de l'un vaut pour l'autre.
+    /// </summary>
+    public const double EcartDeFormeTolereParCent = 5;
+
+    /// <summary>
+    /// Ce produit cadre-t-il dans la MÊME FORME qu'un autre — au liseré et à la taille près ?
+    ///
+    /// <b>C'est ce qui décide si le cadrage de l'opérateur survit à un changement de
+    /// format.</b> Passer un 20×25 en « bord blanc 20×25 » ne change pas le format : le
+    /// papier est le même, seule une marge de cinq millimètres vient s'y poser, et la
+    /// fenêtre passe de 203 × 256 à 193 × 246 — un pour cent de rapport. Refaire un cadrage
+    /// centré pour cela, c'est jeter le recadrage que l'opérateur venait de poser à la
+    /// main, sur chaque photo, sans rien lui demander. Signalé au comptoir le 21/08/2026.
+    ///
+    /// C'est la FENÊTRE qui est comparée, et non le papier : c'est elle qui donne le
+    /// rapport à cadrer (voir <see cref="FenetreMm"/>).
+    ///
+    /// Deux nulls se ressemblent ; un null et un produit, non — il n'y a alors rien à
+    /// comparer, et mieux vaut repartir d'un cadre neuf.
+    /// </summary>
+    public static bool MemeForme(Product? a, Product? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null) return false;
+
+        var (la, ha) = a.FenetreMm;
+        var (lb, hb) = b.FenetreMm;
+        if (la <= 0 || ha <= 0 || lb <= 0 || hb <= 0) return false;
+
+        var rapportA = la / ha;
+        var rapportB = lb / hb;
+
+        return Math.Abs(rapportA - rapportB) / Math.Max(rapportA, rapportB) * 100
+               <= EcartDeFormeTolereParCent;
+    }
     /// <summary>Fichier ICC dans catalog/icc, null = sRGB géré par le pilote.</summary>
     public string? IccProfile { get; set; }
 
