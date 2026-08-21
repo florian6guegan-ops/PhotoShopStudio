@@ -22,10 +22,19 @@ public class PlancheRentreeTests
     /// <summary>L'écart d'une planche à fond perdu : un millimètre, où le trait s'inscrit.</summary>
     private static int Gap => MmPx.ToPixels(1, Dpi);          // 12
 
+    /// <summary>L'air gardé au bord de la feuille, en pixels. Voir <see cref="PlancheRentree.AirAuBordMm"/>.</summary>
+    private static int Air => MmPx.ToPixels(PlancheRentree.AirAuBordMm, Dpi);
+
+    /// <summary>
+    /// Ce que le RENDU pose — donc avec l'air du bord, comme <c>ImagePipeline</c> et
+    /// <c>PortraitDeLaPlanche</c> le passent. Mesurer autre chose que ce qui s'imprime
+    /// n'apprendrait rien.
+    /// </summary>
     private static PlancheRentreeResult Poser(int identites = 4, int reserve = 0) =>
         PlancheRentree.Layout(SheetW, SheetH, CellW, CellH, Gap, identites,
             bottomReserve: reserve,
-            largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, Dpi))
+            largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, Dpi),
+            airAuBord: Air)
         ?? throw new InvalidOperationException("la planche devrait tenir");
 
     [Fact]
@@ -51,8 +60,87 @@ public class PlancheRentreeTests
         var largeurMm = MmPx.ToMm(planche.Grande.Width, Dpi);
         var hauteurMm = MmPx.ToMm(planche.Grande.Height, Dpi);
 
-        Assert.InRange(largeurMm, 83, 86);
+        // 82 mm depuis le 21/08/2026 : le portrait a cédé les deux millimètres d'air que le
+        // bloc d'identités prend désormais à sa gauche. Voir Le_portrait_cede_lair_du_bord.
+        Assert.InRange(largeurMm, 81, 84);
         Assert.InRange(hauteurMm, 104, 105);
+    }
+
+    // — l'air au bord de la feuille, et la colonne de gauche —
+
+    /// <summary>
+    /// <b>Le défaut du 21/08/2026 : les deux photos de gauche sortaient à 33,5 mm.</b>
+    ///
+    /// Le bloc partait de <c>x = 0</c>. Le tirage étant à fond perdu, la machine rogne près
+    /// d'un millimètre et demi par bord, et la colonne de gauche — la seule qui touche le
+    /// bord, les autres étant intérieures — perdait cette bande sur sa largeur. Une photo
+    /// d'identité qui ne mesure pas 35 × 45 se fait refuser au guichet.
+    /// </summary>
+    [Fact]
+    public void La_colonne_de_gauche_ne_touche_pas_le_bord()
+    {
+        var planche = Poser();
+
+        var gauche = planche.Identites.Min(c => c.X);
+
+        Assert.Equal(Air, gauche);
+        Assert.True(MmPx.ToMm(gauche, Dpi) >= PlancheRentree.AirAuBordMm - 0.1,
+            $"la colonne de gauche commence à {MmPx.ToMm(gauche, Dpi):0.00} mm du bord");
+    }
+
+    /// <summary>
+    /// La mesure qui compte vraiment : ce qui RESTE d'une case de gauche une fois la
+    /// machine passée. À fond perdu elle rogne près d'un millimètre et demi ; la case doit
+    /// commencer plus loin que cela, sans quoi elle sort hors cote.
+    /// </summary>
+    [Fact]
+    public void Une_case_de_gauche_survit_entiere_au_rognage_de_la_machine()
+    {
+        const double rognageMm = 1.5;
+
+        var planche = Poser();
+        var gauche = planche.Identites.OrderBy(c => c.X).First();
+
+        Assert.True(MmPx.ToMm(gauche.X, Dpi) > rognageMm,
+            $"la case commence à {MmPx.ToMm(gauche.X, Dpi):0.00} mm, la machine en rogne {rognageMm}");
+
+        // et elle garde bien la cote de la norme
+        Assert.InRange(MmPx.ToMm(gauche.Width, Dpi), 34.8, 35.2);
+        Assert.InRange(MmPx.ToMm(gauche.Height, Dpi), 44.8, 45.2);
+    }
+
+    /// <summary>
+    /// <b>C'est le portrait qui paie cet air</b>, et c'est le bon arbitrage : deux
+    /// millimètres de moins sur une grande photo ne se voient pas, deux millimètres de
+    /// moins sur une case d'identité la rendent inutilisable.
+    /// </summary>
+    [Fact]
+    public void Le_portrait_cede_lair_du_bord()
+    {
+        var sansAir = PlancheRentree.Layout(SheetW, SheetH, CellW, CellH, Gap, 4,
+            largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, Dpi))!;
+
+        var avecAir = Poser();
+
+        Assert.Equal(0, sansAir.Identites.Min(c => c.X));
+        Assert.Equal(sansAir.Grande.Width - Air, avecAir.Grande.Width);
+        Assert.Equal(sansAir.Grande.X + Air, avecAir.Grande.X);
+
+        // la hauteur du portrait, elle, ne bouge pas : l'air est pris sur la largeur
+        Assert.Equal(sansAir.Grande.Height, avecAir.Grande.Height);
+    }
+
+    /// <summary>
+    /// La bande basse suit le bloc : elle porte la date et la mention, et un texte écrit au
+    /// bord serait rogné comme le serait une case.
+    /// </summary>
+    [Fact]
+    public void La_bande_basse_suit_le_bloc_didentites()
+    {
+        var planche = Poser(reserve: MmPx.ToPixels(10, Dpi));
+
+        Assert.Equal(Air, planche.BandeBasse.X);
+        Assert.Equal(planche.Identites.Min(c => c.X), planche.BandeBasse.X);
     }
 
     [Fact]

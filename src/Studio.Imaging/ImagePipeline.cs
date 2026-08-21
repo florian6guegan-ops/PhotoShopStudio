@@ -184,7 +184,7 @@ public static class ImagePipeline
             gapPx, identites, tickPx,
             bottomReserve: SheetFooterLayout.ReserveMinimalePx(footer, dpi),
             largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, dpi),
-            airEnHaut: MmPx.ToPixels(PlancheRentree.AirEnHautMm, dpi))
+            airAuBord: MmPx.ToPixels(PlancheRentree.AirAuBordMm, dpi))
             ?? throw new InvalidOperationException(
                 $"{identites} photos de {cellRequest.TargetWidthPx}×{cellRequest.TargetHeightPx} px " +
                 $"ne laissent pas la place d'un portrait sur {sheetWidthPx}×{sheetHeightPx} px.");

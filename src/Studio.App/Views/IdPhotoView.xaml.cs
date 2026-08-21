@@ -507,8 +507,13 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         var max = 0;
         for (var n = 1; n <= MaximumRaisonnableDeCases; n++)
         {
+            // ⚠ LES MÊMES ARGUMENTS QUE LE RENDU, l'air du bord compris : cette boucle
+            // décide combien de cases on OFFRE, et le rendu, lui, lève une exception quand
+            // la disposition ne tient pas. Compter plus large qu'on ne pose, c'est proposer
+            // un papier qui échouera au moment d'imprimer.
             if (PlancheRentree.Layout(sheetW, sheetH, cellW, cellH, gap, n,
-                    bottomReserve: bande, largeurMinimaleGrandePx: mini) is null) break;
+                    bottomReserve: bande, largeurMinimaleGrandePx: mini,
+                    airAuBord: MmPx.ToPixels(PlancheRentree.AirAuBordMm, product.Dpi)) is null) break;
             max = n;
         }
         return max;

@@ -53,7 +53,7 @@ public static class PortraitDeLaPlanche
                     // ⚠ LES MÊMES ARGUMENTS QUE LE RENDU, sans quoi le portrait serait cadré
                     // à un rapport pour être posé dans un autre. C'est la raison d'être de
                     // cette classe.
-                    airEnHaut: MmPx.ToPixels(PlancheRentree.AirEnHautMm, planche.Dpi));
+                    airAuBord: MmPx.ToPixels(PlancheRentree.AirAuBordMm, planche.Dpi));
 
                 if (layout is null) return null;
 

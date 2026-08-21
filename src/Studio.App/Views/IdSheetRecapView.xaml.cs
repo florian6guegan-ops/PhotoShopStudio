@@ -181,7 +181,10 @@ public partial class IdSheetRecapView : UserControl
                 planche.Copies,
                 bottomReserve: bande,
                 largeurMinimaleGrandePx:
-                    MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, PppApercuVoulu));
+                    MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, PppApercuVoulu),
+                // les mêmes arguments que le rendu : on teste si la disposition TIENT, et
+                // elle ne tient pas au même endroit selon qu'on garde l'air du bord ou non
+                airAuBord: MmPx.ToPixels(PlancheRentree.AirAuBordMm, PppApercuVoulu));
 
             return tient is not null ? PppApercuVoulu : planche.Produit.Dpi;
         }

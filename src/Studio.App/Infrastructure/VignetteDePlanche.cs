@@ -78,7 +78,11 @@ public static class VignetteDePlanche
             feuilleL, feuilleH,
             Px(document.WidthMm), Px(document.HeightMm),
             Px(1), identites,
-            largeurMinimaleGrandePx: Px(PlancheRentree.LargeurMinimaleGrandeMm));
+            largeurMinimaleGrandePx: Px(PlancheRentree.LargeurMinimaleGrandeMm),
+            // ⚠ LES MÊMES ARGUMENTS QUE LE RENDU. La tuile dessine la vraie géométrie —
+            // c'est tout son intérêt — et une tuile calculée sans l'air du bord montrerait
+            // un bloc collé à gauche que le tirage, lui, ne fait plus.
+            airAuBord: Px(PlancheRentree.AirAuBordMm));
 
         if (mise is null) return null;
 

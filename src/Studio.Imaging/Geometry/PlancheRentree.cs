@@ -42,9 +42,13 @@ public sealed record PlancheRentreeResult(
 /// <b>Le bloc d'identités va à GAUCHE, en colonnes pleines.</b> On empile d'abord en
 /// hauteur — autant de rangées que le papier en porte — puis on ajoute une colonne. C'est
 /// ce qui laisse au portrait le plus large morceau d'un seul tenant : quatre identités
-/// 35 × 45 sur une planche 10×15 couchée tiennent en 2 × 2 et laissent 84 mm de largeur
-/// sur toute la hauteur, soit un portrait de 84 × 97 mm. Les poser en une seule rangée
-/// n'aurait laissé qu'une bande de 55 mm de haut.
+/// 35 × 45 sur une planche 10×15 couchée tiennent en 2 × 2 et laissent au portrait
+/// 78,4 mm de largeur sur toute la hauteur, soit 78,4 × 101,6 mm. Les poser en une seule
+/// rangée n'aurait laissé qu'une bande de 55 mm de haut.
+///
+/// <b>« À gauche » ne veut pas dire « au bord »</b> : le bloc garde
+/// <see cref="AirAuBordMm"/> à sa gauche comme au-dessus, parce que le tirage est à fond
+/// perdu et qu'une case rognée n'est plus à la norme. C'est le portrait qui paie cet air.
 ///
 /// Fonctions pures, comme <see cref="IdSheetLayout"/> : ce qui se dessine sur un tirage
 /// doit pouvoir se vérifier sans imprimante.
@@ -62,8 +66,8 @@ public static class PlancheRentree
     public const double LargeurMinimaleGrandeMm = 50;
 
     /// <summary>
-    /// Air gardé AU-DESSUS du bloc d'identités, en millimètres, quand la planche porte une
-    /// bande basse.
+    /// Air gardé entre le bloc d'identités et le BORD DE LA FEUILLE, en millimètres — en
+    /// haut, et à gauche.
     ///
     /// Le tirage est à fond perdu : la machine réclame l'image avec du débord qu'elle rogne
     /// elle-même, près d'un millimètre et demi par bord. Une case d'identité rognée est une
@@ -71,9 +75,21 @@ public static class PlancheRentree
     ///
     /// Deux millimètres, comme <c>SheetFooterLayout.MargeBasseMm</c> et pour la même
     /// raison : au-dessus du rognage mesuré, et pas plus. Chaque millimètre pris ici est un
-    /// millimètre de moins pour écrire, et c'est ce qui décide si la mention reste lisible.
+    /// millimètre de moins pour écrire ou pour le portrait.
+    ///
+    /// ⚠ <b>À GAUCHE, C'EST UNE CORRECTION DU 21/08/2026.</b> Le raisonnement ci-dessus
+    /// n'avait été appliqué qu'en haut : le bloc partait de <c>x = 0</c>, collé au bord.
+    /// La colonne de GAUCHE — et elle seule, les autres étant intérieures — sortait donc
+    /// rognée : <b>33,5 mm de large au lieu de 35</b>, mesuré sur une planche 10×15. Les
+    /// deux photos de gauche d'une planche de quatre n'étaient pas à la norme, et une
+    /// photo d'identité hors cote se fait refuser au guichet.
+    ///
+    /// <see cref="IdSheetLayout"/> n'avait pas le défaut : il CENTRE son bloc, et la marge
+    /// naissait du centrage. Ici le bloc est poussé à gauche exprès — pour laisser au
+    /// portrait le plus large morceau d'un seul tenant — et « poussé à gauche » était
+    /// devenu « au bord ».
     /// </summary>
-    public const double AirEnHautMm = 2;
+    public const double AirAuBordMm = 2;
 
     /// <summary>
     /// Dispose les identités et le portrait sur la planche.
@@ -110,7 +126,7 @@ public static class PlancheRentree
         int cellWidth, int cellHeight,
         int gap, int identites,
         int tickLength = 0, int bottomReserve = 0,
-        int largeurMinimaleGrandePx = 0, int airEnHaut = 0)
+        int largeurMinimaleGrandePx = 0, int airAuBord = 0)
     {
         if (identites < 1) return null;
         if (cellWidth <= 0 || cellHeight <= 0) return null;
@@ -136,9 +152,20 @@ public static class PlancheRentree
 
         var blocW = colonnes * cellWidth + (colonnes - 1) * gap;
         var blocH = rangees * cellHeight + (rangees - 1) * gap;
-        if (blocW >= sheetWidth) return null;
 
-        var largeurGrande = sheetWidth - blocW - gap;
+        // ⚠ LE BLOC NE PART PLUS DU BORD GAUCHE. Voir AirAuBordMm : à fond perdu, la
+        // machine rogne, et la colonne de gauche sortait à 33,5 mm au lieu de 35.
+        //
+        // Le repère de coupe l'emporte quand il est plus large : dessiné depuis le bord,
+        // il s'écrirait sinon PAR-DESSUS la première case.
+        var originX = Math.Max(tickLength, airAuBord);
+
+        if (originX + blocW >= sheetWidth) return null;
+
+        // le portrait paie cet air : il commence d'autant plus à droite, et c'est voulu —
+        // mieux vaut un portrait de deux millimètres plus étroit que deux identités
+        // hors cote
+        var largeurGrande = sheetWidth - originX - blocW - gap;
         if (largeurGrande < Math.Max(1, largeurMinimaleGrandePx)) return null;
 
         // ⚠ LE BLOC MONTE, POUR QUE LA BANDE RESPIRE.
@@ -151,10 +178,10 @@ public static class PlancheRentree
         //
         // Il ne va pas pour autant au bord : le tirage est à fond perdu, la machine rogne
         // près d'un millimètre et demi, et une case d'identité rognée est une photo refusée
-        // au guichet. On lui laisse donc <see cref="AirEnHautMm"/>, et tout le reste va à
+        // au guichet. On lui laisse donc <see cref="AirAuBordMm"/>, et tout le reste va à
         // la bande.
         var originY = bottomReserve > 0
-            ? Math.Max(tickLength, airEnHaut)
+            ? Math.Max(tickLength, airAuBord)
             : Math.Max(tickLength, (utile - blocH) / 2);
 
         if (originY + blocH > sheetHeight) originY = Math.Max(0, sheetHeight - blocH);
@@ -168,18 +195,18 @@ public static class PlancheRentree
             var colonne = i / rangees;
             var rangee = i % rangees;
             cases.Add(new PixelRect(
-                colonne * (cellWidth + gap),
+                originX + colonne * (cellWidth + gap),
                 originY + rangee * (cellHeight + gap),
                 cellWidth, cellHeight));
         }
 
         // Le portrait descend jusqu'au bord : la bande ne court plus sous lui.
-        var grande = new PixelRect(blocW + gap, 0, largeurGrande, sheetHeight);
+        var grande = new PixelRect(originX + blocW + gap, 0, largeurGrande, sheetHeight);
 
         // Tout ce qui reste sous le bloc d'identités, sur SA largeur : la réserve demandée,
         // plus le jeu que les rangées n'ont pas comblé.
         var basDuBloc = originY + blocH;
-        var bande = new PixelRect(0, basDuBloc, blocW, sheetHeight - basDuBloc);
+        var bande = new PixelRect(originX, basDuBloc, blocW, sheetHeight - basDuBloc);
 
         IReadOnlyList<CutTick> ticks = tickLength > 0
             ? Reperes(sheetWidth, sheetHeight, [.. cases, grande], tickLength)

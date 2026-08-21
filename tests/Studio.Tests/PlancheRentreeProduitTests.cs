@@ -149,7 +149,12 @@ public class PlancheRentreeProduitTests
             MmPx.ToPixels(sheet.LayoutGapMm, rentree.Dpi),
             identites,
             largeurMinimaleGrandePx:
-                MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, rentree.Dpi));
+                MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, rentree.Dpi),
+            // ⚠ LES MÊMES ARGUMENTS QUE LE RENDU, sans quoi cet essai-là ment précisément
+            // sur ce qu'il promet de vérifier : il existe pour attraper le produit qui
+            // annonce quatre cases sur un papier qui n'en porte que trois, et le poserait
+            // plus au large que l'impression ne le fait.
+            airAuBord: MmPx.ToPixels(PlancheRentree.AirAuBordMm, rentree.Dpi));
 
         var pose = Poser(sheet.Copies);
 

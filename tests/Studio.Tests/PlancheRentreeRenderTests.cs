@@ -75,11 +75,20 @@ public class PlancheRentreeRenderTests : IDisposable
         return sortie;
     }
 
+    /// <summary>
+    /// La disposition que le RENDU vient de poser — et donc les mêmes arguments que lui.
+    ///
+    /// ⚠ <c>airAuBord</c> en fait partie depuis le 21/08/2026 : les essais d'ici sondent des
+    /// PIXELS à des coordonnées prises ici, et une disposition calculée autrement que celle
+    /// qui a été dessinée les ferait regarder à côté — en silence, et avec des assertions
+    /// qui passeraient ou tomberaient sans rapport avec ce qu'elles décrivent.
+    /// </summary>
     private static PlancheRentreeResult Disposition(int identites = 4, int reserve = 0) =>
         PlancheRentree.Layout(SheetW, SheetH, CellW, CellH,
             MmPx.ToPixels(SheetSpec.EcartFondPerduMm, Dpi), identites,
             bottomReserve: reserve,
-            largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, Dpi))!;
+            largeurMinimaleGrandePx: MmPx.ToPixels(PlancheRentree.LargeurMinimaleGrandeMm, Dpi),
+            airAuBord: MmPx.ToPixels(PlancheRentree.AirAuBordMm, Dpi))!;
 
     private static byte Niveau(IPixelCollection<byte> pixels, int x, int y) =>
         (byte)pixels.GetPixel(x, y).GetChannel(0);
