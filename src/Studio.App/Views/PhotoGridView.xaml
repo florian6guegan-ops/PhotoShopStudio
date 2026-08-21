@@ -61,7 +61,7 @@
                     HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0"
                     IsHitTestVisible="False">
                 <TextBlock Foreground="#12181E" FontSize="17" FontWeight="SemiBold"
-                           Text="Recadrage à la volée — glissez la photo dans sa vignette · molette : zoom · C pour sortir"/>
+                           Text="Recadrage à la volée — glissez la photo dans sa vignette · molette : zoom · clic droit : coucher le cadre · C pour sortir"/>
             </Border>
 
             <!-- La planche ne fabrique QUE les tuiles visibles (voir PlancheVirtualisee) :
@@ -101,6 +101,7 @@
                                 PreviewMouseLeftButtonDown="OnVignetteRecadrageDown"
                                 MouseMove="OnVignetteRecadrageMove"
                                 PreviewMouseWheel="OnVignetteRecadrageWheel"
+                                PreviewMouseRightButtonUp="OnVignetteRecadrageClicDroit"
                                 Tag="{Binding}">
                             <Grid>
                                 <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="4"/>

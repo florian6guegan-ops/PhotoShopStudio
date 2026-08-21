@@ -2370,6 +2370,49 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     }
 
     /// <summary>
+    /// Clic droit sur une vignette, mode armé : le cadre pivote d'un quart de tour.
+    ///
+    /// C'est le troisième geste de « Modifier », et il manquait ici. Faire tenir une photo
+    /// verticale dans un tirage horizontal — ou l'inverse — est un besoin quotidien du
+    /// comptoir, et pivoter la PHOTO ne le résout pas : c'est le CADRE qu'il faut coucher.
+    /// </summary>
+    private void OnVignetteRecadrageClicDroit(object sender, MouseButtonEventArgs e)
+    {
+        if (!_recadrageALaVolee) return;
+        if ((sender as Border)?.Tag is not PhotoItem photo) return;
+        if (photo.Cadre is null) return;
+
+        PivoterLeCadre(photo);
+
+        // sans cela, le menu contextuel de la fenêtre s'ouvrirait par-dessus le geste
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Pivote le CADRE d'un quart de tour : ses deux côtés s'échangent, la photo ne bouge
+    /// pas.
+    ///
+    /// ⚠ On refait un cadre aux côtés échangés plutôt que d'échanger les côtés du
+    /// RECADRAGE : la photo se replace alors toute seule pour couvrir le nouveau cadre, et
+    /// l'opération n'a aucun effet de bord. Échanger les côtés du recadrage ne ferait rien
+    /// du tout quand celui-ci vaut l'image entière — c'est le défaut qu'on a déjà corrigé
+    /// dans « Modifier », et il n'a aucune raison de renaître ici.
+    /// </summary>
+    private static void PivoterLeCadre(PhotoItem photo)
+    {
+        if (photo.Cadre is not { } ancien) return;
+
+        var pixels = photo.PixelsVus;
+        var pivote = new FramedCrop(pixels.Width, pixels.Height, ancien.FrameHeight, ancien.FrameWidth)
+        {
+            RotationDegrees = ancien.RotationDegrees,
+        };
+
+        photo.RemplacerCadre(pivote);
+        photo.RefreshThumbnail();
+    }
+
+    /// <summary>
     /// Ce point de l'écran appartient-il à un bouton ?
     ///
     /// On remonte le VISUEL, et non le logique : un bouton est fait d'un gabarit, et
