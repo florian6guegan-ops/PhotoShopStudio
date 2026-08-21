@@ -229,10 +229,39 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         photo.Product = ProduitPour(taille);
     }
 
+    /// <summary>
+    /// Pose sur une photo le format du bandeau — <b>taille libre comprise</b>.
+    ///
+    /// ⚠ <b>C'EST LA SEULE FAÇON CORRECTE DE POSER <see cref="DefaultProduct"/>.</b>
+    ///
+    /// En taille libre, <c>DefaultProduct</c> vaut le produit FANTÔME. Un
+    /// <c>photo.Product = DefaultProduct</c> écrit à la main lui donnait donc le fantôme
+    /// sans sa taille — exactement l'état que <see cref="PoserLaTaille"/> existe pour
+    /// interdire. La photo retombait alors dans le groupe « format du catalogue » à
+    /// l'impression, et la commande partait sous un code que le catalogue ne connaît pas.
+    ///
+    /// <b>C'est ce qui a fait échouer la commande 21-014, le 21/08/2026 :</b> deux photos
+    /// en 35 × 45 libre, prises par un Ctrl+A qui n'avait jamais posé de taille. La
+    /// commande a bien été créée — prix zéro, aucune imprimante — et n'a échoué qu'au
+    /// moment d'imprimer, en tâche de fond, sur
+    /// « Produit inconnu dans le catalogue : perso-35x45 ». Rien n'était sorti, et rien ne
+    /// le disait à l'écran.
+    ///
+    /// Les deux champs voyagent ensemble : <c>_taillePerso</c> est posé exactement quand
+    /// <c>_produitPerso</c> l'est, ce qui rend le test ci-dessous suffisant.
+    /// </summary>
+    private void PoserLeFormatParDefaut(PhotoItem photo)
+    {
+        if (_taillePerso is { } taille) PoserLaTaille(photo, taille);
+        else photo.Product = DefaultProduct;
+    }
+
     /// <summary>Le produit fantôme d'une taille libre, fabriqué une seule fois.</summary>
     private Product ProduitPour(CustomSize taille)
     {
-        var code = $"perso-{taille.WidthMm:0.#}x{taille.HeightMm:0.#}";
+        // le code est bâti par TailleLibre : c'est lui qui sait aussi le RECONNAÎTRE, et les
+        // deux moitiés d'une convention ne doivent pas vivre chacune de son côté
+        var code = TailleLibre.Code(taille.WidthMm, taille.HeightMm);
         if (_produitsPerso.TryGetValue(code, out var deja)) return deja;
 
         var produit = new Product
@@ -1079,7 +1108,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         if (photo.Product is null)
         {
-            photo.Product = DefaultProduct;
+            PoserLeFormatParDefaut(photo);
             photo.Quantity = _quantity;
         }
 
@@ -1092,7 +1121,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         if (!photo.Selected && photo.Product is null)
         {
             // première sélection : la photo prend le produit et la quantité du bandeau
-            photo.Product = DefaultProduct;
+            PoserLeFormatParDefaut(photo);
             photo.Quantity = _quantity;
         }
 
@@ -1849,7 +1878,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         if (choisies.Count == 0) return;
 
         // un produit est indispensable pour connaître la forme du cadre
-        foreach (var photo in choisies) photo.Product ??= DefaultProduct;
+        foreach (var photo in choisies.Where(p => p.Product is null)) PoserLeFormatParDefaut(photo);
 
         Navigator.Go(
             new EditSelectionView(choisies, () => OnPrint(this, new RoutedEventArgs()),
@@ -2125,7 +2154,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
             if (!photo.Selected)
             {
-                photo.Product ??= DefaultProduct;
+                if (photo.Product is null) PoserLeFormatParDefaut(photo);
                 photo.Selected = true;
             }
 
@@ -2347,6 +2376,42 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         if (selected.Count == 0) return;
 
         var services = App.Services;
+
+        // ⚠ UN FANTÔME SANS SA TAILLE NE DOIT PAS DEVENIR UNE COMMANDE.
+        //
+        // Le filet, et non la règle : la règle est PoserLeFormatParDefaut, qui pose les deux
+        // ensemble. Mais ce défaut-là ne se voit nulle part quand il passe. La commande
+        // 21-014 avait été CRÉÉE — prix zéro, aucune imprimante — et n'a échoué qu'à
+        // l'impression, en tâche de fond, sur « Produit inconnu dans le catalogue :
+        // perso-35x45 ». L'opérateur avait rendu la monnaie et rien n'était sorti.
+        //
+        // On refait donc le geste manquant quand on peut — la taille du bandeau est là —,
+        // et l'on refuse bruyamment quand on ne peut pas. Dans les deux cas, avant que le
+        // papier ne soit engagé et que le ticket ne soit imprimé.
+        foreach (var photo in selected.Where(p => p.TaillePerso is null
+                                                  && TailleLibre.EstUnFantome(p.Product!.Code)))
+        {
+            if (_taillePerso is { } rattrapage)
+            {
+                FileLog.Write(
+                    $"Photo « {photo.Name} » portait « {photo.Product!.Code} » sans sa taille : " +
+                    $"reposée en {rattrapage.Libelle} avant la commande.");
+
+                PoserLaTaille(photo, rattrapage);
+                continue;
+            }
+
+            FileLog.Write(
+                $"Commande refusée : « {photo.Name} » porte le produit « {photo.Product!.Code} », " +
+                "qui n'existe pas au catalogue, et aucune taille libre n'est active.");
+
+            MessageBox.Show(
+                $"La photo « {photo.Name} » a perdu sa taille personnalisée.\n\n" +
+                "Rien n'a été commandé. Redonnez-lui son format — « Taille personnalisée… » " +
+                "dans la liste — puis relancez l'impression.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         // ⚠ UNE LIGNE PAR TAILLE, et non une par commande.
         //
