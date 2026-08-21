@@ -136,6 +136,33 @@ public partial class CropSurface : UserControl
         set => TraitDeDecoupe.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private double _lisereMm;
+
+    /// <summary>
+    /// La marge blanche qui entoure le tirage, en millimètres — celle d'un produit « bord
+    /// blanc ». Zéro, le cas ordinaire, ne montre rien.
+    ///
+    /// <b>Dans la MÊME unité que le cadre</b>, c'est-à-dire les millimètres du papier :
+    /// <c>FramedCrop.FrameWidth</c> porte la FENÊTRE du produit, et le liseré se pose
+    /// autour d'elle. Les deux se convertissent donc à la même échelle, et le rapport
+    /// montré à l'écran est celui du tirage.
+    ///
+    /// <b>Ce qu'il change à l'écran :</b> le cadre jaune reste sur la fenêtre — c'est là
+    /// que la photo atterrit, et c'est ce que les poignées recadrent —, et le blanc apparaît
+    /// AUTOUR. L'opérateur voit enfin son tirage tel qu'il sortira, au lieu d'une photo
+    /// pleine bord qui ne dit rien de sa marge.
+    /// </summary>
+    public double LisereMm
+    {
+        get => _lisereMm;
+        set
+        {
+            if (Math.Abs(_lisereMm - value) < 0.001) return;
+            _lisereMm = Math.Max(0, value);
+            Redessiner();
+        }
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         // Une répétition de touche ne doit pas faire clignoter le mode : garder T enfoncée
@@ -233,8 +260,16 @@ public partial class CropSurface : UserControl
 
         var cadre = _cadre!;
 
-        _echelle = Math.Min(largeur * PartDuCadre / cadre.FrameWidth,
-                            hauteur * PartDuCadre / cadre.FrameHeight);
+        // ⚠ C'EST LE PAPIER QU'ON FAIT TENIR, ET NON LE CADRE.
+        //
+        // Le liseré déborde du cadre : le mesurer sur le seul cadre ferait sortir la marge
+        // blanche de la surface, et le tirage n'y serait plus entier — or c'est justement
+        // pour le voir entier qu'on l'affiche.
+        var papierLargeur = cadre.FrameWidth + 2 * _lisereMm;
+        var papierHauteur = cadre.FrameHeight + 2 * _lisereMm;
+
+        _echelle = Math.Min(largeur * PartDuCadre / papierLargeur,
+                            hauteur * PartDuCadre / papierHauteur);
 
         var cadreLargeur = cadre.FrameWidth * _echelle;
         var cadreHauteur = cadre.FrameHeight * _echelle;
@@ -268,6 +303,20 @@ public partial class CropSurface : UserControl
         Canvas.SetTop(Papier, cadreY);
         Papier.Width = cadreLargeur;
         Papier.Height = cadreHauteur;
+
+        // LE LISERÉ, autour du cadre : la marge d'un « bord blanc », à l'échelle du reste.
+        // Le cadre jaune reste sur la fenêtre — c'est là que la photo atterrit et c'est ce
+        // que les poignées recadrent —, et le blanc se voit tout autour.
+        var lisere = _lisereMm * _echelle;
+        LisereBlanc.Visibility = lisere > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        if (lisere > 0)
+        {
+            Canvas.SetLeft(LisereBlanc, cadreX - lisere);
+            Canvas.SetTop(LisereBlanc, cadreY - lisere);
+            LisereBlanc.Width = cadreLargeur + 2 * lisere;
+            LisereBlanc.Height = cadreHauteur + 2 * lisere;
+        }
 
         // En mode « photo entière » il n'y a rien à recadrer : la photo tient tout entière
         // dans le format, et le tirage la centrera de toute façon. Montrer des poignées

@@ -15,6 +15,18 @@
           ManipulationDelta="OnManipulationDelta">
 
         <Canvas x:Name="Scene" IsHitTestVisible="False">
+            <!-- LE LISERÉ BLANC, autour du cadre : la marge d'un produit « bord blanc »,
+                 telle qu'elle sortira du papier.
+
+                 Il ne se voyait NULLE PART. Sur un bord blanc, la photo REMPLIT la fenêtre
+                 et le cadre s'arrête à la fenêtre : l'opérateur voyait donc exactement la
+                 même chose qu'en format ordinaire, et rien ne disait que cinq millimètres
+                 de blanc allaient entourer le tirage. Signalé au comptoir le 21/08/2026.
+
+                 En premier dans le canevas, donc tout au fond : le papier déborde du cadre,
+                 la photo se pose dessus. -->
+            <Rectangle x:Name="LisereBlanc" Fill="White" Visibility="Collapsed"/>
+
             <!-- Le PAPIER : le format du tirage, en blanc, sous la photo. Il ne se voit
                  qu'en mode « photo entière », où la photo ne couvre plus tout le cadre —
                  et ce qui dépasse d'elle est alors exactement la marge blanche qui

@@ -17,7 +17,7 @@
                        VerticalAlignment="Center"/>
             <TextBlock x:Name="HintText" DockPanel.Dock="Right" Style="{StaticResource Hint}"
                        HorizontalAlignment="Right" VerticalAlignment="Center" TextWrapping="Wrap"
-                       Text="Ctrl+clic sur une vignette : la viser pour les réglages · C maintenue : recadrer à la souris sur la vignette · clic droit : pivoter le cadre · T puis molette : redresser"/>
+                       Text="Clic sur une vignette : la viser pour les réglages · Maj+clic : toute une plage · C maintenue : recadrer à la souris sur la vignette · clic droit : pivoter le cadre · T puis molette : redresser"/>
         </DockPanel>
 
         <Grid Grid.Row="1">
@@ -56,14 +56,13 @@
                                         Tag="{Binding}">
                                     <Grid Height="200">
                                         <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
-                                        <!-- Case à cocher VISIBLE : le Ctrl+clic faisait la
-                                             même chose, mais rien ne l'annonçait et personne
-                                             ne l'a trouvé. C'est par elle qu'on désigne les
-                                             photos dont on va changer le format. -->
-                                        <CheckBox HorizontalAlignment="Left" VerticalAlignment="Top"
-                                                  Margin="6" IsChecked="{Binding Ciblee, Mode=TwoWay}"
-                                                  Background="White" Focusable="False"
-                                                  ToolTip="Cocher pour changer le format de cette photo"/>
+                                        <!-- La case à cocher a été RETIRÉE le 21/08/2026 :
+                                             un clic sur la vignette suffit à la viser. Elle
+                                             avait été ajoutée parce que le Ctrl+clic ne
+                                             s'annonçait nulle part ; c'est la petite cible à
+                                             viser qui gênait, pas l'idée. Le fond coloré de
+                                             la vignette (CibleBrush) dit désormais seul ce
+                                             qui est visé, et il se voit de loin. -->
                                         <Border Background="#CC000000" Padding="5,2"
                                                 HorizontalAlignment="Left" VerticalAlignment="Bottom">
                                             <TextBlock Text="{Binding Name}" FontSize="11" Foreground="White"
@@ -91,6 +90,29 @@
                                             <TextBlock Text="{Binding QuantityLabel}" FontSize="15"
                                                        FontWeight="Bold" Foreground="{DynamicResource TitleBrush}"/>
                                         </Border>
+
+                                        <!-- LA CROIX : cette photo NE SORTIRA PAS, sa
+                                             quantité est à zéro.
+
+                                             Elle couvre toute la vignette et la voile : une
+                                             photo qui ne sort pas doit se reconnaître d'un
+                                             coup d'œil sur la bande entière, pas en lisant
+                                             un « 0 » de quinze pixels dans un coin. C'est un
+                                             tirage manquant qu'on ne découvrirait sinon
+                                             qu'en comptant les photos rendues au client. -->
+                                        <Grid Visibility="{Binding CroixVisibility}"
+                                              Background="#99101418">
+                                            <TextBlock Text="✕" FontSize="72" Foreground="#F26D6D"
+                                                       FontWeight="Bold" Opacity="0.95"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+                                            <Border Background="#CCB00020" Padding="8,3" CornerRadius="4"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                                    Margin="0,0,0,10">
+                                                <TextBlock Text="ne sort pas" FontSize="13"
+                                                           FontWeight="Bold" Foreground="White"/>
+                                            </Border>
+                                        </Grid>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

@@ -384,7 +384,7 @@ internal partial class EditSelectionView : UserControl
             ? $"Les corrections portent sur les {visees} photo(s) visées. " +
               "Ctrl+A n'en vise plus aucune."
             : "Les corrections portent sur la photo affichée. " +
-              "Ctrl+clic sur une vignette pour en viser plusieurs, Ctrl+A pour toutes.";
+              "Cliquez les vignettes pour en viser plusieurs, Ctrl+A pour toutes.";
     }
 
     /// <summary>
@@ -495,6 +495,10 @@ internal partial class EditSelectionView : UserControl
 
         // le trait de découpe se voit sur la surface, comme il sortira sur le papier
         Surface.ContourDeDecoupe = _courante.CutBorder;
+
+        // et la marge blanche aussi : sur un « bord blanc », la photo remplit la fenêtre et
+        // rien ne disait que cinq millimètres de blanc allaient l'entourer
+        Surface.LisereMm = LisereDe(_courante);
 
         // rangée par CLÉ et non par chemin : un doublon partage le fichier de son original
         // sans partager ses corrections (voir PhotoItem.Cle)
@@ -690,6 +694,21 @@ internal partial class EditSelectionView : UserControl
     /// photos qu'on ouvrait — les autres partaient à l'impression sans cadrage.
     /// </summary>
     private static FramedCrop? Cadre(PhotoGridView.PhotoItem photo) => photo.Cadre;
+
+    /// <summary>
+    /// La marge blanche qui entourera ce tirage, en millimètres — zéro pour tout le reste.
+    ///
+    /// <b>Deux sources, et il faut les deux.</b> Un produit du catalogue porte sa marge dans
+    /// <c>BorderMm</c> ; une taille libre à bord blanc la porte sur la TAILLE, parce que son
+    /// produit n'est qu'un fantôme fabriqué pour l'écran et que c'est la
+    /// <c>CustomSheetSpec</c> qui la transporte jusqu'au rendu. N'en lire qu'une laisserait
+    /// la moitié des bords blancs invisibles à l'écran — et l'autre moitié, c'est celle que
+    /// l'opérateur vient de saisir à la main.
+    /// </summary>
+    private static double LisereDe(PhotoGridView.PhotoItem photo) =>
+        photo.TaillePerso?.BorderMm is > 0 and var perso
+            ? perso
+            : photo.Product is { ABordBlanc: true } produit ? produit.BorderMm : 0;
 
     /// <summary>Reporte le cadre sur la photo et redessine — le seul point de conversion.</summary>
     private void Appliquer(PhotoGridView.PhotoItem photo, FramedCrop cadre)
@@ -887,7 +906,25 @@ internal partial class EditSelectionView : UserControl
         _ancreVisee = photo;
         SetCurrent(photo);
 
-        if (!CTenue) return;
+        // UN CLIC SIMPLE VISE LA PHOTO — la case à cocher n'existe plus.
+        //
+        // Elle avait été posée parce que le Ctrl+clic ne s'annonçait nulle part et que
+        // personne ne l'avait trouvé. Mais viser une case de quinze pixels dans le coin
+        // d'une vignette est un geste de précision, au comptoir, avec un client devant
+        // soi : c'est la CIBLE qui gênait, pas l'idée. Retirée le 21/08/2026 à la demande
+        // de l'exploitant, le clic prend sa place.
+        //
+        // Le Ctrl+clic continue de marcher à l'identique : ceux qui l'ont appris n'ont rien
+        // à réapprendre, et Maj+clic garde la plage.
+        //
+        // ⚠ Sauf avec C : ce geste-là recadre à la souris sur la vignette, et faire
+        // basculer la sélection sous un recadrage serait une surprise à chaque prise en
+        // main.
+        if (!CTenue)
+        {
+            photo.Ciblee = !photo.Ciblee;
+            return;
+        }
 
         // C maintenue : on s'apprête à recadrer à la souris sur la vignette
         _gesteOperateur = true;
@@ -1148,15 +1185,24 @@ internal partial class EditSelectionView : UserControl
     private void OnQuantitePlus(object sender, RoutedEventArgs e) => ChangerLaQuantite(+1);
 
     /// <summary>
-    /// Décale la quantité des photos visées. Bornes 1..99, comme à l'écran de sélection :
-    /// zéro tirage n'est pas une quantité, c'est un décochage.
+    /// Décale la quantité des photos visées. Bornes <b>0</b>..99.
+    ///
+    /// <b>Zéro est une réponse, et c'est celle qu'on attendait ici.</b> Le plancher était à
+    /// un : descendre une photo déjà à un exemplaire ne faisait rien, et retirer une photo
+    /// d'une commande obligeait à ressortir vers l'écran de sélection pour la décocher.
+    /// Demandé par l'exploitant le 21/08/2026 : « moins sur une photo déjà à 1, elle ne doit
+    /// pas sortir ».
+    ///
+    /// La vignette le dit alors d'une croix — voir <c>PhotoItem.NeSortPas</c> : une quantité
+    /// à zéro qui ne se verrait pas serait exactement le genre de silence qui fait rendre la
+    /// monnaie pour un tirage qui n'est jamais sorti.
     /// </summary>
     private void ChangerLaQuantite(int pas)
     {
         var visees = Visees();
 
         foreach (var photo in visees)
-            photo.Quantity = Math.Clamp(photo.Quantity + pas, 1, 99);
+            photo.Quantity = Math.Clamp(photo.Quantity + pas, 0, 99);
 
         FileLog.Write(
             $"Quantité {(pas > 0 ? "montée" : "descendue")} d'un cran sur {visees.Count} photo(s) " +

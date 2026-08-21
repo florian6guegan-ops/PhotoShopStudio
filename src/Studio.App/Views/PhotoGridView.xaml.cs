@@ -2372,8 +2372,29 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
     private async void OnPrint(object sender, RoutedEventArgs e)
     {
-        var selected = _photos.Where(p => p.Selected && p.Product is not null).ToList();
-        if (selected.Count == 0) return;
+        // ⚠ UNE QUANTITÉ À ZÉRO NE SORT PAS, et c'est ce que la croix annonce.
+        //
+        // Le compteur de l'écran de modification descend jusqu'à zéro depuis le 21/08/2026 :
+        // c'est ainsi qu'on retire une photo d'une commande sans ressortir vers la grille.
+        // Sans ce filtre, elle partait quand même — un article à zéro exemplaire dans la
+        // commande, donc un rendu pour rien et une ligne qui ne veut rien dire.
+        var selected = _photos
+            .Where(p => p.Selected && p.Product is not null && p.Quantity > 0)
+            .ToList();
+
+        if (selected.Count == 0)
+        {
+            // Toutes à zéro : le dire, plutôt que de ne rien faire sous le doigt de
+            // l'opérateur. Un bouton qui ne répond pas passe pour cassé.
+            if (_photos.Any(p => p.Selected && p.Product is not null))
+                MessageBox.Show(
+                    "Toutes les photos retenues sont à zéro exemplaire : il n'y a rien à " +
+                    "imprimer.\n\nRemontez la quantité d'au moins une photo — celles qui " +
+                    "portent une croix ne sortiront pas.",
+                    "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            return;
+        }
 
         var services = App.Services;
 
@@ -3147,6 +3168,8 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             {
                 if (!Set(ref _quantity, value)) return;
                 OnPropertyChanged(nameof(QuantityLabel));
+                OnPropertyChanged(nameof(NeSortPas));
+                OnPropertyChanged(nameof(CroixVisibility));
                 _cartChanged();
             }
         }
@@ -3178,6 +3201,22 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             _product is null ? Visibility.Collapsed : Visibility.Visible;
 
         public string QuantityLabel => _quantity.ToString();
+
+        /// <summary>
+        /// Cette photo NE SORTIRA PAS : sa quantité est à zéro.
+        ///
+        /// <b>Zéro est une réponse, pas une erreur.</b> C'est ainsi qu'on retire une photo
+        /// d'une commande depuis l'écran de modification, sans ressortir vers la grille
+        /// pour la décocher — demandé le 21/08/2026.
+        ///
+        /// ⚠ <b>Ce qui compte, c'est qu'on le VOIE.</b> Une photo cochée, visible dans la
+        /// bande, avec son format et son cadrage, mais qui ne sort pas : sans la croix,
+        /// c'est un tirage manquant qu'on ne découvre qu'en comptant les photos rendues au
+        /// client — ou qu'on ne découvre pas.
+        /// </summary>
+        public bool NeSortPas => _quantity <= 0;
+
+        public Visibility CroixVisibility => NeSortPas ? Visibility.Visible : Visibility.Collapsed;
 
         public Brush BorderBrush => Selected
             ? (Brush)Application.Current.Resources["AccentBrush"]
