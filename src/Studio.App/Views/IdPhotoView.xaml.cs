@@ -881,6 +881,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         photo.NoirEtBlanc = GrayscaleCheck.IsChecked == true;
         photo.FondBlanc = WhiteBackgroundCheck.IsChecked == true;
         photo.FondGris = GrayBackgroundCheck.IsChecked == true;
+        photo.NonConforme = NonConformeCheck.IsChecked == true;
         photo.Copies = _copies;
         photo.Quantite = _quantity;
     }
@@ -906,6 +907,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             GrayscaleCheck.IsChecked = photo.NoirEtBlanc;
             WhiteBackgroundCheck.IsChecked = photo.FondBlanc;
             GrayBackgroundCheck.IsChecked = photo.FondGris;
+            NonConformeCheck.IsChecked = photo.NonConforme;
         });
 
         Redresser(photo.Redressement);
@@ -1279,6 +1281,61 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         if (_enReprise) return;
         if (_current is not null) _current.NoirEtBlanc = GrayscaleCheck.IsChecked == true;
         ApplyGrayscalePreview();
+    }
+
+    /// <summary>
+    /// Déclare la planche de la photo affichée HORS NORME, ou l'y ramène.
+    ///
+    /// <b>La même case qu'au récapitulatif, mais atteignable depuis le poste identité</b>,
+    /// qui ne passe jamais par cet écran-là : sur un poste verrouillé, « Imprimer » sort la
+    /// planche directement. Le logiciel qui tire le plus de planches d'école était le seul
+    /// à ne pas pouvoir le dire sur le papier. Signalé le 22/08/2026.
+    ///
+    /// <b>Rien à redessiner ici.</b> À la différence du fond ou du noir et blanc, la mention
+    /// ne touche pas les pixels de la photo : elle vit sur la bande basse de la planche, que
+    /// cet écran ne montre pas. C'est le récapitulatif — quand on y passe — et le tirage qui
+    /// la font apparaître.
+    ///
+    /// <b>Cocher propose de marquer tout le lot retenu.</b> Le cas qui amène ici est la série
+    /// d'école, où toutes les planches le sont ; cocher trente fois est le geste qu'on oublie
+    /// sur la trentième. La question ne se pose qu'en COCHANT, et seulement s'il reste
+    /// d'autres photos retenues à marquer : décocher ne concerne que celle qui est affichée,
+    /// parce qu'on décoche pour corriger un clic, pas pour reprendre un lot.
+    ///
+    /// ⚠ Les photos JAMAIS RETENUES sont ignorées. Sur le poste d'Arcueil, la bande porte
+    /// toute la carte du client — quatre-vingts vignettes dont l'opérateur n'a ouvert que
+    /// trois : proposer d'en marquer quatre-vingts serait proposer n'importe quoi. Voir
+    /// <see cref="LotIdentite.EstRetenue"/>, le même garde-fou qu'à l'impression.
+    /// </summary>
+    private void OnNonConformeChanged(object sender, RoutedEventArgs e)
+    {
+        if (_enReprise) return;
+        if (_current is not { } photo) return;
+
+        var coche = NonConformeCheck.IsChecked == true;
+        photo.NonConforme = coche;
+
+        if (!coche) return;
+
+        var autres = _photos
+            .Where(p => !ReferenceEquals(p, photo)
+                        && LotIdentite.EstRetenue(p.Quantite)
+                        && !p.NonConforme)
+            .ToList();
+
+        if (autres.Count == 0) return;
+
+        var reponse = MessageBox.Show(
+            $"Marquer aussi les {autres.Count} autre(s) photo(s) retenue(s) comme non " +
+            "conformes ?\n\nOui pour une série d'école ou de souvenirs, Non pour ne marquer " +
+            "que la photo affichée.",
+            "Photos non conformes", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (reponse != MessageBoxResult.Yes) return;
+
+        foreach (var autre in autres) autre.NonConforme = true;
+
+        FileLog.Write($"Photos non conformes : {autres.Count + 1} planche(s) marquée(s).");
     }
 
     /// <summary>

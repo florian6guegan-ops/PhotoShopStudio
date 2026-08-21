@@ -601,6 +601,28 @@
                             <TextBlock Text="Noir et blanc" Style="{StaticResource Texte}" FontSize="14"/>
                         </CheckBox>
 
+                        <!-- CE QUE LA BANDE AFFIRME.
+
+                             La case vit AUSSI ici, et pas seulement au récapitulatif, parce
+                             que STUDIO PHOTO IDENTITÉ NE PASSE JAMAIS PAR LE RÉCAPITULATIF :
+                             sur un poste identité verrouillé, « Imprimer » sort la planche
+                             sans écran intermédiaire — c'est délibéré, un écran de plus par
+                             client se paie en file d'attente. La case posée là-bas n'était
+                             donc atteignable que depuis le Studio complet, et le poste qui
+                             tire le plus de planches d'école était le seul à ne pas l'avoir.
+                             Signalé le 22/08/2026.
+
+                             Elle porte sur la photo affichée, comme les cases au-dessus.
+                             Cocher quand la bande en contient d'autres propose de les
+                             marquer toutes : une série d'école l'est en entier, et cocher
+                             trente fois est le geste qu'on oublie sur la trentième. -->
+                        <TextBlock Style="{StaticResource TitreModule}" Text="CONFORMITÉ" Margin="0,16,0,0"/>
+                        <CheckBox x:Name="NonConformeCheck" Style="{StaticResource CaseCochable}"
+                                  ToolTip="Pour une photo d'école, un souvenir, ou un client qui tient à sa pose : la planche sort avec « PHOTOS NON CONFORMES » au lieu de la mention de conformité. Le nom du magasin reste écrit."
+                                  Checked="OnNonConformeChanged" Unchecked="OnNonConformeChanged">
+                            <TextBlock Text="Photos non conformes" Style="{StaticResource Texte}" FontSize="14"/>
+                        </CheckBox>
+
                         <TextBlock Style="{StaticResource TitreModule}" Text="CORRECTIONS" Margin="0,16,0,0"/>
                         <!-- Les mêmes corrections que sur les tirages : une photo d'identité
                              prise au comptoir est sous-exposée ou tire au jaune comme une autre. -->

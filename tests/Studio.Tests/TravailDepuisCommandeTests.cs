@@ -352,4 +352,36 @@ public class TravailDepuisCommandeTests
 
         Assert.Equal("10x15", travail.ProduitParDefaut);
     }
+
+    // — l'avertissement « photos non conformes » —
+
+    /// <summary>
+    /// <b>C'est au retour du guichet qu'il sert.</b> On rouvre une planche d'identité
+    /// surtout quand la mairie l'a refusée ; une série d'école qui repartirait alors en
+    /// « PHOTOS CONFORMES » aurait perdu l'avertissement exactement au moment qui compte.
+    /// </summary>
+    [Fact]
+    public void Une_planche_hors_norme_le_reste_a_la_reouverture()
+    {
+        var article = Article("001.jpg");
+        article.PhotosNonConformes = true;
+
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [article], @"C:\photos", "planche", Norme());
+
+        Assert.True(Assert.Single(travail.Identite!.Photos).NonConforme);
+    }
+
+    /// <summary>
+    /// Le défaut ne bouge pas : une planche ordinaire, et toutes les commandes écrites avant
+    /// que ce champ n'existe, reviennent conformes.
+    /// </summary>
+    [Fact]
+    public void Une_planche_ordinaire_revient_conforme()
+    {
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [Article("001.jpg")], @"C:\photos", "planche", Norme());
+
+        Assert.False(Assert.Single(travail.Identite!.Photos).NonConforme);
+    }
 }
