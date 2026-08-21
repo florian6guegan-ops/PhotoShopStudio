@@ -27,6 +27,36 @@ public partial class App : Application
         DispatcherUnhandledException += OnUnhandledException;
         Studio.Printing.BitmapPrinter.Log = message => FileLog.Write(message);
 
+        // ⚠ LE JOURNAL AVANT TOUT LE RESTE.
+        //
+        // Les deux contrôles qui suivent écrivent au journal — droits manquants, bascule
+        // entre les deux logiciels —, et ce sont justement les lignes qu'on vient relire
+        // quand un poste n'a pas démarré comme il faut. Réglé après eux, le dossier valait
+        // celui d'usine : sur un poste dont la racine de données est ailleurs, ces
+        // lignes-là partaient dans un fichier que personne ne va lire.
+        var racine = AppServices.RacineDonneesParDefaut();
+        FileLog.LogsDir = Path.Combine(racine, "logs");
+
+        // LES DROITS D'ABORD, avant même de regarder si l'autre logiciel tourne.
+        //
+        // Sans élévation, les SDK des machines échouent en « accès refusé » et le défaut ne
+        // se voit qu'AU MOMENT D'IMPRIMER — plusieurs boîtes d'erreur, et le tirage qui
+        // ne part pas tant qu'on ne les a pas fermées, devant le client. Signalé le
+        // 21/08/2026 sur l'E-Photo. Voir Elevation.
+        //
+        // En premier parce qu'une relance élevée refait tout ce qui suit : demander la
+        // bascule de l'autre logiciel avant, ce serait la demander DEUX FOIS.
+        if (!Elevation.AssurerLesDroits("Studio Photo Identité"))
+        {
+            Shutdown(0);
+            return;
+        }
+
+        // Quand c'est une relance élevée : laisser l'instance d'avant finir de se retirer.
+        // Sans cela, le contrôle qui suit la compterait et demanderait de fermer un
+        // logiciel qui est déjà en train de partir. Voir Elevation.
+        Elevation.AttendreLInstanceRemplacee(e.Args);
+
         // UN SEUL des deux logiciels à la fois : ils se disputent le relais des machines, et
         // celui qui perd n'imprime plus — sans un mot. L'opérateur peut demander la bascule
         // plutôt que d'aller fermer l'autre à la main. Voir UnSeulLogiciel.
@@ -36,9 +66,6 @@ public partial class App : Application
             return;
         }
 
-        var racine = AppServices.RacineDonneesParDefaut();
-
-        FileLog.LogsDir = Path.Combine(racine, "logs");
         Studio.Imaging.BiRefNetMatting.DossiersCherches =
         [
             Path.Combine(racine, "models"),
