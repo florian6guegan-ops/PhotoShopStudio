@@ -47,6 +47,23 @@
         </Grid>
 
         <Grid Grid.Row="1">
+            <!-- Bandeau du mode « recadrer à la volée ».
+
+                 C'est un ÉTAT, pas un rappel : tant qu'il est là, le clic ne coche plus les
+                 photos et la molette ne fait plus défiler la planche, elle resserre le
+                 cadre. Sans lui, l'opérateur croit la grille cassée — c'est la leçon du
+                 bandeau de redressement de la surface de recadrage.
+
+                 Panel.ZIndex : il flotte AU-DESSUS des vignettes, qui sont déclarées
+                 après lui. -->
+            <Border x:Name="BandeauRecadrageVolee" Visibility="Collapsed" Panel.ZIndex="10"
+                    Background="#F0932B" CornerRadius="8" Padding="16,8"
+                    HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0"
+                    IsHitTestVisible="False">
+                <TextBlock Foreground="#12181E" FontSize="17" FontWeight="SemiBold"
+                           Text="Recadrage à la volée — glissez la photo dans sa vignette · molette : zoom · C pour sortir"/>
+            </Border>
+
             <!-- La planche ne fabrique QUE les tuiles visibles (voir PlancheVirtualisee) :
                  un dossier peut en compter 1200, et le WrapPanel les construisait toutes.
                  Le défilement appartient donc au panneau, et le ScrollViewer descend dans
@@ -80,7 +97,11 @@
                              n'apparaît que sur les photos de la commande. -->
                         <Border Width="210" Height="230"
                                 Margin="3" Background="{Binding TileBrush}"
-                                MouseLeftButtonUp="OnPhotoClicked" Tag="{Binding}">
+                                MouseLeftButtonUp="OnPhotoClicked"
+                                PreviewMouseLeftButtonDown="OnVignetteRecadrageDown"
+                                MouseMove="OnVignetteRecadrageMove"
+                                PreviewMouseWheel="OnVignetteRecadrageWheel"
+                                Tag="{Binding}">
                             <Grid>
                                 <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="4"/>
 

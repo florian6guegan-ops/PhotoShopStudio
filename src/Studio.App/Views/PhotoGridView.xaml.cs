@@ -1037,6 +1037,17 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     {
         if ((sender as Border)?.Tag is not PhotoItem photo) return;
 
+        // ⚠ EN RECADRAGE À LA VOLÉE, LE CLIC RECADRE — il ne coche pas.
+        //
+        // Le relâchement passe forcément ici : c'est lui qui rend la souris. Sans ce
+        // retour anticipé, chaque recadrage cocherait ou décocherait la photo au passage,
+        // et l'opérateur perdrait sa sélection en réglant ses cadrages.
+        if (_recadrageALaVolee)
+        {
+            LacherLaVignette();
+            return;
+        }
+
         // Maj+clic prend toute la PLAGE depuis la dernière photo touchée : sur une carte de
         // soixante photos dont le client en veut quarante d'affilée, c'est quarante clics
         // en moins. Le geste est celui de l'explorateur Windows, donc il n'a pas à
@@ -2210,7 +2221,9 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
         var map = new KeyMap()
             .OnCtrl(Key.A, SelectAll)
-            .On(Key.C, () => OnCropCurrent(this, new RoutedEventArgs()))
+            // C n'ouvre plus la photo en grand : il arme le recadrage sur les vignettes.
+            // Voir BasculerLeRecadrageALaVolee.
+            .On(Key.C, BasculerLeRecadrageALaVolee)
             .On([Key.Add, Key.OemPlus], () => ChangeQuantityOnTargets(1))
             .On([Key.Subtract, Key.OemMinus], () => ChangeQuantityOnTargets(-1))
             .On([Key.D0, Key.NumPad0], () => SetQuantityOnTargets(0))
@@ -2253,10 +2266,159 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         }
     }
 
-    private void OnCropCurrent(object sender, RoutedEventArgs e)
+    // ----- le recadrage à la volée, sur les vignettes -----
+
+    /// <summary>Vrai tant que la touche C a armé le recadrage sur les vignettes.</summary>
+    private bool _recadrageALaVolee;
+
+    /// <summary>La vignette qu'on est en train de tirer, ou null.</summary>
+    private PhotoItem? _recadreSur;
+
+    private Point _dernierPointVignette;
+
+    /// <summary>
+    /// Arme ou désarme le recadrage à la volée — la touche <b>C</b>.
+    ///
+    /// <b>Ce que ça remplace.</b> C ouvrait la photo courante EN GRAND, dans l'éditeur de
+    /// cadrage, une par une : sur une carte de quarante photos où le client veut resserrer
+    /// chaque cadrage d'un cheveu, c'était quarante allers-retours. L'exploitant demandait
+    /// le geste qui existe déjà dans « Modifier » — glisser la photo à l'intérieur de sa
+    /// vignette — mais sur la grille, et sans ouvrir quoi que ce soit. Demandé le
+    /// 21/08/2026.
+    ///
+    /// <b>Une BASCULE, et non une touche maintenue.</b> Dans « Modifier », C se tient
+    /// pendant qu'on tire à la souris ; ici l'opérateur enchaîne les vignettes, et tenir une
+    /// touche d'une main pendant qu'on cadre quarante photos de l'autre n'est pas un geste
+    /// de comptoir. C'est aussi la leçon de <c>CropSurface.RedressementArme</c> :
+    /// <c>Keyboard.IsKeyDown</c> lit le clavier tel que le voit l'élément qui a le FOCUS, et
+    /// dès qu'on a touché une liste ou un bouton la touche part ailleurs — l'outil passe
+    /// alors pour cassé.
+    /// </summary>
+    private void BasculerLeRecadrageALaVolee()
     {
-        if (_photoCourante is { } photo && photo.Selected)
-            EditCrop(photo, onClosed: null);
+        _recadrageALaVolee = !_recadrageALaVolee;
+
+        BandeauRecadrageVolee.Visibility =
+            _recadrageALaVolee ? Visibility.Visible : Visibility.Collapsed;
+
+        // un mode qu'on quitte ne doit pas garder la souris ni sa photo
+        if (!_recadrageALaVolee) LacherLaVignette();
+
+        FileLog.Write($"Recadrage à la volée {(_recadrageALaVolee ? "armé" : "désarmé")}");
+    }
+
+    private void LacherLaVignette()
+    {
+        if (_recadreSur is null) return;
+
+        _recadreSur = null;
+        Mouse.Capture(null);
+    }
+
+    private void OnVignetteRecadrageDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_recadrageALaVolee) return;
+        if ((sender as Border)?.Tag is not PhotoItem photo) return;
+
+        // ⚠ LES BOUTONS DE LA VIGNETTE GARDENT LA MAIN.
+        //
+        // Ce gestionnaire est posé en Preview : il voit le clic AVANT le + et le − de la
+        // tuile, et les rendrait muets tant que le mode est armé — on ne pourrait plus
+        // changer une quantité sans sortir du recadrage.
+        if (e.OriginalSource is DependencyObject source && EstDansUnBouton(source)) return;
+
+        // Sans produit, il n'y a pas de cadre : rien à tirer. On ne fait alors RIEN plutôt
+        // que de laisser croire que le geste a porté.
+        if (photo.Cadre is null) return;
+
+        _recadreSur = photo;
+        _dernierPointVignette = e.GetPosition(this);
+        ((UIElement)sender).CaptureMouse();
+
+        // le clic ne doit pas cocher la photo : ici il recadre
+        e.Handled = true;
+    }
+
+    private void OnVignetteRecadrageMove(object sender, MouseEventArgs e)
+    {
+        if (!_recadrageALaVolee || _recadreSur is not { } photo) return;
+        if (e.LeftButton != MouseButtonState.Pressed) { LacherLaVignette(); return; }
+
+        var point = e.GetPosition(this);
+
+        // Le même diviseur que dans « Modifier » : les vignettes y font 200 px de haut,
+        // celles-ci 210 — le geste doit avoir le même poids sous la main dans les deux
+        // écrans, sinon on recadre trop vite d'un côté et trop lentement de l'autre.
+        var dx = (point.X - _dernierPointVignette.X) / 200.0;
+        var dy = (point.Y - _dernierPointVignette.Y) / 200.0;
+        _dernierPointVignette = point;
+
+        // on tire la PHOTO sous le cadre : le cadre part donc en sens inverse
+        DeplacerLeCadre(photo, -dx, -dy);
+    }
+
+    private void OnVignetteRecadrageWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (!_recadrageALaVolee) return;
+        if ((sender as Border)?.Tag is not PhotoItem photo) return;
+        if (photo.Cadre is null) return;
+
+        ZoomerLeCadre(photo, e.Delta > 0);
+
+        // sans cela la planche défilerait sous le geste
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Ce point de l'écran appartient-il à un bouton ?
+    ///
+    /// On remonte le VISUEL, et non le logique : un bouton est fait d'un gabarit, et
+    /// l'élément qui reçoit vraiment le clic est le plus souvent un <c>TextBlock</c> ou une
+    /// <c>Border</c> qui vit dedans. Le repli sur l'arbre logique évite l'exception que
+    /// <c>VisualTreeHelper</c> lève sur ce qui n'est pas un visuel.
+    /// </summary>
+    private static bool EstDansUnBouton(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is System.Windows.Controls.Primitives.ButtonBase) return true;
+
+            element = element is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(element)
+                : LogicalTreeHelper.GetParent(element);
+        }
+
+        return false;
+    }
+
+    /// <summary>Déplace le cadre d'une photo, en fractions de sa propre taille.</summary>
+    private static void DeplacerLeCadre(PhotoItem photo, double dx, double dy)
+    {
+        if (photo.Cadre is not { } cadre) return;
+
+        cadre.Move(dx * cadre.FrameWidth, dy * cadre.FrameHeight);
+        AppliquerLeCadre(photo, cadre);
+    }
+
+    /// <summary>
+    /// Resserre ou élargit le cadre autour de son centre, en gardant son rapport : un cadre
+    /// qui ne serait plus à la forme du produit donnerait un tirage déformé.
+    /// </summary>
+    private static void ZoomerLeCadre(PhotoItem photo, bool avant)
+    {
+        if (photo.Cadre is not { } cadre) return;
+
+        if (avant) cadre.ZoomIn();
+        else cadre.ZoomOut();
+
+        AppliquerLeCadre(photo, cadre);
+    }
+
+    /// <summary>Reporte le cadre sur le recadrage de la photo — le seul point de conversion.</summary>
+    private static void AppliquerLeCadre(PhotoItem photo, FramedCrop cadre)
+    {
+        photo.Crop = cadre.ToCropSpec();
+        photo.RefreshThumbnail();
     }
 
     /// <summary>
@@ -2328,25 +2490,6 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                     }
                 }),
             aCorriger.Count > 1 ? $"Corrections — {aCorriger.Count} photos" : "Corrections");
-    }
-
-    private void EditCrop(PhotoItem photo, Action? onClosed, string titre = "Recadrage")
-    {
-        if (photo.Product is not { } product) return;
-
-        var initial = new CropEditorView.State(
-            photo.Crop, photo.RotationQuarterTurns, photo.FitOverride ?? product.DefaultFit);
-
-        Navigator.Go(new CropEditorView(photo.Path, product, initial, result =>
-        {
-            // même ordre qu'au lot : ce qui remet le cadrage au centre passe en premier
-            photo.RotationQuarterTurns = result.RotationQuarterTurns;
-            photo.OublierCadre();
-            photo.Crop = result.Crop;
-            photo.FitOverride = result.Fit == product.DefaultFit ? null : result.Fit;
-            photo.RefreshThumbnail();
-            onClosed?.Invoke();
-        }), titre);
     }
 
     private void OnPickProduct(object sender, RoutedEventArgs e)
