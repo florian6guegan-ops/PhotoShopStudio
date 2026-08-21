@@ -123,6 +123,10 @@ public static class TravailDepuisCommande
                 // 0 = « planche pleine » : l'écran recalera sur la capacité du papier
                 Copies = article.SheetCopiesOverride ?? 0,
 
+                // l'avertissement hors norme survit à la réouverture : voir
+                // PhotoIdentiteEnAttente.NonConforme
+                NonConforme = article.PhotosNonConformes,
+
                 // ⚠ LA PHOTO NE REVIENT « PRÊTE » QUE SI LA COMMANDE PORTE SES REPÈRES.
                 //
                 // Elle ne les portait pas du tout jusqu'ici : on laissait donc la détection

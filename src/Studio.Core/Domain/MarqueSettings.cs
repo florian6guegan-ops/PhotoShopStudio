@@ -61,6 +61,29 @@ public sealed record MarqueSettings(
     public const string MentionParDefaut =
         "PHOTOS CONFORMES\naux normes des documents officiels";
 
+    /// <summary>
+    /// Ce que la bande porte quand l'opérateur a coché « photos non conformes ».
+    ///
+    /// <b>Elle REMPLACE la mention réglée, elle ne s'y ajoute pas.</b> Une planche ne peut
+    /// pas affirmer la conformité et la démentir sur la ligne suivante.
+    ///
+    /// <b>Pourquoi une planche sortirait exprès hors norme.</b> Une photo d'école, un
+    /// souvenir au format identité, et surtout le client qui veut sa pose, son sourire ou
+    /// ses lunettes contre l'avis du comptoir. La boutique tire ce qu'on lui demande — mais
+    /// elle n'a pas à porter par écrit une conformité qu'elle sait fausse, et l'opérateur
+    /// n'a pas à la démontrer de mémoire quand la mairie refuse la photo trois semaines plus
+    /// tard. Demandé le 21/08/2026.
+    ///
+    /// Le NOM DU MAGASIN reste écrit à la suite, comme sur une planche conforme : la
+    /// signature dit qui a tiré, pas ce que vaut le tirage.
+    ///
+    /// ⚠ Elle n'est pas réglable, à la différence de <see cref="MentionParDefaut"/>. Une
+    /// boutique peut vouloir formuler sa promesse à sa façon ; l'avertissement qui la
+    /// protège doit rester dans les mêmes termes partout, et lisible.
+    /// </summary>
+    public const string MentionNonConforme =
+        "PHOTOS NON CONFORMES\naux normes des documents officiels";
+
     /// <summary>Vrai si la bande porte quelque chose de plus que la date.</summary>
     /// <remarks>Hors du fichier : c'est un calcul, voir <c>DropboxSettings.EstUtilisable</c>.</remarks>
     [JsonIgnore]

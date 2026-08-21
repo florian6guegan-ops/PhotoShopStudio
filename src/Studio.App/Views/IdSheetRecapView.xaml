@@ -85,6 +85,26 @@
                             Padding="14,0" FontSize="15" Margin="0,0,14,4" Click="OnRemplacerLaPhoto"
                             ToolTip="Revenir au choix des photos">Remplacer la photo</Button>
 
+                    <!-- HORS NORME, DIT SUR LE PAPIER.
+
+                         Photo d'école, souvenir au format identité, ou le client qui tient à
+                         sa pose contre l'avis du comptoir : la boutique tire ce qu'on lui
+                         demande, mais elle n'écrit pas « PHOTOS CONFORMES » sur une planche
+                         dont elle sait que la mairie la refusera. Cochée, la bande basse
+                         porte l'avertissement à la place.
+
+                         À LA PLANCHE, comme la quantité juste à côté : une commande peut
+                         mêler une série d'école et une vraie identité. Avec plusieurs
+                         planches, l'écran propose de l'étendre à toutes. Demandé le
+                         21/08/2026. -->
+                    <CheckBox x:Name="NonConformeCheck" Style="{StaticResource CaseCochable}"
+                              VerticalAlignment="Center" VerticalContentAlignment="Center"
+                              FontSize="15" Margin="0,0,14,4"
+                              Foreground="{DynamicResource TextBrush}"
+                              Content="Photos non conformes"
+                              ToolTip="Pour une photo d'école, un souvenir, ou un client qui tient à sa pose : la planche sort avec « PHOTOS NON CONFORMES » au lieu de la mention de conformité."
+                              Click="OnNonConformeChange"/>
+
                     <TextBlock x:Name="DetailText" Style="{StaticResource Hint}" FontSize="14"
                                VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
                                Margin="0,0,0,4"/>

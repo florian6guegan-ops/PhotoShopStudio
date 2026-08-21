@@ -99,6 +99,19 @@ public sealed class PhotoIdentiteEnAttente
     public bool Selected { get; set; }
     public int Quantity { get; set; } = 1;
 
+    /// <summary>
+    /// Planche déclarée HORS NORME au récapitulatif : la bande basse porte un avertissement
+    /// au lieu d'affirmer la conformité. Voir <c>OrderItem.PhotosNonConformes</c>.
+    ///
+    /// ⚠ <b>Il revient avec la planche rouverte, et c'est le cas qui compte.</b> On rouvre
+    /// une commande d'identité surtout quand la photo est revenue du guichet ; une série
+    /// d'école qui repartirait alors en « PHOTOS CONFORMES » aurait perdu l'avertissement
+    /// exactement au moment où il sert.
+    ///
+    /// Faux sur les commandes enregistrées avant ce champ, comme sur toute planche ordinaire.
+    /// </summary>
+    public bool NonConforme { get; set; }
+
     /// <summary>Photos sur la planche.</summary>
     public int Copies { get; set; }
 

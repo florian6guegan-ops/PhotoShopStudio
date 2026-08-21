@@ -16,6 +16,20 @@ public sealed record SheetLayoutResult(
 public static class IdSheetLayout
 {
     /// <summary>
+    /// Distance à garder entre un bloc de photos et le bord de la feuille, en millimètres,
+    /// quand ce bloc est CALÉ dans un coin au lieu d'être centré.
+    ///
+    /// Deux millimètres : au-dessus du rognage mesuré sur la DNP — près d'un millimètre et
+    /// demi par bord sur un tirage à fond perdu — et pas plus, chaque millimètre pris ici
+    /// étant perdu pour la photo.
+    ///
+    /// ⚠ <b>Une seule valeur pour tout l'atelier.</b> <see cref="PlancheRentree"/> y renvoie
+    /// au lieu de la redéclarer : les deux répondent au même phénomène physique, et deux
+    /// constantes jumelles finissent toujours par diverger sans que personne ne le voie.
+    /// </summary>
+    public const double AirAuBordMm = 2;
+
+    /// <summary>
     /// Nombre maximal de cellules tenant sur la planche. Sert à borner le choix
     /// de l'opérateur avant d'appeler <see cref="Layout"/>, qui lèverait au-delà.
     /// Renvoie 0 si la cellule ne tient pas du tout.
@@ -84,10 +98,29 @@ public static class IdSheetLayout
     /// Hauteur laissée libre en bas de la planche, par exemple pour y porter la date. Le
     /// bloc de photos est alors centré sur ce qui reste, donc remonte.
     /// </param>
+    /// <param name="airAuCoinPx">
+    /// Null — le défaut — centre le bloc sur la planche. Une valeur le CALE dans le coin
+    /// haut-gauche, à cette distance des deux bords.
+    ///
+    /// <b>C'est un compromis de massicot, pas une préférence d'allure.</b> Un bloc centré
+    /// laisse de la marge des quatre côtés : le tirage est sûr, mais l'opérateur coupe
+    /// quatre bords. Calé dans le coin, il n'en reste que deux à couper — les deux autres
+    /// tombent avec le bord de la feuille.
+    ///
+    /// ⚠ <b>L'air n'est pas un ornement, il remplace ce que la machine mange.</b> Un tirage
+    /// part à fond perdu et le massicot de la DNP rogne près d'un millimètre et demi par
+    /// bord. Coller le bloc à zéro rognerait la photo — c'est exactement le défaut des 7×10
+    /// du 20/08/2026, corrigé alors en centrant. Voir <see cref="PlancheRentree.AirAuBordMm"/>,
+    /// qui répond au même problème sur la planche de rentrée.
+    ///
+    /// Quand la planche est trop juste pour donner cet air, on prend ce qui reste plutôt que
+    /// de pousser le bloc hors de la feuille.
+    /// </param>
     public static SheetLayoutResult Layout(
         int sheetWidth, int sheetHeight,
         int cellWidth, int cellHeight,
-        int gap, int copies, int tickLength = 0, int bottomReserve = 0)
+        int gap, int copies, int tickLength = 0, int bottomReserve = 0,
+        int? airAuCoinPx = null)
     {
         if (copies < 1) throw new ArgumentOutOfRangeException(nameof(copies));
         if (cellWidth <= 0 || cellHeight <= 0 || cellWidth > sheetWidth || cellHeight > sheetHeight)
@@ -112,7 +145,12 @@ public static class IdSheetLayout
 
         var blockW = cols * cellWidth + (cols - 1) * gap;
         var blockH = rows * cellHeight + (rows - 1) * gap;
-        var originX = (sheetWidth - blockW) / 2;
+
+        // Calé au coin, l'air demandé cède à la place réellement libre : sur une planche
+        // juste, le réclamer en entier ferait sortir la dernière colonne de la feuille.
+        var originX = airAuCoinPx is { } air
+            ? Math.Min(Math.Max(0, air), Math.Max(0, sheetWidth - blockW))
+            : (sheetWidth - blockW) / 2;
 
         // la réserve est prise en bas : le bloc se centre sur la hauteur restante
         var utile = Math.Max(blockH, sheetHeight - bottomReserve);
@@ -135,7 +173,13 @@ public static class IdSheetLayout
         // Ce sont donc les REPÈRES qui cèdent : ils se raccourcissent à la marge disponible
         // (voir <see cref="BuildCutTicks"/>). Un repère écourté se pardonne ; un tirage
         // rogné se refait.
-        var originY = Math.Max(0, (utile - blockH) / 2);
+        //
+        // ⚠ Le calage au coin RENONCE à ce centrage, en connaissance de cause : c'est
+        // l'opérateur qui l'a demandé pour couper deux bords au lieu de quatre, et l'air du
+        // coin est là pour que la machine ne rogne toujours pas la photo.
+        var originY = airAuCoinPx is { } airHaut
+            ? Math.Min(Math.Max(0, airHaut), Math.Max(0, utile - blockH))
+            : Math.Max(0, (utile - blockH) / 2);
         if (originY + blockH > sheetHeight) originY = Math.Max(0, sheetHeight - blockH);
 
         var cells = new List<PixelRect>(copies);

@@ -98,7 +98,11 @@ public static class TirageIdentite
                 CropGrande: genre == GenreDePlanche.Rentree ? p.CropGrande : null,
                 // les repères du visage : c'est ce qui permet de rouvrir la planche telle
                 // qu'elle est sortie depuis « Commandes du jour › Photos d'identité »
-                Reperes: p.Reperes))
+                Reperes: p.Reperes,
+                // hors norme déclaré au récapitulatif : la commande le garde, pour qu'une
+                // réimpression ressorte avec le même avertissement — c'est justement quand
+                // la photo revient au comptoir qu'il sert
+                PhotosNonConformes: p.NonConforme))
             .ToList();
 
         // LA FEUILLE EN PLUS, quand c'est « la planche ET une 10×15 ».

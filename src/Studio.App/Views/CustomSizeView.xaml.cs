@@ -37,9 +37,26 @@ namespace Studio.App.Views;
 /// d'ici pose la valeur de départ des photos ouvertes dans ce format, et l'édition reste
 /// libre de la changer photo par photo.
 /// </param>
+/// <param name="CalerDansLeCoin">
+/// Pose le bloc de photos dans le COIN de la feuille au lieu de le centrer.
+///
+/// <b>C'est du temps de massicot, et rien d'autre.</b> Centré, un tirage bâtard laisse de la
+/// marge des quatre côtés : quatre coupes. Calé au coin, deux suffisent — les deux autres
+/// bords sont ceux de la feuille. Sur une planche pleine, le centrage donne DÉJÀ ce résultat
+/// sans qu'on l'ait demandé, ce qui explique l'impression que le logiciel « fait des fois
+/// bien et des fois non » : il centre toujours, c'est la planche qui est tantôt juste,
+/// tantôt large.
+///
+/// Il reste 2 mm de blanc du côté calé (<c>IdSheetLayout.AirAuBordMm</c>) : le tirage part à
+/// fond perdu et la machine rogne près d'un millimètre et demi par bord. Sans cet air, ce
+/// serait la photo qu'elle mangerait — le défaut des 7 × 10 du 20/08/2026.
+///
+/// Demandé le 21/08/2026, en case à cocher plutôt qu'en règle : les deux dispositions se
+/// valent selon ce qu'on tire, et c'est l'opérateur qui a le massicot en main.
+/// </param>
 public sealed record CustomSize(
     double WidthMm, double HeightMm, string? PaperCode = null, double BorderMm = 0,
-    bool ContourNoir = false)
+    bool ContourNoir = false, bool CalerDansLeCoin = false)
 {
     /// <summary>Libellé en centimètres, l'unité du comptoir.</summary>
     public string Libelle =>
@@ -131,6 +148,8 @@ public partial class CustomSizeView : UserControl
     /// soit, puisque la case reste cochée à l'écran.
     /// </summary>
     private void OnContourNoirChange(object sender, RoutedEventArgs e) => Recalculer();
+
+    private void OnCalerAuCoinChange(object sender, RoutedEventArgs e) => Recalculer();
 
     // ----- le sens de la photo -----
 
@@ -224,7 +243,8 @@ public partial class CustomSizeView : UserControl
         }
 
         _taille = new CustomSize(largeur, hauteur, BorderMm: _bordMm,
-            ContourNoir: ContourNoirCheck.IsChecked == true);
+            ContourNoir: ContourNoirCheck.IsChecked == true,
+            CalerDansLeCoin: CalerAuCoinCheck.IsChecked == true);
         ContinuerButton.IsEnabled = true;
 
         // LE SENS SUIT LES CADRAGES, ET L'ÉCRAN LE DIT.
@@ -347,7 +367,12 @@ public partial class CustomSizeView : UserControl
         // Le CONTOUR non plus : il tient à la façon de couper du jour — ciseaux ou massicot
         // sur repères —, pas au format. Une taille reproposée le porterait sans que la case
         // le montre, puisqu'elle repart décochée.
-        _recentes.Insert(0, taille with { BorderMm = 0, ContourNoir = false });
+        // Le CALAGE AU COIN suit la même règle, et pour la même raison : c'est une décision
+        // de découpe, prise ce jour-là, pas une propriété du 9 × 13.
+        _recentes.Insert(0, taille with
+        {
+            BorderMm = 0, ContourNoir = false, CalerDansLeCoin = false,
+        });
         if (_recentes.Count > MaximumRecentes) _recentes.RemoveRange(MaximumRecentes,
             _recentes.Count - MaximumRecentes);
 

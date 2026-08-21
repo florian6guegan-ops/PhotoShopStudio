@@ -2645,7 +2645,8 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
 
                 produitDeLaLigne = retenue.Papier;
                 planche = new CustomSheetSpec(
-                    taille.WidthMm, taille.HeightMm, retenue.Plan.Sheets, taille.BorderMm);
+                    taille.WidthMm, taille.HeightMm, retenue.Plan.Sheets, taille.BorderMm,
+                    taille.CalerDansLeCoin);
             }
 
             items.AddRange(photos.Select(p =>

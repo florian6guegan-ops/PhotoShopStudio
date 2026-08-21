@@ -217,6 +217,22 @@ public sealed class OrderItem
     /// </summary>
     public ReperesIdentite? Reperes { get; set; }
 
+    /// <summary>
+    /// Planches identité : vrai quand l'opérateur a déclaré la planche HORS NORME. La bande
+    /// basse porte alors <see cref="MarqueSettings.MentionNonConforme"/> au lieu d'affirmer
+    /// la conformité.
+    ///
+    /// <b>Photos d'école, souvenirs au format identité, et le client qui veut sa pose.</b>
+    /// La boutique tire ce qu'on lui demande, mais elle n'écrit pas sur le papier une
+    /// conformité qu'elle sait fausse.
+    ///
+    /// ⚠ <b>Il est gardé par la commande, comme le cadrage.</b> Une planche réimprimée trois
+    /// semaines plus tard doit ressortir avec le même avertissement : c'est justement au
+    /// moment où la photo revient au comptoir qu'il sert. Faux sur tout ce qui n'est pas une
+    /// planche identité, et sur les commandes d'avant ce champ.
+    /// </summary>
+    public bool PhotosNonConformes { get; set; }
+
     /// <summary>Nom de la finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
     public string? Finish { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();
@@ -301,6 +317,20 @@ public sealed class OrderLine
     /// au lieu de chaque tirage.
     /// </summary>
     public double? CustomCellBorderMm { get; set; }
+
+    /// <summary>
+    /// Vrai pour CALER le bloc de photos dans le coin haut-gauche de la feuille au lieu de
+    /// le centrer. Faux — le défaut — garde le centrage.
+    ///
+    /// <b>C'est une économie de massicot.</b> Centré, un tirage en taille bâtarde laisse de
+    /// la marge des quatre côtés et l'opérateur coupe quatre bords. Calé au coin, il n'en
+    /// reste que deux ; les deux autres tombent avec le bord de la feuille.
+    ///
+    /// Porté par la LIGNE et non par le produit, comme <see cref="CustomCellBorderMm"/> :
+    /// c'est une décision prise sur cette commande-là, devant ce client-là, et le produit
+    /// désigne ici le seul papier.
+    /// </summary>
+    public bool CustomSheetCoin { get; set; }
 
     /// <summary>Vrai quand la ligne est une planche à taille choisie.</summary>
     public bool IsCustomSheet => CustomCellWidthMm is > 0 && CustomCellHeightMm is > 0;

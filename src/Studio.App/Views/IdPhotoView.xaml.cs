@@ -3156,7 +3156,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                     : null,
                 // Les repères partent AVEC la planche : c'est ce qui permet de la rouvrir
                 // telle qu'elle est sortie depuis « Commandes du jour ». Voir ReperesDe.
-                ReperesDe(p)))
+                ReperesDe(p))
+            {
+                // Posé après coup : c'est une propriété modifiable du récapitulatif, comme
+                // la quantité, et non un paramètre de construction.
+                NonConforme = p.NonConforme,
+            })
             .ToList();
 
         if (planches.Count == 0)
@@ -3230,7 +3235,8 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 surModifier: RevenirSurLaPhoto,
                 surRemplacer: RevenirAuChoixDesPhotos,
                 attenteId: _attenteId,
-                genre: _genre),
+                genre: _genre,
+                surNonConforme: MarquerNonConforme),
             planches.Count == 1 ? "Récapitulatif de la planche" : "Récapitulatif des planches");
     }
 
@@ -3290,6 +3296,20 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         var photo = _photos.FirstOrDefault(p => p.Rang == rang);
         if (photo is not null) _ = OuvrirLaPhotoAsync(photo);
+    }
+
+    /// <summary>
+    /// Retient qu'une planche a été déclarée hors norme au récapitulatif.
+    ///
+    /// Le récapitulatif est REFABRIQUÉ depuis cette bande à chaque retour : sans ce report,
+    /// la case cochée disparaîtrait au premier « Modifier la photo », et la planche
+    /// repartirait en affirmant une conformité que l'opérateur venait de démentir.
+    /// C'est aussi par là que la mise de côté et la commande l'apprennent.
+    /// </summary>
+    private void MarquerNonConforme(int rang, bool nonConforme)
+    {
+        if (_photos.FirstOrDefault(p => p.Rang == rang) is { } photo)
+            photo.NonConforme = nonConforme;
     }
 
     /// <summary>
@@ -3462,6 +3482,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             Selected = p.Selected,
             Quantity = p.Quantite,
             Copies = p.Copies,
+            NonConforme = p.NonConforme,
             Prete = p.Prete,
             CropX = p.Crop.X,
             CropY = p.Crop.Y,
@@ -3652,6 +3673,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             photo.Corrections = garde.Corrections.Clone();
             photo.Quantite = garde.Quantity;
             photo.Copies = garde.Copies;
+            photo.NonConforme = garde.NonConforme;
             photo.Prete = garde.Prete;
         }
     }
@@ -3770,6 +3792,13 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         /// <summary>Photos par planche. Recalé sur la capacité du papier au premier passage.</summary>
         public int Copies { get; set; }
+
+        /// <summary>
+        /// Planche déclarée HORS NORME. Elle se coche au récapitulatif, pas ici : c'est là
+        /// qu'on voit la bande. Ce champ ne sert qu'à la RAPPORTER d'une planche rouverte
+        /// jusqu'à cet écran-là. Voir <c>PhotoIdentiteEnAttente.NonConforme</c>.
+        /// </summary>
+        public bool NonConforme { get; set; }
 
         /// <summary>
         /// Nombre de planches identiques pour CETTE photo. Deux personnes commandent

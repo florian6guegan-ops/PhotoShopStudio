@@ -269,10 +269,17 @@ public static class ImagePipeline
     /// tour pour la poser. Le tirage découpé retrouve son sens dans la main de l'opérateur —
     /// exactement ce que fait déjà la planche identité composée debout.
     /// </param>
+    /// <param name="calerAuCoin">
+    /// Vrai pose le bloc dans le coin haut-gauche au lieu de le centrer, pour que
+    /// l'opérateur n'ait que deux bords à massicoter. Voir
+    /// <see cref="IdSheetLayout.Layout"/> : l'air laissé au bord y est expliqué, et il n'est
+    /// pas négociable — c'est lui qui empêche la machine de rogner la photo.
+    /// </param>
     public static void RenderCustomSheetToFile(
         IReadOnlyList<SheetCell> cells, double gapMm, bool cutMarks,
         int sheetWidthPx, int sheetHeightPx, string outputPath, int dpi = 300,
-        bool cutBorder = true, (int Width, int Height)? footprint = null)
+        bool cutBorder = true, (int Width, int Height)? footprint = null,
+        bool calerAuCoin = false)
     {
         ArgumentNullException.ThrowIfNull(cells);
         if (cells.Count == 0)
@@ -303,7 +310,10 @@ public static class ImagePipeline
         var tickPx = cutMarks ? MmPx.ToPixels(3, dpi) : 0;
 
         var layout = IdSheetLayout.Layout(
-            sheetWidthPx, sheetHeightPx, cellW, cellH, gapPx, total, tickPx);
+            sheetWidthPx, sheetHeightPx, cellW, cellH, gapPx, total, tickPx,
+            airAuCoinPx: calerAuCoin
+                ? MmPx.ToPixels(IdSheetLayout.AirAuBordMm, dpi)
+                : (int?)null);
 
         using var sheet = new MagickImage(MagickColors.White, (uint)sheetWidthPx, (uint)sheetHeightPx);
         sheet.Density = new Density(dpi, dpi, DensityUnit.PixelsPerInch);

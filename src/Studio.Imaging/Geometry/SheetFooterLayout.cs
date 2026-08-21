@@ -53,9 +53,28 @@ public sealed record SheetFooter(
     /// l'impression — deux endroits où il pourrait diverger sans qu'on le voie.
     /// </summary>
     /// <param name="marque">Réglages de la boutique. Null = date seule, comme avant.</param>
-    public static SheetFooter Pour(DateTime moment, MarqueSettings? marque)
+    /// <param name="nonConforme">
+    /// Vrai quand l'opérateur a déclaré la planche hors norme : la mention de conformité est
+    /// alors REMPLACÉE par <see cref="MarqueSettings.MentionNonConforme"/>.
+    ///
+    /// ⚠ <b>Il force la bande, même quand la boutique l'a éteinte.</b> C'est le seul endroit
+    /// où l'on passe outre <see cref="MarqueSettings.BandeActive"/>, et c'est délibéré : la
+    /// bande est un ornement qu'on a le droit de retirer, l'avertissement est une
+    /// protection. Une planche hors norme qui sortirait muette parce qu'un réglage traînait
+    /// à « désactivé » laisserait la boutique sans rien à montrer.
+    ///
+    /// Le logo et le code QR suivent la marque, comme d'habitude : ils ne disent rien de la
+    /// conformité.
+    /// </param>
+    public static SheetFooter Pour(DateTime moment, MarqueSettings? marque,
+        bool nonConforme = false)
     {
-        if (marque is not { BandeActive: true }) return new SheetFooter(moment);
+        // Bande éteinte : rien, SAUF l'avertissement, qui doit sortir de toute façon.
+        if (marque is not { BandeActive: true })
+            return nonConforme
+                ? new SheetFooter(moment, MarqueSettings.MentionNonConforme,
+                    NomMagasin: marque?.NomMagasin)
+                : new SheetFooter(moment);
 
         byte[]? qr = null;
         if (!string.IsNullOrWhiteSpace(marque.QrTexte))
@@ -73,7 +92,11 @@ public sealed record SheetFooter(
             }
         }
 
-        return new SheetFooter(moment, marque.Mention, marque.LogoPath, qr, marque.NomMagasin);
+        // La mention hors norme l'emporte sur celle qui est réglée : affirmer la conformité
+        // et la démentir sur la même bande n'aurait aucun sens.
+        var mention = nonConforme ? MarqueSettings.MentionNonConforme : marque.Mention;
+
+        return new SheetFooter(moment, mention, marque.LogoPath, qr, marque.NomMagasin);
     }
 }
 

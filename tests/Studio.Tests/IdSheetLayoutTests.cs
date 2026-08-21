@@ -127,4 +127,56 @@ public class IdSheetLayoutTests
             else Assert.Contains(t.Y1, ys);
         });
     }
+
+    // ----- le calage dans un coin : deux bords à couper au lieu de quatre -----
+
+    [Fact]
+    public void CaleAuCoin_PoseLeBlocAAirDesDeuxBords()
+    {
+        var air = MmPx.ToPixels(IdSheetLayout.AirAuBordMm, Dpi);
+
+        var layout = IdSheetLayout.Layout(
+            SheetW, SheetH, CellW, CellH, Gap, copies: 4, airAuCoinPx: air);
+
+        // le coin haut-gauche du bloc, et non son centre : c'est tout l'intérêt
+        Assert.Equal(air, layout.Cells.Min(c => c.X));
+        Assert.Equal(air, layout.Cells.Min(c => c.Y));
+    }
+
+    [Fact]
+    public void CaleAuCoin_NeCollePasAuBord()
+    {
+        // l'air n'est pas décoratif : à zéro, le rognage de la machine mangerait la photo
+        var layout = IdSheetLayout.Layout(
+            SheetW, SheetH, CellW, CellH, Gap, copies: 4,
+            airAuCoinPx: MmPx.ToPixels(IdSheetLayout.AirAuBordMm, Dpi));
+
+        Assert.True(layout.Cells.Min(c => c.X) > 0);
+        Assert.True(layout.Cells.Min(c => c.Y) > 0);
+    }
+
+    [Fact]
+    public void CaleAuCoin_SurPlancheJuste_LAirCedeALaPlace()
+    {
+        // planche taillée au plus juste pour une seule case : réclamer l'air en entier
+        // ferait sortir la photo de la feuille. C'est l'air qui cède, jamais le tirage.
+        var layout = IdSheetLayout.Layout(
+            CellW, CellH, CellW, CellH, Gap, copies: 1, airAuCoinPx: 999);
+
+        Assert.Equal(0, layout.Cells[0].X);
+        Assert.Equal(0, layout.Cells[0].Y);
+        Assert.Equal(CellW, layout.Cells[0].Right);
+        Assert.Equal(CellH, layout.Cells[0].Bottom);
+    }
+
+    [Fact]
+    public void SansCalage_LeBlocResteCentre()
+    {
+        // le défaut ne bouge pas : tout ce qui existait continue de sortir centré
+        var layout = IdSheetLayout.Layout(SheetW, SheetH, CellW, CellH, Gap, copies: 6);
+
+        var gauche = layout.Cells.Min(c => c.X);
+        var droite = SheetW - layout.Cells.Max(c => c.Right);
+        Assert.InRange(Math.Abs(gauche - droite), 0, 1);
+    }
 }

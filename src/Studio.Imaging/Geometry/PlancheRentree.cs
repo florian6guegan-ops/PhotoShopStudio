@@ -88,8 +88,13 @@ public static class PlancheRentree
     /// naissait du centrage. Ici le bloc est poussé à gauche exprès — pour laisser au
     /// portrait le plus large morceau d'un seul tenant — et « poussé à gauche » était
     /// devenu « au bord ».
+    ///
+    /// ⚠ <b>La valeur ne vit plus ici</b> : elle est celle d'<see cref="IdSheetLayout"/>,
+    /// que les planches personnalisées calées au coin réclament pour la même raison. Le
+    /// rognage de la machine est un fait physique unique ; il n'a pas à être chiffré deux
+    /// fois.
     /// </summary>
-    public const double AirAuBordMm = 2;
+    public const double AirAuBordMm = IdSheetLayout.AirAuBordMm;
 
     /// <summary>
     /// Dispose les identités et le portrait sur la planche.

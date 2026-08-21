@@ -1900,8 +1900,14 @@ public sealed class PrintOrchestrator
 
                             // la date de la commande, pas l'heure du rendu : une planche
                             // rejouée après un incident doit porter la même mention
-                            var bande = sheet.DateStamp
-                                ? SheetFooter.Pour(order.CreatedAt.DateTime, Marque)
+                            //
+                            // ⚠ La planche déclarée hors norme porte une bande MÊME SI le
+                            // produit ne demande pas la date : l'avertissement n'est pas un
+                            // ornement de planche, c'est ce qui protège la boutique quand la
+                            // photo revient refusée du guichet.
+                            var bande = sheet.DateStamp || item.PhotosNonConformes
+                                ? SheetFooter.Pour(order.CreatedAt.DateTime, Marque,
+                                    item.PhotosNonConformes)
                                 : null;
 
                             if (sheet.GrandePhoto)
@@ -2173,7 +2179,8 @@ public sealed class PrintOrchestrator
                     MmPx.ToPixels(plan.SheetWidthMm, product.Dpi),
                     MmPx.ToPixels(plan.SheetHeightMm, product.Dpi),
                     output, product.Dpi,
-                    cutBorder: ContourDemande(cellules));
+                    cutBorder: ContourDemande(cellules),
+                    calerAuCoin: line.CustomSheetCoin);
             }
 
             yield return new RenderedPage(output, 1, plan.SheetWidthMm, plan.SheetHeightMm,

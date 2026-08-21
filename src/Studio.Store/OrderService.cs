@@ -14,8 +14,17 @@ namespace Studio.Store;
 /// Marge blanche à l'intérieur de chaque case — la famille « cadre blanc » en taille libre.
 /// Zéro = la photo remplit sa case, le comportement d'origine.
 /// </param>
+/// <param name="CalerAuCoin">
+/// Vrai pose le bloc dans le coin haut-gauche de la feuille au lieu de le centrer : deux
+/// bords à massicoter au lieu de quatre. Voir <c>OrderLine.CustomSheetCoin</c>.
+///
+/// ⚠ <b>Il entre dans la clé de regroupement</b>, comme le reste de ce record : une planche
+/// ne peut pas être calée à moitié, et deux photos qui ne s'accordent pas là-dessus doivent
+/// partir sur deux planches.
+/// </param>
 public sealed record CustomSheetSpec(
-    double CellWidthMm, double CellHeightMm, int SheetCount, double CellBorderMm = 0);
+    double CellWidthMm, double CellHeightMm, int SheetCount, double CellBorderMm = 0,
+    bool CalerAuCoin = false);
 
 /// <summary>
 /// Taille d'une case de planche identité, en millimètres : celle du document visé.
@@ -88,7 +97,14 @@ public sealed record DraftItem(
     /// Planches identité : les repères posés sur le visage — crâne, menton, visage détecté,
     /// axe. Null partout ailleurs. Voir <see cref="ReperesIdentite"/>.
     /// </summary>
-    ReperesIdentite? Reperes = null);
+    ReperesIdentite? Reperes = null,
+    /// <summary>
+    /// Planches identité : vrai quand l'opérateur a déclaré la planche HORS NORME — photo
+    /// d'école, souvenir, ou client qui tient à sa pose. La bande porte alors un
+    /// avertissement au lieu d'affirmer la conformité.
+    /// Voir <see cref="OrderItem.PhotosNonConformes"/>.
+    /// </summary>
+    bool PhotosNonConformes = false);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -184,6 +200,7 @@ public sealed class OrderService
                     CustomCellWidthMm = planche?.CellWidthMm,
                     CustomCellHeightMm = planche?.CellHeightMm,
                     CustomCellBorderMm = planche?.CellBorderMm,
+                    CustomSheetCoin = planche?.CalerAuCoin ?? false,
                     SheetCount = planche?.SheetCount ?? 0,
                     // le montage suit le PRODUIT : toutes les photos d'une même ligne
                     // partent sur la même feuille, sans quoi la grille serait à trous
@@ -208,6 +225,7 @@ public sealed class OrderService
                         SheetCellHeightMm = item.SheetCell?.HeightMm,
                         CropGrandePhoto = item.CropGrande,
                         Reperes = item.Reperes,
+                        PhotosNonConformes = item.PhotosNonConformes,
                         Finish = item.Finish,
                         Adjustments = item.Adjustments,
                     });

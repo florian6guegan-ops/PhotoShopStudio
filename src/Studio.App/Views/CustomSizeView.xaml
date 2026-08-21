@@ -55,6 +55,25 @@
                           ToolTip="Trace un trait noir de 0,2 mm sur le bord de chaque photo, à suivre aux ciseaux. À décocher si vous coupez au massicot sur repères."
                           Click="OnContourNoirChange"/>
 
+                <!-- OÙ POSER LE BLOC SUR LA FEUILLE : deux coupes ou quatre.
+
+                     Le bloc est CENTRÉ par défaut, et l'a toujours été. Sur une planche
+                     pleine ça ne se voit pas — les photos touchent déjà les bords — mais sur
+                     une planche large, l'opérateur se retrouve à massicoter les quatre côtés
+                     d'un seul tirage. « Des fois il imprime bien dans un coin, des fois il te
+                     le met au milieu » : c'est le même calcul, une planche différente.
+
+                     Calé au coin, il reste 2 mm de blanc de ce côté et non zéro : à fond
+                     perdu la machine rogne près d'un millimètre et demi, et coller le bloc au
+                     bord rognerait la PHOTO. C'est le défaut des 7 × 10 du 20/08/2026, qui
+                     avait justement été réparé en centrant. Demandé le 21/08/2026. -->
+                <CheckBox x:Name="CalerAuCoinCheck" Style="{StaticResource CaseCochable}"
+                          HorizontalAlignment="Center" Margin="0,10,0,0" FontSize="18"
+                          Foreground="{DynamicResource TextBrush}" VerticalContentAlignment="Center"
+                          Content="Caler les photos dans un coin"
+                          ToolTip="Pousse les photos dans le coin de la feuille au lieu de les centrer : il n'y a plus que deux bords à couper au lieu de quatre. Laissez décoché pour des marges égales tout autour."
+                          Click="OnCalerAuCoinChange"/>
+
                 <!-- LE SENS DE LA PHOTO, en toutes lettres.
 
                      Il se décidait par le seul ORDRE des deux nombres, et rien ne le disait :

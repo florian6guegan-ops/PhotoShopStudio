@@ -58,6 +58,17 @@ public partial class IdSheetRecapView : UserControl
     {
         /// <summary>La quantité change sur cet écran : elle n'est pas figée à l'arrivée.</summary>
         public int Quantite { get; set; } = Quantite;
+
+        /// <summary>
+        /// Planche déclarée HORS NORME : la bande basse portera un avertissement au lieu
+        /// d'affirmer la conformité.
+        ///
+        /// <b>Elle se décide ICI, à la planche</b>, comme la quantité : une même commande
+        /// peut mêler une série d'école et une identité pour de vrai. L'écran propose de
+        /// l'étendre à toutes les planches quand il y en a plusieurs — c'est le cas de la
+        /// série d'école, où cocher huit fois serait le geste qu'on oublie.
+        /// </summary>
+        public bool NonConforme { get; set; }
     }
 
     /// <summary>
@@ -77,6 +88,7 @@ public partial class IdSheetRecapView : UserControl
     private readonly IdDocumentSpec _document;
     private readonly Action<int>? _surModifier;
     private readonly Action? _surRemplacer;
+    private readonly Action<int, bool>? _surNonConforme;
 
     /// <summary>La planche mise de côté que cette impression solde, s'il y en a une.</summary>
     private readonly Guid? _attenteId;
@@ -102,13 +114,24 @@ public partial class IdSheetRecapView : UserControl
     /// Ce qu'on vend. Il fixe le prix affiché, et voyage jusqu'au tirage — c'est lui qui
     /// décide de la feuille supplémentaire. Voir <see cref="GenreDePlanche"/>.
     /// </param>
+    /// <param name="surNonConforme">
+    /// Rapporte « planche de ce rang déclarée hors norme » à l'écran qui tient les photos.
+    ///
+    /// ⚠ <b>Sans lui, la case ne survivrait pas à « Modifier la photo ».</b> Cet écran est
+    /// REFABRIQUÉ à chaque retour, depuis la bande de photos : ce qui n'a été posé que sur
+    /// la <see cref="Planche"/> est perdu au premier aller-retour. C'est déjà le sort de la
+    /// quantité ; l'avertissement, lui, ne peut pas se permettre de disparaître en silence.
+    ///
+    /// Null = la case ne vaut que pour cette visite de l'écran.
+    /// </param>
     public IdSheetRecapView(
         IReadOnlyList<Planche> planches,
         IdDocumentSpec document,
         Action<int>? surModifier = null,
         Action? surRemplacer = null,
         Guid? attenteId = null,
-        GenreDePlanche genre = GenreDePlanche.Standard)
+        GenreDePlanche genre = GenreDePlanche.Standard,
+        Action<int, bool>? surNonConforme = null)
     {
         ArgumentNullException.ThrowIfNull(planches);
 
@@ -116,6 +139,7 @@ public partial class IdSheetRecapView : UserControl
         _document = document;
         _surModifier = surModifier;
         _surRemplacer = surRemplacer;
+        _surNonConforme = surNonConforme;
         _attenteId = attenteId;
         _genre = genre;
 
@@ -151,6 +175,22 @@ public partial class IdSheetRecapView : UserControl
     private const int PppApercuVoulu = 150;
 
     /// <summary>
+    /// La bande basse de CETTE planche, ou null si elle n'en porte pas.
+    ///
+    /// <b>Une seule définition pour l'aperçu et pour la capacité</b>, et elle doit rester
+    /// celle du tirage (voir <c>PrintOrchestrator</c>) : une bande qui n'apparaîtrait qu'au
+    /// tirage est exactement la mauvaise surprise que cet écran existe pour éviter, et une
+    /// réserve mal comptée fait montrer une case de trop.
+    ///
+    /// ⚠ Une planche déclarée hors norme en porte une MÊME SI le produit ne demande pas la
+    /// date : l'avertissement passe avant l'ornement.
+    /// </summary>
+    private SheetFooter? BandeDe(Planche planche) =>
+        planche.Produit.Sheet?.DateStamp == true || planche.NonConforme
+            ? SheetFooter.Pour(DateTime.Now, App.Services.Marque, planche.NonConforme)
+            : null;
+
+    /// <summary>
     /// La résolution à laquelle rendre l'aperçu de CETTE planche : celle voulue si la
     /// planche y porte encore ses cases, celle du tirage sinon.
     ///
@@ -161,9 +201,8 @@ public partial class IdSheetRecapView : UserControl
     {
         // la bande basse compte dans la capacité, comme au rendu : sans elle ici, l'aperçu
         // se croirait plus large qu'il ne sera et montrerait une case de trop
-        var bande = planche.Produit.Sheet?.DateStamp == true
-            ? SheetFooterLayout.ReserveMinimalePx(
-                SheetFooter.Pour(DateTime.Now, App.Services.Marque), PppApercuVoulu)
+        var bande = BandeDe(planche) is { } bandeSortie
+            ? SheetFooterLayout.ReserveMinimalePx(bandeSortie, PppApercuVoulu)
             : 0;
 
         // PLANCHE DE RENTRÉE : ce n'est plus un compte de cases qu'il faut vérifier, mais
@@ -316,7 +355,7 @@ public partial class IdSheetRecapView : UserControl
                 MmPx.ToPixels(planche.Produit.HeightMm, ppp),
                 feuille, ppp,
                 sheet.CutBorder,
-                sheet.DateStamp ? SheetFooter.Pour(DateTime.Now, App.Services.Marque) : null,
+                BandeDe(planche),
                 sheet.FullBleed);
 
             // jamais composée debout : voir RenderPlancheRentreeToFile
@@ -350,7 +389,7 @@ public partial class IdSheetRecapView : UserControl
             // la MÊME bande que le tirage, marque comprise : l'aperçu existe pour montrer
             // ce qui sortira, et une bande qui n'apparaîtrait qu'au tirage serait
             // exactement la mauvaise surprise que cet écran est là pour éviter
-            sheet.DateStamp ? SheetFooter.Pour(DateTime.Now, App.Services.Marque) : null,
+            BandeDe(planche),
             sheet.FullBleed);
 
         return AvecLeBonSens(feuille, planche, ppp);
@@ -373,9 +412,8 @@ public partial class IdSheetRecapView : UserControl
 
         var sheet = planche.Produit.Sheet ?? new SheetSpec();
 
-        var bande = sheet.DateStamp
-            ? SheetFooterLayout.ReserveMinimalePx(
-                SheetFooter.Pour(DateTime.Now, App.Services.Marque), ppp)
+        var bande = BandeDe(planche) is { } bandeSortie
+            ? SheetFooterLayout.ReserveMinimalePx(bandeSortie, ppp)
             : 0;
 
         var (_, debout) = IdSheetLayout.MeilleureCapacite(
@@ -437,6 +475,7 @@ public partial class IdSheetRecapView : UserControl
             : $"planche {_page + 1} de {_planches.Count}";
 
         QuantiteText.Text = planche.Quantite.ToString();
+        NonConformeCheck.IsChecked = planche.NonConforme;
 
         PremiereButton.IsEnabled = PrecedenteButton.IsEnabled = _page > 0;
         SuivanteButton.IsEnabled = DerniereButton.IsEnabled = _page < _planches.Count - 1;
@@ -515,6 +554,60 @@ public partial class IdSheetRecapView : UserControl
 
         planche.Quantite = Math.Clamp(planche.Quantite + pas, 0, 20);
         Afficher();
+    }
+
+    /// <summary>
+    /// Déclare la planche courante hors norme, ou l'y ramène.
+    ///
+    /// <b>L'aperçu est refait</b> : la bande change de texte, et c'est précisément ce que
+    /// l'opérateur doit pouvoir montrer au client avant d'imprimer. Sans cela, la case
+    /// cochée ne se verrait que sur le papier.
+    ///
+    /// <b>Plusieurs planches : on propose de toutes les marquer.</b> Le cas qui amène ici
+    /// est la série d'école, où elles le sont toutes ; cocher huit fois serait le geste
+    /// qu'on oublie sur la huitième. La question ne se pose qu'en COCHANT — décocher ne
+    /// concerne que la planche affichée, parce qu'on décoche pour corriger une erreur de
+    /// clic, pas pour reprendre tout un lot.
+    /// </summary>
+    private void OnNonConformeChange(object sender, RoutedEventArgs e)
+    {
+        if (Courante is not { } planche)
+        {
+            NonConformeCheck.IsChecked = false;
+            return;
+        }
+
+        var coche = NonConformeCheck.IsChecked == true;
+        planche.NonConforme = coche;
+
+        var visees = new List<Planche> { planche };
+
+        if (coche && _planches.Count > 1)
+        {
+            var reponse = MessageBox.Show(
+                $"Marquer les {_planches.Count} planches de cette commande comme non " +
+                "conformes ?\n\nOui pour une série d'école ou de souvenirs, Non pour ne " +
+                "marquer que celle qui est affichée.",
+                "Photos non conformes", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (reponse == MessageBoxResult.Yes)
+            {
+                foreach (var autre in _planches) autre.NonConforme = true;
+                visees = [.. _planches];
+            }
+        }
+
+        foreach (var visee in visees)
+        {
+            // la bande a changé : l'aperçu en cache montre l'ancienne mention
+            _apercus.Remove(visee.Rang);
+
+            // et la bande de photos doit l'apprendre, sans quoi « Modifier la photo »
+            // refabriquerait cet écran sans la case
+            _surNonConforme?.Invoke(visee.Rang, visee.NonConforme);
+        }
+
+        _ = RendreLesApercusAsync();
     }
 
     private void OnModifierLaPhoto(object sender, RoutedEventArgs e)
