@@ -52,6 +52,7 @@ public partial class DropboxSendView : UserControl
         Loaded += async (_, _) =>
         {
             NomBox.Text = NomParDefaut();
+            RemplirLesMessages();
             VerifierLaConfiguration();
             AnnoncerLesLots();
             await CompterLeDossierAsync();
@@ -117,6 +118,132 @@ public partial class DropboxSendView : UserControl
                        "gratuit le lien partira quand même, simplement sans elles.");
 
         LienReglageText.Text = string.Join("\n\n", lignes);
+    }
+
+    // ----- le mot pour le client -----
+
+    /// <summary>
+    /// Le mot tel que la liste vient de le poser, pour savoir s'il a été retouché depuis.
+    /// Null = la case a été remplie à la main, ou vidée.
+    /// </summary>
+    private string? _motPose;
+
+    /// <summary>Le modèle choisi, AVEC ses étiquettes : c'est lui qu'on réapplique.</summary>
+    private string? _modeleChoisi;
+
+    /// <summary>Le nom du client, ou null pour la formule neutre.</summary>
+    private string? NomClient() =>
+        string.IsNullOrWhiteSpace(NomClientBox.Text) ? null : NomClientBox.Text.Trim();
+
+    /// <summary>
+    /// Les mots prêts à joindre, réglés dans Paramètres.
+    ///
+    /// <b>Le MÊME fichier que l'envoi par courriel</b> (<c>mail-messages.json</c>) : une
+    /// boutique n'écrit pas différemment selon le tuyau par lequel les photos partent, et
+    /// entretenir deux listes reviendrait à en laisser une vieillir. Voir
+    /// <see cref="MailMessages"/>.
+    ///
+    /// Une entrée vide ouvre la liste : sans elle, on ne pourrait pas revenir à « pas de
+    /// message » après en avoir choisi un.
+    /// </summary>
+    private void RemplirLesMessages()
+    {
+        var messages = MailMessages.Load(App.Services.ConfigDir);
+
+        MessagesCombo.ItemsSource = new[] { new MessagePredefini("— aucun message —", "") }
+            .Concat(messages)
+            .ToList();
+
+        MessagesCombo.SelectedIndex = 0;
+        MessagesCombo.Visibility = messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        EtiquettesText.Text =
+            $"Dans un message prédéfini, {string.Join(" et ", MailMessages.Etiquettes)} sont " +
+            "remplacés par le nom saisi au-dessus et par le nom du magasin. Les messages se " +
+            "modifient dans Paramètres → Messages prédéfinis.";
+    }
+
+    private void OnMessagePredefini(object sender, SelectionChangedEventArgs e)
+    {
+        if (MessagesCombo.SelectedItem is not MessagePredefini choix) return;
+
+        _modeleChoisi = string.IsNullOrWhiteSpace(choix.Texte) ? null : choix.Texte;
+        PoserLeMot();
+    }
+
+    /// <summary>
+    /// Réécrit la case avec le modèle choisi, nom remplacé.
+    ///
+    /// <b>Et il pose <see cref="_motPose"/></b> : c'est ce qui permet, plus tard, de savoir
+    /// si l'opérateur a retouché le texte. Voir <see cref="OnNomClientChanged"/>.
+    /// </summary>
+    private void PoserLeMot()
+    {
+        var texte = MailMessages.Appliquer(
+            _modeleChoisi, NomClient(), App.Services.Marque.NomMagasin);
+
+        _motPose = texte;
+        MotBox.Text = texte;
+    }
+
+    /// <summary>
+    /// Le nom arrive souvent APRÈS le choix du message — l'opérateur clique la phrase toute
+    /// prête, puis demande son nom au client. Le mot se réécrit donc quand le nom change.
+    ///
+    /// ⚠ <b>Sauf s'il a été retouché à la main.</b> On compare la case à ce qu'on y avait
+    /// posé : dès qu'elle en diffère d'un caractère, elle appartient à l'opérateur et on n'y
+    /// touche plus. Réécrire par-dessus une phrase qu'il vient de composer serait le pire
+    /// des services — et il ne le verrait pas forcément avant l'envoi.
+    /// </summary>
+    private void OnNomClientChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_modeleChoisi is not null && MotBox.Text == _motPose) PoserLeMot();
+        RafraichirLApercu();
+    }
+
+    private void OnMotChanged(object sender, TextChangedEventArgs e) => RafraichirLApercu();
+
+    private void OnBasculerLApercu(object sender, RoutedEventArgs e)
+    {
+        var ouvert = ApercuCarte.Visibility != Visibility.Visible;
+
+        ApercuCarte.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
+        ApercuButton.Content = ouvert
+            ? "✉  Masquer le courriel du client"
+            : "✉  Voir le courriel du client";
+
+        RafraichirLApercu();
+    }
+
+    /// <summary>
+    /// Le courriel tel que le client le lira.
+    ///
+    /// <b>C'est <see cref="PhotoMailer.ApercuDuLien"/> qui l'écrit</b>, et non une imitation
+    /// : deux textes entretenus séparément finiraient par différer, et l'aperçu montrerait
+    /// autre chose que ce qui part. C'est aussi ce qui rend visible la formule d'appel — la
+    /// vraie réponse à « je veux une phrase toute prête avec le nom ».
+    ///
+    /// Le lien n'existe pas encore avant l'envoi : on montre celui qui est sorti s'il y en a
+    /// un, et une adresse d'exemple sinon. Le reste du message est exact.
+    /// </summary>
+    private void RafraichirLApercu()
+    {
+        // rien à calculer tant que personne ne regarde : l'aperçu se recalcule à chaque
+        // frappe dans le nom comme dans le mot
+        if (ApercuCarte is null || ApercuCarte.Visibility != Visibility.Visible) return;
+
+        var reglages = App.Services.Dropbox;
+
+        ApercuText.Text = PhotoMailer.ApercuDuLien(
+            _dernierResultat?.Url ?? "https://www.dropbox.com/scl/fo/…",
+            _dernierResultat?.Fichiers ?? Math.Max(1, LotChoisi().Count),
+            NomClient(),
+            string.IsNullOrWhiteSpace(MotBox.Text) ? null : MotBox.Text,
+            _dernierResultat is { } fait
+                ? JoursDeValidite(fait, reglages)
+                : reglages.RetentionJours > 0 ? reglages.RetentionJours : null,
+            !string.IsNullOrWhiteSpace(reglages.MotDePasse),
+            App.Services.Marque.NomMagasin);
     }
 
     // ----- les deux lots -----
@@ -404,7 +531,7 @@ public partial class DropboxSendView : UserControl
                 adresses,
                 resultat.Url,
                 resultat.Fichiers,
-                nomClient: null,
+                nomClient: NomClient(),
                 mot: string.IsNullOrWhiteSpace(MotBox.Text) ? null : MotBox.Text,
                 joursDeValidite: JoursDeValidite(resultat, reglages),
                 protege: resultat.Protege);

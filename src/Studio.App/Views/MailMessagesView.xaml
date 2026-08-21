@@ -11,10 +11,18 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}"
-                   Text="Messages prédéfinis (envoi par courriel)"/>
+                   Text="Messages prédéfinis (courriel et Dropbox)"/>
 
-        <TextBlock Grid.Row="1" Style="{StaticResource Hint}" Margin="0,0,0,16" TextWrapping="Wrap"
-                   Text="Ces mots se choisissent dans une liste au moment de l'envoi, et remplissent la case « Mot pour le client ». Ils restent retouchables à ce moment-là : le nom du client s'y ajoute en deux mots."/>
+        <StackPanel Grid.Row="1" Margin="0,0,0,16">
+            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                       Text="Ces mots se choisissent dans une liste au moment de l'envoi — par courriel comme par Dropbox — et remplissent la case « Mot pour le client ». Ils restent retouchables à ce moment-là."/>
+
+            <!-- LES ÉTIQUETTES, écrites là où on écrit les messages.
+                 Une possibilité qu'aucun écran n'annonce n'existe pas : personne ne devine
+                 qu'un texte accepte {nom}. -->
+            <TextBlock Style="{StaticResource Hint}" Margin="0,8,0,0" TextWrapping="Wrap"
+                       Text="Écrivez {nom} là où le nom du client doit apparaître, et {magasin} pour celui de la boutique : ils sont remplacés au moment de l'envoi. Quand le nom n'est pas connu, l'étiquette s'efface proprement — « Bonjour {nom}, » devient « Bonjour, »."/>
+        </StackPanel>
 
         <!-- Saisie : un intitulé court, qu'on lit dans la liste déroulante, et le mot lui-même -->
         <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12"

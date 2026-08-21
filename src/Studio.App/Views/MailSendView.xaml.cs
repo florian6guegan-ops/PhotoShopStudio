@@ -186,10 +186,19 @@ public partial class MailSendView : UserControl
         MessagesCombo.Visibility = messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>
+    /// ⚠ <b>Les étiquettes sont remplacées ICI aussi</b>, et pas seulement à l'envoi par
+    /// Dropbox : les deux écrans lisent le MÊME fichier de messages. Un modèle portant
+    /// <c>{nom}</c> partirait sinon tel quel depuis celui-ci — c'est-à-dire que le client
+    /// lirait les accolades. Voir <see cref="MailMessages.Appliquer"/>.
+    ///
+    /// Le nom vient de la COMMANDE et non d'une saisie : cet écran-là en connaît un.
+    /// </summary>
     private void OnMessagePredefini(object sender, SelectionChangedEventArgs e)
     {
         if (MessagesCombo.SelectedItem is MessagePredefini choix)
-            MotBox.Text = choix.Texte;
+            MotBox.Text = MailMessages.Appliquer(
+                choix.Texte, _nomClient, App.Services.Marque.NomMagasin);
     }
 
     /// <summary>
