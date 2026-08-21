@@ -128,7 +128,7 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             await ScanAndLoadAsync();
 
             Focus(); // sans le focus, aucune touche ne nous parvient
-            await LoadMachinesAsync();
+            await AssurerLesMachinesAsync();
         };
         Unloaded += (_, _) => _thumbnailCts?.Cancel();
     }
@@ -1229,6 +1229,46 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
     /// tournait dans la machine B, à côté. Constaté sur les commandes 04-010, 04-014 et
     /// 04-019 du 04/08/2026.
     /// </summary>
+    /// <summary>
+    /// Le minilab a-t-il son mot à dire sur CET écran ? C'est la même condition que celle
+    /// qui montre le sélecteur de machine — voir <see cref="AfficherLaSortie"/>.
+    /// </summary>
+    private bool LeMinilabEstEnJeu =>
+        EnTaillePersonnalisee || DefaultProduct?.Output == ProductOutput.FujiMinilab;
+
+    /// <summary>Vrai dès que la liste des machines a été demandée une fois sur cet écran.</summary>
+    private bool _machinesDemandees;
+
+    /// <summary>
+    /// Demande la liste des machines du minilab — <b>et seulement quand elle sert</b>.
+    ///
+    /// <b>Elle était demandée à tous les coups, et elle coûte dix secondes quand le minilab
+    /// dort.</b> Le sélecteur qu'elle remplit est pourtant MASQUÉ dès que le produit ne sort
+    /// pas du DE100 : on interrogeait donc une machine endormie pour garnir une liste que
+    /// personne ne voit.
+    ///
+    /// ⚠ <b>Et ce n'est pas seulement l'affichage qui attendait.</b> Le relais n'a qu'un
+    /// tube et traite ses commandes l'une après l'autre : le tirage partait derrière le
+    /// « list-machines » en cours, et attendait son expiration. Mesuré au journal du
+    /// 21/08/2026, sur des tirages qui sortent tous les deux de la DNP :
+    ///
+    ///     21-006  planche d'identité   12:03:10 → 12:03:16    6 s
+    ///     21-007  E-Photo              12:04:02 → 12:04:21   19 s
+    ///
+    /// L'E-Photo est un produit tiré tel quel qui passe par CET écran, et elle sort de la
+    /// DNP : le minilab n'a rien à y voir. Signalé par l'exploitant le 21/08/2026.
+    ///
+    /// Demandée UNE fois par écran : la liste ne bouge pas pendant qu'on coche des photos,
+    /// et le bandeau des machines, lui, la suit en continu de son côté.
+    /// </summary>
+    private async Task AssurerLesMachinesAsync()
+    {
+        if (!LeMinilabEstEnJeu || _machinesDemandees) return;
+
+        _machinesDemandees = true;
+        await LoadMachinesAsync();
+    }
+
     private async Task LoadMachinesAsync()
     {
         // Ce que l'opérateur avait imposé, s'il l'avait fait. Relevé AVANT de toucher à la
@@ -1969,6 +2009,10 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             SortieBadge.Background = (Brush)Application.Current.Resources["AccentDarkBrush"];
             MachineLabel.Visibility = Visibility.Visible;
             MachineCombo.Visibility = Visibility.Visible;
+
+            // ⚠ Cette sortie-là est anticipée : sans cette ligne, une planche en taille
+            // libre montrerait un sélecteur de machine que rien ne remplit.
+            _ = AssurerLesMachinesAsync();
             return;
         }
 
@@ -1992,6 +2036,14 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         var visible = minilab ? Visibility.Visible : Visibility.Collapsed;
         MachineLabel.Visibility = visible;
         MachineCombo.Visibility = visible;
+
+        // ⚠ LA LISTE SE REMPLIT ICI, là où l'on décide de la MONTRER.
+        //
+        // Les deux gestes vont ensemble, et les séparer est ce qui a coûté dix secondes à
+        // l'E-Photo : la demande vivait au chargement de l'écran, sans regarder le produit.
+        // Posée ici, aucun chemin ne peut l'oublier — pas plus celui du produit changé que
+        // celui de la taille libre, qui passent tous les deux par cette méthode.
+        _ = AssurerLesMachinesAsync();
 
         static Brush Pinceau(byte r, byte v, byte b) => new SolidColorBrush(Color.FromRgb(r, v, b));
     }
