@@ -46,8 +46,9 @@ public static class MagickInit
     /// les deux sens, et coûte au pire un cran de décodage.
     ///
     /// Rend null pour tout ce qui n'est pas un JPEG — les autres formats n'ont pas de
-    /// décodage progressif — et jamais à la hausse : le décodeur ne sait pas agrandir, un
-    /// besoin supérieur au fichier le laisse simplement le lire en entier.
+    /// décodage progressif — et null, aussi, quand le besoin dépasse ce que le fichier
+    /// contient : le décodeur, LUI, sait agrandir, et il ne faut surtout pas le lui
+    /// demander. Voir le corps de la méthode.
     /// </summary>
     /// <param name="sourcePath">Fichier à lire.</param>
     /// <param name="cote">Côté voulu, en pixels ; zéro ou moins = pas d'indication.</param>
@@ -57,6 +58,45 @@ public static class MagickInit
 
         if (cote <= 0) return null;
         if (Path.GetExtension(sourcePath).ToLowerInvariant() is not (".jpg" or ".jpeg")) return null;
+
+        // ⚠ SI, LE DÉCODEUR SAIT AGRANDIR — et c'est ce qui rendait l'envoi par courriel
+        // interminable.
+        //
+        // « jamais à la hausse : le décodeur ne sait pas agrandir » était faux. libjpeg
+        // accepte un facteur d'échelle de 1/8 à 16/8 : demandé plus grand que le fichier,
+        // il DÉCODE EN DOUBLE. Mesuré le 20/08/2026 sur une photo de 6016 × 4000 :
+        // « jpeg:size 7823x7823 » rend du 12032 × 8000, soit 96 Mpx là où le fichier en
+        // contient 24.
+        //
+        // L'impression n'en souffrait pas : elle vise 1795 px et l'indication réduit
+        // vraiment. L'envoi par courriel, lui, vise LA DÉFINITION NATIVE du cadrage — la
+        // photo entière, à quelques pour cent près — et l'indication devenait donc un
+        // agrandissement systématique. Tout le pipeline travaillait ensuite sur quatre fois
+        // trop de pixels, et le redressement fin, seul, y passait 46 s au lieu de 11.
+        //
+        // On pingue l'en-tête — deux nombres, aucun pixel décodé — et on ne pose
+        // l'indication que quand elle DEMANDE MOINS que ce que le fichier contient.
+        //
+        // <b>Le PLUS PETIT côté commande</b>, et c'est là-dessus que la première version de
+        // cette garde s'est trompée. On demande un CARRÉ — voir plus haut, l'orientation du
+        // fichier n'est pas connue avant l'EXIF — et « size » veut dire « au moins autant
+        // dans les deux sens » : sur un fichier de 1200 × 800, une indication de 900
+        // agrandit déjà, pour amener la hauteur à 900. Comparer au grand côté laissait donc
+        // passer tout un domaine d'agrandissements silencieux.
+        try
+        {
+            Configure();
+
+            using var entete = new MagickImage();
+            entete.Ping(sourcePath);
+
+            if (cote >= Math.Min(entete.Width, entete.Height)) return null;
+        }
+        catch (MagickException)
+        {
+            // en-tête illisible : on laisse le décodeur lire le fichier tel quel
+            return null;
+        }
 
         var settings = new MagickReadSettings();
         settings.SetDefine(MagickFormat.Jpeg, "size", $"{cote}x{cote}");

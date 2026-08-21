@@ -2422,9 +2422,13 @@ public sealed class PrintOrchestrator
 
                 // Le réglage du POSTE que le DEVMODE ne porte pas, et qui décide pourtant
                 // de la façon dont l'image arrive au pilote. Voir DnpSpouleur.
-                if (Devices.Dnp.DnpSpouleur.FonctionnalitesAvancees(product.PrinterName) is { } avancees)
-                    Log?.Invoke($"File « {product.PrinterName} » : fonctionnalités d'impression " +
-                                $"avancées {(avancees ? "ACTIVÉES (rendu rejoué par le spouleur)" : "désactivées")}");
+                //
+                // ⚠ IL S'ANNONCE À CÔTÉ, PAS ICI. La lecture passe par WMI et coûte une
+                // demi-seconde ; elle se payait sur le chemin de l'impression, à chaque
+                // commande, pour une ligne de journal qui ne change rien au tirage. Voir
+                // AnnoncerLesFonctionnalitesAvancees.
+                Devices.Dnp.DnpSpouleur.AnnoncerLesFonctionnalitesAvancees(
+                    product.PrinterName, message => Log?.Invoke(message));
             }
 
             // le bitmap n'est ouvert que si au moins une de ses copies reste à tirer

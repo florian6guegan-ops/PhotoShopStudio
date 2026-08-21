@@ -187,4 +187,49 @@ public class RenduEconomeTests : IDisposable
         Assert.Equal(1795u, rendu.Width);
         Assert.Equal(1205u, rendu.Height);
     }
+
+    /// <summary>
+    /// <b>Le décodeur SAIT agrandir, et il ne faut pas le lui demander.</b>
+    ///
+    /// L'essai ci-dessus ne regardait que les dimensions de SORTIE, qui sont justes de toute
+    /// façon : le défaut se cachait entre les deux. libjpeg accepte un facteur d'échelle
+    /// allant jusqu'au double — une indication plus grande que le fichier ne le laissait pas
+    /// « le lire en entier », elle le faisait décoder en 2×, soit quatre fois trop de pixels
+    /// à tourner, recadrer et réduire ensuite.
+    ///
+    /// Mesuré le 20/08/2026 sur l'envoi par courriel, seul chemin qui demande la définition
+    /// NATIVE du cadrage : une photo de 6016 × 4000 arrivait en 12032 × 8000 dans le
+    /// pipeline, et une photo redressée mettait 58 s à partir au lieu de 19.
+    /// </summary>
+    [Fact]
+    public void Une_indication_plus_grande_que_le_fichier_est_ecartee()
+    {
+        var source = PhotoAvecDuDetail(1200, 800);
+
+        Assert.Null(MagickInit.IndicationDeTaille(source, 800));
+        Assert.Null(MagickInit.IndicationDeTaille(source, 1200));
+        Assert.Null(MagickInit.IndicationDeTaille(source, 2400));
+        Assert.NotNull(MagickInit.IndicationDeTaille(source, 600));
+    }
+
+    /// <summary>
+    /// La même garde, vue du décodeur : ce qui sort de la lecture ne dépasse JAMAIS ce que
+    /// le fichier contient, quelle que soit l'indication demandée.
+    /// </summary>
+    [Fact]
+    public void Le_decodage_ne_rend_jamais_plus_de_pixels_que_le_fichier()
+    {
+        var source = PhotoAvecDuDetail(1200, 800);
+
+        foreach (var cote in new[] { 900, 1200, 1600, 4000 })
+        {
+            var econome = MagickInit.IndicationDeTaille(source, cote);
+            using var lue = econome is not null
+                ? new MagickImage(source, econome)
+                : new MagickImage(source);
+
+            Assert.True(lue.Width <= 1200u && lue.Height <= 800u,
+                $"indication {cote} : décodé en {lue.Width}×{lue.Height} pour un fichier de 1200×800");
+        }
+    }
 }

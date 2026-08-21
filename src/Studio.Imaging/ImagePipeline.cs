@@ -507,8 +507,10 @@ public static class ImagePipeline
     /// raison : le rééchantillonnage final doit avoir de la matière.
     ///
     /// N'agit que sur les JPEG — les autres formats n'ont pas de décodage progressif — et
-    /// jamais à la hausse : le décodeur ne sait pas agrandir, un besoin supérieur au fichier
-    /// le laisse simplement le lire en entier.
+    /// jamais à la hausse. Ce dernier point n'allait PAS de soi : libjpeg sait agrandir
+    /// jusqu'au double, et une indication plus grande que le fichier faisait donc décoder
+    /// quatre fois trop de pixels. C'est <see cref="MagickInit.IndicationDeTaille"/> qui
+    /// tient la garde, l'en-tête à l'appui.
     /// </summary>
     private static MagickReadSettings? LectureEconome(RenderRequest request)
     {
@@ -778,8 +780,10 @@ public static class ImagePipeline
         {
             ReduireAvantRedressement(image, request);
 
-            image.BackgroundColor = remplissage;
-            image.Rotate(request.FineRotationDegrees);
+            // La rotation elle-même est passée à OpenCV : elle coûtait 11,9 s des 18,6 s
+            // d'un envoi par courriel, et en coûte 0,37. Voir RedressementFin — le repli
+            // sur ImageMagick y est prévu, et le contrat est le même.
+            RedressementFin.Appliquer(image, request.FineRotationDegrees, remplissage);
             image.ResetPage();
         }
 

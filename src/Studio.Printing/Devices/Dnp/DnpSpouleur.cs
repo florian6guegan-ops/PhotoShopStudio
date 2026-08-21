@@ -361,6 +361,59 @@ public static class DnpSpouleur
     }
 
     /// <summary>
+    /// Les files déjà annoncées au journal. Le réglage appartient au POSTE : le lire une
+    /// fois par session suffit.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool>
+        DejaAnnoncees = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Écrit au journal l'état des « fonctionnalités avancées » de la file — <b>une seule
+    /// fois par session, et JAMAIS sur le chemin de l'impression</b>.
+    ///
+    /// <b>C'est une demi-seconde par commande, et elle se payait devant le client.</b>
+    /// <see cref="FonctionnalitesAvancees"/> interroge WMI, qui met 0,48 à 0,59 s à répondre
+    /// sur ce poste — mesuré le 20/08/2026, cinq appels de suite, sans amélioration : WMI ne
+    /// garde rien en cache. Le premier appel après le démarrage de Windows a coûté 2,6 s.
+    ///
+    /// Or l'appel n'a AUCUN effet sur le tirage : « On ne la CHANGE pas — on la DIT au
+    /// journal ». Il était pourtant fait à chaque commande, en plein milieu de la séquence
+    /// d'impression, entre la lecture du DEVMODE et l'envoi à la machine. Sur une planche
+    /// d'identité qui part en 4 s, une demi-seconde d'attente pour écrire une ligne de
+    /// journal, c'est un huitième du temps que l'opérateur passe à regarder l'écran.
+    ///
+    /// Pire : ce poste-là envoie DIRECTEMENT à la DNP, sans passer par le spouleur. Le
+    /// réglage qu'on interroge ne décrit alors même pas le chemin qu'emprunte le tirage.
+    ///
+    /// La ligne garde toute sa valeur de diagnostic — c'est un des rares réglages capables
+    /// d'expliquer un tirage abîmé — elle arrive simplement quelques centaines de
+    /// millisecondes plus tard, et une fois par jour au lieu d'une fois par commande.
+    /// </summary>
+    public static void AnnoncerLesFonctionnalitesAvancees(string nomDeFile, Action<string>? journal)
+    {
+        if (journal is null || string.IsNullOrWhiteSpace(nomDeFile)) return;
+
+        // TryAdd fait les deux d'un coup : il dit si c'est la première fois, et il le retient.
+        if (!DejaAnnoncees.TryAdd(nomDeFile, true)) return;
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (FonctionnalitesAvancees(nomDeFile) is not { } avancees) return;
+
+                journal($"File « {nomDeFile} » : fonctionnalités d'impression " +
+                        $"avancées {(avancees ? "ACTIVÉES (rendu rejoué par le spouleur)" : "désactivées")}");
+            }
+            catch (Exception)
+            {
+                // Une ligne de journal n'a pas à faire tomber quoi que ce soit, et surtout
+                // pas depuis un fil de fond où personne ne l'attend.
+            }
+        });
+    }
+
+    /// <summary>
     /// Les « fonctionnalités d'impression avancées » de la file Windows sont-elles actives ?
     ///
     /// C'est la case de l'onglet Avancé des propriétés d'imprimante. Active — c'est le
