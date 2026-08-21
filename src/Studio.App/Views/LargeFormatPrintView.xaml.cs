@@ -47,6 +47,13 @@ public partial class LargeFormatPrintView : UserControl
 
     private double _pageWidthMm = 210;
     private double _pageHeightMm = 297;
+
+    /// <summary>
+    /// Nom du format papier posé d'office, s'il l'a été. Null = c'est le format par défaut de
+    /// la file, ou le réglage que l'opérateur est allé chercher dans le pilote.
+    /// </summary>
+    private string? _papierPose;
+
     private bool _loading = true;
     private bool _syncing;
     private bool _impressionEnCours;
@@ -169,7 +176,75 @@ public partial class LargeFormatPrintView : UserControl
         PrinterCombo.SelectedItem = choisie ?? imprimantes.FirstOrDefault();
         _settings.PrinterName = PrinterCombo.SelectedItem as string ?? "";
 
+        await PoserLeFormatPapierAsync();
         await RefreshPageSizeAsync();
+    }
+
+    /// <summary>
+    /// Pose d'office, dans le pilote, le plus petit format papier où le tirage tient entier.
+    ///
+    /// <b>C'est le défaut qui faisait sortir un 30 × 40 à la taille d'une A4.</b> La boîte
+    /// s'ouvrait sur le format par défaut de la file — « A4 210 × 297 mm » sur l'Epson du
+    /// Kremlin-Bicêtre — et le tirage demandé était centré dessus : 48 % passait par-dessus
+    /// bord, et ce qui ressortait de la machine ressemblait à un 20 × 30. Le pilote proposait
+    /// pourtant « 30 x 40 cm ». Signalé le 21/08/2026, retrouvé au journal (commande 21-005).
+    ///
+    /// <b>La taille visée est celle du tirage à 100 %</b>, c'est-à-dire les millimètres que
+    /// le fichier rendu porte déjà : un 30 × 40 est rendu en 3543 × 4724 px à 300 ppp. Rien
+    /// n'a donc besoin de connaître le produit du catalogue, et un format hors catalogue —
+    /// l'A2 saisi à la main — se trouve son papier de la même façon.
+    ///
+    /// ⚠ <b>On ne touche à rien si l'opérateur a ouvert « Paramètres d'impression… ».</b>
+    /// Ses réglages pilote portent aussi le média, le sans-marges et la correction couleur ;
+    /// les écraser pour un format papier lui reprendrait tout le reste.
+    ///
+    /// ⚠ La disposition suit le format retenu. Un tirage couché sur un papier debout se pose
+    /// en paysage : sans cela, la feuille demandée serait la bonne et le tirage déborderait
+    /// quand même.
+    /// </summary>
+    private async Task PoserLeFormatPapierAsync()
+    {
+        if (_settings.DevModeBytes is not null) return;
+        if (PrinterCombo.SelectedItem is not string imprimante || imprimante.Length == 0) return;
+
+        _papierPose = null;
+
+        try
+        {
+            var (largeurMm, hauteurMm) =
+                PrintLayout.NaturalSizeMm(_imageWidth, _imageHeight, _sourceDpi);
+
+            var choisi = await Task.Run(() =>
+                LargeFormatPrinter.ChoisirLeFormatPapier(imprimante, largeurMm, hauteurMm));
+
+            if (choisi is null)
+            {
+                FileLog.Write(
+                    $"Agrandissement : aucun format de « {imprimante} » ne contient un tirage " +
+                    $"de {largeurMm:0}×{hauteurMm:0} mm — le format par défaut du pilote est " +
+                    "conservé.");
+                return;
+            }
+
+            _settings.DevModeBytes = choisi.DevMode;
+            _papierPose = choisi.Nom;
+
+            // la combo pilote _settings.Landscape : la poser ici évite que le tirage sorte
+            // en travers de son propre papier
+            _syncing = true;
+            OrientationCombo.SelectedIndex = choisi.Paysage ? 1 : 0;
+            _syncing = false;
+
+            FileLog.Write(
+                $"Agrandissement : papier « {choisi.Nom} » ({choisi.WidthMm:0}×{choisi.HeightMm:0} mm" +
+                (choisi.Paysage ? ", paysage" : "") +
+                $") pose d'office pour un tirage de {largeurMm:0}×{hauteurMm:0} mm.");
+        }
+        catch (Exception ex)
+        {
+            _syncing = false;
+            FileLog.Write("Choix du format papier impossible", ex);
+        }
     }
 
     /// <summary>
@@ -320,8 +395,14 @@ public partial class LargeFormatPrintView : UserControl
         DrawPreview(placement);
 
         var u = PrintLayout.UnitSuffix(_settings.Units);
+
+        // LE NOM DU PAPIER, et pas seulement ses cotes : c'est ce qu'il faut charger dans la
+        // machine, et c'est sous ce nom-là qu'il est écrit sur le rouleau comme dans la boîte
+        // du pilote. « Feuille 300 × 400 mm » ne dit pas à l'opérateur quoi aller chercher.
+        var papier = _papierPose is null ? "" : $" « {_papierPose} »";
+
         SizeText.Text =
-            $"Feuille {PrintLayout.FromMm(_pageWidthMm, _settings.Units):0.##} × " +
+            $"Feuille{papier} {PrintLayout.FromMm(_pageWidthMm, _settings.Units):0.##} × " +
             $"{PrintLayout.FromMm(_pageHeightMm, _settings.Units):0.##} {u}    •    " +
             $"Tirage {PrintLayout.FromMm(placement.WidthMm, _settings.Units):0.##} × " +
             $"{PrintLayout.FromMm(placement.HeightMm, _settings.Units):0.##} {u}";
@@ -467,7 +548,10 @@ public partial class LargeFormatPrintView : UserControl
     /// </summary>
     private async void OnOrientationChanged(object sender, RoutedEventArgs e)
     {
-        if (_loading) return;
+        // _syncing : la disposition est aussi POSÉE par le choix automatique du papier, et
+        // elle ne doit pas alors relancer une interrogation du pilote au milieu de celle qui
+        // est en cours
+        if (_loading || _syncing) return;
         await RefreshPageSizeAsync();
         UpdateAll();
     }
@@ -476,6 +560,7 @@ public partial class LargeFormatPrintView : UserControl
     {
         if (_loading) return;
         _settings.DevModeBytes = null; // les réglages pilote ne valent que pour une machine
+        await PoserLeFormatPapierAsync();   // l'autre machine a sa propre liste de formats
         await RefreshPageSizeAsync();
         UpdateAll();
     }
@@ -598,6 +683,11 @@ public partial class LargeFormatPrintView : UserControl
             if (devMode is not null)
             {
                 _settings.DevModeBytes = devMode;
+
+                // l'opérateur vient de choisir lui-même : le nom que NOUS avions posé ne
+                // décrit plus la feuille, et l'annoncer encore serait mentir
+                _papierPose = null;
+
                 await RefreshPageSizeAsync();
                 UpdateAll();
             }

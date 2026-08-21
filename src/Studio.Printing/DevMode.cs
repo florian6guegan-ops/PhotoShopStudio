@@ -28,9 +28,25 @@ public static class DevMode
     private static extern bool ClosePrinter(IntPtr hPrinter);
 
     /// <summary>Extrait les octets DEVMODE courants d'un PrinterSettings.</summary>
-    public static byte[] Capture(PrinterSettings settings)
+    public static byte[] Capture(PrinterSettings settings) => Capturer(settings.GetHdevmode());
+
+    /// <summary>
+    /// Les octets DEVMODE du pilote APRÈS y avoir fondu une page précise — format papier et
+    /// disposition en tête.
+    ///
+    /// <b>C'est le seul moyen de fabriquer un réglage pilote sans ouvrir sa boîte de
+    /// dialogue.</b> <c>GetHdevmode()</c> sans argument rend les réglages par défaut de la
+    /// file, format papier compris : poser <c>DefaultPageSettings.PaperSize</c> avant de
+    /// l'appeler ne change rien, la page n'entre dans le DEVMODE que par cette surcharge.
+    ///
+    /// Voir <see cref="LargeFormat.LargeFormatPrinter.ChoisirLeFormatPapier"/>, qui s'en
+    /// sert pour poser d'office le papier à la taille du tirage.
+    /// </summary>
+    public static byte[] Capture(PrinterSettings settings, PageSettings page) =>
+        Capturer(settings.GetHdevmode(page));
+
+    private static byte[] Capturer(IntPtr hDevMode)
     {
-        var hDevMode = settings.GetHdevmode();
         try
         {
             var ptr = NativeMethods.GlobalLock(hDevMode);

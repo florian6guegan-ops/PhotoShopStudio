@@ -61,6 +61,169 @@ public static class LargeFormatPrinter
             definition > 0 ? definition : 0);
     }
 
+    /// <summary>
+    /// Le format papier retenu pour un tirage, et les octets pilote qui le posent.
+    /// </summary>
+    /// <param name="DevMode">À mettre dans <c>LargeFormatPrintSettings.DevModeBytes</c>.</param>
+    /// <param name="Nom">Nom du format tel que le pilote l'appelle — « 30 x 40 cm ».</param>
+    /// <param name="WidthMm">Largeur de la feuille une fois la disposition appliquée.</param>
+    /// <param name="HeightMm">Hauteur de la feuille une fois la disposition appliquée.</param>
+    /// <param name="Paysage">Vrai si le format ne convient qu'en travers.</param>
+    public sealed record FormatPapierChoisi(
+        byte[] DevMode, string Nom, double WidthMm, double HeightMm, bool Paysage);
+
+    /// <summary>
+    /// Le plus petit format du pilote où le tirage tient ENTIER, prêt à être appliqué.
+    ///
+    /// <b>Pourquoi il faut le choisir soi-même.</b> La boîte d'agrandissement s'ouvrait sur
+    /// le format par défaut de la file d'impression. Sur l'Epson du Kremlin-Bicêtre c'est
+    /// « A4 210 × 297 mm » : un 30 × 40 demandé par le comptoir partait donc centré sur une
+    /// A4, et <b>48 % du tirage tombait hors de la feuille</b> — relevé au journal le
+    /// 21/08/2026, commande 21-005. Ce qui ressortait de la machine avait la taille d'une
+    /// A4, c'est-à-dire à peu près un 20 × 30 : « tu choisis 30 × 40, il te met une 20 × 30 ».
+    /// Le pilote proposait pourtant « 30 x 40 cm », exactement 300 × 400 mm.
+    ///
+    /// <b>Le choix se fait sur les DIMENSIONS, jamais sur le nom.</b> Un même papier
+    /// s'appelle « 30 x 40 cm » ici, « 12 x 16 p. » ailleurs, et les index ne voyagent pas
+    /// d'un poste à l'autre (voir <see cref="DevMode.RecalerLeFormatPapier"/>). Les
+    /// millimètres, eux, sont les mêmes partout.
+    ///
+    /// On retient le plus PETIT format qui contient le tirage : sur cet Epson, un 30 × 40
+    /// trouve son 30 × 40 plutôt que l'A2 qui le contient aussi et gâcherait le papier.
+    ///
+    /// ⚠ <b>Les formats « Personnalisée » sont écartés.</b> Le pilote y annonce la dernière
+    /// taille saisie — ici 210 × 297, celle d'une A4 — qui ne dit rien de ce qui sortira. Un
+    /// format dont la mesure ment ne peut pas servir à mesurer.
+    ///
+    /// ⚠ <b>Au moindre doute, on rend null</b> et l'appelant garde le format par défaut du
+    /// pilote : imprimante muette, aucun format assez grand, ou pilote qui refuse de rendre
+    /// ses octets. C'est le comportement d'avant, qui n'a jamais empêché un tirage de partir.
+    ///
+    /// ⚠ <b>Les octets rendus ne valent que sur CE poste, et ne doivent pas être
+    /// enregistrés.</b> Le pilote Epson les rend avec un <c>dmFormName</c> VIDE — vérifié sur
+    /// la machine du Kremlin-Bicêtre le 21/08/2026 — de sorte que
+    /// <see cref="DevMode.RecalerLeFormatPapier"/> n'aurait aucun nom à relire pour les
+    /// retraduire ailleurs, et laisserait passer un index étranger. Ici c'est sans
+    /// conséquence : ils sont capturés sur la file même où l'on va imprimer, dans la seconde
+    /// qui précède.
+    /// </summary>
+    /// <param name="printerName">File d'impression visée.</param>
+    /// <param name="tirageWidthMm">Largeur du tirage voulu, en millimètres.</param>
+    /// <param name="tirageHeightMm">Hauteur du tirage voulu.</param>
+    /// <param name="toleranceMm">
+    /// Ce qu'on accepte de manquer sur un bord. Un format papier est déclaré en centièmes de
+    /// pouce : « 30 x 40 cm » se relit 300,0 × 400,0 mais « A3 297 × 420 » se relit
+    /// 296,9 × 420,1. Sans cette tolérance, un tirage donné à la cote exacte de son papier
+    /// serait jugé trop grand pour lui par un dixième de millimètre.
+    /// </param>
+    public static FormatPapierChoisi? ChoisirLeFormatPapier(
+        string printerName, double tirageWidthMm, double tirageHeightMm, double toleranceMm = 0.6)
+    {
+        if (string.IsNullOrWhiteSpace(printerName)) return null;
+        if (tirageWidthMm <= 0 || tirageHeightMm <= 0) return null;
+
+        try
+        {
+            using var doc = new PrintDocument();
+            doc.PrinterSettings.PrinterName = printerName;
+            if (!doc.PrinterSettings.IsValid) return null;
+
+            var offres = new List<PapierOffert>();
+            foreach (PaperSize papier in doc.PrinterSettings.PaperSizes)
+                offres.Add(new PapierOffert(
+                    papier.PaperName,
+                    papier.Width / 100.0 * MmPerInch,
+                    papier.Height / 100.0 * MmPerInch,
+                    papier.Kind == PaperKind.Custom));
+
+            var choix = Retenir(offres, tirageWidthMm, tirageHeightMm, toleranceMm);
+            if (choix is null) return null;
+
+            var retenu = doc.PrinterSettings.PaperSizes
+                .Cast<PaperSize>()
+                .FirstOrDefault(p => p.PaperName == choix.Nom);
+            if (retenu is null) return null;
+
+            var page = (PageSettings)doc.DefaultPageSettings.Clone();
+            page.PaperSize = retenu;
+            page.Landscape = choix.Paysage;
+
+            var octets = DevMode.Capture(doc.PrinterSettings, page);
+
+            return new FormatPapierChoisi(
+                octets, choix.Nom, choix.WidthMm, choix.HeightMm, choix.Paysage);
+        }
+        catch (Exception)
+        {
+            // pilote muet, imprimante debranchee : on ne sait pas choisir, on ne choisit pas
+            return null;
+        }
+    }
+
+    /// <summary>Un format tel que le pilote l'annonce, réduit à ce qui sert à choisir.</summary>
+    /// <param name="Personnalise">
+    /// Vrai pour l'entrée « Personnalisée » du pilote, dont les cotes annoncées sont celles
+    /// de la dernière saisie et ne disent rien de ce qui sortira.
+    /// </param>
+    public sealed record PapierOffert(
+        string Nom, double WidthMm, double HeightMm, bool Personnalise = false);
+
+    /// <summary>Le format retenu, avant d'aller demander ses octets au pilote.</summary>
+    public sealed record PapierRetenu(string Nom, double WidthMm, double HeightMm, bool Paysage);
+
+    /// <summary>
+    /// Le choix lui-même, séparé du pilote pour être vérifiable : le plus petit format où le
+    /// tirage tient entier, couché seulement s'il le faut.
+    ///
+    /// Voir <see cref="ChoisirLeFormatPapier"/> pour le pourquoi et les garde-fous.
+    /// </summary>
+    public static PapierRetenu? Retenir(
+        IEnumerable<PapierOffert> offres, double tirageWidthMm, double tirageHeightMm,
+        double toleranceMm = 0.6)
+    {
+        ArgumentNullException.ThrowIfNull(offres);
+        if (tirageWidthMm <= 0 || tirageHeightMm <= 0) return null;
+
+        PapierRetenu? retenu = null;
+        var retenuSurface = double.MaxValue;
+
+        foreach (var offre in offres)
+        {
+            // un format dont la mesure ment ne peut pas servir à mesurer
+            if (offre.Personnalise) continue;
+            if (offre.WidthMm <= 0 || offre.HeightMm <= 0) continue;
+
+            var debout =
+                offre.WidthMm + toleranceMm >= tirageWidthMm
+                && offre.HeightMm + toleranceMm >= tirageHeightMm;
+
+            // en travers, le pilote permute les côtés de la feuille : c'est le drapeau
+            // Landscape qui le fait, pas un autre format
+            var couche =
+                offre.HeightMm + toleranceMm >= tirageWidthMm
+                && offre.WidthMm + toleranceMm >= tirageHeightMm;
+
+            if (!debout && !couche) continue;
+
+            var surface = offre.WidthMm * offre.HeightMm;
+            if (surface > retenuSurface) continue;
+
+            // à surface égale, on ne couche pas la feuille pour rien : une rotation inutile
+            // est une occasion de charger le papier dans le mauvais sens
+            if (surface == retenuSurface && !(retenu?.Paysage == true && debout)) continue;
+
+            var paysage = !debout;
+            retenu = new PapierRetenu(
+                offre.Nom,
+                paysage ? offre.HeightMm : offre.WidthMm,
+                paysage ? offre.WidthMm : offre.HeightMm,
+                paysage);
+            retenuSurface = surface;
+        }
+
+        return retenu;
+    }
+
     /// <summary>Formats déclarés par le pilote, pour information dans l'interface.</summary>
     public static IReadOnlyList<string> ListPaperSizes(string printerName)
     {
