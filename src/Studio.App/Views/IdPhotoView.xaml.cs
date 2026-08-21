@@ -969,16 +969,19 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     /// <summary>
-    /// Envoie au client la photo qu'il a sous les yeux — cadrage, redressement et
-    /// corrections compris.
+    /// Envoie au client TOUT LE LOT RETENU — cadrage, redressement et corrections de
+    /// chaque photo compris.
     ///
     /// C'est une prestation à part, facturée à la photo : elle n'imprime rien, et
     /// imprimer n'envoie rien. Un client peut vouloir les deux, ou l'un des deux, et le
     /// prix n'est pas le même.
+    ///
+    /// Le lot est le MÊME qu'à l'impression (voir <c>OnPrint</c>) : ce que l'opérateur a
+    /// retenu part, ce qu'il a mis à zéro reste.
     /// </summary>
     private async void OnSendByMail(object sender, RoutedEventArgs e)
     {
-        if (_current is not { } photo)
+        if (_current is null)
         {
             MessageBox.Show("Choisissez d'abord une photo dans la bande du bas.",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -989,19 +992,54 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         // garderait le cadrage d'AVANT la dernière retouche
         SauverDansLaPhoto();
 
-        // dernier moment où la carte du client est encore là — voir MettreALAbriLeLotAsync
-        await MettreALAbriAsync(photo);
+        // ⚠ TOUT LE LOT PART, ET NON LA SEULE PHOTO AFFICHÉE.
+        //
+        // L'envoi ne portait que `_current` : une famille de trois personnes demandait
+        // trois envois, donc trois passages en caisse et trois courriels au client, alors
+        // que l'impression, elle, sort les trois planches d'un coup. Demandé par
+        // l'exploitant le 21/08/2026.
+        //
+        // C'est EXACTEMENT le lot qu'on imprime — `LotIdentite.EstRetenue` —, et c'est ce
+        // qui rend la règle tenable : une photo mise à zéro ne s'imprime pas et ne s'envoie
+        // pas non plus. La prestation étant facturée à la photo, envoyer ce que l'opérateur
+        // vient d'écarter la lui ferait payer.
+        var retenues = _photos.Where(p => LotIdentite.EstRetenue(p.Quantite)).ToList();
+
+        if (retenues.Count == 0)
+        {
+            MessageBox.Show(
+                "Aucune photo n'est retenue : il n'y a rien à envoyer.\n\n" +
+                "Ouvrez la photo du client dans la bande — elle entre alors dans le lot — " +
+                "ou remontez son compteur.",
+                "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // dernier moment où la carte du client est encore là : on rattrape ici les mises à
+        // l'abri qui auraient échoué à l'ouverture, pour TOUT le lot cette fois
+        await MettreALAbriLeLotAsync(retenues);
+
+        // ⚠ CHAQUE PHOTO PART AVEC SES PROPRES RÉGLAGES, et non avec ceux de l'écran.
+        //
+        // `_crop`, `_redressement` et `ReglagesRetenus()` décrivent la photo AFFICHÉE :
+        // les poser sur tout le lot enverrait le cadrage du dernier client sur les photos
+        // des autres. `ReglagesDe` est la jumelle par photo, celle que la planche emploie
+        // déjà — et sa clé de détourage est la même, si bien que les masques calculés à
+        // l'écran servent l'envoi au lieu d'être repayés.
+        var envois = retenues
+            .Select(p => new MailSendView.PhotoAEnvoyer(
+                p.Path, p.Crop, 0, p.Redressement, ReglagesDe(p)))
+            .ToList();
 
         // revenirEnArriere : l'envoi ne doit pas emporter la photo en cours — l'opérateur
         // enchaîne souvent sur la planche pour le même client. Voir MailSendView.
         Navigator.Go(
-            new MailSendView([new MailSendView.PhotoAEnvoyer(
-                    photo.Path, _crop, 0, _redressement, ReglagesRetenus())],
+            new MailSendView(envois,
                 revenirEnArriere: true,
 
                 // l'envoi RÉUSSI, et lui seul : rien n'est facturé quand il échoue, rien
                 // ne doit être historisé non plus
-                surEnvoi: commande => NoterDansLHistorique([photo], commande, envoyee: true)),
+                surEnvoi: commande => NoterDansLHistorique(retenues, commande, envoyee: true)),
             "Envoyer les photos par courriel");
     }
 
