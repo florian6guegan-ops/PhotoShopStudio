@@ -210,11 +210,64 @@ public sealed class OrderItem
     /// Null sur toutes les autres planches, et sur tous les tirages.
     /// </summary>
     public CropSpec? CropGrandePhoto { get; set; }
+
+    /// <summary>
+    /// Planches identité : les repères posés sur le visage. Null partout ailleurs, et sur
+    /// les planches enregistrées avant que ce champ n'existe. Voir <see cref="ReperesIdentite"/>.
+    /// </summary>
+    public ReperesIdentite? Reperes { get; set; }
+
     /// <summary>Nom de la finition choisie (voir Product.Finishes) ; null = DEVMODE par défaut du produit.</summary>
     public string? Finish { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();
 }
 
+
+/// <summary>
+/// Les repères d'une photo d'identité : sommet du crâne, bas du menton, visage détecté et
+/// axe vertical du visage — tous en fractions de l'image.
+///
+/// <b>Pourquoi la commande doit les garder.</b> Elle ne les gardait pas, et « Commandes du
+/// jour › Photos d'identité » est pourtant l'endroit d'où l'on rouvre une planche déjà
+/// tirée — quand le guichet a refusé le cadrage, c'est-à-dire le seul motif de la rouvrir.
+/// Sans eux, <see cref="Studio.Store.TravailDepuisCommande.TraduireIdentite"/> rendait une
+/// photo <c>Prete = false</c> : l'écran relançait la détection de visage, reposait SES
+/// repères, et la mesure de la tête pouvait tomber ailleurs que sur la planche qui est
+/// sortie. On revenait donc corriger un cadrage en repartant d'une autre mesure que celle
+/// qu'on venait chercher.
+///
+/// C'est aussi ce qui coûtait une détection de visage à chaque réouverture, alors que le
+/// travail était déjà fait une fois.
+///
+/// Null sur tous les tirages, et sur les planches enregistrées avant que ce champ n'existe :
+/// elles se rouvrent alors exactement comme avant, par la détection.
+/// </summary>
+public sealed class ReperesIdentite
+{
+    /// <summary>Sommet du crâne ; null = pas posé.</summary>
+    public double? CrownX { get; set; }
+    public double? CrownY { get; set; }
+
+    /// <summary>Bas du menton ; null = pas posé.</summary>
+    public double? ChinX { get; set; }
+    public double? ChinY { get; set; }
+
+    /// <summary>Visage détecté ; null = aucune détection retenue.</summary>
+    public double? HeadX { get; set; }
+    public double? HeadY { get; set; }
+    public double? HeadWidth { get; set; }
+    public double? HeadHeight { get; set; }
+
+    /// <summary>Axe vertical du visage, en fraction de la largeur.</summary>
+    public double AxeVisage { get; set; } = 0.5;
+
+    /// <summary>
+    /// Vrai quand rien n'a été posé — un objet écrit par acquit de conscience, qui n'apprend
+    /// rien de plus que son absence. La reprise le traite alors comme un null et laisse la
+    /// détection travailler.
+    /// </summary>
+    public bool RienDePose => CrownX is null && ChinX is null && HeadX is null;
+}
 /// <summary>Un produit commandé (ex : 10×15 brillant) et ses photos.</summary>
 public sealed class OrderLine
 {

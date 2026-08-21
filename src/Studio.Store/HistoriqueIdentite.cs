@@ -21,9 +21,14 @@ namespace Studio.Store;
 /// le fond gris, les corrections fines, les photos par planche et la quantité. Rien à
 /// inventer, et surtout un seul format à faire évoluer — voir <see cref="PhotoIdentiteEnAttente"/>.
 ///
-/// ⚠ Les commandes (<c>orders\</c>) ne pouvaient pas tenir ce rôle : elles ne gardent PAS les
-/// repères de crâne et de menton (voir <see cref="TravailDepuisCommande.TraduireIdentite"/>),
-/// et une photo envoyée par courriel n'y est pas reconnaissable comme une identité.
+/// ⚠ Les commandes (<c>orders\</c>) ne tiennent pas ce rôle, et pour une raison qui reste
+/// entière : <b>une photo ENVOYÉE PAR COURRIEL n'y est pas reconnaissable comme une
+/// identité</b> — elle n'a pas de planche, donc pas de ligne d'identité. Une commande ne dit
+/// que ce qui est passé en caisse.
+///
+/// Elles gardent en revanche les repères de crâne et de menton depuis le 21/08/2026 (voir
+/// <see cref="ReperesIdentite"/>) : « Commandes du jour › Photos d'identité » rouvre donc
+/// une planche IMPRIMÉE telle qu'elle est sortie, sans repasser par la détection de visage.
 /// </summary>
 public sealed class PhotoFaite
 {

@@ -235,17 +235,82 @@ public class TravailDepuisCommandeTests
     }
 
     /// <summary>
-    /// ⚠ La commande ne garde PAS les repères de crâne et de menton. La photo revient donc
-    /// « pas prête », pour que la détection les retrouve — et l'écran, lui, ne recadre pas
-    /// par-dessus un cadrage repris.
+    /// Une commande écrite AVANT que la commande ne garde les repères n'en a aucun : la
+    /// photo revient « pas prête », pour que la détection les retrouve — et l'écran, lui,
+    /// ne recadre pas par-dessus un cadrage repris.
     /// </summary>
     [Fact]
-    public void Une_planche_revient_pas_prete_pour_que_la_detection_retrouve_les_reperes()
+    public void Une_planche_sans_reperes_revient_pas_prete_pour_que_la_detection_les_retrouve()
     {
         var travail = TravailDepuisCommande.TraduireIdentite(
             [Article("001.jpg")], @"C:\photos", "planche", Norme());
 
         Assert.False(Assert.Single(travail.Identite!.Photos).Prete);
+    }
+
+    /// <summary>
+    /// <b>Les repères reviennent de la commande, et la photo est alors PRÊTE.</b>
+    ///
+    /// C'est ce qui fait de « Commandes du jour › Photos d'identité » un historique dont on
+    /// rouvre une planche telle qu'elle est SORTIE : sans eux, la détection de visage
+    /// reposait les siens, et la mesure de la tête pouvait tomber ailleurs que sur le papier
+    /// qu'on vient chercher — alors qu'on la rouvre justement parce que le guichet a refusé
+    /// le cadrage.
+    /// </summary>
+    [Fact]
+    public void Une_planche_rend_les_reperes_du_visage_et_revient_prete()
+    {
+        var article = Article("001.jpg");
+        article.Reperes = new ReperesIdentite
+        {
+            CrownX = 0.51, CrownY = 0.12,
+            ChinX = 0.50, ChinY = 0.62,
+            HeadX = 0.34, HeadY = 0.10, HeadWidth = 0.33, HeadHeight = 0.54,
+            AxeVisage = 0.47,
+        };
+
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [article], @"C:\photos", "planche", Norme());
+
+        var photo = Assert.Single(travail.Identite!.Photos);
+
+        Assert.True(photo.Prete);
+        Assert.Equal(0.51, photo.CrownX!.Value, 4);
+        Assert.Equal(0.12, photo.CrownY!.Value, 4);
+        Assert.Equal(0.50, photo.ChinX!.Value, 4);
+        Assert.Equal(0.62, photo.ChinY!.Value, 4);
+        Assert.Equal(0.34, photo.HeadX!.Value, 4);
+        Assert.Equal(0.54, photo.HeadHeight!.Value, 4);
+        Assert.Equal(0.47, photo.AxeVisage, 4);
+    }
+
+    /// <summary>
+    /// Un objet de repères VIDE ne vaut pas des repères : il ne dit rien de plus que son
+    /// absence, et laisser la photo « prête » figerait un placement que personne n'a posé.
+    /// </summary>
+    [Fact]
+    public void Des_reperes_vides_ne_rendent_pas_la_photo_prete()
+    {
+        var article = Article("001.jpg");
+        article.Reperes = new ReperesIdentite();
+
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [article], @"C:\photos", "planche", Norme());
+
+        Assert.False(Assert.Single(travail.Identite!.Photos).Prete);
+    }
+
+    /// <summary>
+    /// L'axe du visage revient à SON milieu quand la commande n'en porte pas : c'est la
+    /// valeur neutre, et non zéro — qui collerait le visage au bord gauche.
+    /// </summary>
+    [Fact]
+    public void Sans_reperes_l_axe_du_visage_revient_au_milieu()
+    {
+        var travail = TravailDepuisCommande.TraduireIdentite(
+            [Article("001.jpg")], @"C:\photos", "planche", Norme());
+
+        Assert.Equal(0.5, Assert.Single(travail.Identite!.Photos).AxeVisage, 4);
     }
 
     /// <summary>La norme visée revient telle quelle : c'est elle qui fixe la case et le prix.</summary>

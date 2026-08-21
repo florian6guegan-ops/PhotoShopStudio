@@ -83,7 +83,12 @@ public sealed record DraftItem(
     /// ⚠ Sans effet sur le prix — voir <see cref="OrderLine.MontageSheetCode"/>. C'est toute
     /// la différence avec <paramref name="CustomSheet"/>, qui, lui, facture le papier.
     /// </summary>
-    string? MontageSheetCode = null);
+    string? MontageSheetCode = null,
+    /// <summary>
+    /// Planches identité : les repères posés sur le visage — crâne, menton, visage détecté,
+    /// axe. Null partout ailleurs. Voir <see cref="ReperesIdentite"/>.
+    /// </summary>
+    ReperesIdentite? Reperes = null);
 
 /// <summary>
 /// Transforme une sélection en commande persistée : numéro du jour, enveloppes
@@ -202,6 +207,7 @@ public sealed class OrderService
                         SheetCellWidthMm = item.SheetCell?.WidthMm,
                         SheetCellHeightMm = item.SheetCell?.HeightMm,
                         CropGrandePhoto = item.CropGrande,
+                        Reperes = item.Reperes,
                         Finish = item.Finish,
                         Adjustments = item.Adjustments,
                     });

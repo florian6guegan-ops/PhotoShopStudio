@@ -57,6 +57,49 @@ public class OrderServiceTests : IDisposable
         Assert.Equal(15m, order.Total);
     }
 
+    /// <summary>
+    /// <b>La commande GARDE les repères du visage.</b>
+    ///
+    /// C'est l'autre moitié de <c>TravailDepuisCommande.TraduireIdentite</c> : sans cette
+    /// écriture-là, la reprise aurait beau les lire, elle ne trouverait rien. Une planche
+    /// rouverte depuis « Commandes du jour › Photos d'identité » repasserait par la
+    /// détection de visage, et la mesure de la tête pourrait tomber ailleurs que sur la
+    /// planche qui est vraiment sortie.
+    /// </summary>
+    [Fact]
+    public void CreateOrder_GardeLesReperesDuVisage()
+    {
+        var photo = MakePhoto("identite.jpg");
+
+        var reperes = new ReperesIdentite
+        {
+            CrownX = 0.51, CrownY = 0.12,
+            ChinX = 0.50, ChinY = 0.62,
+            HeadX = 0.34, HeadY = 0.10, HeadWidth = 0.33, HeadHeight = 0.54,
+            AxeVisage = 0.47,
+        };
+
+        var order = _service.CreateOrder("Operateur",
+            [Draft(photo, P10x15) with { Reperes = reperes }]);
+
+        var article = order.Envelopes.Single().Lines.Single().Items.Single();
+
+        Assert.NotNull(article.Reperes);
+        Assert.False(article.Reperes!.RienDePose);
+        Assert.Equal(0.12, article.Reperes.CrownY!.Value, 4);
+        Assert.Equal(0.62, article.Reperes.ChinY!.Value, 4);
+        Assert.Equal(0.47, article.Reperes.AxeVisage, 4);
+    }
+
+    /// <summary>Un tirage ordinaire n'en porte aucun : le champ ne concerne que l'identité.</summary>
+    [Fact]
+    public void CreateOrder_UnTirageOrdinaireNaPasDeReperes()
+    {
+        var order = _service.CreateOrder("Operateur", [Draft(MakePhoto("a.jpg"), P10x15)]);
+
+        Assert.Null(order.Envelopes.Single().Lines.Single().Items.Single().Reperes);
+    }
+
     [Fact]
     public void CreateOrder_SansPrixImpose_leCatalogueDecide()
     {

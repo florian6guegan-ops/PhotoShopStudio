@@ -95,7 +95,10 @@ public static class TirageIdentite
                 UnitPriceOverride: prix,
                 // le cadrage du portrait, sur la planche de rentrée : la commande doit le
                 // garder, sans quoi une réimpression sortirait un autre cadrage
-                CropGrande: genre == GenreDePlanche.Rentree ? p.CropGrande : null))
+                CropGrande: genre == GenreDePlanche.Rentree ? p.CropGrande : null,
+                // les repères du visage : c'est ce qui permet de rouvrir la planche telle
+                // qu'elle est sortie depuis « Commandes du jour › Photos d'identité »
+                Reperes: p.Reperes))
             .ToList();
 
         // LA FEUILLE EN PLUS, quand c'est « la planche ET une 10×15 ».

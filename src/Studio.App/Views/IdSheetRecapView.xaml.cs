@@ -47,7 +47,14 @@ public partial class IdSheetRecapView : UserControl
         Product Produit,
         string? Finition,
         int Rang,
-        CropSpec? CropGrande = null)
+        CropSpec? CropGrande = null,
+        /// <summary>
+        /// Les repères du visage, pour que la COMMANDE les garde — et qu'une planche
+        /// rouverte depuis « Commandes du jour › Photos d'identité » revienne avec la
+        /// mesure de tête qui est vraiment sortie sur le papier, sans repasser par la
+        /// détection. Voir <see cref="ReperesIdentite"/>.
+        /// </summary>
+        ReperesIdentite? Reperes = null)
     {
         /// <summary>La quantité change sur cet écran : elle n'est pas figée à l'arrivée.</summary>
         public int Quantite { get; set; } = Quantite;

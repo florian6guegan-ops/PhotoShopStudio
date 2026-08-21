@@ -818,8 +818,22 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 item.Prete = true;
             }
 
-            // le fond se recalcule sur la nouvelle image, il ne se reporte pas
-            if (item.FondBlanc || item.FondGris) await RefaireLeFondBlancAsync();
+            // ⚠ LE FOND N'EST REFAIT QUE S'IL N'EST PAS DÉJÀ LÀ.
+            //
+            // Il était recalculé à CHAQUE passage sur la photo, y compris en revenant sur
+            // celle qu'on venait de quitter : 1,5 s d'attente, masque déjà en mémoire
+            // compris — c'est ce qui rendait pénible le va-et-vient entre les poses d'un
+            // même client, et l'aller-retour est justement le geste ordinaire quand on
+            // choisit une photo. Ce qui est gardé est valable (voir GarderLeDetourage) ;
+            // le retrouver ne coûte rien.
+            if (item.FondBlanc || item.FondGris)
+            {
+                var gris = item.FondGris;
+
+                if (DetourageGarde(item, gris) is { } deja) _detoure = deja;
+                else await RefaireLeFondBlancAsync();
+            }
+
             await RecalculerLApercuCorrigeAsync();
         }
         catch (Exception ex)
@@ -1297,20 +1311,37 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     /// </summary>
     private async Task RefaireLeFondBlancAsync()
     {
-        if (_current is null || _displayBitmap is null) return;
+        if (_current is not { } laPhoto || _displayBitmap is null) return;
 
         Mouse.OverrideCursor = CurseurStudio.Attente;
 
         // Le fond passe par le MÊME détourage que la correction du sujet, et il fait donc
         // attendre pareil. Rien ne le disait : la photo restait immobile sous un curseur
         // d'attente, sans que rien n'annonce combien de temps.
-        CommencerLAttente(GrayBackgroundCheck.IsChecked == true
-            ? "Pose du fond gris"
-            : "Pose du fond blanc", MegapixelsDeLApercu);
+        //
+        // ⚠ MAIS SEULEMENT S'IL Y A VRAIMENT QUELQUE CHOSE À ATTENDRE.
+        //
+        // La barre s'affichait à tous les coups. Tant que le détourage coûtait une seconde
+        // et demie, cela se tenait ; depuis que les pixels ne font plus l'aller-retour par
+        // un PNG, un masque déjà connu se repose en un demi-tiers de seconde — et la barre
+        // ne faisait plus que CLIGNOTER, ce qui est pire que pas de barre du tout. C'est
+        // exactement la règle que <see cref="MasqueSujet.DejaEnMemoire"/> existe pour
+        // servir, et que l'aperçu corrigé applique déjà, quelques lignes plus bas.
+        //
+        // Sans clé — fichier illisible, chemin trop long — on ne peut rien affirmer : mieux
+        // vaut annoncer une attente qui n'aura pas lieu que figer l'écran sans un mot.
+        var cle = CleDuFichier(laPhoto.Path);
+
+        // Les dimensions sont ignorées depuis le 12/08/2026 : un masque d'aperçu sert aussi
+        // la planche pleine résolution. Voir la remarque de DejaEnMemoire.
+        if (cle is null || !MasqueSujet.DejaEnMemoire(cle, 0, 0))
+            CommencerLAttente(GrayBackgroundCheck.IsChecked == true
+                ? "Pose du fond gris"
+                : "Pose du fond blanc", MegapixelsDeLApercu);
 
         try
         {
-            var chemin = _current.Path;
+            var chemin = laPhoto.Path;
             var gris = GrayBackgroundCheck.IsChecked == true;
 
             // ⚠ LA CLÉ DU FICHIER, ET C'EST TOUT LE POINT.
@@ -1331,25 +1362,55 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             // La vignette et la planche n'ont pas la même définition, et c'est sans
             // importance : MasqueSujet ignore la taille depuis le 12/08/2026, exprès pour
             // qu'un masque d'aperçu serve la planche pleine résolution.
-            var cle = CleDuFichier(chemin);
+            //
+            // Elle est calculée plus haut : c'est elle qui décide aussi s'il y a une attente
+            // à annoncer, et deux calculs de la même clé finiraient par diverger.
 
-            var octets = await Task.Run(() =>
+            // ⚠ ON NE PASSE PLUS PAR UN PNG, et c'était le poste le plus cher de l'écran.
+            //
+            // Ce calcul rendait ses pixels encodés en PNG, que la ligne suivante redécodait
+            // aussitôt pour en faire une image d'écran. Un aller-retour complet par un
+            // format compressé, entre deux endroits de la même méthode, sur un fichier
+            // d'1,4 à 1,9 Mo. Mesuré le 21/08/2026 sur une vignette de 1362×2048 :
+            //
+            //     encoder en PNG        657 à 1071 ms
+            //     les mêmes pixels bruts    9 à 17 ms
+            //
+            // C'est-à-dire SOIXANTE FOIS le prix, pour un intermédiaire que personne ne lit
+            // ni n'enregistre. Sur les 1,5 s qu'un retour sur une photo déjà détourée
+            // coûtait, il en prenait les deux tiers — masque déjà en mémoire compris.
+            //
+            // Les deux bouts du chemin savaient déjà s'en passer : l'aperçu corrigé, juste
+            // en dessous, travaille en BGRA depuis toujours (voir EnBgra / DepuisBgra).
+            // Celui-ci était simplement resté à l'écart.
+            var pose = await Task.Run(() =>
             {
                 var jpeg = App.Services.Thumbnails.GetJpeg(chemin, 1600);
                 using var image = new ImageMagick.MagickImage(jpeg);
                 var fond = gris
                     ? BackgroundRemoval.GrisIdentite
                     : ImageMagick.MagickColors.White;
-                return BackgroundRemoval.PoserUnFond(image, fond, cle)
-                    ? image.ToByteArray(ImageMagick.MagickFormat.Png)
-                    : null;
+
+                if (!BackgroundRemoval.PoserUnFond(image, fond, cle)) return null;
+
+                // Le fond posé est opaque, mais l'image peut garder une couche alpha du
+                // détourage : on la rend opaque pour que la relecture donne bien quatre
+                // octets par pixel — DepuisBgra les compte.
+                image.Alpha(ImageMagick.AlphaOption.Opaque);
+
+                using var lus = image.GetPixels();
+                var bgra = lus.ToByteArray(ImageMagick.PixelMapping.BGRA)
+                           ?? throw new InvalidOperationException("détourage illisible");
+
+                return new ApercuBrut(bgra, (int)image.Width, (int)image.Height);
             });
 
-            if (octets is null)
+            if (pose is null)
             {
                 DecocherSansRelancer(WhiteBackgroundCheck);
                 DecocherSansRelancer(GrayBackgroundCheck);
-                if (_current is not null) { _current.FondBlanc = false; _current.FondGris = false; }
+                laPhoto.FondBlanc = false;
+                laPhoto.FondGris = false;
                 MessageBox.Show(
                     "Le fond de cette photo n'est pas assez uni pour être remplacé sans risque " +
                     "d'entamer le sujet.\n\nLa photo est laissée telle quelle.",
@@ -1357,14 +1418,34 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 return;
             }
 
-            _detoure = ToBitmap(octets);
+            var fait = DepuisBgra(pose.Pixels, pose.Largeur, pose.Hauteur);
+
+            // gardé tout prêt : revenir sur cette photo ne le recalculera pas
+            GarderLeDetourage(laPhoto, fait, gris);
+
+            // ⚠ ON NE POSE À L'ÉCRAN QUE CE QUI EST ENCORE DEMANDÉ.
+            //
+            // Ce calcul a duré ; l'opérateur a pu toucher une autre vignette entre-temps,
+            // et ce gestionnaire-là est un `async void` (voir OnStripPhotoClicked) : rien
+            // n'empêche deux passages de se chevaucher. Poser ces pixels sans regarder
+            // afficherait le client précédent sur la photo du suivant.
+            //
+            // Le rangement ci-dessus, lui, se fait dans tous les cas : il est nommé, il ne
+            // se trompe pas de photo, et le travail est bon même si personne ne le regarde
+            // — c'est justement ce qui rendra le retour instantané.
+            if (ReferenceEquals(_current, laPhoto)) _detoure = fait;
         }
         catch (Exception ex)
         {
             DecocherSansRelancer(WhiteBackgroundCheck);
             DecocherSansRelancer(GrayBackgroundCheck);
-            if (_current is not null) { _current.FondBlanc = false; _current.FondGris = false; }
-            _detoure = null;
+            laPhoto.FondBlanc = false;
+            laPhoto.FondGris = false;
+
+            // même précaution qu'au succès : si l'opérateur a changé de photo pendant le
+            // calcul, l'échec de celle-ci n'a pas à effacer le détourage de celle-là
+            if (ReferenceEquals(_current, laPhoto)) _detoure = null;
+
             FileLog.Write("Fond de photo d'identité impossible", ex);
             MessageBox.Show($"Fond impossible à poser : {ex.Message}",
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -2091,6 +2172,63 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         image.Freeze();
         return image;
     }
+
+    /// <summary>
+    /// Des pixels bruts et leurs dimensions, tels qu'ils sortent d'un calcul de fond mené
+    /// sur un fil de fond. Ils deviennent une image d'écran chez l'appelant, par
+    /// <see cref="DepuisBgra"/>.
+    /// </summary>
+    private sealed record ApercuBrut(byte[] Pixels, int Largeur, int Hauteur);
+
+    // ----- la mémoire courte des détourages -----
+
+    /// <summary>
+    /// Les photos dont on garde le détourage tout prêt, de la plus ancienne à la plus
+    /// récente.
+    ///
+    /// <b>Quatre, comme <c>MasqueSujet</c> en garde quatre</b>, et pour exactement la même
+    /// raison : l'opérateur fait l'aller-retour entre les quelques poses d'un client avant
+    /// de choisir. Au-delà, c'est qu'il parcourt la carte, et une carte porte parfois
+    /// quatre-vingts photos — les garder toutes ferait presque un gigaoctet d'images
+    /// d'écran, sur des postes qui n'en ont pas la place (Créteil travaille à 0,8 Go
+    /// libres).
+    /// </summary>
+    private const int DetouragesGardes = 4;
+
+    private readonly List<StripItem> _detourages = [];
+
+    /// <summary>
+    /// Range le détourage qu'on vient de calculer, et laisse partir le plus ancien.
+    ///
+    /// Ce qui est gardé ne dépend QUE de la photo et de la couleur du fond : le masque est
+    /// pris nu, sans le contour ni l'adoucissement, et le redressement n'est qu'une
+    /// transformation d'affichage. Ni les curseurs, ni les corrections du sujet, ni l'angle
+    /// ne le périment donc — c'est ce qui rend cette mémoire sûre.
+    /// </summary>
+    private void GarderLeDetourage(StripItem photo, BitmapSource image, bool gris)
+    {
+        photo.Detoure = image;
+        photo.DetoureEnGris = gris;
+
+        _detourages.Remove(photo);
+        _detourages.Add(photo);
+
+        while (_detourages.Count > DetouragesGardes)
+        {
+            var vieille = _detourages[0];
+            _detourages.RemoveAt(0);
+            vieille.Detoure = null;
+        }
+    }
+
+    /// <summary>
+    /// Le détourage déjà calculé pour cette photo ET ce fond, ou null.
+    ///
+    /// La couleur compte : passer du blanc au gris fabrique une autre image, et rendre
+    /// celle d'avant montrerait un fond que l'opérateur vient justement de changer.
+    /// </summary>
+    private static BitmapSource? DetourageGarde(StripItem photo, bool gris) =>
+        photo.Detoure is { } image && photo.DetoureEnGris == gris ? image : null;
 
     /// <summary>Dit à l'opérateur que des corrections sont posées — sinon rien ne le montre.</summary>
     private void MontrerLesCorrections()
@@ -2972,7 +3110,10 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                         PortraitDeLaPlanche.Cotes(_genre, choice.Product, _document,
                             p.Copies > 0 ? p.Copies : choice.Capacite),
                         p.Redressement)
-                    : null))
+                    : null,
+                // Les repères partent AVEC la planche : c'est ce qui permet de la rouvrir
+                // telle qu'elle est sortie depuis « Commandes du jour ». Voir ReperesDe.
+                ReperesDe(p)))
             .ToList();
 
         if (planches.Count == 0)
@@ -3071,6 +3212,33 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         return reglages;
     }
+
+    /// <summary>
+    /// Les repères du visage d'une photo du lot, dans la forme que la COMMANDE enregistre.
+    ///
+    /// <b>Jumelle de <see cref="ReglagesDe"/>, et pour la même raison</b> : ce que l'écran
+    /// porte doit se retrouver dans la commande, sans quoi il n'existe que le temps de la
+    /// séance. La commande ne gardait pas les repères ; « Commandes du jour › Photos
+    /// d'identité » rouvrait donc les planches sans eux, et la détection de visage les
+    /// reposait — parfois ailleurs que sur la planche qui était sortie.
+    ///
+    /// Rendue même quand rien n'est posé : c'est <see cref="ReperesIdentite.RienDePose"/> qui
+    /// tranche à la relecture, et non l'absence d'objet. Un null ici et un objet vide
+    /// là-bas voudraient dire la même chose, et deux façons de dire la même chose finissent
+    /// toujours par diverger.
+    /// </summary>
+    private static ReperesIdentite ReperesDe(StripItem photo) => new()
+    {
+        CrownX = photo.Crown?.X,
+        CrownY = photo.Crown?.Y,
+        ChinX = photo.Chin?.X,
+        ChinY = photo.Chin?.Y,
+        HeadX = photo.Head?.X,
+        HeadY = photo.Head?.Y,
+        HeadWidth = photo.Head?.Width,
+        HeadHeight = photo.Head?.Height,
+        AxeVisage = photo.AxeVisage,
+    };
 
     /// <summary>Retour du récapitulatif sur une photo précise, pour la recadrer.</summary>
     private void RevenirSurLaPhoto(int rang)
@@ -3539,6 +3707,20 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
         public ImageAdjustments Corrections { get; set; } = new();
         public bool NoirEtBlanc { get; set; }
         public bool FondBlanc { get; set; }
+
+        /// <summary>
+        /// Le détourage tout prêt de cette photo, quand on le garde — voir
+        /// <c>GarderLeDetourage</c>. Null la plupart du temps : quatre photos seulement le
+        /// portent à la fois.
+        ///
+        /// <b>Il n'appartient pas au travail de l'opérateur</b>, contrairement à tout ce qui
+        /// l'entoure ici : c'est un résultat, qui se recalcule à l'identique. Rien ne
+        /// l'enregistre, et le perdre ne coûte que du temps.
+        /// </summary>
+        public BitmapSource? Detoure { get; set; }
+
+        /// <summary>Sur quel fond <see cref="Detoure"/> a été calculé : gris, ou blanc.</summary>
+        public bool DetoureEnGris { get; set; }
 
         /// <summary>Le même détourage, posé sur du gris clair. Exclusif de <see cref="FondBlanc"/>.</summary>
         public bool FondGris { get; set; }

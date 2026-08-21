@@ -89,12 +89,17 @@ public static class TravailDepuisCommande
     /// <summary>
     /// La même chose pour une PLANCHE D'IDENTITÉ, qui se reprend dans son propre écran.
     ///
-    /// <b>⚠ Les repères de crâne et de menton ne sont PAS dans la commande.</b> Elle ne garde
-    /// que le cadrage, les corrections et les fonds ; les repères n'appartiennent qu'au
-    /// travail mis de côté. La photo revient donc avec <c>Prete = false</c>, de sorte que la
-    /// détection de visage les retrouve — et l'écran, lui, sait ne PAS recadrer par-dessus un
-    /// cadrage repris (voir <c>IdPhotoView.OuvrirLaPhotoAsync</c>). On récupère ainsi les
-    /// deux : les repères par la détection, le cadrage tel que l'opérateur l'avait laissé.
+    /// <b>La planche revient ENTIÈRE</b> : cadrage, cadre du portrait, redressement, noir et
+    /// blanc, fond blanc ou gris, corrections — sujet détouré compris —, photos par planche,
+    /// quantité, et depuis le 21/08/2026 les REPÈRES du visage (voir
+    /// <see cref="ReperesIdentite"/>). C'est ce qui fait de « Commandes du jour › Photos
+    /// d'identité » un vrai historique : on y rouvre une planche telle qu'elle est sortie.
+    ///
+    /// ⚠ <b>Une commande écrite AVANT ce champ n'a pas de repères</b> : la photo revient
+    /// alors <c>Prete = false</c> et la détection de visage les repose, comme avant. L'écran
+    /// sait ne PAS recadrer par-dessus un cadrage repris (voir
+    /// <c>IdPhotoView.OuvrirLaPhotoAsync</c>) : on récupère donc les repères par la
+    /// détection et le cadrage tel que l'opérateur l'avait laissé.
     /// </summary>
     /// <param name="articles">Les articles des lignes d'identité de la commande.</param>
     /// <param name="norme">
@@ -118,9 +123,28 @@ public static class TravailDepuisCommande
                 // 0 = « planche pleine » : l'écran recalera sur la capacité du papier
                 Copies = article.SheetCopiesOverride ?? 0,
 
-                // Voir plus haut : sans repères en magasin, on laisse la détection les
-                // retrouver, et l'écran garde le cadrage repris.
-                Prete = false,
+                // ⚠ LA PHOTO NE REVIENT « PRÊTE » QUE SI LA COMMANDE PORTE SES REPÈRES.
+                //
+                // Elle ne les portait pas du tout jusqu'ici : on laissait donc la détection
+                // de visage les retrouver à l'ouverture. Cela marchait, mais mal — la mesure
+                // de la tête pouvait tomber ailleurs que sur la planche qui est SORTIE, et
+                // l'on revenait corriger un cadrage refusé au guichet en repartant d'une
+                // autre mesure que celle qu'on venait chercher. C'était aussi une détection
+                // de visage payée à chaque réouverture pour un travail déjà fait.
+                //
+                // Une commande d'avant ce champ n'a rien à donner : elle repasse par la
+                // détection, exactement comme avant.
+                Prete = article.Reperes is { RienDePose: false },
+
+                CrownX = article.Reperes?.CrownX,
+                CrownY = article.Reperes?.CrownY,
+                ChinX = article.Reperes?.ChinX,
+                ChinY = article.Reperes?.ChinY,
+                HeadX = article.Reperes?.HeadX,
+                HeadY = article.Reperes?.HeadY,
+                HeadWidth = article.Reperes?.HeadWidth,
+                HeadHeight = article.Reperes?.HeadHeight,
+                AxeVisage = article.Reperes?.AxeVisage ?? 0.5,
 
                 CropX = article.Crop.X,
                 CropY = article.Crop.Y,
