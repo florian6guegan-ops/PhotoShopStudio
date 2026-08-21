@@ -902,29 +902,38 @@ internal partial class EditSelectionView : UserControl
             return;
         }
 
-        // l'ancre suit le dernier clic SIMPLE : c'est de là que partira la prochaine plage
-        _ancreVisee = photo;
-        SetCurrent(photo);
-
-        // UN CLIC SIMPLE VISE LA PHOTO — la case à cocher n'existe plus.
+        // UN CLIC SIMPLE NE GARDE QU'ELLE — la case à cocher n'existe plus.
         //
-        // Elle avait été posée parce que le Ctrl+clic ne s'annonçait nulle part et que
+        // La case avait été posée parce que le Ctrl+clic ne s'annonçait nulle part et que
         // personne ne l'avait trouvé. Mais viser une case de quinze pixels dans le coin
         // d'une vignette est un geste de précision, au comptoir, avec un client devant
         // soi : c'est la CIBLE qui gênait, pas l'idée. Retirée le 21/08/2026 à la demande
         // de l'exploitant, le clic prend sa place.
         //
-        // Le Ctrl+clic continue de marcher à l'identique : ceux qui l'ont appris n'ont rien
-        // à réapprendre, et Maj+clic garde la plage.
+        // ⚠ IL REMPLACE LA SÉLECTION, IL NE S'Y AJOUTE PAS. C'est le geste de
+        // l'explorateur Windows, et c'est ce que l'exploitant a demandé le 21/08/2026 :
+        // « quand j'en ai plusieurs et que je clique sur une seule, elle doit être la seule
+        // sélectionnée ». Une première version basculait la photo cliquée sans toucher aux
+        // autres — on ne pouvait donc plus RÉDUIRE une sélection d'un geste, seulement
+        // l'agrandir ou la défaire photo par photo.
+        //
+        // Ctrl+clic garde l'ancien geste — ajouter ou retirer sans toucher au reste — et
+        // Maj+clic garde la plage. Ceux qui les ont appris n'ont rien à réapprendre.
         //
         // ⚠ Sauf avec C : ce geste-là recadre à la souris sur la vignette, et faire
         // basculer la sélection sous un recadrage serait une surprise à chaque prise en
         // main.
+        //
+        // Posé AVANT SetCurrent, qui rafraîchit l'écran : l'inverse aurait montré l'ancienne
+        // sélection pendant un instant, puis la nouvelle.
         if (!CTenue)
-        {
-            photo.Ciblee = !photo.Ciblee;
-            return;
-        }
+            foreach (var autre in _photos) autre.Ciblee = ReferenceEquals(autre, photo);
+
+        // l'ancre suit le dernier clic SIMPLE : c'est de là que partira la prochaine plage
+        _ancreVisee = photo;
+        SetCurrent(photo);
+
+        if (!CTenue) return;
 
         // C maintenue : on s'apprête à recadrer à la souris sur la vignette
         _gesteOperateur = true;
