@@ -104,7 +104,14 @@ public partial class App : Application
         // de l'attente, l'autre étant la compilation des noyaux DirectML au premier calcul.
         try
         {
-            Studio.Imaging.BiRefNetMatting.Prechauffer();
+            // Le temoin vit avec les DONNÉES du poste et non à côté de l'exécutable : une
+            // mise à jour remplace le second, et perdrait la trace d'un démarrage qui vient
+            // justement de mal finir.
+            var temoin = Services is { } s
+                ? System.IO.Path.Combine(s.CacheDir, "prechauffage-en-cours")
+                : null;
+
+            Studio.Imaging.BiRefNetMatting.Prechauffer(temoin);
         }
         catch (Exception ex)
         {

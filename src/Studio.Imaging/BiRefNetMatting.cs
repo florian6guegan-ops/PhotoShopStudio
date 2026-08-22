@@ -345,7 +345,24 @@ public static class BiRefNetMatting
     /// secondes ; sur le fil de l'interface elle figerait l'accueil d'autant, ce qui est
     /// exactement le défaut qu'on venait de corriger à Créteil.
     /// </summary>
-    public static void Prechauffer()
+    /// <param name="temoin">
+    /// Fichier-canari qui protège le DÉMARRAGE, ou null pour s'en passer.
+    ///
+    /// <b>Un préchauffage n'echoue pas toujours par une exception.</b> Sur la GTX 1660 SUPER
+    /// de Créteil, un dépassement de mémoire vidéo tue le processus depuis le pilote NVIDIA
+    /// (<c>nvd3dumx.dll</c>, <c>0xc0000005</c>, les 13 et 21/08/2026) : aucun <c>catch</c> ne
+    /// s'exécute, et le repli vers un modèle plus léger ne joue pas non plus. Tant que ce
+    /// travail se faisait au PREMIER DÉTOURAGE, la boutique pouvait au moins ouvrir le
+    /// logiciel ; déplacé au démarrage, le même plantage l'empêcherait de démarrer DU TOUT,
+    /// indéfiniment, et fermerait le comptoir.
+    ///
+    /// Le témoin est écrit avant le passage à vide et effacé après. Le retrouver au
+    /// démarrage suivant ne peut vouloir dire qu'une chose : le préchauffage précédent n'est
+    /// jamais revenu. On le saute alors, et on l'efface — un plantage peut être ponctuel, et
+    /// le poste doit pouvoir réessayer demain plutôt que de renoncer pour toujours. Le
+    /// détourage, lui, reste entier : le premier tirage le paiera comme avant ce correctif.
+    /// </param>
+    public static void Prechauffer(string? temoin = null)
     {
         lock (Verrou)
         {
@@ -356,6 +373,19 @@ public static class BiRefNetMatting
         // Rien à dégourdir si le poste ne détoure pas, ou n'a aucun modèle posé : la
         // méthode par couleur n'a ni session ni noyaux à compiler.
         if (!Actif || !EstInstalle) return;
+
+        if (temoin is { Length: > 0 } && File.Exists(temoin))
+        {
+            Log?.Invoke(
+                "BiRefNet : le préchauffage précédent n'est jamais revenu — la carte graphique " +
+                "a emporté le logiciel avec elle. Il est SAUTÉ cette fois, pour que le poste " +
+                "démarre ; le premier détourage le paiera, et le prochain démarrage réessaiera.");
+
+            Effacer(temoin);
+            return;
+        }
+
+        Poser(temoin);
 
         try
         {
@@ -385,6 +415,42 @@ public static class BiRefNetMatting
             // Un préchauffage raté ne doit rien empêcher : le premier détourage se
             // rattrapera tout seul, exactement comme avant ce correctif.
             Log?.Invoke($"BiRefNet : préchauffage impossible ({ex.Message}).");
+        }
+        finally
+        {
+            // ⚠ CE RETRAIT EST TOUT L'INTÉRÊT DU TÉMOIN. S'il n'a pas lieu, c'est que le
+            // processus est mort en chemin — et c'est précisément ce qu'on veut savoir.
+            Effacer(temoin);
+        }
+    }
+
+    /// <summary>Écrit le témoin de préchauffage, sans jamais empêcher le démarrage.</summary>
+    private static void Poser(string? temoin)
+    {
+        if (temoin is not { Length: > 0 }) return;
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(temoin)!);
+            File.WriteAllText(temoin, DateTime.Now.ToString("O"));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // sans témoin on retombe sur le comportement d'avant : un risque, pas une panne
+        }
+    }
+
+    /// <summary>Retire le témoin. Muet sur l'échec : il sera relu, et au pire sauté une fois.</summary>
+    private static void Effacer(string? temoin)
+    {
+        if (temoin is not { Length: > 0 }) return;
+
+        try
+        {
+            if (File.Exists(temoin)) File.Delete(temoin);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
         }
     }
 
