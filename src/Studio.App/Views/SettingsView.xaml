@@ -279,6 +279,26 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ===== Profil couleur du minilab DE100 =====
+                     Le même défaut que la DNP, en pire : ses 26 produits n'avaient AUCUN
+                     profil, donc du sRGB présumé sur tous les tirages ordinaires de la
+                     boutique. Le pilote Fuji installe pourtant ses profils dans Windows.
+                     ⚠ Il y en a un par PAPIER (Glossy, Lustre, Photo Matte…) et les deux
+                     machines ne portent pas le même rouleau : voir MachineCouleur.MinilabFuji
+                     pour pourquoi un seul profil est ce qu'on peut faire aujourd'hui. -->
+
+                <TextBlock Text="Profil couleur du minilab (DE100)" Style="{StaticResource Texte}"
+                           FontSize="24" FontWeight="SemiBold" Margin="0,34,0,10"/>
+
+                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="20">
+                    <StackPanel>
+                        <TextBlock x:Name="CouleurMinilabResumeText" Style="{StaticResource Hint}"
+                                   TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <Button Content="Profil couleur du minilab…" Click="OnOuvrirLaCouleurMinilab"
+                                HorizontalAlignment="Left" Padding="18,10" FontSize="16"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- ===== Compensation d'impression =====
                      Une machine ne rend pas ce que l'écran montre : la DS620 sort plus dense
                      qu'un écran rétroéclairé. Le champ existait déjà par produit

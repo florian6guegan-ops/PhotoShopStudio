@@ -12,7 +12,7 @@ namespace Studio.Tests;
 /// <c>DS620-R0.icc</c>, l'E-Photo et le 10×15 n'avaient rien du tout, sur le même rouleau.
 /// C'est ce désaccord-là que ces essais surveillent.
 /// </summary>
-public class ProfilCouleurDnpTests
+public class ProfilCouleurMachineTests
 {
     private static Product Dnp(string code, string? icc = null, string file = "DP-DS620") =>
         new() { Code = code, Name = code, PrinterName = file, IccProfile = icc };
@@ -48,7 +48,7 @@ public class ProfilCouleurDnpTests
         };
 
         Assert.Equal(["ID-FR-6", "e-photo-dnp"],
-            ProfilCouleurDnp.Produits(tous).Select(p => p.Code));
+            ProfilCouleurMachine.Produits(tous, MachineCouleur.Dnp).Select(p => p.Code));
     }
 
     /// <summary>
@@ -60,7 +60,77 @@ public class ProfilCouleurDnpTests
     {
         var tous = new[] { new Product { Code = "retouche", Output = ProductOutput.ManualFile, PrinterName = "DS620" } };
 
-        Assert.Empty(ProfilCouleurDnp.Produits(tous));
+        Assert.Empty(ProfilCouleurMachine.Produits(tous, MachineCouleur.Dnp));
+    }
+
+    // ----- le minilab Fuji -----
+
+    private static Product Fuji(string code, string? icc = null) =>
+        new() { Code = code, Name = code, Output = ProductOutput.FujiMinilab, PrinterName = "", IccProfile = icc };
+
+    /// <summary>
+    /// Le DE100 se reconnaît à sa SORTIE et non à un nom de file : ses produits n'en ont
+    /// pas — le minilab ne se pilote pas par le spouleur Windows, ses files y sont branchées
+    /// sur le port « nul ».
+    /// </summary>
+    [Fact]
+    public void Seuls_les_produits_du_minilab_sont_retenus()
+    {
+        var tous = new[]
+        {
+            Fuji("10x15"), Fuji("13x18"),
+            Dnp("ID-FR-6"),
+            new Product { Code = "agrandissement", Output = ProductOutput.ManualFile, PrinterName = "EPSON SC-P800" },
+        };
+
+        Assert.Equal(["10x15", "13x18"],
+            ProfilCouleurMachine.Produits(tous, MachineCouleur.MinilabFuji).Select(p => p.Code));
+    }
+
+    /// <summary>
+    /// Les deux machines ne se marchent pas dessus : régler la couleur du minilab ne doit
+    /// pas toucher la planche d'identité, qui sort d'une autre machine et d'un autre papier.
+    /// </summary>
+    [Fact]
+    public void Regler_le_minilab_ne_touche_pas_la_dnp()
+    {
+        var planche = Dnp("ID-FR-6", "DS620-R0.icc");
+        var tirage = Fuji("10x15");
+        var tous = new[] { planche, tirage };
+
+        ProfilCouleurMachine.Appliquer(
+            ProfilCouleurMachine.Produits(tous, MachineCouleur.MinilabFuji), "DE100 Glossy.icc");
+
+        Assert.Equal("DE100 Glossy.icc", tirage.IccProfile);
+        Assert.Equal("DS620-R0.icc", planche.IccProfile);
+    }
+
+    /// <summary>
+    /// L'état RÉEL du poste avant ce réglage, relevé le 22/08/2026 dans
+    /// <c>products.json</c> : vingt-six produits DE100, pas un seul profil. C'est un accord —
+    /// tout le monde en sRGB présumé — et l'écran doit donc proposer d'en poser un, pas
+    /// signaler un désaccord.
+    /// </summary>
+    [Fact]
+    public void Le_minilab_sans_aucun_profil_est_un_accord()
+    {
+        var etat = ProfilCouleurMachine.Lire([Fuji("10x15"), Fuji("13x18"), Fuji("20x30")]);
+
+        Assert.True(etat.Accord);
+        Assert.Null(etat.Profil);
+    }
+
+    /// <summary>
+    /// Les deux machines sont décrites, et différemment : un écran qui dirait « la DNP » en
+    /// réglant le DE100 enverrait l'opérateur changer la couleur de la mauvaise machine.
+    /// </summary>
+    [Fact]
+    public void Chaque_machine_a_ses_propres_mots()
+    {
+        Assert.NotEqual(MachineCouleur.Dnp.Titre, MachineCouleur.MinilabFuji.Titre);
+        Assert.NotEqual(MachineCouleur.Dnp.Sortie, MachineCouleur.MinilabFuji.Sortie);
+        Assert.Contains("DE100", MachineCouleur.MinilabFuji.Titre);
+        Assert.Contains("DNP", MachineCouleur.Dnp.Titre);
     }
 
     // ----- ce qu'il lit -----
@@ -68,7 +138,7 @@ public class ProfilCouleurDnpTests
     [Fact]
     public void Sans_produit_dnp_il_n_y_a_rien_a_dire()
     {
-        var etat = ProfilCouleurDnp.Lire([]);
+        var etat = ProfilCouleurMachine.Lire([]);
 
         Assert.Null(etat.Profil);
         Assert.True(etat.Accord);
@@ -77,7 +147,7 @@ public class ProfilCouleurDnpTests
     [Fact]
     public void Le_meme_profil_partout_est_un_accord()
     {
-        var etat = ProfilCouleurDnp.Lire([Dnp("a", "DS620.icc"), Dnp("b", "DS620.icc")]);
+        var etat = ProfilCouleurMachine.Lire([Dnp("a", "DS620.icc"), Dnp("b", "DS620.icc")]);
 
         Assert.Equal("DS620.icc", etat.Profil);
         Assert.True(etat.Accord);
@@ -87,7 +157,7 @@ public class ProfilCouleurDnpTests
     [Fact]
     public void Aucun_profil_partout_est_un_accord()
     {
-        var etat = ProfilCouleurDnp.Lire([Dnp("a"), Dnp("b")]);
+        var etat = ProfilCouleurMachine.Lire([Dnp("a"), Dnp("b")]);
 
         Assert.Null(etat.Profil);
         Assert.True(etat.Accord);
@@ -101,7 +171,7 @@ public class ProfilCouleurDnpTests
     [Fact]
     public void Un_produit_sans_profil_a_cote_d_un_produit_avec_est_un_desaccord()
     {
-        var etat = ProfilCouleurDnp.Lire([Dnp("ID-FR-6", "DS620-R0.icc"), Dnp("e-photo-dnp")]);
+        var etat = ProfilCouleurMachine.Lire([Dnp("ID-FR-6", "DS620-R0.icc"), Dnp("e-photo-dnp")]);
 
         Assert.False(etat.Accord);
         Assert.Null(etat.Profil);
@@ -109,7 +179,7 @@ public class ProfilCouleurDnpTests
 
     [Fact]
     public void Deux_profils_differents_sont_un_desaccord() =>
-        Assert.False(ProfilCouleurDnp.Lire([Dnp("a", "DS620.icc"), Dnp("b", "DS620_SD.icc")]).Accord);
+        Assert.False(ProfilCouleurMachine.Lire([Dnp("a", "DS620.icc"), Dnp("b", "DS620_SD.icc")]).Accord);
 
     /// <summary>
     /// Le profil d'une FINITION l'emporte sur celui du produit — c'est ce que fait
@@ -122,7 +192,7 @@ public class ProfilCouleurDnpTests
         var produit = Dnp("ID-FR-6", "DS620.icc");
         produit.Finishes = [new FinishOption { Name = "Brillant", IccProfile = "DS620_Metallic.icc" }];
 
-        Assert.Equal("DS620_Metallic.icc", ProfilCouleurDnp.Lire([produit]).Profil);
+        Assert.Equal("DS620_Metallic.icc", ProfilCouleurMachine.Lire([produit]).Profil);
     }
 
     [Fact]
@@ -131,7 +201,7 @@ public class ProfilCouleurDnpTests
         var produit = Dnp("ID-FR-6", "DS620.icc");
         produit.Finishes = [new FinishOption { Name = "Brillant", DevmodeFile = "brillant.bin" }];
 
-        Assert.Equal("DS620.icc", ProfilCouleurDnp.Lire([produit]).Profil);
+        Assert.Equal("DS620.icc", ProfilCouleurMachine.Lire([produit]).Profil);
     }
 
     // ----- ce qu'il pose -----
@@ -141,11 +211,11 @@ public class ProfilCouleurDnpTests
     {
         var produits = new[] { Dnp("ID-FR-6", "DS620-R0.icc"), Dnp("e-photo-dnp"), Dnp("10x15-dnp") };
 
-        var changes = ProfilCouleurDnp.Appliquer(produits, "DS620.icc");
+        var changes = ProfilCouleurMachine.Appliquer(produits, "DS620.icc");
 
         Assert.All(produits, p => Assert.Equal("DS620.icc", p.IccProfile));
         Assert.Equal(3, changes.Count);
-        Assert.True(ProfilCouleurDnp.Lire(produits).Accord);
+        Assert.True(ProfilCouleurMachine.Lire(produits).Accord);
     }
 
     /// <summary>
@@ -157,7 +227,7 @@ public class ProfilCouleurDnpTests
     {
         var produits = new[] { Dnp("a", "DS620.icc"), Dnp("b") };
 
-        var changes = ProfilCouleurDnp.Appliquer(produits, "DS620.icc");
+        var changes = ProfilCouleurMachine.Appliquer(produits, "DS620.icc");
 
         Assert.Equal(["b"], changes.Select(p => p.Code));
     }
@@ -167,7 +237,7 @@ public class ProfilCouleurDnpTests
     {
         var produits = new[] { Dnp("a", "DS620.icc") };
 
-        var changes = ProfilCouleurDnp.Appliquer(produits, null);
+        var changes = ProfilCouleurMachine.Appliquer(produits, null);
 
         Assert.Null(produits[0].IccProfile);
         Assert.Single(changes);
@@ -179,7 +249,7 @@ public class ProfilCouleurDnpTests
     {
         var produits = new[] { Dnp("a", "DS620.icc") };
 
-        ProfilCouleurDnp.Appliquer(produits, "   ");
+        ProfilCouleurMachine.Appliquer(produits, "   ");
 
         Assert.Null(produits[0].IccProfile);
     }
@@ -198,9 +268,9 @@ public class ProfilCouleurDnpTests
             new FinishOption { Name = "Mat", DevmodeFile = "mat.bin" },
         ];
 
-        ProfilCouleurDnp.Appliquer([produit], "DS620.icc");
+        ProfilCouleurMachine.Appliquer([produit], "DS620.icc");
 
         Assert.All(produit.Finishes, f => Assert.Null(f.IccProfile));
-        Assert.Equal("DS620.icc", ProfilCouleurDnp.Lire([produit]).Profil);
+        Assert.Equal("DS620.icc", ProfilCouleurMachine.Lire([produit]).Profil);
     }
 }

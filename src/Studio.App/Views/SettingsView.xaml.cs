@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
+using Studio.Core.Catalog;
 using Studio.Core.Cloud;
 using Studio.Core.Domain;
 using Studio.Core.Imaging;
@@ -1095,15 +1096,25 @@ public partial class SettingsView : UserControl
     private void OnOuvrirLeDetourage(object sender, RoutedEventArgs e) =>
         Navigator.Go(new ReglagesDetourageView(), "Détourage du fond blanc");
 
-    // ----- profil couleur de la DNP -----
+    // ----- profil couleur des machines -----
 
     /// <summary>
     /// Le profil couleur se choisissait produit par produit, dans le Catalogue. C'est un
     /// réglage de MACHINE : il a donc son écran, partagé avec Studio Photo Identité — voir
-    /// <see cref="ReglagesCouleurDnpView"/>. Ici, la porte et le résumé.
+    /// <see cref="ReglagesCouleurMachineView"/>. Ici, la porte et le résumé.
+    ///
+    /// <b>Deux machines, un seul écran.</b> La DNP et le minilab DE100 posent exactement la
+    /// même question, et la seule chose qui change est la liste des produits touchés : c'est
+    /// la règle du dépôt — les BOUTONS se doublent, ce qu'ils font, non.
     /// </summary>
     private void OnOuvrirLaCouleurDnp(object sender, RoutedEventArgs e) =>
-        Navigator.Go(new ReglagesCouleurDnpView(), "Profil couleur de la DNP");
+        OuvrirLaCouleur(MachineCouleur.Dnp);
+
+    private void OnOuvrirLaCouleurMinilab(object sender, RoutedEventArgs e) =>
+        OuvrirLaCouleur(MachineCouleur.MinilabFuji);
+
+    private static void OuvrirLaCouleur(MachineCouleur machine) =>
+        Navigator.Go(new ReglagesCouleurMachineView(machine), machine.Titre);
 
     // ----- compensation d'impression -----
 
@@ -1118,8 +1129,11 @@ public partial class SettingsView : UserControl
     private void MontrerLaCorrectionImpression() =>
         CorrectionImpressionResumeText.Text = ReglagesCorrectionImpressionView.Resume();
 
-    private void MontrerLaCouleurDnp() =>
-        CouleurDnpResumeText.Text = ReglagesIdentiteView.ResumeCouleurDnp();
+    private void MontrerLaCouleurDnp()
+    {
+        CouleurDnpResumeText.Text = ReglagesCouleurMachineView.Resume(MachineCouleur.Dnp);
+        CouleurMinilabResumeText.Text = ReglagesCouleurMachineView.Resume(MachineCouleur.MinilabFuji);
+    }
 
     // ----- WiFi du magasin -----
 

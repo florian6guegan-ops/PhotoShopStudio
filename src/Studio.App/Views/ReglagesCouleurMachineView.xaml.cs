@@ -8,7 +8,7 @@ using Studio.Core.Domain;
 namespace Studio.App.Views;
 
 /// <summary>
-/// Le profil couleur de la DNP, choisi une fois pour la machine.
+/// Le profil couleur d'une machine — la DNP ou le minilab DE100 —, choisi une fois pour elle.
 ///
 /// <b>Pourquoi cet écran.</b> Le profil se réglait produit par produit, dans le Catalogue —
 /// écran que Studio Photo Identité n'a pas. Sur les trois postes, seule la planche
@@ -19,9 +19,9 @@ namespace Studio.App.Views;
 ///
 /// Le même écran pour les deux logiciels, comme le détourage : <b>les BOUTONS se doublent,
 /// ce qu'ils font, non.</b> La règle qui décide de ce qui est touché vit dans
-/// <see cref="ProfilCouleurDnp"/>, où elle se vérifie sans imprimante.
+/// <see cref="ProfilCouleurMachine"/>, où elle se vérifie sans imprimante.
 /// </summary>
-public partial class ReglagesCouleurDnpView : UserControl
+public partial class ReglagesCouleurMachineView : UserControl
 {
     /// <summary>Entrée « aucun profil » : la couleur est alors laissée au pilote.</summary>
     private const string SansProfil = "Aucun — le pilote gère la couleur";
@@ -36,23 +36,36 @@ public partial class ReglagesCouleurDnpView : UserControl
         public override string ToString() => Libelle;
     }
 
-    /// <summary>Les produits DNP du catalogue, relevés une fois à l'ouverture.</summary>
+    /// <summary>La machine réglée : c'est elle qui décide des produits touchés et des mots.</summary>
+    private readonly MachineCouleur _machine;
+
+    /// <summary>Les produits de cette machine dans le catalogue, relevés une fois à l'ouverture.</summary>
     private IReadOnlyList<Product> _produits = [];
 
     /// <summary>Vrai le temps de poser la liste : le gestionnaire doit alors se taire.</summary>
     private bool _chargement;
 
-    public ReglagesCouleurDnpView()
+    /// <param name="machine">
+    /// La machine dont on règle la couleur. Par défaut la DNP, parce que c'est le seul
+    /// appel de Studio Photo Identité — il n'imprime que là.
+    /// </param>
+    public ReglagesCouleurMachineView(MachineCouleur? machine = null)
     {
+        _machine = machine ?? MachineCouleur.Dnp;
+
         InitializeComponent();
         Loaded += (_, _) => Montrer();
     }
 
     private void Montrer()
     {
-        _produits = ProfilCouleurDnp.Produits(App.Services.Catalog.All);
+        TitreText.Text = _machine.Titre;
+        ExplicationText.Text = _machine.Explication;
+        AideProfilsText.Text = _machine.AideProfils;
 
-        RemplirLaListe(ProfilCouleurDnp.Lire(_produits).Profil);
+        _produits = ProfilCouleurMachine.Produits(App.Services.Catalog.All, _machine);
+
+        RemplirLaListe(ProfilCouleurMachine.Lire(_produits).Profil);
         DecrireLesProduits();
         DireOuEnEst();
 
@@ -65,7 +78,7 @@ public partial class ReglagesCouleurDnpView : UserControl
 
     /// <summary>
     /// Tous les profils utilisables : ceux du catalogue d'abord, puis ceux que les pilotes
-    /// ont fait installer par Windows — c'est là que vivent les profils DNP tant qu'on ne
+    /// ont fait installer par Windows — c'est là que vivent les profils des pilotes tant qu'on ne
     /// les a pas importés.
     /// </summary>
     private void RemplirLaListe(string? retenu)
@@ -110,8 +123,7 @@ public partial class ReglagesCouleurDnpView : UserControl
         if (_produits.Count == 0)
         {
             ProduitsText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
-            ProduitsText.Text = "Aucun produit de ce poste ne sort sur une imprimante DNP : " +
-                                "il n'y a rien à régler ici.";
+            ProduitsText.Text = _machine.Rien;
             return;
         }
 
@@ -128,7 +140,7 @@ public partial class ReglagesCouleurDnpView : UserControl
     /// </summary>
     private static string DecrireLeProfilDe(Product produit)
     {
-        var etat = ProfilCouleurDnp.Lire([produit]);
+        var etat = ProfilCouleurMachine.Lire([produit]);
 
         if (!etat.Accord) return "plusieurs profils selon la finition";
         return etat.Profil is null ? "aucun profil aujourd'hui" : $"« {etat.Profil} »";
@@ -143,7 +155,7 @@ public partial class ReglagesCouleurDnpView : UserControl
             return;
         }
 
-        var actuel = ProfilCouleurDnp.Lire(_produits);
+        var actuel = ProfilCouleurMachine.Lire(_produits);
         var voulu = Saisie()?.Name;
 
         if (!actuel.Accord)
@@ -160,7 +172,7 @@ public partial class ReglagesCouleurDnpView : UserControl
             EtatText.Foreground = (Brush)Application.Current.Resources["MutedBrush"];
             EtatText.Text = voulu is null
                 ? "C'est le réglage actuel : aucun profil, la couleur est laissée au pilote."
-                : $"C'est le réglage actuel : « {voulu} » sur tout ce qui sort de la DNP.";
+                : $"C'est le réglage actuel : « {voulu} » sur tout ce qui sort {_machine.Sortie}.";
             return;
         }
 
@@ -196,12 +208,12 @@ public partial class ReglagesCouleurDnpView : UserControl
         {
             FileLog.Write("Import du profil couleur impossible", ex);
             MessageBox.Show($"Ce profil n'a pas pu être copié : {ex.Message}",
-                "Profil couleur de la DNP", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _machine.Titre, MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
     /// <summary>
-    /// Pose le profil sur tous les produits DNP et enregistre le catalogue.
+    /// Pose le profil sur tous les produits de la machine et enregistre le catalogue.
     ///
     /// Le profil est d'abord COPIÉ dans <c>catalog\icc</c> quand il vient du dossier couleur
     /// de Windows : le catalogue nomme un fichier qu'il doit trouver chez lui, sans quoi le
@@ -227,11 +239,11 @@ public partial class ReglagesCouleurDnpView : UserControl
         {
             FileLog.Write("Import du profil couleur avant enregistrement impossible", ex);
             MessageBox.Show($"Ce profil n'a pas pu être copié dans le catalogue : {ex.Message}",
-                "Profil couleur de la DNP", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _machine.Titre, MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        var changes = ProfilCouleurDnp.Appliquer(_produits, nom);
+        var changes = ProfilCouleurMachine.Appliquer(_produits, nom);
 
         try
         {
@@ -240,13 +252,13 @@ public partial class ReglagesCouleurDnpView : UserControl
         }
         catch (Exception ex)
         {
-            FileLog.Write("Enregistrement du profil couleur de la DNP impossible", ex);
+            FileLog.Write($"Enregistrement du profil couleur — {_machine.Cle} — impossible", ex);
             MessageBox.Show($"Le catalogue n'a pas pu être enregistré : {ex.Message}",
-                "Profil couleur de la DNP", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _machine.Titre, MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        FileLog.Write($"Profil couleur de la DNP : « {nom ?? "aucun"} » posé sur " +
+        FileLog.Write($"Profil couleur du {_machine.Cle} : « {nom ?? "aucun"} » posé sur " +
                       $"{changes.Count} produit(s) — {string.Join(", ", changes.Select(p => p.Code))}.");
 
         MessageBox.Show(
@@ -254,10 +266,34 @@ public partial class ReglagesCouleurDnpView : UserControl
                 ? "C'était déjà le réglage : rien n'a changé."
                 : $"Profil enregistré sur {changes.Count} produit(s). Il s'applique au tirage " +
                   "suivant, sans redémarrer.",
-            "Profil couleur de la DNP", MessageBoxButton.OK, MessageBoxImage.Information);
+            _machine.Titre, MessageBoxButton.OK, MessageBoxImage.Information);
 
         Navigator.Back();
     }
 
     private void OnRetour(object sender, RoutedEventArgs e) => Navigator.Back();
+
+    /// <summary>
+    /// Le résumé du profil d'une machine, en une phrase, pour la carte qui ouvre cet écran.
+    ///
+    /// Partagé par les deux logiciels et par les deux machines : une phrase recopiée finit
+    /// par ne plus dire la même chose d'un endroit à l'autre.
+    /// </summary>
+    internal static string Resume(MachineCouleur machine)
+    {
+        ArgumentNullException.ThrowIfNull(machine);
+
+        var produits = ProfilCouleurMachine.Produits(App.Services.Catalog.All, machine);
+        if (produits.Count == 0) return machine.Rien;
+
+        var etat = ProfilCouleurMachine.Lire(produits);
+
+        if (!etat.Accord)
+            return $"⚠ Les produits {machine.Sortie} n'appliquent pas tous le même profil : la " +
+                   "machine sort deux couleurs selon ce qu'on imprime.";
+
+        return etat.Profil is null
+            ? machine.SansProfil
+            : $"Profil « {etat.Profil} » sur les {produits.Count} produits {machine.Sortie}.";
+    }
 }
