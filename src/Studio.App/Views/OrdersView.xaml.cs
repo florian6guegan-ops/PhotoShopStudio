@@ -173,27 +173,48 @@ public partial class OrdersView : UserControl
 
             ligne.PoserLeReste(fichiers.Count - Math.Min(fichiers.Count, ApercusParCommande));
 
-            foreach (var chemin in fichiers.Take(ApercusParCommande))
+            // LES QUATRE VIGNETTES D'UNE COMMANDE SE DÉCODENT ENSEMBLE.
+            //
+            // Elles se prenaient une par une : quatre-vingt-treize commandes à quatre
+            // vignettes, c'est trois cent soixante-douze décodages à la file, un seul cœur
+            // occupé sur les quatre du poste pendant que la liste se remplit à vue d'œil.
+            // Or un décodage est du calcul pur, et le cache des vignettes a le fichier pour
+            // clé : rien n'obligeait à les attendre l'une après l'autre.
+            //
+            // Les LIGNES, elles, gardent leur ordre : l'opérateur regarde le haut de la
+            // liste, et c'est là que les vignettes doivent apparaître d'abord.
+            var chemins = fichiers.Take(ApercusParCommande).ToList();
+
+            byte[]?[] jpegs;
+            try
             {
-                if (ct.IsCancellationRequested) return;
-
-                try
+                jpegs = await Task.WhenAll(chemins.Select(chemin => Task.Run(() =>
                 {
-                    var jpeg = await Task.Run(
-                        () => App.Services.Thumbnails.GetJpeg(chemin, ApercuPx), ct);
-
-                    ligne.Apercus.Add(EnImage(jpeg));
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    // fichier illisible : la ligne se passe de cette vignette
-                    FileLog.Write($"Aperçu indisponible pour {Path.GetFileName(chemin)}", ex);
-                }
+                    try
+                    {
+                        return (byte[]?)App.Services.Thumbnails.GetJpeg(chemin, ApercuPx);
+                    }
+                    catch (Exception ex)
+                    {
+                        // fichier illisible : la ligne se passe de cette vignette, et les
+                        // trois autres n'ont pas à en pâtir
+                        FileLog.Write($"Aperçu indisponible pour {Path.GetFileName(chemin)}", ex);
+                        return null;
+                    }
+                }, ct)));
             }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (ct.IsCancellationRequested) return;
+
+            // L'ajout revient sur le fil de l'interface, et dans l'ordre des fichiers :
+            // `Apercus` est observée par la liste, et des vignettes qui arriveraient dans
+            // le désordre feraient danser les photos d'une commande à l'autre.
+            foreach (var jpeg in jpegs)
+                if (jpeg is not null) ligne.Apercus.Add(EnImage(jpeg));
         }
     }
 

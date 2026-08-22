@@ -174,6 +174,20 @@ public static class TravailDepuisCommande
                 Corrections = article.Adjustments.Clone(),
             });
 
+        // ⚠ LA PREMIÈRE PHOTO S'OUVRE TOUTE SEULE, et il a fallu le dire ici.
+        //
+        // `IdPhotoView` n'ouvre d'office qu'à deux conditions : des chemins imposés par
+        // l'écran de choix, ou une `PhotoCourante` nommée. Une planche reprise depuis
+        // « Commandes du jour » n'avait ni l'un ni l'autre — on remplit `Photos`, jamais
+        // `Chemins` — et l'écran s'ouvrait donc VIDE, sur une bande de vignettes où
+        // l'opérateur devait aller cliquer. Un clic pour rien : il vient de désigner une
+        // commande précise, et toutes ses photos sont à retoucher.
+        //
+        // On nomme la première. Une planche mise de côté, elle, garde la photo qu'on
+        // regardait (voir IdPhotoView) — ici il n'y a pas de « où j'en étais » à retrouver,
+        // la commande est close.
+        norme.PhotoCourante ??= norme.Photos.FirstOrDefault()?.FileName;
+
         return new TravailEnAttente
         {
             Id = Guid.NewGuid(),

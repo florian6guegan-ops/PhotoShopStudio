@@ -19,6 +19,15 @@ namespace Studio.Imaging;
 /// </summary>
 public static class ImageAdjuster
 {
+    /// <summary>
+    /// Journal optionnel, branché sur FileLog par l'application — comme ceux de
+    /// <see cref="BiRefNetMatting"/> et de <see cref="MasqueSujet"/>.
+    ///
+    /// Il n'y en avait aucun ici, et c'est ce qui a rendu la planche 22-010 du 22/08/2026
+    /// inexplicable : un fond blanc demandé, non posé, et pas une ligne pour le dire.
+    /// </summary>
+    public static Action<string>? Log { get; set; }
+
     /// <param name="avecRelief">
     /// Faux pour sauter la clarté et la netteté.
     ///
@@ -84,14 +93,32 @@ public static class ImageAdjuster
         {
             var fond = a.GrayBackground ? BackgroundRemoval.GrisIdentite : MagickColors.White;
 
-            if (masqueAligne is not null)
-                BackgroundRemoval.PoserUnFond(photo, fond, masqueAligne);
-            else
-                BackgroundRemoval.PoserUnFond(
+            // ⚠ CE RETOUR SE LIT. Il était jeté, et c'est la planche 22-010 du 22/08/2026.
+            //
+            // `PoserUnFond` rend FAUX quand le détourage n'a rien pu dire — masque absent du
+            // cache et réseau qui ne répond pas. Personne ne regardait : la planche partait
+            // à la DNP avec le fond du studio, l'écran ayant montré du blanc une minute plus
+            // tôt, et le journal ne portait pas un mot. La même photo réimprimée deux minutes
+            // après (22-012) sortait correctement — un défaut qui va et vient sans laisser de
+            // trace est le pire de tous à retrouver.
+            //
+            // `PhotoMailer` lisait ce retour depuis toujours : l'envoi par courriel savait se
+            // rattraper là où l'impression ne savait même pas qu'elle avait échoué.
+            var pose = masqueAligne is not null
+                ? BackgroundRemoval.PoserUnFond(photo, fond, masqueAligne)
+                : BackgroundRemoval.PoserUnFond(
                     photo, fond,
                     // la MÊME clé que la correction du sujet ci-dessus : les deux veulent le
                     // même découpage, et sans elle le fond repayait le réseau à chaque rendu
                     a.CleDeLaPhoto);
+
+            if (!pose)
+                Log?.Invoke(
+                    $"Fond {(a.GrayBackground ? "gris" : "blanc")} DEMANDÉ MAIS NON POSÉ sur " +
+                    $"une image de {photo.Width}×{photo.Height} " +
+                    $"(clé « {a.CleDeLaPhoto ?? "aucune — empreinte des pixels"} », " +
+                    $"masque fourni : {(masqueAligne is not null ? "oui" : "non")}) — " +
+                    "le détourage n'a rien rendu, la photo garde le fond d'origine.");
         }
 
         // Les yeux rouges AVANT le noir et blanc, et avant tout réglage de couleur : la

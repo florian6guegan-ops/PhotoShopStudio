@@ -765,6 +765,11 @@ public sealed class AppServices
         BiRefNetMatting.Log = message => FileLog.Write(message);
         BackgroundRemoval.Log = message => FileLog.Write(message);
 
+        // Et celui qui dit qu'un fond DEMANDÉ n'a pas été posé. Sans lui, la planche 22-010
+        // du 22/08/2026 est sortie avec le fond du studio après avoir montré du blanc à
+        // l'écran, et le journal ne portait rien — voir ImageAdjuster.Apply.
+        ImageAdjuster.Log = message => FileLog.Write(message);
+
         // Et le seul qui dise si un détourage a été REFAIT : sans lui, un envoi lent ne
         // s'explique pas — voir MasqueSujet.Brut, et les 76,6 s d'Arcueil du 19/08/2026.
         Studio.Imaging.MasqueSujet.Log = message => FileLog.Write(message);

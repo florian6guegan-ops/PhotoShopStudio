@@ -793,8 +793,23 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             await MettreALAbriAsync(item);
 
             var path = item.Path;
-            var bytes = await Task.Run(() => App.Services.Thumbnails.GetJpeg(path, 1600));
-            _displayBitmap = ToBitmap(bytes);
+
+            // ⚠ LE DÉCODAGE ET LA DÉTECTION PARTENT ENSEMBLE.
+            //
+            // Ils se suivaient, et rien ne l'imposait : ils lisent la même photo, chacun de
+            // son côté, sans rien se devoir. La détection attendait donc que l'image
+            // d'affichage soit décodée pour commencer la sienne — deux lectures à la file
+            // là où le poste a quatre cœurs, et c'est le clic sur une photo qui traînait.
+            //
+            // Elle n'est lancée qu'à la PREMIÈRE ouverture, comme avant : sur une photo
+            // déjà réglée, la détection écraserait le placement fait à la main. `Prete` se
+            // lit ici sans risque — `ReprendreDeLaPhoto` le consulte, ne l'écrit jamais.
+            var affichage = Task.Run(() => App.Services.Thumbnails.GetJpeg(path, 1600));
+            var detection = item.Prete
+                ? null
+                : Task.Run(() => App.Services.Faces.DetectMain(path));
+
+            _displayBitmap = ToBitmap(await affichage);
 
             ReprendreDeLaPhoto(item);
 
@@ -815,7 +830,9 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 // La détection tourne MÊME quand le cadrage automatique est éteint : elle
                 // pose les repères, donc le contrôle de conformité du bandeau. Ce qu'on
                 // coupe alors, c'est le PLACEMENT du cadre, pas la mesure de la tête.
-                var face = await Task.Run(() => App.Services.Faces.DetectMain(path));
+                // lancée plus haut, en même temps que le décodage : ici on ne fait que
+                // recueillir ce qu'elle a trouvé
+                var face = detection is null ? null : await detection;
                 var detecte = face is null ? null : IdPhotoFr.EstimateHead(face.Box);
                 PoserReperes(detecte);
 
