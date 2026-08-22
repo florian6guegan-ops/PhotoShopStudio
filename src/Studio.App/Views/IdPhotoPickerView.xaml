@@ -13,13 +13,32 @@
              d'explication en dessous prenaient cent vingt pixels pour redire ce que
              l'en-tête de la fenêtre annonce déjà (« France — choisir les photos »). Le
              format visé, lui, compte : il reste, sur la même ligne que les boutons. -->
+        <!-- TROIS COLONNES, et non trois enfants posés dans la même case.
+
+             Ils y étaient tous les trois — titre calé à gauche, boutons centrés, phrase
+             d'aide calée à droite —, et une case de grille ne sépare rien : les enfants s'y
+             SUPERPOSENT. Tant que la fenêtre était large, les alignements donnaient
+             l'illusion d'une rangée ; dès qu'un titre s'allongeait (« États-Unis — visa,
+             51 × 51 mm »), il passait sous le bouton « tout ».
+
+             Les deux colonnes extrêmes sont en `*` : à largeurs égales, le bloc de boutons
+             du milieu reste VRAIMENT centré, et ce sont le titre et la phrase d'aide qui
+             cèdent, en coupant proprement. Les boutons, eux, gardent leur taille en toutes
+             circonstances — c'est ce qu'on vient chercher ici. -->
         <Grid Grid.Row="0" Margin="0,0,0,8">
-            <TextBlock x:Name="TitleText" FontSize="20" FontWeight="SemiBold"
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock x:Name="TitleText" Grid.Column="0" FontSize="20" FontWeight="SemiBold"
                        Foreground="{DynamicResource TitleBrush}"
                        VerticalAlignment="Center" HorizontalAlignment="Left"
+                       TextTrimming="CharacterEllipsis" Margin="0,0,8,0"
                        ToolTip="Cliquez sur les photos à traiter. Vous les cadrerez une par une à l'étape suivante."/>
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
                 <Button Style="{StaticResource FlatButton}" MinHeight="38" MinWidth="0"
                         FontSize="15" Padding="16,0" Margin="4,0"
                         ToolTip="Tout sélectionner" Click="OnTout">☑  tout</Button>
@@ -32,8 +51,9 @@
                         Click="OnTrier" Content="⇅  trier"/>
             </StackPanel>
 
-            <TextBlock x:Name="HintText" Style="{StaticResource Hint}" FontSize="15"
-                       VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"
+            <TextBlock x:Name="HintText" Grid.Column="2" Style="{StaticResource Hint}" FontSize="15"
+                       VerticalAlignment="Center" HorizontalAlignment="Right" Margin="8,0,8,0"
+                       TextTrimming="CharacterEllipsis"
                        Text="Cliquez sur les photos à traiter."/>
         </Grid>
 
@@ -91,10 +111,26 @@
 
         <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="12"
                 Padding="12,10" Margin="0,10,0,0">
-            <DockPanel>
-                <TextBlock x:Name="CountText" DockPanel.Dock="Left" Style="{StaticResource Valeur}"
-                           FontSize="19" VerticalAlignment="Center"/>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+            <!-- GRILLE ET NON DOCKPANEL, pour la raison déjà écrite dans IdPhotoView :
+                 un DockPanel donne à chaque enfant docké toute la largeur qu'il demande,
+                 sans jamais la lui reprendre. `CountText` est docké EN PREMIER : il se
+                 servait donc avant les boutons, et « 12 photos sélectionnées sur 148 »
+                 rognait « Suivant → », c'est-à-dire le bouton dont dépend tout l'écran.
+
+                 Ici le compteur occupe la place restante et coupe proprement quand il n'y
+                 en a plus ; les trois boutons gardent la leur en toutes circonstances. -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="CountText" Grid.Column="0" Style="{StaticResource Valeur}"
+                           FontSize="19" VerticalAlignment="Center"
+                           HorizontalAlignment="Left" TextAlignment="Left"
+                           TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44"
                             Padding="18,0" FontSize="15" Click="OnRetour">←  Précédent</Button>
                     <Button Style="{StaticResource FlatButton}" MinWidth="0" MinHeight="44"
@@ -104,7 +140,7 @@
                             MinHeight="52" FontSize="20" Padding="18,8" Margin="14,0,0,0"
                             Click="OnSuivant" IsEnabled="False">Suivant  →</Button>
                 </StackPanel>
-            </DockPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>
