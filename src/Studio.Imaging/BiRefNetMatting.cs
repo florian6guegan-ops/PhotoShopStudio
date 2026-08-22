@@ -92,6 +92,13 @@ public static class BiRefNetMatting
             // une attente courte juste après un changement de modèle, c'est-à-dire au seul
             // moment où l'on sait qu'elle sera longue.
             DureeDuChargement = null;
+
+            // Et il repaiera aussi la compilation des noyaux : un modèle qui change, c'est
+            // une session neuve, donc des noyaux à recompiler. Rouvrir le préchauffage ici
+            // permet à l'appelant de le relancer en tâche de fond plutôt que de laisser la
+            // note au premier client d'après le réglage.
+            _prechauffe = false;
+            DureeDuPrechauffage = null;
         }
     }
 
@@ -159,6 +166,23 @@ public static class BiRefNetMatting
     {
         get { lock (Verrou) return _session is not null; }
     }
+
+    /// <summary>Vrai dès que <see cref="Prechauffer"/> a été tenté, réussi ou non.</summary>
+    private static bool _prechauffe;
+
+    /// <summary>
+    /// Ce qu'a duré le préchauffage — chargement ET passage à vide — ou null s'il n'a pas
+    /// eu lieu sur ce poste.
+    ///
+    /// <b>C'est la moitié cachée de l'attente.</b> Le chargement se mesurait déjà
+    /// (<see cref="DureeDuChargement"/>) et l'on croyait tenir là tout le surcoût de la
+    /// première photo. Le journal dit autre chose. Le 21/08/2026 sur la Quadro P2000 :
+    /// session chargée en 4,2 s, puis PREMIER détourage en 10,6 s quand les suivants en
+    /// prennent 3,9. Les six secondes de différence ne sont ni le fichier ni le calcul,
+    /// c'est DirectML qui compile ses noyaux au premier passage — une fois par session, et
+    /// personne ne les mesurait.
+    /// </summary>
+    public static TimeSpan? DureeDuPrechauffage { get; private set; }
 
     /// <summary>Le fichier de modèle réellement chargé dans <see cref="_session"/>.</summary>
     private static string? _modeleCharge;
@@ -301,6 +325,67 @@ public static class BiRefNetMatting
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Charge le réseau et lui fait faire un passage À VIDE, loin de l'opérateur.
+    ///
+    /// <b>Pourquoi un passage à vide, et pas seulement le chargement.</b> Créer la session
+    /// ne fait que poser le modèle sur la carte : DirectML ne compile ses noyaux qu'au
+    /// premier calcul réel. Précharger la session seule aurait donc laissé six secondes sur
+    /// le dos du premier client — voir <see cref="DureeDuPrechauffage"/> pour les mesures.
+    ///
+    /// <b>Par le chemin normal, exprès.</b> On passe par <see cref="CalculerMasque"/> plutôt
+    /// que d'appeler le réseau en direct : le repli vers un modèle plus léger, le verrou
+    /// d'exécution et la démotion d'un modèle trop gros doivent jouer ICI, au démarrage, et
+    /// non devant quelqu'un. Une panne de mémoire vidéo découverte au lancement est une
+    /// bonne nouvelle — c'est la journée de Créteil du 12/08/2026 qui ne se rejoue pas.
+    ///
+    /// <b>À appeler en tâche de fond.</b> La méthode rend la main après une dizaine de
+    /// secondes ; sur le fil de l'interface elle figerait l'accueil d'autant, ce qui est
+    /// exactement le défaut qu'on venait de corriger à Créteil.
+    /// </summary>
+    public static void Prechauffer()
+    {
+        lock (Verrou)
+        {
+            if (_prechauffe) return;
+            _prechauffe = true;
+        }
+
+        // Rien à dégourdir si le poste ne détoure pas, ou n'a aucun modèle posé : la
+        // méthode par couleur n'a ni session ni noyaux à compiler.
+        if (!Actif || !EstInstalle) return;
+
+        try
+        {
+            // Unie, et à la taille d'entrée du réseau. Les noyaux compilés ne dépendent que
+            // de la FORME des tenseurs, jamais des valeurs qui y passent : une image grise
+            // dégourdit donc exactement ceux dont la première vraie photo se servira.
+            using var vide = new ImageMagick.MagickImage(
+                ImageMagick.MagickColors.Gray, (uint)Cote, (uint)Cote);
+
+            var chrono = System.Diagnostics.Stopwatch.StartNew();
+            using var masque = CalculerMasque(vide);
+            DureeDuPrechauffage = chrono.Elapsed;
+
+            if (masque is null)
+            {
+                Log?.Invoke("BiRefNet : préchauffage sans effet — le réseau n'a pas répondu, " +
+                            "le détourage passera par la méthode couleur.");
+                return;
+            }
+
+            Log?.Invoke($"BiRefNet : réseau chargé et dégourdi en " +
+                        $"{DureeDuPrechauffage.Value.TotalSeconds:0.0} s au démarrage — le premier " +
+                        "détourage ne paiera plus ni le chargement ni la compilation des noyaux.");
+        }
+        catch (Exception ex)
+        {
+            // Un préchauffage raté ne doit rien empêcher : le premier détourage se
+            // rattrapera tout seul, exactement comme avant ce correctif.
+            Log?.Invoke($"BiRefNet : préchauffage impossible ({ex.Message}).");
+        }
     }
 
     /// <summary>

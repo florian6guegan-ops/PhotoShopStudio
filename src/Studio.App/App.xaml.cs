@@ -78,6 +78,13 @@ public partial class App : Application
     ///
     /// Elle ne se rejoue jamais d'elle-même — le résultat est écrit dans les réglages du
     /// poste. Voir <c>AppServices.MesurerLesCartesSiBesoin</c>.
+    ///
+    /// <b>Le préchauffage du réseau suit, dans la MÊME tâche.</b> Les deux chargent un
+    /// modèle sur la carte graphique : menés de front sur la Quadro P2000, ils demandent
+    /// exactement ce qu'elle ne sait pas faire — deux sessions à la fois, c'est le
+    /// <c>DmlFusedNode</c> du 03/08/2026. À la suite, l'un après l'autre, la carte n'en
+    /// porte jamais qu'une. Et la mesure doit passer d'abord : elle peut CHANGER la carte
+    /// retenue, et préchauffer la mauvaise ne servirait à rien.
     /// </summary>
     public static void MesurerLesCartes() => Task.Run(() =>
     {
@@ -90,6 +97,18 @@ public partial class App : Application
             // Une mesure ratée n'est pas une panne : on garde la carte 0, qui est ce que
             // faisait le logiciel avant qu'on sache choisir.
             Infrastructure.FileLog.Write("Mesure des cartes graphiques impossible", ex);
+        }
+
+        // Dix à seize secondes payées ICI plutôt qu'au premier client. Voir
+        // BiRefNetMatting.Prechauffer : le chargement de la session n'était que la moitié
+        // de l'attente, l'autre étant la compilation des noyaux DirectML au premier calcul.
+        try
+        {
+            Studio.Imaging.BiRefNetMatting.Prechauffer();
+        }
+        catch (Exception ex)
+        {
+            Infrastructure.FileLog.Write("Préchauffage du détourage impossible", ex);
         }
     });
 
