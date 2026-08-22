@@ -696,7 +696,7 @@ public static class ImagePipeline
         // correction du sujet tombait à côté du sujet : chevron clair derrière les épaules,
         // démarcation nette en travers du front, huit fois sur la planche. Parfait à l'aperçu,
         // gâché sur le papier.
-        using var masqueDuSujet = MasqueDuSujet(image, request.Adjustments);
+        using var masqueDuSujet = MasqueDuSujet(image, request.Adjustments, request.SourcePath);
 
         var aDecouper = AppliquerLaGeometrie(image, request, MagickColors.White);
 
@@ -743,7 +743,8 @@ public static class ImagePipeline
     /// fois pour les deux, et le gain de 14,5 s par photo mesuré à Créteil le 12/08/2026 est
     /// préservé.
     /// </summary>
-    private static MagickImage? MasqueDuSujet(MagickImage image, ImageAdjustments a)
+    private static MagickImage? MasqueDuSujet(
+        MagickImage image, ImageAdjustments a, string? sourcePath = null)
     {
         if (a.IsNeutral) return null;
 
@@ -751,11 +752,100 @@ public static class ImagePipeline
         var unFond = a.GrayBackground || a.WhiteBackground;
         if (!leSujet && !unFond) return null;
 
+        // ⚠ LE MASQUE VOYAGE AVEC LA COMMANDE, et c'est la planche 22-010 du 22/08/2026
+        // qui l'a imposé.
+        //
+        // Le masque vivait dans un cache indexé par une CLÉ — celle du fichier quand
+        // l'écran la donne, l'empreinte des pixels sinon. L'écran range sous l'une, le
+        // rendu cherche sous l'autre, et le jour où les deux ne se rencontrent pas la
+        // planche sort avec le fond du studio après avoir montré du blanc à l'opérateur.
+        // Le masque de la 22-010 était pourtant PARFAIT et sur le disque, calculé quinze
+        // secondes avant le tirage : ce n'est pas le détourage qui a manqué, c'est la
+        // jonction.
+        //
+        // Rangé à côté des photos de la commande, il ne dépend plus d'aucune clé : le
+        // fichier est là ou il n'y est pas. Il survit au redémarrage, au vidage du cache
+        // et à une réimpression du trentième jour — et la réimpression ne repaie plus
+        // jamais le réseau.
+        var range = sourcePath is null ? null : MasqueDeLaCommande(sourcePath);
+
+        if (range is not null && File.Exists(range))
+        {
+            try
+            {
+                return new MagickImage(range);
+            }
+            catch (Exception ex)
+            {
+                // masque illisible (écriture interrompue, disque abîmé) : on le recalcule
+                // et on le réécrit juste en dessous, plutôt que de renoncer au fond
+                Log?.Invoke($"Masque de commande « {Path.GetFileName(range)} » illisible " +
+                            $"({ex.Message}) — il est recalculé.");
+            }
+        }
+
         // AU RAPPORT SEULEMENT : ce masque-ci ne se compose pas sur la photo entière, il
         // traverse d'abord la même géométrie qu'elle et finit à la taille du tirage. Le
         // rendre en 24 Mpx pour le recadrer ensuite en 8 était du travail pur — six secondes
         // par photo sur l'envoi par courriel du 19/08/2026.
-        return MasqueSujet.Nu(image, a.CleDeLaPhoto, auRapportSeulement: true);
+        var masque = MasqueSujet.Nu(image, a.CleDeLaPhoto, auRapportSeulement: true);
+
+        if (masque is not null && range is not null) Ranger(masque, range);
+
+        return masque;
+    }
+
+    /// <summary>
+    /// Où se range le masque d'une photo DE COMMANDE, ou null quand la photo n'en vient pas.
+    ///
+    /// La reconnaissance se fait sur le dossier <c>photos</c>, qui est la signature d'un
+    /// dossier de commande (voir <c>OrderFolderStore.GetPhotosFolder</c>). Les autres rendus
+    /// — copies de travail, aperçus — n'ont pas de commande où ranger quoi que ce soit, et
+    /// n'iront donc rien écrire à côté des fichiers du client.
+    ///
+    /// Un dossier <c>masques</c> frère de <c>photos</c>, et le nom de la photo : le lien se
+    /// lit à l'œil quand on ouvre le dossier d'une commande, ce qu'une empreinte hexadécimale
+    /// n'aurait pas permis.
+    /// </summary>
+    private static string? MasqueDeLaCommande(string sourcePath)
+    {
+        var photos = Path.GetDirectoryName(sourcePath);
+        if (photos is null) return null;
+
+        if (!string.Equals(Path.GetFileName(photos), "photos", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var commande = Path.GetDirectoryName(photos);
+        if (commande is null) return null;
+
+        return Path.Combine(
+            commande, "masques", Path.GetFileNameWithoutExtension(sourcePath) + ".png");
+    }
+
+    /// <summary>
+    /// Écrit le masque à côté de la commande, sans jamais faire échouer le tirage.
+    ///
+    /// Par un fichier provisoire renommé : un masque à moitié écrit — disque plein, poste
+    /// éteint au mauvais moment — serait relu tel quel au tirage suivant, et un masque
+    /// tronqué découpe le sujet n'importe où. Le renommage, lui, est atomique.
+    /// </summary>
+    private static void Ranger(MagickImage masque, string chemin)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(chemin)!);
+
+            var provisoire = chemin + ".tmp";
+            MagickInit.Write(masque, provisoire);
+            File.Move(provisoire, chemin, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // le tirage en cours a son masque en main : il sort correctement. Seule la
+            // réimpression repaiera le détourage, ce qu'elle faisait de toute façon avant.
+            Log?.Invoke($"Masque non rangé avec la commande ({ex.Message}) — " +
+                        "le tirage n'en souffre pas, une réimpression le recalculera.");
+        }
     }
 
     /// <summary>
