@@ -193,8 +193,88 @@ public static class BiRefNetMatting
     /// terre avec lui (l'écran clignote, Windows le redémarre).
     ///
     /// L'aperçu d'identité en lançait un par mouvement de curseur. Le verrou fait la queue.
+    ///
+    /// ⚠ <b>Il ne vaut que DANS ce processus</b>, et c'est pourquoi <see cref="VerrouDuPoste"/>
+    /// existe : Studio Photo et Studio Photo Identité sont deux exécutables, installés côte à
+    /// côte à Créteil comme à Arcueil, et rien n'empêche d'ouvrir les deux.
     /// </summary>
     private static readonly object VerrouExecution = new();
+
+    /// <summary>
+    /// Un seul passage du réseau à la fois SUR TOUT LE POSTE, les deux logiciels compris.
+    ///
+    /// <b>Le verrou d'objet ne protégeait qu'un processus.</b> Studio Photo et Studio Photo
+    /// Identité sont deux exécutables qui partagent le dossier de données, le catalogue — et
+    /// LA MÊME CARTE GRAPHIQUE. Ouverts ensemble, ils chargent chacun leur session et peuvent
+    /// lancer deux inférences au même instant : exactement ce que la carte ne sait pas faire,
+    /// et le seul cas que <see cref="VerrouExecution"/> ne pouvait pas voir.
+    ///
+    /// Un mutex nommé le couvre, parce qu'il vit dans le noyau et non dans le tas managé.
+    /// <c>Global\</c> pour qu'il traverse les sessions Windows : le relais DE100 tourne en
+    /// service, et un poste peut avoir une session ouverte pendant qu'une tâche planifiée
+    /// travaille dans une autre.
+    ///
+    /// <b>Il n'est jamais bloquant pour toujours</b> : au-delà de l'attente, on passe outre
+    /// plutôt que de figer le comptoir. Un détourage qui se superpose est un risque ; un
+    /// logiciel qui ne rend plus la main est une certitude.
+    /// </summary>
+    private static readonly Lazy<Mutex?> VerrouDuPoste = new(() =>
+    {
+        try
+        {
+            return new Mutex(initiallyOwned: false, @"Global\StudioPhoto-BiRefNet");
+        }
+        catch (Exception)
+        {
+            // droits refusés sur l'espace Global (poste verrouillé par une stratégie) :
+            // on retombe sur le verrou du processus, qui est ce qu'on avait avant
+            return null;
+        }
+    });
+
+    /// <summary>
+    /// Combien de temps on attend l'autre logiciel avant de passer outre.
+    ///
+    /// Un détourage dure quatre à six secondes, et le premier d'une séance jusqu'à seize.
+    /// Vingt laisse donc passer le cas normal — deux planches lancées en même temps — sans
+    /// jamais immobiliser un opérateur devant un client.
+    /// </summary>
+    private static readonly TimeSpan AttenteDuPoste = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// Exécute <paramref name="travail"/> en s'assurant qu'aucun autre logiciel du poste ne
+    /// fait tourner le réseau au même moment.
+    /// </summary>
+    private static T SousLeVerrouDuPoste<T>(Func<T> travail)
+    {
+        if (VerrouDuPoste.Value is not { } mutex) return travail();
+
+        var tenu = false;
+        try
+        {
+            try
+            {
+                tenu = mutex.WaitOne(AttenteDuPoste);
+                if (!tenu)
+                    Log?.Invoke("BiRefNet : l'autre logiciel du poste occupe la carte depuis " +
+                                $"plus de {AttenteDuPoste.TotalSeconds:0} s — on passe outre.");
+            }
+            catch (AbandonedMutexException)
+            {
+                // l'autre logiciel est mort en tenant le verrou — c'est précisément ce qui
+                // arrive quand le pilote l'emporte. Le mutex nous revient, et il est à nous.
+                tenu = true;
+                Log?.Invoke("BiRefNet : l'autre logiciel du poste a lâché la carte en cours " +
+                            "de route (il a probablement été emporté par le pilote).");
+            }
+
+            return travail();
+        }
+        finally
+        {
+            if (tenu) mutex.ReleaseMutex();
+        }
+    }
 
     private static InferenceSession? _session;
     private static bool _tentative;
@@ -371,8 +451,10 @@ public static class BiRefNetMatting
 
             try
             {
+                // les DEUX verrous : celui du processus, puis celui du poste entier — voir
+                // VerrouDuPoste. L'ordre compte peu, mais il doit être le même partout.
                 lock (VerrouExecution)
-                    return Executer(session, image);
+                    return SousLeVerrouDuPoste(() => Executer(session, image));
             }
             catch (Exception ex)
             {
@@ -777,9 +859,14 @@ public static class BiRefNetMatting
             var chrono = System.Diagnostics.Stopwatch.StartNew();
 
             // Un seul passage à la fois, comme partout ailleurs : la mesure ne doit pas
-            // demander à la carte ce qu'un détourage lui demanderait en même temps.
+            // demander à la carte ce qu'un détourage lui demanderait en même temps — ni
+            // celui de l'AUTRE logiciel du poste, d'où le second verrou.
             lock (VerrouExecution)
-                using (session.Run([tenseur], [nomSortie])) { }
+                SousLeVerrouDuPoste<object?>(() =>
+                {
+                    using (session.Run([tenseur], [nomSortie])) { }
+                    return null;
+                });
 
             return chrono.Elapsed.TotalSeconds;
         }
