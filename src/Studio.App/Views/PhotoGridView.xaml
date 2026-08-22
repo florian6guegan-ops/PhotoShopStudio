@@ -244,6 +244,14 @@
                               DisplayMemberPath="Label" VerticalAlignment="Center" Margin="0,0,0,4"
                               ToolTip="Machine du minilab et papier qui y est chargé. « Automatique » envoie sur celle dont le rouleau porte le format."
                               SelectionChanged="OnMachineChanged"/>
+
+                    <!-- L'état de la retouche, sur la même ligne que le reste : il dit ce
+                         qu'il faut faire dans Photoshop (Ctrl+S) et signale le retour de
+                         chaque photo. Sans lui, le bouton ouvre une autre application et
+                         Studio n'a plus l'air de rien faire. -->
+                    <TextBlock x:Name="RetoucheEtatText" Style="{StaticResource Hint}"
+                               FontSize="14" VerticalAlignment="Center" Margin="16,0,0,4"
+                               TextWrapping="Wrap" MaxWidth="420" Visibility="Collapsed"/>
                 </WrapPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
@@ -256,6 +264,14 @@
                             MinWidth="0" Padding="18,0" FontSize="15" Margin="0,0,8,0" IsEnabled="False"
                             ToolTip="Recadrer et corriger la sélection, sans la perdre de vue"
                             Click="OnModify">Modifier</Button>
+                    <!-- La retouche VRAIE, celle que Studio ne sait pas faire : tampon,
+                         peau, éléments à effacer. On sort dans Photoshop (ou GIMP), et la
+                         photo revient toute seule à l'enregistrement. L'original du client
+                         n'est jamais touché — voir RetoucheExterne. -->
+                    <Button x:Name="RetoucheButton" Style="{StaticResource FlatButton}" MinHeight="44"
+                            MinWidth="0" Padding="18,0" FontSize="15" Margin="0,0,8,0" IsEnabled="False"
+                            ToolTip="Ouvrir la sélection dans Photoshop. Enregistrez là-bas (Ctrl+S) et la photo revient ici retouchée, sans rien changer au fichier du client."
+                            Click="OnRetoucher">✎  Retoucher</Button>
                     <!-- Envoyer plutôt que tirer : le client repart avec un lien. Toujours
                          actif, parce qu'il sert aussi à envoyer le DOSSIER ENTIER, sans
                          qu'aucune photo ait à être cochée. -->

@@ -70,6 +70,13 @@ namespace Studio.Core.Domain;
 /// Ne vaut que pour le minilab : sur la DS620 une feuille blanche coûterait un panneau de
 /// sublimation entier, ruban compris, pour séparer deux paquets qu'on relève à la main.
 /// </param>
+/// <param name="LogicielDeRetouche">
+/// Chemin forcé du logiciel de retouche, quand celui du poste n'est pas là où on le
+/// cherche. Vide = trouvé tout seul : Photoshop par le registre, GIMP à défaut.
+///
+/// Se règle à la main dans le fichier, et pas à l'écran : c'est un dépannage
+/// d'installation, pas un choix de comptoir.
+/// </param>
 public sealed record PosteSettings(
     string DiLandRacine = "",
     string ImprimanteGrandFormat = "",
@@ -77,7 +84,8 @@ public sealed record PosteSettings(
     string AdresseRapport = "",
     bool CadrageAutoVisage = false,
     IReadOnlyList<string>? SupportsMasques = null,
-    bool SeparerLesCommandes = true)
+    bool SeparerLesCommandes = true,
+    string LogicielDeRetouche = "")
 {
     /// <summary>Les supports masqués, jamais null — un fichier ancien n'en porte pas.</summary>
     public IReadOnlyList<string> Masques => SupportsMasques ?? [];

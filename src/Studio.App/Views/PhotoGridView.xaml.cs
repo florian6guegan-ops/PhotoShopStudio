@@ -130,7 +130,17 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
             Focus(); // sans le focus, aucune touche ne nous parvient
             await AssurerLesMachinesAsync();
         };
-        Unloaded += (_, _) => _thumbnailCts?.Cancel();
+        Unloaded += (_, _) =>
+        {
+            _thumbnailCts?.Cancel();
+
+            // Le guetteur des retouches meurt avec l'écran : un FileSystemWatcher laissé
+            // derrière garderait un fil et une poignée sur le dossier pour rien, et
+            // rappellerait une grille qui n'est plus affichée.
+            _surveillant?.Dispose();
+            _surveillant = null;
+            _enRetouche.Clear();
+        };
     }
 
     // Une commande de borne arrive DÉCOCHÉE, comme n'importe quel dossier de photos.
@@ -1514,6 +1524,11 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
         ModifyButton.IsEnabled = selected.Count > 0;
         ModifyButton.Content = selected.Count > 1 ? $"Modifier ({selected.Count})" : "Modifier";
 
+        RetoucheButton.IsEnabled = selected.Count > 0;
+        RetoucheButton.Content = selected.Count > 1
+            ? $"✎  Retoucher ({selected.Count})"
+            : "✎  Retoucher";
+
         // Une planche est là : le bouton la reprend, il n'en fabrique pas une seconde.
         // Il en refaisait une à chaque appui, et l'opérateur qui rappuyait par réflexe se
         // retrouvait avec deux, trois planches empilées en tête de grille, à décocher une à une.
@@ -1905,6 +1920,202 @@ public partial class PhotoGridView : UserControl, ITravailReprenable
                 // l'impression parcourt
                 dupliquer: DupliquerPhoto),
             $"Modifier — {choisies.Count} photo(s)");
+    }
+
+    // ----- retouche dans Photoshop (ou GIMP) -----
+
+    /// <summary>
+    /// Le guetteur des copies en cours de retouche. Né au premier appui sur le bouton, et
+    /// jeté avec l'écran.
+    /// </summary>
+    private SurveillantDeRetouche? _surveillant;
+
+    /// <summary>La photo de la grille à remplacer, par le chemin de sa copie de retouche.</summary>
+    private readonly Dictionary<string, PhotoItem> _enRetouche = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Ouvre la sélection dans le logiciel de retouche du poste.
+    ///
+    /// <b>Ce que Studio ne sait pas faire.</b> Recadrer, corriger l'exposition, les yeux
+    /// rouges : tout cela est ici. Mais un tampon sur un bouton, une peau à adoucir, un
+    /// panneau à effacer derrière la mariée, non — et c'est justement ce qu'on demande au
+    /// comptoir. Plutôt que de refaire Photoshop, on l'ouvre.
+    ///
+    /// <b>Sur une COPIE, toujours.</b> L'original reste intact dans le dossier du client :
+    /// voir <see cref="RetoucheExterne"/>. La copie retouchée prend ensuite la place de la
+    /// photo dans la commande, avec son format, son cadrage et sa quantité.
+    /// </summary>
+    private void OnRetoucher(object sender, RoutedEventArgs e)
+    {
+        var choisies = _photos.Where(p => p.Selected).ToList();
+        if (choisies.Count == 0) return;
+
+        var editeur = RetoucheExterne.Trouver(App.Services.Poste.LogicielDeRetouche);
+        if (editeur is null)
+        {
+            MessageBox.Show(
+                "Aucun logiciel de retouche n'a été trouvé sur ce poste.\n\n" +
+                "Studio cherche Photoshop puis GIMP. Si l'un des deux est installé " +
+                "ailleurs qu'à l'endroit habituel, indiquez son chemin dans " +
+                "config\\poste.json, champ « LogicielDeRetouche ».",
+                "Retoucher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _surveillant ??= CreerLeSurveillant();
+
+        var copies = new List<string>();
+        var manquees = 0;
+
+        foreach (var photo in choisies)
+        {
+            try
+            {
+                var copie = RetoucheExterne.PreparerLaCopie(photo.Path, App.Services.RetouchesDir);
+
+                _enRetouche[copie] = photo;
+                _surveillant.Surveiller(copie);
+                copies.Add(copie);
+            }
+            catch (Exception ex)
+            {
+                // une photo illisible ou disparue ne doit pas empêcher les autres de partir
+                FileLog.Write($"Copie de retouche impossible ({photo.Path})", ex);
+                manquees++;
+            }
+        }
+
+        if (copies.Count == 0)
+        {
+            MessageBox.Show("Aucune de ces photos n'a pu être préparée pour la retouche.",
+                "Retoucher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            RetoucheExterne.Ouvrir(editeur, copies);
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Ouverture de {editeur.Nom} impossible", ex);
+            MessageBox.Show($"{editeur.Nom} n'a pas voulu s'ouvrir : {ex.Message}",
+                "Retoucher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        AfficherLEtatDeLaRetouche(
+            $"{copies.Count} photo(s) ouverte(s) dans {editeur.Nom}. Enregistrez là-bas " +
+            "(Ctrl+S) et elles reviennent ici toutes seules." +
+            (manquees > 0 ? $" {manquees} n'a pas pu être préparée." : ""));
+    }
+
+    private SurveillantDeRetouche CreerLeSurveillant()
+    {
+        var surveillant = new SurveillantDeRetouche(App.Services.RetouchesDir);
+
+        // Le guetteur parle depuis un fil de travail : tout ce qui touche à la grille doit
+        // repasser par le fil d'interface, sans quoi WPF lève au premier rafraîchissement.
+        surveillant.Enregistree += copie =>
+            Dispatcher.BeginInvoke(new Action(() => ReprendreLaRetouche(copie)));
+
+        return surveillant;
+    }
+
+    /// <summary>
+    /// Une copie vient d'être enregistrée : elle prend la place de la photo d'origine dans
+    /// la commande.
+    ///
+    /// <b>On REMPLACE au lieu d'ajouter.</b> L'opérateur a retouché pour tirer la version
+    /// retouchée ; laisser les deux dans la grille le forcerait à décocher l'ancienne, et
+    /// une seule oubliée sort en double au tirage.
+    ///
+    /// Le format, le cadrage, la quantité et les corrections suivent : ils ont été posés
+    /// pour cette photo, et les reperdre à chaque aller-retour dans Photoshop rendrait le
+    /// bouton inutilisable au milieu d'une commande.
+    /// </summary>
+    private void ReprendreLaRetouche(string copie)
+    {
+        if (!_enRetouche.TryGetValue(copie, out var ancienne)) return;
+
+        var rang = _photos.IndexOf(ancienne);
+        if (rang < 0)
+        {
+            // la photo a été retirée de la grille pendant la retouche : plus rien à remplacer
+            _enRetouche.Remove(copie);
+            _surveillant?.Oublier(copie);
+            return;
+        }
+
+        var retouchee = new PhotoItem(copie, OnCartChanged)
+        {
+            Product = ancienne.Product,
+            Finish = ancienne.Finish,
+            RotationQuarterTurns = ancienne.RotationQuarterTurns,
+            FineRotationDegrees = ancienne.FineRotationDegrees,
+            FitOverride = ancienne.FitOverride,
+            CutBorder = ancienne.CutBorder,
+            Adjustments = ancienne.Adjustments.Clone(),
+            Quantity = ancienne.Quantity,
+            Selected = ancienne.Selected,
+        };
+
+        // le cadrage en DERNIER, comme partout : les mutateurs ci-dessus le remettent à zéro
+        retouchee.PoserLeCadrageDOrigine(ancienne.Crop);
+
+        _photos[rang] = retouchee;
+
+        // ⚠ La vignette n'est PAS recopiée depuis l'ancienne, contrairement au doublon :
+        // c'est justement l'image qui a changé, et la reprendre montrerait la photo d'AVANT
+        // la retouche. Elle est relue du disque — le cache ne la confondra pas avec
+        // l'ancienne, sa clef porte la date et la taille du fichier (ThumbnailService).
+        ChargerLaVignetteDe(retouchee);
+
+        // la grille ne surveille pas la liste : sans cela, l'ancienne resterait affichée
+        PhotosGrid.ItemsSource = null;
+        PhotosGrid.ItemsSource = _photos;
+
+        // La copie reste surveillée : l'opérateur enchaîne souvent deux passes dans
+        // Photoshop sans revenir ici, et le second enregistrement doit revenir aussi. On
+        // pointe simplement la NOUVELLE photo de la grille.
+        _enRetouche[copie] = retouchee;
+
+        UpdateSummary();
+        AfficherLEtatDeLaRetouche($"« {retouchee.Name} » revient retouchée.");
+        FileLog.Write($"Retouche reprise : {copie}");
+    }
+
+    /// <summary>
+    /// Relit la vignette et la définition d'une seule photo, hors du fil d'interface.
+    ///
+    /// Le chargement d'ensemble ne convient pas ici : il ne lit que les photos SANS
+    /// vignette, il travaille par tranches, et il est piloté par l'ouverture du dossier.
+    /// Une photo qui revient de Photoshop est un cas isolé, au milieu d'une grille déjà
+    /// remplie.
+    /// </summary>
+    private async void ChargerLaVignetteDe(PhotoItem photo)
+    {
+        try
+        {
+            var lue = await Task.Run(() => App.Services.Thumbnails.Lire(photo.Path));
+            if (lue.Jpeg is null) return;
+
+            photo.SetSourceThumbnail(ToBitmap(lue.Jpeg));
+            photo.SetSourceSize(lue.SourceWidth, lue.SourceHeight);
+            photo.RefreshThumbnail();
+        }
+        catch (Exception ex)
+        {
+            // la photo reste dans la grille, sans vignette : elle est tirable, et l'écarter
+            // ferait perdre une retouche que l'opérateur vient de faire
+            FileLog.Write($"Vignette de la photo retouchée illisible ({photo.Path})", ex);
+        }
+    }
+
+    private void AfficherLEtatDeLaRetouche(string message)
+    {
+        RetoucheEtatText.Text = message;
+        RetoucheEtatText.Visibility = Visibility.Visible;
     }
 
     // ----- bandeau : s'applique à toutes les photos cochées -----

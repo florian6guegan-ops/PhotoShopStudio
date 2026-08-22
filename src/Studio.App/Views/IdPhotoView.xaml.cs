@@ -349,7 +349,16 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
                 "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         Loaded += async (_, _) => await LoadStripAsync();
-        Unloaded += (_, _) => _loadCts?.Cancel();
+        Unloaded += (_, _) =>
+        {
+            _loadCts?.Cancel();
+
+            // le guetteur des retouches meurt avec l'écran : sinon il garde un fil et une
+            // poignée sur le dossier, et rappelle une bande qui n'est plus affichée
+            _surveillantRetouche?.Dispose();
+            _surveillantRetouche = null;
+            _enRetouche.Clear();
+        };
 
         // Le mode redressement se capte sur la FENÊTRE : voir _redressementArme. Sur cet
         // écran-ci, le focus part sur la liste des papiers dès que l'opérateur choisit son
@@ -879,11 +888,170 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
 
         PrintButton.IsEnabled = _current is not null;
         MailButton.IsEnabled = _current is not null;
+        RetoucheButton.IsEnabled = _current is not null;
         Redraw();
         AnnoncerLeLot();
     }
 
     /// <summary>Dépose sur la photo courante tout ce que l'écran porte.</summary>
+    // ----- retouche dans Photoshop (ou GIMP) -----
+
+    /// <summary>Le guetteur des copies en retouche. Voir <see cref="SurveillantDeRetouche"/>.</summary>
+    private SurveillantDeRetouche? _surveillantRetouche;
+
+    /// <summary>La photo de la bande à rebrancher, par le chemin de sa copie de retouche.</summary>
+    private readonly Dictionary<string, StripItem> _enRetouche = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Ouvre la photo courante dans le logiciel de retouche du poste.
+    ///
+    /// <b>Ce qu'aucun curseur de cet écran ne fera.</b> Exposition, contraste, yeux rouges,
+    /// fond blanc : tout cela est ici. Un bouton sur le front, une mèche rebelle, une
+    /// cicatrice que le client demande à atténuer, non — et c'est demandé au comptoir. On
+    /// sort donc dans Photoshop plutôt que de refaire Photoshop.
+    ///
+    /// <b>Sur une COPIE</b>, comme dans le Studio complet : le fichier du client n'est
+    /// jamais réécrit. La photo de la bande suit ensuite la copie
+    /// (<see cref="StripItem.SuivreLaCopie"/>) sans changer de NOM — c'est le mécanisme qui
+    /// existait déjà pour la mise à l'abri des cartes mémoire.
+    /// </summary>
+    private void OnRetoucher(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { } photo) return;
+
+        var editeur = RetoucheExterne.Trouver(App.Services.Poste.LogicielDeRetouche);
+        if (editeur is null)
+        {
+            MessageBox.Show(
+                "Aucun logiciel de retouche n'a été trouvé sur ce poste.\n\n" +
+                "Studio cherche Photoshop puis GIMP. Si l'un des deux est installé " +
+                "ailleurs qu'à l'endroit habituel, indiquez son chemin dans " +
+                "config\\poste.json, champ « LogicielDeRetouche ».",
+                "Retoucher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            // Le travail en cours est DÉPOSÉ avant de sortir : cadrage, repères,
+            // corrections. L'opérateur peut passer un quart d'heure dans Photoshop, et
+            // rien ne dit qu'il reviendra par cette photo-là.
+            SauverDansLaPhoto();
+
+            var copie = RetoucheExterne.PreparerLaCopie(photo.Path, App.Services.RetouchesDir);
+
+            _surveillantRetouche ??= CreerLeSurveillantDeRetouche();
+            _enRetouche[copie] = photo;
+            _surveillantRetouche.Surveiller(copie);
+
+            RetoucheExterne.Ouvrir(editeur, [copie]);
+
+            DireLaRetouche($"Ouverte dans {editeur.Nom}. Enregistrez là-bas (Ctrl+S) : " +
+                           "la photo revient ici toute seule.");
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Retouche impossible ({photo.Path})", ex);
+            MessageBox.Show($"La retouche n'a pas pu démarrer : {ex.Message}",
+                "Retoucher", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private SurveillantDeRetouche CreerLeSurveillantDeRetouche()
+    {
+        var surveillant = new SurveillantDeRetouche(App.Services.RetouchesDir);
+
+        // le guetteur parle depuis un fil de travail : tout ce qui suit touche à l'écran
+        surveillant.Enregistree += copie =>
+            Dispatcher.BeginInvoke(new Action(async () => await ReprendreLaRetoucheAsync(copie)));
+
+        return surveillant;
+    }
+
+    /// <summary>
+    /// La copie vient d'être enregistrée : la photo de la bande la suit, et la scène est
+    /// relue.
+    ///
+    /// ⚠ <b>Le cadrage du visage est gardé — sauf si la taille de l'image a changé.</b>
+    /// Une retouche ordinaire (tampon, peau, tache) ne déplace pas le visage d'un pixel :
+    /// refaire la détection écraserait alors le placement que l'opérateur venait de régler
+    /// à la main. Mais si la photo revient RECADRÉE de Photoshop, les repères désignent des
+    /// pixels qui ne sont plus là — la planche sortirait à côté du visage, et c'est
+    /// exactement le genre de défaut qui ne se voit qu'une fois imprimé. Dans ce cas
+    /// seulement, on repart de la détection automatique.
+    /// </summary>
+    private async Task ReprendreLaRetoucheAsync(string copie)
+    {
+        if (!_enRetouche.TryGetValue(copie, out var photo)) return;
+        if (!_photos.Contains(photo))
+        {
+            _enRetouche.Remove(copie);
+            _surveillantRetouche?.Oublier(copie);
+            return;
+        }
+
+        var avant = TailleDe(photo.Path);
+        var apres = TailleDe(copie);
+
+        photo.SuivreLaCopie(copie);
+
+        if (avant is not null && apres is not null && avant != apres)
+        {
+            photo.Prete = false;   // la géométrie a changé : les repères ne valent plus rien
+            FileLog.Write(
+                $"Retouche : « {photo.Name} » revient en {apres.Value.L}×{apres.Value.H} " +
+                $"au lieu de {avant.Value.L}×{avant.Value.H} — le cadrage du visage est refait.");
+        }
+
+        RafraichirLaVignetteDe(photo);
+
+        // ReferenceEquals barre la porte quand la photo est DÉJÀ celle qu'on affiche : on
+        // la rouvre donc en faisant oublier la courante. Le travail vient d'être déposé sur
+        // l'objet, rien ne se perd.
+        if (ReferenceEquals(_current, photo)) _current = null;
+        await OuvrirLaPhotoAsync(photo);
+
+        // La copie reste surveillée : deux passes d'affilée dans Photoshop sont la règle,
+        // et la seconde doit revenir aussi.
+        DireLaRetouche($"« {photo.Name} » revient retouchée.");
+    }
+
+    /// <summary>La définition d'un fichier, ou null s'il est illisible.</summary>
+    private static (int L, int H)? TailleDe(string chemin)
+    {
+        try
+        {
+            var (largeur, hauteur) = ImagePipeline.GetOrientedSize(chemin, 0);
+            return largeur > 0 && hauteur > 0 ? (largeur, hauteur) : null;
+        }
+        catch (Exception ex)
+        {
+            FileLog.Write($"Définition illisible ({chemin})", ex);
+            return null;
+        }
+    }
+
+    /// <summary>Relit la vignette de la bande : c'est l'image qui a changé.</summary>
+    private async void RafraichirLaVignetteDe(StripItem photo)
+    {
+        try
+        {
+            var octets = await Task.Run(() => App.Services.Thumbnails.GetJpeg(photo.Path, 220));
+            if (octets is not null) photo.Thumbnail = ToBitmap(octets);
+        }
+        catch (Exception ex)
+        {
+            // la vignette reste celle d'avant : gênant, jamais bloquant
+            FileLog.Write($"Identité : vignette de la photo retouchée illisible — {photo.Path}", ex);
+        }
+    }
+
+    private void DireLaRetouche(string message)
+    {
+        RetoucheEtatText.Text = message;
+        RetoucheEtatText.Visibility = Visibility.Visible;
+    }
+
     private void SauverDansLaPhoto()
     {
         if (_current is not { } photo) return;

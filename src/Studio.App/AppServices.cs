@@ -55,6 +55,15 @@ public sealed class AppServices
     /// </summary>
     public string CacheDir => Path.Combine(DataRoot, "cache");
 
+    /// <summary>
+    /// Les copies ouvertes dans le logiciel de retouche.
+    ///
+    /// Dans les données du poste, et JAMAIS à côté de l'original : le dossier ouvert est
+    /// souvent la carte du client, et une retouche écrite par dessus repartirait avec elle
+    /// sans qu'on puisse revenir en arrière. Voir <c>RetoucheExterne</c>.
+    /// </summary>
+    public string RetouchesDir => Path.Combine(DataRoot, "retouches");
+
     public required ProductCatalog Catalog { get; set; }
     public required OrderFolderStore Store { get; init; }
     public required OrderService Orders { get; init; }
