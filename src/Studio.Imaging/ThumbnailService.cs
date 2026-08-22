@@ -36,6 +36,22 @@ public sealed class ThumbnailService
     /// </summary>
     public const int Defaut = 512;
 
+    /// <summary>
+    /// Taille des aperçus PLEIN ÉCRAN — cadrage, corrections, photo d'identité.
+    ///
+    /// <b>1440 et non 1600, parce que 1600 n'existe pas.</b> Les écrans demandaient 1600, qui
+    /// n'est pas un palier : la demande montait donc à 2048, soit <b>le double de pixels à
+    /// décoder</b> pour un aperçu que personne ne regarde à cette finesse. 1440 est le palier
+    /// juste en dessous, il tient largement sur un moniteur de boutique, et il est atteint
+    /// tel quel — sans arrondi vers le haut.
+    ///
+    /// <b>Et une seule constante pour tous les écrans.</b> Ils écrivaient chacun 1600 dans
+    /// leur coin ; deux écrans qui divergeraient d'un palier décoderaient deux fois la même
+    /// photo, et le cache ne les rejoindrait jamais — c'est le défaut que la liste des
+    /// <see cref="Paliers"/> existe pour empêcher, et qu'un nombre écrit en dur ramenait.
+    /// </summary>
+    public const int Apercu = 1440;
+
     private readonly string _cacheDir;
 
     public ThumbnailService(string cacheDir)

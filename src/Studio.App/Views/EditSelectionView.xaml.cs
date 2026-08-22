@@ -11,6 +11,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Imaging;
 using Studio.Imaging.Geometry;
 
 namespace Studio.App.Views;
@@ -397,7 +398,7 @@ internal partial class EditSelectionView : UserControl
     /// </summary>
     private readonly CacheImages _hautesDefinitions = new();
 
-    private const int PreviewBoxPx = 1600;
+    private const int PreviewBoxPx = ThumbnailService.Apercu;
 
     /// <summary>
     /// Quelques images seulement, les dernières servies.

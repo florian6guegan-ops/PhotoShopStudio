@@ -804,7 +804,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             // Elle n'est lancée qu'à la PREMIÈRE ouverture, comme avant : sur une photo
             // déjà réglée, la détection écraserait le placement fait à la main. `Prete` se
             // lit ici sans risque — `ReprendreDeLaPhoto` le consulte, ne l'écrit jamais.
-            var affichage = Task.Run(() => App.Services.Thumbnails.GetJpeg(path, 1600));
+            var affichage = Task.Run(() => App.Services.Thumbnails.GetJpeg(path, ThumbnailService.Apercu));
             var detection = item.Prete
                 ? null
                 : Task.Run(() => App.Services.Faces.DetectMain(path));
@@ -1502,7 +1502,7 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
             // Celui-ci était simplement resté à l'écart.
             var pose = await Task.Run(() =>
             {
-                var jpeg = App.Services.Thumbnails.GetJpeg(chemin, 1600);
+                var jpeg = App.Services.Thumbnails.GetJpeg(chemin, ThumbnailService.Apercu);
                 using var image = new ImageMagick.MagickImage(jpeg);
                 var fond = gris
                     ? BackgroundRemoval.GrisIdentite
@@ -2190,10 +2190,12 @@ public partial class IdPhotoView : UserControl, ITravailReprenable
     }
 
     /// <summary>
-    /// Taille de l'aperçu sur lequel travaille cet écran — la vignette de 1 600 px, dans le
-    /// rapport d'un portrait. Approchée : elle ne sert qu'à annoncer une attente.
+    /// Taille de l'aperçu sur lequel travaille cet écran — la vignette de
+    /// <see cref="ThumbnailService.Apercu"/> px, dans le rapport d'un portrait. Approchée :
+    /// elle ne sert qu'à annoncer une attente.
     /// </summary>
-    private const double MegapixelsDeLApercu = 1600 * 1200 / 1_000_000.0;
+    private const double MegapixelsDeLApercu =
+        ThumbnailService.Apercu * (ThumbnailService.Apercu * 3.0 / 4.0) / 1_000_000.0;
 
     /// <summary>
     /// Montre la barre et la fait avancer. Sans effet si l'attente est déjà affichée — un

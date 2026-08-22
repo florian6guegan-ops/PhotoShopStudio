@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Studio.App.Infrastructure;
 using Studio.Core.Domain;
+using Studio.Imaging;
 using Studio.Imaging.Geometry;
 
 namespace Studio.App.Views;
@@ -134,7 +135,7 @@ public partial class CropEditorView : UserControl
     {
         try
         {
-            var bytes = await Task.Run(() => App.Services.Thumbnails.GetJpeg(_photoPath, boxPx: 1600));
+            var bytes = await Task.Run(() => App.Services.Thumbnails.GetJpeg(_photoPath, boxPx: ThumbnailService.Apercu));
             using var stream = new MemoryStream(bytes);
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
