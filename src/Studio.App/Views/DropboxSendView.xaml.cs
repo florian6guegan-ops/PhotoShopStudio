@@ -393,23 +393,44 @@ public partial class DropboxSendView : UserControl
         if (lot.Count == 0) return;
 
         _envoiEnCours = true;
+        _lienEnvoye = false;
+        _avancementVu = 0;
         _arret = new CancellationTokenSource();
 
         ChoixCarte.IsEnabled = false;
-        ReglagesCarte.IsEnabled = false;
+
+        // ⚠ Les réglages restent SAISISSABLES pendant le téléversement : ils ne décident que
+        // du courriel, qui partira à la fin, et l'adresse du client se prend justement
+        // pendant qu'on attend — le client la donne, l'opérateur la tape, et le lien part
+        // tout seul quand les photos sont là. Tout griser obligeait à attendre la fin, puis
+        // à taper, puis à cliquer un second bouton.
+        //
+        // Seul le nom du lot est figé : il a DÉJÀ servi à créer le dossier, et le voir
+        // encore modifiable ferait croire qu'on peut le changer.
+        NomBox.IsEnabled = false;
+
         ResultatCarte.Visibility = Visibility.Collapsed;
+
+        // un second envoi ne doit pas garder sous les yeux la confirmation du premier :
+        // l'opérateur croirait le nouveau lien déjà parti
+        CourrielCarte.Visibility = Visibility.Collapsed;
+
         AvancementCarte.Visibility = Visibility.Visible;
         ArreterButton.Visibility = Visibility.Visible;
         EnvoyerButton.IsEnabled = false;
         EtatText.Text = "";
 
-        var avancement = new Progress<AvancementEnvoi>(a =>
-        {
-            AvancementBarre.Value = a.Part;
-            AvancementText.Text = a.Faits >= a.Total
-                ? "Création du lien de partage…"
-                : $"Envoi {a.Faits + 1} / {a.Total} — {a.Fichier}";
-        });
+        AvancementBarre.Value = 0;
+        AvancementPourcent.Text = "0 %";
+        AvancementText.Text = $"0 / {lot.Count} photos envoyées";
+        AvancementFichierText.Text = "préparation du dossier…";
+        AvancementDetailText.Text = "";
+
+        // la carte est en tête de page, mais la page peut être défilée ailleurs
+        AvancementCarte.BringIntoView();
+
+        var chrono = System.Diagnostics.Stopwatch.StartNew();
+        var avancement = new Progress<AvancementEnvoi>(a => MontrerLAvancement(a, chrono));
 
         try
         {
@@ -446,9 +467,65 @@ public partial class DropboxSendView : UserControl
             AvancementCarte.Visibility = Visibility.Collapsed;
             ArreterButton.Visibility = Visibility.Collapsed;
             ChoixCarte.IsEnabled = true;
-            ReglagesCarte.IsEnabled = true;
+            NomBox.IsEnabled = true;
             MettreAJourLeBouton();
         }
+    }
+
+    /// <summary>
+    /// Ce que l'écran montre pendant l'envoi.
+    ///
+    /// Le pourcentage, le volume et le TEMPS QUI RESTE : c'est la seule question du
+    /// comptoir — « j'en ai pour combien de temps ? » — et un client qui l'entend attend
+    /// sans s'impatienter. Le reste (nom du fichier en cours) rassure sur le fait que ça
+    /// bouge encore.
+    ///
+    /// L'estimation ne sort qu'au bout de quelques secondes : les premières mesures d'un
+    /// téléversement sont fausses, et annoncer « 47 minutes » avant de retomber à deux
+    /// serait pire que de ne rien dire.
+    /// </summary>
+    private void MontrerLAvancement(AvancementEnvoi a, System.Diagnostics.Stopwatch chrono)
+    {
+        // ⚠ Plusieurs fils rapportent maintenant, et Progress<T> ne garantit PAS l'ordre :
+        // un compte-rendu retardé peut arriver après un plus récent. Sans ce garde-fou, la
+        // barre reculerait par à-coups — ce qui, à l'œil, ressemble à un envoi qui repart de
+        // zéro.
+        if (a.Faits < _avancementVu && a.Faits < a.Total) return;
+        _avancementVu = a.Faits;
+
+        AvancementBarre.Value = a.Part;
+        AvancementPourcent.Text = $"{a.Part * 100:0} %";
+
+        if (a.Faits >= a.Total)
+        {
+            AvancementText.Text = $"{a.Total} photos envoyées";
+            AvancementFichierText.Text = "Création du lien de partage…";
+        }
+        else
+        {
+            AvancementText.Text = $"{a.Faits} / {a.Total} photos envoyées";
+            AvancementFichierText.Text = $"en cours : {a.Fichier}";
+        }
+
+        var details = new List<string>();
+
+        if (a.OctetsTotal > 0)
+            details.Add($"{a.Octets / 1024.0 / 1024:0.#} Mo sur {a.OctetsTotal / 1024.0 / 1024:0.#} Mo");
+
+        var secondes = chrono.Elapsed.TotalSeconds;
+        if (a.Octets > 0 && secondes > 3)
+        {
+            var debit = a.Octets / secondes;
+            details.Add($"{debit / 1024 / 1024:0.#} Mo/s");
+
+            var restant = TimeSpan.FromSeconds((a.OctetsTotal - a.Octets) / Math.Max(debit, 1));
+            if (restant.TotalSeconds >= 1)
+                details.Add(restant.TotalMinutes >= 1
+                    ? $"encore {restant.TotalMinutes:0} min"
+                    : $"encore {restant.TotalSeconds:0} s");
+        }
+
+        AvancementDetailText.Text = string.Join("  ·  ", details);
     }
 
     private void MontrerLeResultat(ResultatEnvoi resultat)
@@ -485,7 +562,10 @@ public partial class DropboxSendView : UserControl
         CopierLeLien(silencieux: true);
         EtatText.Text = "Lien copié dans le presse-papier.";
 
-        // et il part au client si son adresse a été prise pendant le téléversement
+        // Et il part au client TOUT SEUL, dès l'adresse saisie — avant l'envoi ou pendant
+        // le téléversement, les deux marchent maintenant que les réglages restent
+        // saisissables. Aucun second bouton à trouver : l'opérateur tape l'adresse, les
+        // photos montent, le client a son lien.
         if (AdressesSaisies().Count > 0) EnvoyerLeLienAuClient();
     }
 
@@ -494,6 +574,35 @@ public partial class DropboxSendView : UserControl
     /// jamais retéléverser les photos.
     /// </summary>
     private ResultatEnvoi? _dernierResultat;
+
+    /// <summary>
+    /// Vrai dès que le courriel est PARTI pour l'envoi courant.
+    ///
+    /// C'est ce qui évite le double envoi : le lien part tout seul à la fin du
+    /// téléversement, et l'adresse quittée ensuite ne doit pas en renvoyer un second au
+    /// même client. Remis à faux à chaque nouvel envoi de photos.
+    /// </summary>
+    private bool _lienEnvoye;
+
+    /// <summary>Le plus grand nombre de fichiers déjà annoncé, pour que la barre ne recule pas.</summary>
+    private int _avancementVu;
+
+    /// <summary>
+    /// L'adresse saisie APRÈS coup — le client qui la donne une fois les photos parties.
+    ///
+    /// Sur le départ du curseur et non à la frappe : une adresse à moitié tapée passe par
+    /// des états qui ont l'air valables (« dupont@gmail.co »), et un courriel envoyé là
+    /// serait perdu sans qu'on puisse le rattraper. Quitter la case, c'est avoir fini.
+    /// </summary>
+    private void OnAdressePerdLeFocus(object sender, RoutedEventArgs e)
+    {
+        if (_lienEnvoye || _envoiEnCours || _dernierResultat is null) return;
+
+        var adresses = AdressesSaisies();
+        if (adresses.Count == 0 || adresses.Any(a => !Destinataires.Recevable(a))) return;
+
+        EnvoyerLeLienAuClient();
+    }
 
     private void OnEnvoyerLeLien(object sender, RoutedEventArgs e)
     {
@@ -536,17 +645,52 @@ public partial class DropboxSendView : UserControl
                 joursDeValidite: JoursDeValidite(resultat, reglages),
                 protege: resultat.Protege);
 
-            EtatText.Text = adresses.Count == 1
-                ? $"Lien envoyé à {adresses[0]}."
-                : $"Lien envoyé à {adresses.Count} destinataires.";
+            _lienEnvoye = true;
+
+            AnnoncerLeCourriel(
+                parti: true,
+                titre: adresses.Count == 1
+                    ? $"✅  Lien envoyé à {adresses[0]}"
+                    : $"✅  Lien envoyé à {adresses.Count} destinataires",
+                detail: adresses.Count == 1
+                    ? $"Courriel parti à {DateTime.Now:HH:mm} · {resultat.Fichiers} photo(s)."
+                    : $"Courriel parti à {DateTime.Now:HH:mm} · {resultat.Fichiers} photo(s) · " +
+                      string.Join(", ", adresses) +
+                      " · personne ne voit l'adresse des autres.");
+
         }
         catch (Exception ex)
         {
             FileLog.Write("Envoi du lien Dropbox par courriel impossible", ex);
-            EtatText.Text =
-                "Les photos sont bien en ligne et le lien est copié, mais le courriel n'est " +
-                $"pas parti : {ex.Message}";
+
+            AnnoncerLeCourriel(
+                parti: false,
+                titre: "⚠  Le courriel n'est pas parti",
+                detail: "Les photos sont bien en ligne et le lien est copié dans le " +
+                        $"presse-papier : vous pouvez le donner autrement. Raison : {ex.Message}");
+
         }
+    }
+
+    /// <summary>
+    /// Montre en tête d'écran ce que le courriel est devenu.
+    ///
+    /// En VERT ou en ROUGE, et jamais en gris : le seul cas qui compte vraiment est celui
+    /// où l'envoi a échoué, et il doit se distinguer d'un coup d'œil de celui où tout va
+    /// bien. La carte est remontée sous les yeux (<c>BringIntoView</c>) parce que la page
+    /// peut être défilée n'importe où après un envoi qui a duré.
+    /// </summary>
+    private void AnnoncerLeCourriel(bool parti, string titre, string detail)
+    {
+        var couleur = (System.Windows.Media.Brush)FindResource(parti ? "OkBrush" : "DangerBrush");
+
+        CourrielTitreText.Text = titre;
+        CourrielTitreText.Foreground = couleur;
+        CourrielDetailText.Text = detail;
+
+        CourrielCarte.BorderBrush = couleur;
+        CourrielCarte.Visibility = Visibility.Visible;
+        CourrielCarte.BringIntoView();
     }
 
     /// <summary>

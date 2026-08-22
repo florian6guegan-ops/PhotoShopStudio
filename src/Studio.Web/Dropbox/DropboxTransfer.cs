@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Studio.Core.Cloud;
 
@@ -6,10 +7,22 @@ namespace Studio.Web.Dropbox;
 /// <summary>Avancement d'un envoi, pour la barre de l'écran.</summary>
 /// <param name="Faits">Fichiers déjà envoyés.</param>
 /// <param name="Total">Fichiers à envoyer.</param>
-/// <param name="Fichier">Nom du fichier en cours.</param>
-public sealed record AvancementEnvoi(int Faits, int Total, string Fichier)
+/// <param name="Fichier">Nom du dernier fichier parti.</param>
+/// <param name="Octets">Volume déjà envoyé.</param>
+/// <param name="OctetsTotal">Volume à envoyer.</param>
+public sealed record AvancementEnvoi(
+    int Faits, int Total, string Fichier, long Octets = 0, long OctetsTotal = 0)
 {
-    public double Part => Total > 0 ? (double)Faits / Total : 0;
+    /// <summary>
+    /// La part faite, en OCTETS quand on connaît le volume et en fichiers sinon.
+    ///
+    /// En octets parce qu'un lot de photos n'est pas régulier : trente vignettes suivies de
+    /// deux fichiers de reflex feraient une barre qui saute à 90 % puis n'avance plus
+    /// pendant deux minutes. Le volume, lui, avance à la vitesse de la ligne.
+    /// </summary>
+    public double Part => OctetsTotal > 0
+        ? Math.Clamp((double)Octets / OctetsTotal, 0, 1)
+        : Total > 0 ? (double)Faits / Total : 0;
 }
 
 /// <summary>Ce qu'un envoi laisse au comptoir.</summary>
@@ -71,20 +84,63 @@ public static class DropboxTransfer
         if (racine.Length > 0) await client.CreerLeDossierAsync(racine, ct);
         await client.CreerLeDossierAsync(dossier, ct);
 
-        long octets = 0;
+        // Les tailles d'abord, en un seul passage : elles servent à la barre d'avancement,
+        // et les relire APRÈS chaque envoi obligerait à retoucher le disque au moment où
+        // l'on veut justement lui laisser la place.
+        var tailles = new long[fichiers.Count];
+        long octetsTotal = 0;
         for (var i = 0; i < fichiers.Count; i++)
         {
-            ct.ThrowIfCancellationRequested();
-
-            var fichier = fichiers[i];
-            var nom = Path.GetFileName(fichier);
-            avancement?.Report(new AvancementEnvoi(i, fichiers.Count, nom));
-
-            await client.TeleverserAsync(fichier, $"{dossier}/{NomDeFichier(nom)}", ct);
-            octets += new FileInfo(fichier).Length;
+            try { tailles[i] = new FileInfo(fichiers[i]).Length; }
+            catch (IOException) { tailles[i] = 0; }
+            octetsTotal += tailles[i];
         }
 
-        avancement?.Report(new AvancementEnvoi(fichiers.Count, fichiers.Count, "lien de partage…"));
+        long octets = 0;
+        var faits = 0;
+
+        var simultanes = reglages.EnvoisSimultanesReels;
+        Log?.Invoke($"Dropbox : {fichiers.Count} fichier(s) à envoyer, {simultanes} de front.");
+
+        // ⚠ PLUSIEURS FICHIERS DE FRONT, et c'est tout le gain de temps : un envoi seul
+        // passe l'essentiel de sa vie à ATTENDRE — l'aller-retour TLS, l'accusé de Dropbox,
+        // la fenêtre TCP qui remonte à chaque nouvelle connexion. Sur deux cents photos, ces
+        // temps morts pèsent plus que les octets eux-mêmes, et la ligne montante du magasin
+        // n'est jamais remplie. Quatre de front la remplissent.
+        //
+        // Le même DropboxClient sert à tous : HttpClient est fait pour être partagé, et
+        // c'est lui qui garde les connexions ouvertes d'un fichier au suivant.
+        try
+        {
+            await Parallel.ForEachAsync(
+                Enumerable.Range(0, fichiers.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = simultanes, CancellationToken = ct },
+                async (i, jeton) =>
+                {
+                    var fichier = fichiers[i];
+                    var nom = Path.GetFileName(fichier);
+
+                    await client.TeleverserAsync(fichier, $"{dossier}/{NomDeFichier(nom)}", jeton);
+
+                    // compteurs partagés par plusieurs fils : rien ici ne peut être un « += »
+                    var volume = Interlocked.Add(ref octets, tailles[i]);
+                    var compte = Interlocked.Increment(ref faits);
+
+                    avancement?.Report(
+                        new AvancementEnvoi(compte, fichiers.Count, nom, volume, octetsTotal));
+                });
+        }
+        catch (AggregateException ex) when (ex.InnerException is not null)
+        {
+            // Parallel.ForEachAsync empaquette les pannes ; l'écran, lui, affiche le message
+            // tel quel — « Une ou plusieurs erreurs se sont produites » ne dit rien au
+            // comptoir, alors que « le Dropbox du studio est plein » dit quoi faire.
+            ExceptionDispatchInfo.Capture(ex.InnerExceptions[0]).Throw();
+        }
+
+        avancement?.Report(
+            new AvancementEnvoi(fichiers.Count, fichiers.Count, "lien de partage…",
+                octetsTotal, octetsTotal));
 
         var lien = await client.PartagerAsync(dossier, reglages.ExpirationJours, reglages.MotDePasse, ct);
 

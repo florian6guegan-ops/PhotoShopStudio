@@ -52,6 +52,61 @@ public class DropboxTransferTests
         Assert.Equal("", new DropboxSettings(AppKey: "abc", RefreshToken: "jeton", Actif: true).CeQuiManque());
     }
 
+    // ----- envois simultanés -----
+
+    /// <summary>
+    /// Quatre de front par défaut : c'est ce qui remplit la ligne montante du magasin. Une
+    /// photo à la fois passait l'essentiel du temps à attendre l'accusé de Dropbox.
+    /// </summary>
+    [Fact]
+    public void Quatre_envois_de_front_par_defaut() =>
+        Assert.Equal(4, new DropboxSettings().EnvoisSimultanesReels);
+
+    /// <summary>
+    /// Le réglage est BORNÉ, et pour deux raisons opposées : un 0 traîné dans un vieux
+    /// fichier bloquerait tout envoi, et un grand nombre tapé « pour aller plus vite » ferait
+    /// répondre 429 à Dropbox — donc plus lent, pas plus rapide.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 4)]
+    [InlineData(-3, 4)]
+    [InlineData(1, 1)]
+    [InlineData(6, 6)]
+    [InlineData(50, 8)]
+    public void Le_nombre_d_envois_simultanes_est_borne(int regle, int attendu) =>
+        Assert.Equal(attendu, new DropboxSettings(EnvoisSimultanes: regle).EnvoisSimultanesReels);
+
+    // ----- avancement -----
+
+    /// <summary>
+    /// La barre suit le VOLUME et non le nombre de fichiers.
+    ///
+    /// Un lot de photos n'est jamais régulier : trente petites suivies de deux gros fichiers
+    /// de reflex feraient une barre à 94 % qui n'avance plus pendant deux minutes — c'est
+    /// exactement le moment où l'opérateur croit que l'écran a planté.
+    /// </summary>
+    [Fact]
+    public void La_barre_suit_le_volume_quand_on_le_connait()
+    {
+        var a = new AvancementEnvoi(Faits: 30, Total: 32, Fichier: "DSC_0042.jpg",
+            Octets: 10_000_000, OctetsTotal: 100_000_000);
+
+        Assert.Equal(0.1, a.Part, 3);
+    }
+
+    /// <summary>Sans volume connu, on retombe sur le compte des fichiers plutôt que sur zéro.</summary>
+    [Fact]
+    public void Sans_volume_la_barre_compte_les_fichiers() =>
+        Assert.Equal(0.5, new AvancementEnvoi(5, 10, "photo.jpg").Part, 3);
+
+    /// <summary>
+    /// Les tailles sont relues au début, et un fichier qui grossit entre-temps ferait passer
+    /// la barre au-delà de son maximum : WPF n'aime pas, et l'opérateur non plus.
+    /// </summary>
+    [Fact]
+    public void La_barre_ne_depasse_jamais_le_bout() =>
+        Assert.Equal(1.0, new AvancementEnvoi(3, 3, "x.jpg", 120, 100).Part, 3);
+
     // ----- chemins -----
 
     /// <summary>

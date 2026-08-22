@@ -42,6 +42,14 @@ namespace Studio.Core.Cloud;
 /// <param name="MotDePasse">
 /// Mot de passe du lien. Vide = aucun. Même réserve que l'expiration : compte payant requis.
 /// </param>
+/// <param name="EnvoisSimultanes">
+/// Nombre de photos téléversées EN MÊME TEMPS.
+///
+/// Une photo à la fois, c'est un aller-retour réseau perdu entre chaque fichier : sur deux
+/// cents photos, ces temps morts font l'essentiel de l'attente au comptoir, et la ligne
+/// montante n'est jamais remplie. Quatre envois de front la remplissent sans faire dire à
+/// Dropbox « ralentissez » (429).
+/// </param>
 /// <param name="RetentionJours">
 /// Jours au bout desquels un dossier envoyé est SUPPRIMÉ du Dropbox du studio. 0 = jamais.
 ///
@@ -57,8 +65,19 @@ public sealed record DropboxSettings(
     int ExpirationJours = 30,
     string MotDePasse = "",
     bool Actif = false,
-    int RetentionJours = 3)
+    int RetentionJours = 3,
+    int EnvoisSimultanes = 4)
 {
+    /// <summary>
+    /// Le nombre d'envois simultanés réellement appliqué, borné.
+    ///
+    /// Borné et non pris tel quel : un 0 laissé dans un fichier ancien bloquerait tout
+    /// envoi, et un 50 tapé « pour aller plus vite » ferait répondre 429 à Dropbox — ce qui
+    /// est plus lent, pas plus rapide.
+    /// </summary>
+    [JsonIgnore]
+    public int EnvoisSimultanesReels => Math.Clamp(EnvoisSimultanes <= 0 ? 4 : EnvoisSimultanes, 1, 8);
+
     /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
     public const string FileName = "dropbox.json";
 

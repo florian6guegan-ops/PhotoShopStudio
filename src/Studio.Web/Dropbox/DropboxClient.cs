@@ -76,16 +76,71 @@ public sealed class DropboxClient : IDisposable
             mute = true,
         });
 
-        await using var flux = File.OpenRead(cheminLocal);
-        using var contenu = new StreamContent(flux);
-        contenu.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        for (var essai = 1; ; essai++)
+        {
+            // Le flux est rouvert à CHAQUE essai : un contenu déjà lu ne se rejoue pas, et
+            // un renvoi sur un flux épuisé enverrait un fichier vide sans se plaindre.
+            //
+            // Tampon large et lecture séquentielle asynchrone : le disque lit d'avance
+            // pendant que le réseau écrit, au lieu de faire quatre kilo-octets à la fois.
+            await using var flux = new FileStream(
+                cheminLocal, FileMode.Open, FileAccess.Read, FileShare.Read,
+                bufferSize: 128 * 1024, FileOptions.SequentialScan | FileOptions.Asynchronous);
 
-        using var requete = new HttpRequestMessage(HttpMethod.Post,
-            "https://content.dropboxapi.com/2/files/upload") { Content = contenu };
-        requete.Headers.Add("Dropbox-API-Arg", EnTeteAscii(arg));
+            using var contenu = new StreamContent(flux);
+            contenu.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-        using var reponse = await _http.SendAsync(requete, ct);
-        await VerifierAsync(reponse, $"téléversement de {Path.GetFileName(cheminLocal)}", ct);
+            using var requete = new HttpRequestMessage(HttpMethod.Post,
+                "https://content.dropboxapi.com/2/files/upload") { Content = contenu };
+            requete.Headers.Add("Dropbox-API-Arg", EnTeteAscii(arg));
+
+            using var reponse = await _http.SendAsync(requete, ct);
+            if (reponse.IsSuccessStatusCode) return;
+
+            if (await AttendreEtRetenterAsync(reponse, essai, Path.GetFileName(cheminLocal), ct))
+                continue;
+
+            await VerifierAsync(reponse, $"téléversement de {Path.GetFileName(cheminLocal)}", ct);
+            return;   // inatteignable : VerifierAsync lève sur tout ce qui n'est pas un succès
+        }
+    }
+
+    /// <summary>Nombre d'essais avant d'abandonner un fichier.</summary>
+    private const int EssaisMax = 4;
+
+    /// <summary>
+    /// Vrai s'il faut refaire l'envoi — et l'attente a alors déjà été faite.
+    ///
+    /// Deux refus n'en sont pas vraiment : le 429 (« vous allez trop vite ») et les 5xx
+    /// (« mes serveurs toussent »). Ils sont attendus dès qu'on envoie plusieurs fichiers de
+    /// front, et ils passent tout seuls en patientant le temps que Dropbox demande. Faire
+    /// échouer un envoi de deux cents photos là-dessus, alors qu'il suffisait d'attendre
+    /// trois secondes, serait absurde au comptoir.
+    ///
+    /// Tout le reste — compte plein, jeton périmé, permission manquante — ne guérit pas en
+    /// réessayant : on rend faux, et l'appelant lèvera avec le vrai message.
+    /// </summary>
+    private static async Task<bool> AttendreEtRetenterAsync(
+        HttpResponseMessage reponse, int essai, string quoi, CancellationToken ct)
+    {
+        var recuperable = reponse.StatusCode == HttpStatusCode.TooManyRequests
+                          || (int)reponse.StatusCode >= 500;
+
+        if (!recuperable || essai >= EssaisMax) return false;
+
+        // Dropbox dit lui-même combien de temps attendre ; sinon on double à chaque essai
+        // borné à une minute : une valeur aberrante ferait croire l'écran figé
+        var attente = reponse.Headers.RetryAfter?.Delta
+                      ?? TimeSpan.FromSeconds(Math.Pow(2, essai));
+        if (attente > TimeSpan.FromMinutes(1)) attente = TimeSpan.FromMinutes(1);
+        if (attente < TimeSpan.Zero) attente = TimeSpan.FromSeconds(1);
+
+        Log?.Invoke(
+            $"Dropbox : {(int)reponse.StatusCode} sur « {quoi} », " +
+            $"nouvel essai dans {attente.TotalSeconds:0.#} s (essai {essai + 1}/{EssaisMax}).");
+
+        await Task.Delay(attente, ct);
+        return true;
     }
 
     /// <summary>
