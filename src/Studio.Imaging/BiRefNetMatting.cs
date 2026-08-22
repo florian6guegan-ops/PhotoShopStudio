@@ -338,6 +338,20 @@ public static class BiRefNetMatting
     public static int? Carte { get; set; }
 
     /// <summary>
+    /// Faire tourner le réseau sur le PROCESSEUR, sans jamais toucher à la carte graphique.
+    ///
+    /// <b>C'est la seule parade certaine à un pilote qui emporte le logiciel.</b> Voir
+    /// <c>DetourageSettings.SurLeProcesseur</c> : à Créteil, deux plantages dans
+    /// <c>nvd3dumx.dll</c> pendant un détourage, que rien dans le code managé ne peut
+    /// rattraper. Sans DirectML, ce pilote n'est plus jamais sollicité par nous — ces
+    /// plantages-là disparaissent par construction, sans qu'on ait eu besoin d'en
+    /// comprendre la cause.
+    ///
+    /// Le masque est le MÊME : même modèle, même entrée, mêmes poids. Seul le temps change.
+    /// </summary>
+    public static bool SurLeProcesseur { get; set; }
+
+    /// <summary>
     /// Appelé quand la mesure a désigné une carte, pour que le poste s'en souvienne.
     /// L'application y range le numéro dans <c>detourage.json</c>.
     /// </summary>
@@ -708,16 +722,42 @@ public static class BiRefNetMatting
             {
                 var options = new SessionOptions();
 
-                // DirectML exige ces deux réglages pour qu'une session serve PLUSIEURS
-                // fois : sans eux, la première photo passe et la seconde échoue sur un
-                // « DmlFusedNode » (constaté le 03/08/2026 sur la Quadro P2000). Le
-                // réutilisateur de mémoire d'ONNX Runtime n'est pas compatible avec ce
-                // fournisseur, et la documentation demande de le désactiver.
-                options.EnableMemoryPattern = false;
-                options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
+                // ⚠ CES DEUX REGLAGES SONT POUR DIRECTML, ET POUR LUI SEUL.
+                //
+                // DirectML les exige pour qu'une session serve PLUSIEURS fois : sans eux, la
+                // première photo passe et la seconde échoue sur un « DmlFusedNode »
+                // (constaté le 03/08/2026 sur la Quadro P2000). Le réutilisateur de mémoire
+                // d'ONNX Runtime n'est pas compatible avec ce fournisseur, et la
+                // documentation demande de le désactiver.
+                //
+                // Sur PROCESSEUR ils font l'inverse de ce qu'on veut : le réutilisateur de
+                // mémoire y est un gain, et le mode séquentiel interdit d'occuper plusieurs
+                // cœurs. Les poser là reviendrait à choisir le processeur puis à lui
+                // attacher une main dans le dos — sur les six cœurs du poste de Créteil,
+                // c'est tout l'intérêt de la bascule qui disparaîtrait.
+                if (!SurLeProcesseur)
+                {
+                    options.EnableMemoryPattern = false;
+                    options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
+                }
 
-                // LA CARTE MESURÉE, et non la première venue. Voir Carte.
-                options.AppendExecutionProvider_DML(Carte ?? 0);
+                // SUR LE PROCESSEUR : on n'ajoute simplement AUCUN fournisseur, et ONNX
+                // Runtime retombe sur le sien, qui est le processeur. Il n'y a rien à
+                // désactiver — c'est l'absence de DirectML qui fait tout, et c'est
+                // précisément ce qu'on cherche : le pilote graphique n'est plus dans le
+                // chemin, donc il ne peut plus emporter le logiciel avec lui.
+                if (SurLeProcesseur)
+                {
+                    Log?.Invoke("BiRefNet : détourage réglé SUR LE PROCESSEUR — la carte " +
+                                "graphique n'est pas sollicitée. Comptez une dizaine de " +
+                                "secondes par photo, et préférez un modèle fp32 : le fp16 " +
+                                "n'a pas d'unités dédiées sur un processeur.");
+                }
+                else
+                {
+                    // LA CARTE MESURÉE, et non la première venue. Voir Carte.
+                    options.AppendExecutionProvider_DML(Carte ?? 0);
+                }
 
                 // ⚠ CE CHARGEMENT SE COMPTE EN SECONDES, et il tombe sur le PREMIER
                 // détourage de la séance — celui que l'opérateur attend devant un client.

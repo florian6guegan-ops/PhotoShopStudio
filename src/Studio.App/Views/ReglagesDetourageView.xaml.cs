@@ -49,6 +49,7 @@ public partial class ReglagesDetourageView : UserControl
             CouleurRadio.IsChecked = !reglages.Actif;
             ReseauLegerRadio.IsChecked = reglages.Actif && !reglages.ModelePuissant;
             ReseauPuissantRadio.IsChecked = reglages.Actif && reglages.ModelePuissant;
+            SurLeProcesseurCheck.IsChecked = reglages.SurLeProcesseur;
         }
         finally
         {
@@ -63,13 +64,50 @@ public partial class ReglagesDetourageView : UserControl
     /// <summary>Les réglages tels qu'ils sont à l'écran, sans les enregistrer.</summary>
     private DetourageSettings Saisie() => new(
         Actif: CouleurRadio.IsChecked != true,
-        ModelePuissant: ReseauPuissantRadio.IsChecked == true);
+        ModelePuissant: ReseauPuissantRadio.IsChecked == true,
+        SurLeProcesseur: SurLeProcesseurCheck.IsChecked == true);
 
     private void OnDetourageChanged(object sender, RoutedEventArgs e)
     {
         if (!IsLoaded || _chargement) return;
 
         DireOuEnEst(Saisie());
+    }
+
+    /// <summary>
+    /// Bascule le calcul sur le processeur, et dit ce que ça coûte.
+    ///
+    /// <b>On avertit sans refuser</b>, comme pour le modèle puissant : c'est l'exploitant qui
+    /// arbitre entre une dizaine de secondes par photo et une application qui se ferme toute
+    /// seule. On lui donne les chiffres.
+    /// </summary>
+    private void OnSurLeProcesseurChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _chargement) return;
+
+        OnDetourageChanged(sender, e);
+
+        if (SurLeProcesseurCheck.IsChecked != true) return;
+
+        // ⚠ LE FP16 EST UN MAUVAIS CHOIX SUR UN PROCESSEUR, et c'est contre-intuitif : le
+        // fichier le plus léger devient le plus lent. Les processeurs n'ont pas d'unités
+        // demi-précision, ONNX Runtime convertit à la volée. Mesuré le 22/08/2026 sur un
+        // Xeon E3 à 4 coeurs : 17,7 s en fp16 contre 11,8 s en fp32, pour le même masque.
+        var modele = BiRefNetMatting.ModeleRetenu is { } chemin
+            ? System.IO.Path.GetFileName(chemin)
+            : null;
+
+        var note = modele is not null && modele.Contains("fp16", StringComparison.OrdinalIgnoreCase)
+            ? $"\n\nCe poste utilise « {modele} ». Sur un processeur, une version « fp32 » du " +
+              "même modèle est nettement plus rapide — le fp16 n'y a pas d'unités dédiées et " +
+              "doit être converti à la volée."
+            : "";
+
+        MessageBox.Show(
+            "Le détourage ne passera plus par la carte graphique.\n\n" +
+            "Le masque est le même — même modèle, même qualité. Seul le temps change : " +
+            "comptez une dizaine de secondes par photo au lieu de cinq." + note,
+            "Studio Photo", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     /// <summary>
@@ -312,7 +350,8 @@ public partial class ReglagesDetourageView : UserControl
         App.Services.SaveDetourage(reglages);
 
         FileLog.Write($"Détourage : réseau {(reglages.Actif ? "actif" : "éteint")}, " +
-                      $"modèle « {reglages.ModeleDemande} ».");
+                      $"modèle « {reglages.ModeleDemande} », " +
+                      $"calcul sur {(reglages.SurLeProcesseur ? "LE PROCESSEUR" : "la carte graphique")}.");
 
         MessageBox.Show(
             "Réglage enregistré. Il s'applique à la photo suivante, sans redémarrer.",

@@ -334,6 +334,11 @@ public sealed class AppServices
         BiRefNetMatting.Actif = reglages.Actif;
         BiRefNetMatting.ModelePrefere = ModelePourCetteCarte(reglages);
         BiRefNetMatting.Carte = reglages.Carte;
+
+        // Posé AVANT Reinitialiser : c'est la prochaine session qui doit naître avec le bon
+        // fournisseur, et Reinitialiser est ce qui la jette.
+        BiRefNetMatting.SurLeProcesseur = reglages.SurLeProcesseur;
+
         BiRefNetMatting.Reinitialiser();
     }
 
@@ -354,6 +359,11 @@ public sealed class AppServices
     {
         var reglages = Detourage;
         if (!reglages.Actif || reglages.Carte is not null) return;
+
+        // Sur un poste réglé pour le processeur, il n'y a aucune carte à départager — et
+        // surtout, la mesure ferait tourner le réseau sur CHACUNE d'elles, c'est-à-dire
+        // exactement le travail qu'on vient de leur retirer.
+        if (reglages.SurLeProcesseur) return;
 
         var choisie = BiRefNetMatting.ChoisirLaMeilleureCarte();
         if (choisie is null) return;

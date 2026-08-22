@@ -54,6 +54,21 @@
                         </StackPanel>
                     </RadioButton>
 
+                    <!-- POUR UN POSTE DONT LA CARTE EMPORTE LE LOGICIEL. Ce n'est pas un
+                         réglage de confort : à Créteil, le pilote graphique a tué Studio
+                         deux fois en plein détourage, et rien dans le code ne rattrape
+                         cela. Le processeur est plus lent, mais il ne fait pas tomber
+                         l'application. -->
+                    <CheckBox x:Name="SurLeProcesseurCheck" Margin="0,20,0,0"
+                              Checked="OnSurLeProcesseurChanged" Unchecked="OnSurLeProcesseurChanged">
+                        <StackPanel Margin="0,0,0,4">
+                            <TextBlock Style="{StaticResource Texte}" FontSize="17" TextWrapping="Wrap"
+                                       Text="Calculer sur le processeur, sans la carte graphique"/>
+                            <TextBlock Style="{StaticResource Hint}" FontSize="14" TextWrapping="Wrap"
+                                       Text="À cocher si l'application se ferme toute seule pendant un détourage : c'est le pilote de la carte qui l'emporte, et le processeur ne connaît pas ce défaut. Même modèle, même qualité — compter une dizaine de secondes par photo au lieu de cinq."/>
+                        </StackPanel>
+                    </CheckBox>
+
                     <!-- Le minimum requis, en clair : c'est la question qu'on se pose
                          devant cette case, et la seule réponse utile est chiffrée. -->
                     <Border Background="{DynamicResource PanelBrush}" CornerRadius="10"

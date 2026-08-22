@@ -54,11 +54,29 @@ namespace Studio.Core.Imaging;
 /// sert à l'exploitant, qui relit son fichier de réglages et doit pouvoir vérifier que le
 /// numéro désigne encore la même carte.
 /// </param>
+/// <param name="SurLeProcesseur">
+/// Faire tourner le réseau sur le PROCESSEUR au lieu de la carte graphique.
+///
+/// <b>Pour un poste dont la carte emporte le logiciel.</b> À Créteil, <c>Studio.App</c> a été
+/// tué deux fois (13 et 21/08/2026) dans <c>nvd3dumx.dll</c> — le pilote Direct3D de NVIDIA —
+/// pendant un détourage. Un plantage de pilote ne se rattrape pas depuis le code managé : il
+/// emporte le processus sans lever d'exception, donc ni le repli vers un modèle plus léger ni
+/// aucun <c>catch</c> ne jouent. La seule parade certaine est de ne plus lui donner ce travail.
+///
+/// <b>Rien n'est perdu au passage</b> : même modèle, même entrée de 1024, même masque au pixel
+/// près. Seul le temps change — mesuré le 22/08/2026 sur un Xeon E3 à 4 cœurs : 11,8 s en
+/// fp32 et 17,7 s en fp16, contre 4 à 6 s sur la carte. Le fp16 est mauvais ici, les
+/// processeurs n'ayant pas d'unités demi-précision : ONNX Runtime convertit à la volée.
+/// <b>Un poste réglé sur le processeur a donc intérêt au modèle fp32.</b>
+///
+/// Faux par défaut : la carte reste le bon choix partout où elle tient.
+/// </param>
 public sealed record DetourageSettings(
     bool Actif = false,
     bool ModelePuissant = false,
     int? Carte = null,
-    string? CarteNom = null)
+    string? CarteNom = null,
+    bool SurLeProcesseur = false)
 {
     /// <summary>Nom du fichier, dans le dossier de configuration.</summary>
     public const string FileName = "detourage.json";
