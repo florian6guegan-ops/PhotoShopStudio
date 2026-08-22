@@ -112,12 +112,68 @@ public static class BiRefNetMatting
     /// carte photo après photo, et le contour reste très au-dessus de la méthode par
     /// couleur.
     ///
-    /// Le modèle exporté a une entrée FIGÉE à 1024 : lui en donner une autre le fait
-    /// refuser l'image (« invalid dimensions for input »). On ne peut donc pas alléger la
-    /// carte par la taille — c'est le POIDS du modèle qu'il faut réduire, d'où la variante
-    /// « lite ».
+    /// <b>Ce n'est plus qu'un DÉFAUT.</b> Le côté était écrit ici et nulle part ailleurs, ce
+    /// qui rendait tout autre export inutilisable — le modèle en refusait l'image
+    /// (« invalid dimensions for input »), et l'on en concluait qu'on ne pouvait alléger la
+    /// carte que par le POIDS. C'est le modèle qui dit sa taille désormais : voir
+    /// <see cref="_cote"/>. Cette valeur ne sert plus que tant qu'aucune session n'est
+    /// chargée, et pour un export à axes dynamiques — 1024 est la taille d'entraînement.
     /// </summary>
-    private const int Cote = 1024;
+    private const int CoteParDefaut = 1024;
+
+    /// <summary>
+    /// Le côté RÉELLEMENT attendu par le modèle chargé, lu dans son graphe.
+    ///
+    /// <b>Il était écrit en dur, et c'est ce qui interdisait tout autre modèle.</b> Poser un
+    /// export en 768 ou en 512 ne suffisait pas : le code lui aurait envoyé un tenseur de
+    /// 1024, que le réseau refuse (« invalid dimensions for input »). Or c'est précisément
+    /// le levier qui reste contre le plantage de Créteil — les activations d'un réseau
+    /// convolutif suivent la surface, et 768 en retire 44 %.
+    ///
+    /// ONNX Runtime le donne gratuitement : <c>InputMetadata</c> porte les dimensions de
+    /// l'entrée. On les lit au chargement plutôt que de les supposer, et n'importe quel
+    /// export devient utilisable sans toucher à une ligne.
+    ///
+    /// Reste à <see cref="CoteParDefaut"/> tant qu'aucune session n'est chargée, et quand le
+    /// modèle déclare une dimension dynamique — un export à axes libres accepte alors ce
+    /// qu'on lui donne, et 1024 est la taille d'entraînement.
+    /// </summary>
+    private static int _cote = CoteParDefaut;
+
+    /// <summary>
+    /// Relève le côté d'entrée du modèle qui vient d'être chargé.
+    ///
+    /// Une dimension négative ou nulle signale un axe dynamique : on garde le défaut. Une
+    /// entrée qui n'aurait pas quatre dimensions n'est pas ce réseau-là, et on n'y touche
+    /// pas non plus — mieux vaut la valeur d'entraînement qu'une lecture hasardeuse.
+    /// </summary>
+    private static void LireLeCote(InferenceSession session)
+    {
+        _cote = CoteParDefaut;
+
+        foreach (var entree in session.InputMetadata)
+        {
+            var dims = entree.Value.Dimensions;
+            if (dims is not { Length: 4 }) continue;
+
+            var largeur = dims[3];
+            var hauteur = dims[2];
+            if (largeur <= 0 || hauteur <= 0) break;   // axes dynamiques : le défaut fera
+
+            if (largeur != hauteur)
+            {
+                Log?.Invoke($"BiRefNet : entrée {hauteur}×{largeur} — le réseau attend un carré, " +
+                            $"{CoteParDefaut} est conservé.");
+                break;
+            }
+
+            _cote = largeur;
+            break;
+        }
+
+        if (_cote != CoteParDefaut)
+            Log?.Invoke($"BiRefNet : ce modèle travaille en {_cote} et non en {CoteParDefaut}.");
+    }
 
     /// <summary>Normalisation ImageNet, celle avec laquelle le réseau a été entraîné.</summary>
     private static readonly float[] Moyenne = [0.485f, 0.456f, 0.406f];
@@ -393,7 +449,7 @@ public static class BiRefNetMatting
             // de la FORME des tenseurs, jamais des valeurs qui y passent : une image grise
             // dégourdit donc exactement ceux dont la première vraie photo se servira.
             using var vide = new ImageMagick.MagickImage(
-                ImageMagick.MagickColors.Gray, (uint)Cote, (uint)Cote);
+                ImageMagick.MagickColors.Gray, (uint)_cote, (uint)_cote);
 
             var chrono = System.Diagnostics.Stopwatch.StartNew();
             using var masque = CalculerMasque(vide);
@@ -594,6 +650,11 @@ public static class BiRefNetMatting
                 _modeleCharge = Path.GetFileName(chemin);
                 Log?.Invoke($"BiRefNet : « {_modeleCharge} » chargé sur la carte graphique (DirectML) " +
                             $"en {DureeDuChargement.Value.TotalSeconds:0.0} s.");
+
+                // AVANT que quiconque exécute : tout le reste — le tampon d'entrée, le
+                // tenseur, la remise à l'échelle du masque — se dimensionne dessus.
+                LireLeCote(_session);
+
                 return _session;
             }
             catch (Exception ex)
@@ -706,12 +767,12 @@ public static class BiRefNetMatting
             var entree = session.InputMetadata.First();
             var nomSortie = session.OutputMetadata.First().Key;
 
-            var valeurs = new float[3 * Cote * Cote];
+            var valeurs = new float[3 * _cote * _cote];
 
             NamedOnnxValue tenseur = entree.Value.ElementType == typeof(Float16)
                 ? NamedOnnxValue.CreateFromTensor(entree.Key, EnDemiPrecision(valeurs))
                 : NamedOnnxValue.CreateFromTensor(entree.Key,
-                    new DenseTensor<float>(valeurs, [1, 3, Cote, Cote]));
+                    new DenseTensor<float>(valeurs, [1, 3, _cote, _cote]));
 
             var chrono = System.Diagnostics.Stopwatch.StartNew();
 
@@ -736,7 +797,7 @@ public static class BiRefNetMatting
         var sortie = session.OutputMetadata.First().Key;
 
         using var reduite = (ImageMagick.MagickImage)image.Clone();
-        reduite.Resize(new ImageMagick.MagickGeometry(Cote, Cote) { IgnoreAspectRatio = true });
+        reduite.Resize(new ImageMagick.MagickGeometry((uint)_cote, (uint)_cote) { IgnoreAspectRatio = true });
 
         using var mat = Cv2.ImDecode(
             reduite.ToByteArray(ImageMagick.MagickFormat.Png), ImreadModes.Color);
@@ -751,7 +812,7 @@ public static class BiRefNetMatting
         NamedOnnxValue tenseur = entree.Value.ElementType == typeof(Float16)
             ? NamedOnnxValue.CreateFromTensor(entree.Key, EnDemiPrecision(valeurs))
             : NamedOnnxValue.CreateFromTensor(entree.Key,
-                new DenseTensor<float>(valeurs, [1, 3, Cote, Cote]));
+                new DenseTensor<float>(valeurs, [1, 3, _cote, _cote]));
 
         using var resultat = session.Run([tenseur], [sortie]);
         var brut = resultat.First().AsTensor<Float16>() is { } demi
@@ -771,8 +832,8 @@ public static class BiRefNetMatting
     {
         rgb.GetArray(out Vec3b[] pixels);
 
-        var valeurs = new float[3 * Cote * Cote];
-        var plan = Cote * Cote;
+        var valeurs = new float[3 * _cote * _cote];
+        var plan = _cote * _cote;
 
         for (var rang = 0; rang < plan; rang++)
         {
@@ -789,7 +850,7 @@ public static class BiRefNetMatting
     {
         var demi = new Float16[valeurs.Length];
         for (var i = 0; i < valeurs.Length; i++) demi[i] = (Float16)valeurs[i];
-        return new DenseTensor<Float16>(demi, [1, 3, Cote, Cote]);
+        return new DenseTensor<Float16>(demi, [1, 3, _cote, _cote]);
     }
 
     /// <summary>
@@ -811,14 +872,14 @@ public static class BiRefNetMatting
     {
         (largeur, hauteur) = MasqueSujet.TailleDeCalcul(largeur, hauteur);
 
-        var opacites = new byte[Cote * Cote];
+        var opacites = new byte[_cote * _cote];
         for (var i = 0; i < opacites.Length; i++)
         {
             var opacite = 1.0 / (1.0 + Math.Exp(-brut[i]));
             opacites[i] = (byte)Math.Clamp(Math.Round(opacite * 255), 0, 255);
         }
 
-        using var masque = Mat.FromPixelData(Cote, Cote, MatType.CV_8UC1, opacites);
+        using var masque = Mat.FromPixelData(_cote, _cote, MatType.CV_8UC1, opacites);
         Cv2.ImEncode(".png", masque, out var octets);
 
         var resultat = new ImageMagick.MagickImage(octets);

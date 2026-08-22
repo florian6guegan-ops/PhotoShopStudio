@@ -709,6 +709,24 @@ public sealed class AppServices
         var productsJson = Path.Combine(dataRoot, "catalog", "products.json");
         CatalogueLivre.AssurerUnCatalogue(Path.Combine(dataRoot, "catalog"));
 
+        // LES TUILES D'IDENTITÉ SUIVENT LES VERSIONS, elles aussi.
+        //
+        // `IdShortcuts.Load` ne pose ses défauts que si le fichier est ABSENT : un poste
+        // installé avant l'arrivée des formats de rentrée ne les recevait donc JAMAIS, et
+        // aucune mise à jour n'y changeait rien. Arcueil s'en est aperçu le 22/08/2026 — la
+        // planche de rentrée existait dans le logiciel, le produit se serait dérivé tout
+        // seul, mais il n'y avait aucune tuile pour la demander.
+        //
+        // Par PALIER et non par « ce qui manque » : une tuile que l'exploitant a retirée ne
+        // doit pas revenir à chaque démarrage.
+        //
+        // Le journal est posé ICI et non avec les autres (plus bas) : cette complétion a
+        // lieu au tout début du démarrage, et sans lui l'ajout d'une tuile ne laisserait
+        // aucune trace — c'est-à-dire le défaut même qu'on corrige.
+        IdShortcuts.Log = message => FileLog.Write(message);
+        IdShortcuts.CompleterLesManquants(
+            Path.Combine(dataRoot, "catalog"), Logiciel.EstIdentite);
+
         // Les profils ICC que le catalogue nomme sont déjà sur le poste, posés par les
         // pilotes : on les recopie là où il les cherche. Sans cela, la planche d'identité
         // de Créteil est partie sans gestion couleur pendant toute son installation, et
